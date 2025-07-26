@@ -16,10 +16,13 @@ class ConsentScope(str, Enum):
     AGENT_FINANCE_ANALYZE = "agent.finance.analyze"
     AGENT_IDENTITY_VERIFY = "agent.identity.verify"
     AGENT_SALES_OPTIMIZE = "agent.sales.optimize"
+    AGENT_CAREER_GROWTH_PARSE = "agent.career_growth.parse"
+
 
     # Custom and extensible scopes
     CUSTOM_TEMPORARY = "custom.temporary"
     CUSTOM_SESSION_WRITE = "custom.session.write"
+    CUSTOM_LINKEDIN_UPLOAD = "custom.linkedin.upload"  
 
     @classmethod
     def list(cls):
