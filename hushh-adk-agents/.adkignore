@@ -1,0 +1,8 @@
+deploy/
+._mcp_kai/
+mcp-server/
+._scripts/
+._kushal_profile_data
+.deploy/
+.venv/
+

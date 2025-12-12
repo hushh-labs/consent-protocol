@@ -1,0 +1,26 @@
+current_projects:
+  - name: "GenZDealZ Credit Scoring System"
+    role: "Founding Engineer"
+    status: "Alpha/Pilot Stage"
+    url: "https://credit.GenZDealZ.ai"
+    description:
+      - "Founding engineer building AI credit scoring for 100M+ GenZ users with FastAPI + Next.js pipeline achieving 87% accuracy across 300K synthetic profiles."
+      - "Integrated 7 OAuth providers with consent-first flows, audit trails, and AI-assisted delivery (Cursor) for faster iteration."
+    tech_stack: "Next.js, TypeScript, FastAPI, Python, CatBoost, LightGBM, XGBoost, SHAP, OAuth 2.0, Azure"
+
+  - name: "iWebTechno University SaaS Portfolio"
+    role: "Lead Developer"
+    status: "Production"
+    url: "https://www.iwebtechno.com"
+    description:
+      - "Built portfolio showcasing university SaaS modules for admissions, attendance, exams, HRMS, and finance."
+    tech_stack: "Next.js, TypeScript, Tailwind CSS, Prisma, SQL Server, Zod, Docker, Azure"
+
+  - name: "TowerIQ Telecom Infrastructure Management"
+    role: "Lead Developer"
+    status: "Production - Azure"
+    url: "https://github.com/kushaltrivedi5/TowerIQ"
+    description:
+      - "Engineered TowerIQ, a telecom mission control platform with RBAC dashboards for towers, devices, and policies."
+      - "Architected real-time metrics, offline-first UX with service worker caching, and containerized Azure deployments."
+    tech_stack: "Next.js, TypeScript, Tailwind CSS, NextAuth, Service Worker, Docker, Azure"

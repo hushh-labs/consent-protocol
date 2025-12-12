@@ -1,0 +1,8 @@
+key_achievements:
+  - achievement: "Architected an AI-driven credit scoring platform reaching 87% model accuracy on test data while orchestrating 7 OAuth integrations with consent-first auditing for 100M+ GenZ prospects."
+
+  - achievement: "Delivered the iWebTechno university SaaS portfolio with 7+ production modules and the Morphy UX design system, pairing Next.js 15 and React 19 to launch accessible experiences with 40% faster load times."
+
+  - achievement: "Led the JioStar (formerly Disney Star) cloud migration, moving 1M+ HR documents for 10K+ employees to SharePoint Online via .NET and Azure Functions OCR, cutting processing effort 60% and boosting retrieval speed 40%."
+
+one_pager_key_achievements: []

@@ -1,0 +1,40 @@
+technical_skills:
+  languages:
+    category: "Languages"
+    skills:
+      - "C#, JavaScript, TypeScript, Python, HTML, CSS"
+
+  frontend:
+    category: "Front-End"
+    skills:
+      - "React, Next.js, AngularJS, Bootstrap, Tailwind CSS"
+
+  backend:
+    category: "Back-End"
+    skills:
+      - "Node.js, .NET Core, Express, Flask, REST API, GraphQL, Redis, Auth0, Firebase"
+
+  automation_ai:
+    category: "Automation & AI"
+    skills:
+      - "GenAI, RAG, Model Fine-tuning, ReACT, Vector Database, Rulesets, AI Voice Synthesis, Cursor, n8n"
+
+  cloud_devops:
+    category: "Cloud & DevOps"
+    skills:
+      - "Cloud Architecture, Infrastructure as Code, Container Orchestration, CI/CD Design, Monitoring & Observability, Security & Compliance, Performance Optimization, Cost Management, Disaster Recovery"
+
+  databases:
+    category: "Databases"
+    skills:
+      - "Azure SQL Database, Amazon RDS, MongoDB, Azure Cosmos DB, Amazon DynamoDB"
+
+  microsoft_365:
+    category: "Microsoft 365"
+    skills:
+      - "Microsoft Graph API, SharePoint, Power Automate"
+
+  quality_assurance:
+    category: "Quality Assurance"
+    skills:
+      - "ESLint Code Quality, Automated Testing Scripts, Integration Testing, Type Checking"

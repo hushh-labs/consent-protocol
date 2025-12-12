@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Next.js: Dev Server",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "npm",
+        "runtimeArgs": ["run", "dev"],
+        "console": "integratedTerminal",
+        "skipFiles": ["<node_internals>/**"],
+        "env": {
+          "NODE_OPTIONS": "--inspect"
+        }
+      }
+    ]
+  }
+  

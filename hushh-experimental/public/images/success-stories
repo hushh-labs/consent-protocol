@@ -1,0 +1,99 @@
+<svg
+  width="1200"
+  height="400"
+  viewBox="0 0 1200 400"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color: #13405d; stop-opacity: 1" />
+      <stop offset="50%" style="stop-color: #0d7590; stop-opacity: 1" />
+      <stop offset="100%" style="stop-color: #0891b2; stop-opacity: 1" />
+    </linearGradient>
+    <linearGradient id="wave-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color: #fbbf24; stop-opacity: 0.3" />
+      <stop offset="100%" style="stop-color: #f59e0b; stop-opacity: 0.3" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="400" fill="url(#bg-gradient)" />
+
+  <!-- Wave pattern -->
+  <path
+    d="M0,300 Q300,250 600,300 T1200,300 L1200,400 L0,400 Z"
+    fill="url(#wave-gradient)"
+  />
+  <path
+    d="M0,320 Q400,280 800,320 T1200,320 L1200,400 L0,400 Z"
+    fill="url(#wave-gradient)"
+    opacity="0.5"
+  />
+
+  <!-- Fish silhouettes -->
+  <ellipse cx="200" cy="200" rx="15" ry="8" fill="#fbbf24" opacity="0.4" />
+  <ellipse cx="400" cy="150" rx="12" ry="6" fill="#f59e0b" opacity="0.4" />
+  <ellipse cx="800" cy="250" rx="18" ry="10" fill="#fbbf24" opacity="0.4" />
+  <ellipse cx="1000" cy="180" rx="14" ry="7" fill="#f59e0b" opacity="0.4" />
+
+  <!-- Building/Government icon -->
+  <rect
+    x="50"
+    y="100"
+    width="80"
+    height="120"
+    fill="#ffffff"
+    opacity="0.2"
+    rx="4"
+  />
+  <rect x="60" y="110" width="60" height="20" fill="#ffffff" opacity="0.3" />
+  <rect x="60" y="140" width="60" height="20" fill="#ffffff" opacity="0.3" />
+  <rect x="60" y="170" width="60" height="20" fill="#ffffff" opacity="0.3" />
+
+  <!-- Network/Hierarchy lines -->
+  <line
+    x1="140"
+    y1="160"
+    x2="300"
+    y2="160"
+    stroke="#fbbf24"
+    stroke-width="2"
+    opacity="0.4"
+  />
+  <line
+    x1="300"
+    y1="160"
+    x2="500"
+    y2="160"
+    stroke="#f59e0b"
+    stroke-width="2"
+    opacity="0.4"
+  />
+  <line
+    x1="500"
+    y1="160"
+    x2="700"
+    y2="160"
+    stroke="#fbbf24"
+    stroke-width="2"
+    opacity="0.4"
+  />
+
+  <!-- Hierarchy nodes -->
+  <circle cx="140" cy="160" r="8" fill="#fbbf24" />
+  <circle cx="300" cy="160" r="6" fill="#f59e0b" />
+  <circle cx="500" cy="160" r="6" fill="#fbbf24" />
+  <circle cx="700" cy="160" r="6" fill="#f59e0b" />
+
+  <!-- Title area (left for text overlay) -->
+  <rect
+    x="0"
+    y="0"
+    width="1200"
+    height="400"
+    fill="rgba(0,0,0,0)"
+    pointer-events="none"
+  />
+</svg>
