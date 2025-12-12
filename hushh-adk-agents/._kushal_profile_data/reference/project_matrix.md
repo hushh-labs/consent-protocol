@@ -6,8 +6,8 @@
 
 ## 1. GenZDealZ Credit Scoring
 
-**Type**: AI/ML Credit Scoring Platform  
-**Live URL**: https://credit.GenZDealZ.ai  
+**Type**: AI/ML Credit Scoring Platform
+**Live URL**: https://credit.GenZDealZ.ai
 **Status**: Production
 
 ### Tech Stack
@@ -72,8 +72,8 @@
 
 ## 2. iWebtechno
 
-**Type**: University SaaS Platform  
-**Live URL**: https://www.iwebtechno.com  
+**Type**: University SaaS Platform
+**Live URL**: https://www.iwebtechno.com
 **Status**: Production
 
 ### Tech Stack
@@ -138,8 +138,8 @@
 
 ## 3. TowerIQ
 
-**Type**: Telecom Infrastructure Management  
-**Live URL**: https://toweriq-abg9cwfsephvh0dv.centralindia-01.azurewebsites.net/  
+**Type**: Telecom Infrastructure Management
+**Live URL**: https://toweriq-abg9cwfsephvh0dv.centralindia-01.azurewebsites.net/
 **Status**: Production (Azure)
 
 ### Tech Stack
@@ -193,8 +193,8 @@
 
 ## 4. Past Enterprise Work: Disney SharePoint Migration
 
-**Type**: Enterprise Cloud Migration  
-**Client**: Disney  
+**Type**: Enterprise Cloud Migration
+**Client**: Disney
 **Status**: Completed
 
 ### Tech Stack
@@ -260,9 +260,7 @@ RBI guidelines, PDP Act 2023, GDPR patterns, Enterprise security, Audit trails
 
 ## CONTACT
 
-**Full Name**: Kushal Trivedi  
-**Location**: San Mateo, CA  
-**Phone**: +1 201-241-9368  
-**Availability**: Immediate  
-**Rates**: $80/hr C2C, $70/hr W2  
+**Full Name**: Kushal Trivedi
+**Location**: San Mateo, CA
+**Phone**: +1 201-241-9368
 **Work Authorization**: F-1 OPT (Valid until February 2028)
