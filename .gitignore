@@ -179,6 +179,4 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-/adk-samples-main
-/kushal-profile
-# /hushh-kai-demo/iwebtechno-code
+# External Repositories
