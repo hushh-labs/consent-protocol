@@ -1,0 +1,3 @@
+[submodule "consent-protocol"]
+	path = consent-protocol
+	url = https://github.com/hushh-labs/consent-protocol
