@@ -5,13 +5,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { message, agentId } = body;
 
-    // Map agent IDs to local ports (Microservice architecture)
+    // Agent Port Mapping - Keep in sync with consent-protocol/hushh_mcp/constants.py AGENT_PORTS
     const PORT_MAP: Record<string, number> = {
       'agent_orchestrator': 10003,
-      'agent_professional_profile': 10004
+      'agent_professional_profile': 10004,
+      'agent_food_dining': 10005,
+      'agent_finance': 10006,           // Reserved
+      'agent_health_wellness': 10007,   // Reserved
+      'agent_travel': 10008,            // Reserved
+      'agent_identity': 10009,          // Reserved
     };
 
-    const port = PORT_MAP[agentId] || 10003;
+    const port = PORT_MAP[agentId] || 10003; // Default to orchestrator
     const apiUrl = `http://127.0.0.1:${port}/agent/chat`; // ADK standard endpoint
 
     console.log(`[API] Proxying message to ${agentId} on port ${port}...`);

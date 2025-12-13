@@ -6,75 +6,96 @@ Hushh is a **Consent-First Personal Data Agent System** designed to give users c
 
 ### The Stack
 
-- **Frontend:** Next.js (React) - User Interface for managing Agents and Consent.
+- **Frontend:** Next.js 15 (React) - User Interface for managing Agents and Consent.
 - **Protocol:** HushhMCP (Python) - Cryptographic backbone for Permissions and Agent Logic.
-- **Backend:** Python API (FastAPI - Planned) - Exposes HushhMCP agents to the Frontend.
+- **Backend:** FastAPI (Python) - Exposes HushhMCP agents via REST/A2A.
+- **Storage:** PostgreSQL (Cloud SQL) - Encrypted vault for user data.
 
 ## 2. Core Concepts (HushhMCP)
 
 ### Operons
 
-The atomic units of logic (e.g., `verify_email`, `extract_receipt`). They are pure, stateless, and testable functions. Think of them as the "Genes" of an Agent.
+Atomic units of logic (pure, stateless, testable functions). Think of them as the "Genes" of an Agent.
 
 ### Agents
 
-Modular orchestrators that act on behalf of the user.
+Modular orchestrators that act on behalf of the user:
 
-- **Shopper:** Finds deals, manages value.
-- **Identity:** Manages verified credentials.
-- **Curator:** Organizes data.
-- **Hushh:** The main orchestrator.
+- **Orchestrator** - Routes user intent to domain agents
+- **Food & Dining** - Manages dietary preferences, budgets
+- **Professional** - Manages career/resume data
 
 ### Consent Tokens
 
-Cryptographic proofs (`HUSHH_CT`) that authorize an Agent to perform an action for a specific scope.
+Cryptographic proofs (`HCT:...`) that authorize an Agent to perform an action for a specific scope.
 
 - **Stateless:** Validated via HMAC signature.
-- **Scoped:** Access is limited (e.g., `vault.read.email`).
+- **Scoped:** Access is limited (e.g., `vault.read.food`).
 - **Short-lived:** Tokens expire to limit risk.
 
 ### TrustLinks
 
 Signed relationships allowing Agent-to-Agent (A2A) communication and delegation.
 
-### 3. Agent Architecture (Microservices)
+## 3. Agent Port Mapping
 
-The system uses a **Split-Stack Architecture**:
+| Port  | Agent                | Description               |
+| ----- | -------------------- | ------------------------- |
+| 10003 | Orchestrator         | Intent detection, routing |
+| 10004 | Professional Profile | Career data management    |
+| 10005 | Food & Dining        | Dietary/cuisine/budget    |
+| 10006 | Finance (planned)    | Spending/budgets          |
+| 8000  | FastAPI Dev Server   | Food agent REST API       |
 
-### A. Frontend (Next.js)
+## 4. Agentic Data Collection Flow
 
-- **Host**: `localhost:3000`
-- **Role**: UI, Auth, and Proxy.
-- **Hushh Webapp**: Components (`AgentChat`) render the conversation.
-- **Route**: `/api/chat` proxies requests to the active agent port.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER CHAT UI                              │
+│                    (Next.js localhost:3000)                      │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ POST /api/chat
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      ORCHESTRATOR (10003)                        │
+│                                                                  │
+│  1. Receive user message                                         │
+│  2. Classify intent → identify domain                            │
+│  3. Create TrustLink for delegation                              │
+│  4. Route to domain agent                                        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ A2A Delegation
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DOMAIN AGENT (e.g., 10005)                    │
+│                                                                  │
+│  1. Receive delegated task + TrustLink                           │
+│  2. Collect data via conversation                                │
+│  3. Request consent token from user                              │
+│  4. Validate token with hushh_mcp                                │
+│  5. Encrypt data with vault key                                  │
+│  6. Store to PostgreSQL vault                                    │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    POSTGRESQL VAULT (Cloud SQL)                  │
+│                                                                  │
+│  Tables:                                                         │
+│  - vault_keys: User encryption keys (encrypted)                  │
+│  - vault_data: Encrypted user preferences (scope-based)          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### B. Agents (Python/ADK)
+## 5. Communication Flow
 
-- **Framework**: Google ADK (`hushh-adk-agents` reference).
-- **Orchestrator** (`:10003`):
-  - Entry point for chat.
-  - Uses `LlmAgent` to analyze intent.
-  - Delegates via simulated TrustLinks.
-- **Professional Profile** (`:10004`):
-  - Domain expert for career data.
-  - Manages structured (Resume) and dynamic (Metadata) schema.
+`User` → `Next.js UI` → `/api/chat` → `Orchestrator` → (TrustLink) → `Domain Agent` → `Vault`
 
-### C. Communication Flow
+## 6. Directory Structure
 
-`User` -> `Next.js UI` -> `/api/chat` -> `Orchestrator` -> (Delegation) -> `Professional Agent`
-
-## 4. Data Flow
-
-1.  **User Action:** User clicks "Search Deals" in Next.js UI.
-2.  **Consent Request:** UI requests a Consent Token for `agent_shopper`.
-3.  **Token Issue:** Identity Agent (local) signs a token.
-4.  **API Call:** UI sends Token to Python API (`/agent/shopper/search`).
-5.  **Validation:** Python API validates Token HMAC.
-6.  **Execution:** If valid, runs the relevant Operon Logic.
-7.  **Response:** Results returned to UI.
-
-## 4. Directory Structure
-
-- `/hushh-webapp` -> Frontend application (Next.js)
-- `/consent-protocol` -> Core protocol logic (Python)
-- `/docs` -> System documentation
+- `/hushh-webapp` → Frontend application (Next.js)
+- `/consent-protocol` → Core protocol logic (Python) **← Active code**
+- `/consent-protocol/hushh_mcp/agents/` → Agent implementations
+- `/consent-protocol/hushh_mcp/operons/` → Reusable logic units
+- `/hushh-adk-agents` → Reference implementations (not active)
+- `/docs` → System documentation

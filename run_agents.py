@@ -1,27 +1,63 @@
 import asyncio
 import logging
-from consent_protocol.hushh_mcp.agents.orchestrator import a2a_app as orchestrator_app
-from consent_protocol.hushh_mcp.agents.professional_profile import a2a_app as professional_app
 
-# Simple runner to start both agents on different ports
+# Simple runner to start agents on different ports
 # In production, these would be separate services/containers
 
-async def main():
+def main():
     print("🚀 Starting HushhMCP Agents...")
     
-    # We need to run them as separate tasks or processes
-    # For this simple script, we'll just print usage instructions
-    # because uvicorn.run is blocking.
-    
     print("""
-    Please run the agents in separate terminals:
+    ═══════════════════════════════════════════════════════════════════
+    AGENT PORT MAPPING (from consent-protocol/hushh_mcp/constants.py)
+    ═══════════════════════════════════════════════════════════════════
     
-    Terminal 1 (Orchestrator):
-    uvicorn consent_protocol.hushh_mcp.agents.orchestrator:a2a_app --port 10003 --reload
+    Port  │ Agent                  │ Status
+    ──────┼────────────────────────┼─────────
+    10003 │ Orchestrator           │ Active
+    10004 │ Professional Profile   │ Active
+    10005 │ Food & Dining          │ Active
+    10006 │ Finance                │ Reserved
+    10007 │ Health & Wellness      │ Reserved
+    10008 │ Travel                 │ Reserved
+    10009 │ Identity               │ Reserved
+    8000  │ FastAPI Dev Server     │ Optional
     
-    Terminal 2 (Professional Profile):
-    uvicorn consent_protocol.hushh_mcp.agents.professional_profile:a2a_app --port 10004 --reload
+    ═══════════════════════════════════════════════════════════════════
+    HOW TO RUN
+    ═══════════════════════════════════════════════════════════════════
+    
+    Run each agent in a separate terminal:
+    
+    Terminal 1 (Orchestrator - REQUIRED):
+    cd consent-protocol
+    uvicorn hushh_mcp.agents.orchestrator:a2a_app --port 10003 --reload
+    
+    Terminal 2 (Professional Profile - Optional):
+    cd consent-protocol
+    uvicorn hushh_mcp.agents.professional_profile:a2a_app --port 10004 --reload
+    
+    Terminal 3 (Food & Dining REST API - Optional):
+    cd consent-protocol
+    uvicorn api.main:app --port 8000 --reload
+    
+    Terminal 4 (Next.js Frontend):
+    cd hushh-webapp
+    npm run dev
+    
+    ═══════════════════════════════════════════════════════════════════
+    TESTING
+    ═══════════════════════════════════════════════════════════════════
+    
+    Run all tests:
+    cd consent-protocol
+    pytest tests/ -v
+    
+    Run specific test:
+    pytest tests/test_food_dining_agent.py -v
+    
+    ═══════════════════════════════════════════════════════════════════
     """)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

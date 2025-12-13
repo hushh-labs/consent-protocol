@@ -10,39 +10,66 @@
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15, Tailwind CSS, Framer Motion, Shadcn UI (Glassmorphism).
-- **Backend/Protocol:** Python 3.10+, HushhMCP (HMAC/Stateless), FastAPI (Planned).
-- **Storage:** Local Filesystem / SQLite (Planned Vault).
+- **Frontend:** Next.js 15, Tailwind CSS, Framer Motion, Shadcn UI + Morphy UX.
+- **Backend/Protocol:** Python 3.10+, HushhMCP (HMAC/Stateless), FastAPI.
+- **Storage:** PostgreSQL (Cloud SQL via GCP) for vault data.
 
-### 3. Agentic Architecture (HushhMCP)
+## Code Location
 
-- **Framework**: Google ADK (Agent Development Kit).
-- **Pattern**: Orchestrator-Workers.
-  - **Orchestrator**: Central router (`port 10003`). Receives user intent, delegates to domains.
-  - **Domain Agents**: Specialized workers (e.g., `Professional Profile` on `port 10004`).
-  - **Communication**: HTTP/A2A (Agent-to-Agent).
-- **Frontend Integration**: Next.js uses an API Proxy (`/api/chat`) to bridge the browser and the local Python agents.
+> **IMPORTANT**: All active agent/operon code lives in `consent-protocol/hushh_mcp/`.
+> `hushh-adk-agents/` is **reference only** (e.g., kushal_agent patterns).
 
-### 4. Data Privacy & Consent
+## Agentic Architecture (HushhMCP)
 
-- **TrustLinks**: Agents must request delegation.
-- **Vault**: Data is stored locally/encrypted. Agents act as gatekeepers.
+- **Pattern**: Orchestrator → Domain Agents → Vault
+- **Communication**: HTTP/A2A with TrustLinks
+- **Primitives** (USE ONLY THESE):
+  - `consent/token.py`: `issue_token()`, `validate_token()`, `revoke_token()`
+  - `trust/link.py`: `create_trust_link()`, `verify_trust_link()`
+  - `vault/encrypt.py`: `encrypt_data()`, `decrypt_data()`
+
+### Agent Port Mapping
+
+| Port  | Agent                    | Status     |
+| ----- | ------------------------ | ---------- |
+| 10003 | Orchestrator             | Active     |
+| 10004 | Professional Profile     | Active     |
+| 10005 | Food & Dining            | Active     |
+| 10006 | Finance                  | Planned    |
+| 10007 | Health & Wellness        | Planned    |
+| 10008 | Travel                   | Planned    |
+| 8000  | FastAPI (Food Agent API) | Dev Server |
+
+## Data Flow
+
+```
+User → Chat UI → /api/chat → Orchestrator (10003)
+                                   ↓
+                    Intent Detection → Domain Routing
+                                   ↓
+                  Domain Agent (e.g., Food 10005)
+                                   ↓
+                  Validate Consent → Encrypt → Vault (PostgreSQL)
+```
 
 ## Critical Guidelines
 
-1.  **Consent First:** No action happens without a Token.
-2.  **Stateless Protocol:** The Python layer does not hold session state; every request must carry proof.
-3.  **UI Aesthetics:** Clean, minimal, glass effects (Morphy UX). No heavy gradients.
-4.  **Agent Names:** Shopper, Identity, Curator, Hushh (Orchestrator).
+1.  **Consent First:** No action without valid `HushhConsentToken`.
+2.  **Use hushh_mcp Only:** No custom trust/consent logic.
+3.  **Stateless Protocol:** Every request carries cryptographic proof.
+4.  **UI Aesthetics:** Glass effects (Morphy UX), minimal gradients.
 
-## Current State (as of Dec 2025)
+## Current Agents
 
-- Frontend is a minimal shell (Home + Docs).
-- Protocol is a cloned repo (`consent-protocol`) in root.
-- Immediate Goal: Connect Frontend to Protocol via local API.
+| Agent         | Scope                            |
+| ------------- | -------------------------------- |
+| Orchestrator  | Intent detection, A2A delegation |
+| Professional  | Resume, skills, career data      |
+| Food & Dining | Dietary, cuisines, budget        |
 
 ## File Map
 
-- `hushh-experimental/` -> Next.js App
-- `consent-protocol/` -> Python Protocol
-- `docs/` -> Documentation
+- `hushh-webapp/` → Next.js Frontend
+- `consent-protocol/` → Python Protocol (active code)
+- `hushh-adk-agents/` → Reference implementations
+- `docs/` → Documentation

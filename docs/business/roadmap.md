@@ -1,45 +1,66 @@
 # Hushh Business Roadmap
 
-## Vision
+## Vision: Personal Data Sovereignty
 
-To build the infrastructure for **Personal Data Sovereignty**, enabling users to:
+Build the world's most trusted personal agent platform so users own, protect, and leverage their data.
 
-1.  Capture their own digital context (Data).
-2.  Control who accesses it (Consent).
-3.  Monetize or leverage it for value (Agents).
+---
 
-## Current Status (Alpha)
+## Current Status: Alpha
 
-- [x] **Frontend Foundation:** Minimal Next.js UI established.
-- [x] **Protocol:** HushhMCP (Python) core logic available (Tokens, TrustLinks).
-- [x] **Monorepo Setup**: Consolidated `consent-protocol` and `hushh-webapp`.
-- [x] **Agent Infrastructure**: Established `hushh_mcp` agent framework (Google ADK).
-- [x] **Orchestrator**: Implemented central chat router.
-- [x] **Professional Profile**: First data collector agent.
+**Last Updated:** December 2025
 
-## Q1 2026: Expansion & Intelligence Loop (Integration)
+### ✅ Completed
 
-_Goal: End-to-end working demo of a user getting value from their data._
+- [x] Frontend Foundation (Next.js 15 + Morphy UX)
+- [x] HushhMCP Protocol (Tokens, TrustLinks, Vault encryption)
+- [x] Monorepo Setup (consent-protocol + webapp)
+- [x] Agent Infrastructure (port mapping, basic orchestrator)
+- [x] Food & Dining Agent (static data processing)
+- [x] PostgreSQL Vault (Cloud SQL integration)
+- [x] Food domain operons (dietary, preferences, budget)
 
-- **Shopper Agent:** User grants consent -> Agent finds a deal -> User sees result.
+### 🔄 In Progress
 
-### Q2: The Vault (Storage)
+- [ ] Orchestrator with intent detection + domain routing
+- [ ] Write operons for agentic data collection
+- [ ] Frontend-to-Orchestrator integration
+- [ ] Documentation alignment
 
-_Goal: Secure, encrypted local storage for user data._
+---
 
-- Implement `Vault` (AES-256) in the Python layer.
-- Build "Data Ingestion" Operons (e.g., read email, read receipts).
+## Q1 2026: Agentic Data Collection
 
-### Q3: The Network (A2A)
+- **Goal:** Full conversational data collection flow
+- **Demo:** User types "Set my food preferences" → Orchestrator routes → Food agent collects → Vault stores
 
-_Goal: Agents talking to Agents._
+### Deliverables
 
-- Implement **TrustLink** flow where Shopper asks Identity for verification without user intervention.
-- "Talk to my Agent" protocol.
+- [ ] Intent classifier operon
+- [ ] TrustLink-based A2A delegation
+- [ ] Vault write operons with consent validation
+- [ ] E2E food domain demo
 
-### Q4: The Marketplace
+---
 
-_Goal: 3rd Party Agents._
+## Q2 2026: Multi-Domain Expansion
 
-- Developer SDK to write Operons.
-- Marketplace for users to install new Agents.
+- [ ] Finance Agent (spending analysis)
+- [ ] Health & Wellness Agent
+- [ ] Cross-domain consent UI
+
+---
+
+## Q3 2026: The Network (A2A)
+
+- [ ] TrustLink flow without user intervention
+- [ ] Agent-to-agent delegation marketplace
+- [ ] "Talk to my Agent" protocol
+
+---
+
+## Q4 2026: The Marketplace
+
+- [ ] Developer SDK for custom operons
+- [ ] Agent marketplace installation flow
+- [ ] Public API for partners
