@@ -72,46 +72,43 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // University brand colors - simplified system
-        university: {
-          // Primary blue palette (professional, trustworthy)
+        // Hushh Brand Colors
+        hushh: {
+          // Primary blue palette
           blue: {
             50: "#eff6ff",
             100: "#dbeafe",
             200: "#bfdbfe",
             300: "#93c5fd",
             400: "#60a5fa",
-            500: "#13405d", // Primary brand blue
-            600: "#0d7590", // Secondary blue
-            700: "#1d4ed8",
-            800: "#1e40af",
-            900: "#1e3a8a",
+            500: "#0071e3", // Primary - Apple Blue
+            600: "#0051a8",
+            700: "#003d7a",
+            800: "#002952",
+            900: "#001429",
           },
-          // Accent yellow palette (energy, optimism)
-          yellow: {
-            50: "#fefce8",
-            100: "#fef3c7",
-            200: "#fde68a",
-            300: "#fcd34d",
-            400: "#fbbf24", // Primary brand yellow
-            500: "#f59e0b", // Secondary yellow
-            600: "#d97706",
-            700: "#b45309",
-            800: "#92400e",
-            900: "#78350f",
+          // Secondary emerald palette
+          emerald: {
+            50: "#ecfdf5",
+            100: "#d1fae5",
+            200: "#a7f3d0",
+            300: "#6ee7b7",
+            400: "#34d399",
+            500: "#10b981", // Primary - Emerald
+            600: "#059669",
+            700: "#047857",
+            800: "#065f46",
+            900: "#064e3b",
           },
-          // Neutral grays for content
-          gray: {
-            50: "#f9fafb",
-            100: "#f3f4f6",
-            200: "#e5e7eb",
-            300: "#d1d5db",
-            400: "#9ca3af",
-            500: "#6b7280",
-            600: "#4b5563",
-            700: "#374151",
-            800: "#1f2937",
-            900: "#111827",
+          // Accent teal
+          teal: {
+            500: "#0d7590",
+            600: "#0a5a70",
+          },
+          // Dark navy
+          navy: {
+            500: "#13405d",
+            600: "#0d2e42",
           },
         },
       },

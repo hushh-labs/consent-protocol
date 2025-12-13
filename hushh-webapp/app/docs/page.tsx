@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -50,12 +49,12 @@ const docsSections = [
 
 // Data categories
 const dataCategories = [
-  { name: "Financial", icon: "💰", color: "#30D158", desc: "Spending, budgets" },
-  { name: "Calendar", icon: "📅", color: "#007AFF", desc: "Events, meetings" },
+  { name: "Financial", icon: "💰", color: "#10b981", desc: "Spending, budgets" },
+  { name: "Calendar", icon: "📅", color: "#0071e3", desc: "Events, meetings" },
   { name: "Professional", icon: "💼", color: "#BF5AF2", desc: "Skills, career" },
   { name: "Health", icon: "❤️", color: "#FF453A", desc: "Fitness, wellness" },
   { name: "Preferences", icon: "⚙️", color: "#FF9F0A", desc: "Likes, style" },
-  { name: "Network", icon: "👥", color: "#FFD60A", desc: "Contacts" },
+  { name: "Network", icon: "👥", color: "#0d7590", desc: "Contacts" },
 ];
 
 // Agent modes
@@ -100,7 +99,7 @@ export default function DocsPage() {
     <main className="min-h-screen flex" style={{ background: "var(--color-background)" }}>
       {/* Sidebar */}
       <aside 
-        className="fixed left-0 top-0 h-full w-64 glass-prominent overflow-y-auto z-50"
+        className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 glass-prominent overflow-y-auto z-40"
         style={{ borderRight: "0.5px solid rgba(0,0,0,0.06)" }}
       >
         {/* Logo */}
@@ -120,7 +119,7 @@ export default function DocsPage() {
         <nav className="p-4">
           {docsSections.map((section) => (
             <div key={section.title} className="mb-6">
-              <h3 className="text-small uppercase tracking-wider mb-3 px-3" style={{ color: "var(--color-accent-gold)" }}>
+              <h3 className="text-small uppercase tracking-wider mb-3 px-3" style={{ color: "var(--color-hushh-teal)" }}>
                 {section.title}
               </h3>
               <ul className="space-y-1">
@@ -129,9 +128,9 @@ export default function DocsPage() {
                     <a
                       href={`#${item.id}`}
                       onClick={() => setActiveSection(item.id)}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all ${
+                      className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${
                         activeSection === item.id
-                          ? "glass-interactive text-primary font-medium"
+                          ? "glass text-primary font-medium"
                           : "text-secondary hover:text-primary hover:bg-white/50"
                       }`}
                     >
@@ -157,32 +156,24 @@ export default function DocsPage() {
 
       {/* Main Content */}
       <div className="flex-1 ml-64">
-        {/* Header */}
-        <header className="nav-glass px-8 py-4 ml-64">
-          <div className="flex items-center justify-between max-w-4xl mx-auto">
-            <div className="flex items-center gap-2 text-caption">
-              <span>Documentation</span>
-              <span>/</span>
-              <span className="text-primary font-medium">
-                {docsSections.flatMap(s => s.items).find(i => i.id === activeSection)?.label}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-success)" }} />
-              <span className="text-small" style={{ color: "var(--color-success)" }}>Online</span>
-            </div>
+        {/* Breadcrumb */}
+        <div className="max-w-4xl mx-auto px-8 py-4 flex items-center gap-2 text-sm text-secondary">
+          <span>Documentation</span>
+          <span>/</span>
+          <span className="text-primary font-medium">
+            {docsSections.flatMap(s => s.items).find(i => i.id === activeSection)?.label}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-success)" }} />
+            <span className="text-xs" style={{ color: "var(--color-success)" }}>Online</span>
           </div>
-        </header>
+        </div>
 
         {/* Content */}
-        <div className="max-w-4xl mx-auto px-8 pt-24 pb-16">
+        <div className="max-w-4xl mx-auto px-8 pb-16">
           {/* About Section */}
           <section id="about" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <div className="flex items-center gap-4 mb-8">
                 <div className="agent-avatar" style={{ width: 56, height: 56 }}>
                   <span className="text-3xl">🤫</span>
@@ -218,19 +209,15 @@ export default function DocsPage() {
                   </Card>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Philosophy Section */}
           <section id="philosophy" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-6">The 🤫 Promise</h2>
               
-              <Card variant="none" effect="glass" className="mb-6" style={{ borderLeft: "3px solid var(--color-accent-red)" }}>
+              <Card variant="none" effect="glass" className="mb-6" style={{ borderLeft: "3px solid var(--color-hushh-blue)" }}>
                 <p className="text-lg italic mb-4" style={{ color: "var(--color-text-primary)" }}>
                   &quot;Your data stays quiet until YOU decide to share it.&quot;
                 </p>
@@ -253,16 +240,12 @@ export default function DocsPage() {
                   </Card>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Consent Flow Section */}
           <section id="consent" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-2">Consent Flow</h2>
               <p className="text-caption mb-6">How data access permissions work</p>
 
@@ -271,29 +254,25 @@ export default function DocsPage() {
                   <Card key={item.step} variant="none" effect="glass" className="flex items-center gap-4">
                     <div 
                       className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
-                      style={{ background: "var(--color-accent-red)" }}
+                      style={{ background: "var(--color-hushh-blue)" }}
                     >
                       {item.step}
                     </div>
                     <div className="flex-1">
                       <CardTitle className="text-sm">{item.title}</CardTitle>
                     </div>
-                    <span className="text-small px-3 py-1 rounded-full" style={{ background: "rgba(199, 160, 53, 0.15)", color: "var(--color-accent-gold)" }}>
+                    <span className="text-small px-3 py-1 rounded-full" style={{ background: "rgba(13, 117, 144, 0.15)", color: "var(--color-hushh-teal)" }}>
                       {item.time}
                     </span>
                   </Card>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Data Categories Section */}
           <section id="data" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-2">Data Categories</h2>
               <p className="text-caption mb-6">Types of personal data your agent can access with consent</p>
 
@@ -322,16 +301,12 @@ export default function DocsPage() {
                   Manage your permissions →
                 </Link>
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Agent Modes Section */}
           <section id="agents" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-2">Agent Modes</h2>
               <p className="text-caption mb-6">Switch between specialized modes for different tasks</p>
 
@@ -345,22 +320,18 @@ export default function DocsPage() {
                       <CardTitle className="text-sm">{mode.name}</CardTitle>
                       <CardDescription>{mode.desc}</CardDescription>
                     </div>
-                    <code className="text-xs px-3 py-1 rounded-lg" style={{ background: "rgba(220, 20, 60, 0.1)", color: "var(--color-accent-red)" }}>
+                    <code className="text-xs px-3 py-1 rounded-lg" style={{ background: "rgba(0, 113, 227, 0.1)", color: "var(--color-hushh-blue)" }}>
                       {mode.endpoint}
                     </code>
                   </Card>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Endpoints Section */}
           <section id="endpoints" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-2">API Endpoints</h2>
               <p className="text-caption mb-6">Core endpoints for interacting with the agent</p>
 
@@ -386,16 +357,12 @@ export default function DocsPage() {
                   </Card>
                 ))}
               </div>
-            </motion.div>
+            </div>
           </section>
 
           {/* Examples Section */}
           <section id="examples" className="mb-20">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-            >
+            <div className="animate-fade-in-up">
               <h2 className="text-title mb-2">Code Examples</h2>
               <p className="text-caption mb-6">Common request patterns</p>
 
@@ -423,7 +390,7 @@ export default function DocsPage() {
 }`}
                 </pre>
               </Card>
-            </motion.div>
+            </div>
           </section>
 
           {/* CTA */}

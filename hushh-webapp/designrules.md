@@ -1,7 +1,7 @@
-# HushhRules Design System (v2.0)
+# HushhRules Design System (v3.0)
 
 > Comprehensive design rules for the Hushh Agent Platform
-> Adapted from iWebRules.md - READ THIS BEFORE CODING
+> Based on hushh.ai official branding + Morphy-UX physics
 
 ---
 
@@ -116,15 +116,26 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 
 ---
 
-## 5. Colors (CSS Variables)
+## 5. Colors (CSS Variables) - HUSHH BRAND
 
-| Token                 | Value     | Usage          |
-| --------------------- | --------- | -------------- |
-| `--color-accent-red`  | `#DC143C` | Primary CTAs   |
-| `--color-accent-gold` | `#C7A035` | Secondary      |
-| `--color-background`  | `#FAFAFA` | Page bg        |
-| `--color-success`     | `#30D158` | Success states |
-| `--color-info`        | `#007AFF` | Info states    |
+| Token                   | Value     | Usage          |
+| ----------------------- | --------- | -------------- |
+| `--color-hushh-blue`    | `#0071e3` | Primary CTAs   |
+| `--color-hushh-emerald` | `#10b981` | Secondary      |
+| `--color-hushh-teal`    | `#0d7590` | Tertiary       |
+| `--color-hushh-navy`    | `#13405d` | Dark accents   |
+| `--color-background`    | `#FAFAFA` | Page bg        |
+| `--color-success`       | `#10b981` | Success states |
+| `--color-info`          | `#0071e3` | Info states    |
+
+### Morphy-UX Gradients
+
+| Token                      | Value     |
+| -------------------------- | --------- |
+| `--morphy-primary-start`   | `#0071e3` |
+| `--morphy-primary-end`     | `#0051a8` |
+| `--morphy-secondary-start` | `#10b981` |
+| `--morphy-secondary-end`   | `#059669` |
 
 ---
 
@@ -137,6 +148,8 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | `.text-body`     | 1rem - Body           |
 | `.text-caption`  | 0.8125rem - Secondary |
 | `.text-small`    | 0.75rem - Tertiary    |
+
+**Fonts:** Quicksand (body), Economica (headings)
 
 ---
 
@@ -173,10 +186,10 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 
 | Mode         | ID             | Color     | Icon |
 | ------------ | -------------- | --------- | ---- |
-| Optimizer    | `optimizer`    | `#C7A035` | 📈   |
-| Curator      | `curator`      | `#007AFF` | 🎯   |
-| Professional | `professional` | `#DC143C` | 💼   |
-| Orchestrator | `orchestrator` | `#30D158` | 🔗   |
+| Optimizer    | `optimizer`    | `#0071e3` | 📈   |
+| Curator      | `curator`      | `#10b981` | 🎯   |
+| Professional | `professional` | `#0d7590` | 💼   |
+| Orchestrator | `orchestrator` | `#13405d` | 🔗   |
 
 ---
 
@@ -184,12 +197,12 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 
 | Category     | ID             | Color     |
 | ------------ | -------------- | --------- |
-| Financial    | `financial`    | `#30D158` |
-| Calendar     | `calendar`     | `#007AFF` |
+| Financial    | `financial`    | `#10b981` |
+| Calendar     | `calendar`     | `#0071e3` |
 | Professional | `professional` | `#BF5AF2` |
 | Health       | `health`       | `#FF453A` |
 | Preferences  | `preferences`  | `#FF9F0A` |
-| Network      | `network`      | `#FFD60A` |
+| Network      | `network`      | `#0d7590` |
 
 ---
 
@@ -203,6 +216,7 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 | Raw `<button>` element        | `<Button>` component            |
 | Hardcoded colors              | CSS variables                   |
 | Manual icon rendering         | `icon={{ icon: IconName }}`     |
+| `--color-accent-red`          | `--color-hushh-blue`            |
 
 ---
 
@@ -211,8 +225,9 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 - `globals.css` — Glass classes, colors, typography
 - `components/ui/button.tsx` — Button with showRipple
 - `components/ui/card.tsx` — Card with showRipple
-- `lib/morphy-ux/` — Ripple effects, colors
+- `lib/morphy-ux/` — Ripple effects, GSAP animations
+- `tailwind.config.ts` — Hushh color palette
 
 ---
 
-_Version: 2.0 | Updated 2024-12-11 | RippleButton removed_
+_Version: 3.0 | Updated 2024-12-11 | Hushh brand colors applied_
