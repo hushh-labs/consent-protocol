@@ -1,167 +1,91 @@
+'use client';
+
 /**
- * Home Page
- * =========
- * 
- * Landing page that redirects to login for unauthenticated users.
- * Uses Hushh brand gradient text.
+ * Home Page - Hushh PDA
+ * Compact landing page with quick access
  */
 
-"use client";
-
-import Link from "next/link";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardTitle, CardDescription } from "@/components/ui/card";
-import { useAuth } from "@/lib/firebase";
-
-const features = [
-  {
-    icon: "🔐",
-    title: "Consent-First",
-    description: "Every data access requires explicit user permission with time-limited tokens.",
-  },
-  {
-    icon: "🧬",
-    title: "Operons",
-    description: "Modular data logic units that execute only with valid consent.",
-  },
-  {
-    icon: "🤖",
-    title: "AI Agents",
-    description: "Personal AI assistants that work for you, not against you.",
-  },
-  {
-    icon: "🔒",
-    title: "Encrypted Vault",
-    description: "Your data encrypted at rest with AES-256-GCM.",
-  },
-];
-
-const domains = [
-  { icon: "🍽️", name: "Food & Dining", status: "live" },
-  { icon: "👗", name: "Fashion", status: "soon" },
-  { icon: "💪", name: "Health", status: "soon" },
-  { icon: "✈️", name: "Travel", status: "soon" },
-];
+import Link from 'next/link';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/morphy-ux/morphy';
+import { Shield, Lock, Key, Sparkles, ArrowRight } from 'lucide-react';
 
 export default function HomePage() {
-  const router = useRouter();
-  const { user, loading } = useAuth();
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
-  }, [user, loading, router]);
-
-  // Show loading state while checking auth
-  if (loading) {
-    return (
-      <main className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl mb-4 animate-pulse">🤫</div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </main>
-    );
-  }
-
-  // If not logged in, show nothing (redirect happening)
-  if (!user) {
-    return null;
-  }
-
   return (
-    <main className="flex-1">
-      {/* Hero Section */}
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center space-y-8">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-foreground">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            System Active
+    <main className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <div className="w-full max-w-2xl space-y-6">
+        {/* Hero Section */}
+        <div className="text-center space-y-4">
+          <div className="flex justify-center mb-2">
+            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 dark:from-gray-400 dark:to-gray-600 flex items-center justify-center text-3xl shadow-lg">
+              🤫
+            </div>
           </div>
-          
-          <h1 className="text-5xl md:text-6xl font-bold leading-tight text-foreground">
-            Your Data.
-            <br />
-            <span className="hushh-gradient-text">
-              Your Control.
-            </span>
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-gray-300 dark:to-gray-500 bg-clip-text text-transparent">
+            Hushh
           </h1>
-          
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Hushh is the infrastructure for consent-first personal data agents. 
-            AI that works for you, with privacy built in.
+          <p className="text-xl text-muted-foreground max-w-md mx-auto">
+            Privacy-First Personal Data Assistant
           </p>
-          
-          <div className="flex items-center justify-center gap-4 pt-4">
-            <Link href="/dashboard">
-              <Button variant="gradient" effect="glass" showRipple className="text-lg px-8 py-6">
-                Go to Dashboard
-              </Button>
-            </Link>
-            <Link href="/docs">
-              <Button variant="none" effect="glass" className="text-lg px-8 py-6">
-                Documentation
-              </Button>
-            </Link>
-          </div>
         </div>
-      </section>
 
-      {/* Features Grid */}
-      <section className="py-20 px-6 bg-secondary/50 dark:bg-secondary/20">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12 text-foreground">
-            Built on <span className="hushh-gradient-text">Consent</span>
-          </h2>
-          
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {features.map((feature) => (
-              <Card key={feature.title} variant="none" effect="glass" className="p-6">
-                <div className="text-3xl mb-4">{feature.icon}</div>
-                <CardTitle className="mb-2 text-foreground">{feature.title}</CardTitle>
-                <CardDescription className="text-muted-foreground">{feature.description}</CardDescription>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+        {/* CTA Card */}
+        <Card className="glass border-2">
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex justify-center gap-4">
+              <Link href="/login">
+                <Button variant="gradient" effect="glass" size="lg">
+                  Get Started
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+              <Link href="/docs">
+                <Button variant="link" size="lg">
+                  Learn More
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Data Domains */}
-      <section className="py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4 text-foreground">
-            Personal <span className="hushh-gradient-text">Data Domains</span>
-          </h2>
-          <p className="text-center text-muted-foreground mb-12 max-w-2xl mx-auto">
-            Connect and control your personal data across different aspects of your life.
-          </p>
-          
-          <div className="flex flex-wrap justify-center gap-4">
-            {domains.map((domain) => (
-              <div
-                key={domain.name}
-                className={`flex items-center gap-3 px-6 py-3 rounded-full border ${
-                  domain.status === "live"
-                    ? "bg-card/50 border-border text-foreground"
-                    : "bg-card/20 border-border/50 text-muted-foreground opacity-60"
-                }`}
-              >
-                <span className="text-2xl">{domain.icon}</span>
-                <span className="font-medium">{domain.name}</span>
-                {domain.status === "live" && (
-                  <span className="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-600 dark:text-green-300">
-                    Live
-                  </span>
-                )}
+        {/* Features Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="glass text-center">
+            <CardHeader>
+              <div className="flex justify-center mb-2">
+                <Shield className="h-8 w-8 text-green-500" />
               </div>
-            ))}
-          </div>
+              <CardTitle className="text-lg">E2EE</CardTitle>
+              <CardDescription className="text-sm">
+                End-to-end encrypted vault
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="glass text-center">
+            <CardHeader>
+              <div className="flex justify-center mb-2">
+                <Lock className="h-8 w-8 text-blue-500" />
+              </div>
+              <CardTitle className="text-lg">Your Control</CardTitle>
+              <CardDescription className="text-sm">
+                Own your personal data
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          <Card className="glass text-center">
+            <CardHeader>
+              <div className="flex justify-center mb-2">
+                <Key className="h-8 w-8 text-purple-500" />
+              </div>
+              <CardTitle className="text-lg">Zero-Knowledge</CardTitle>
+              <CardDescription className="text-sm">
+                We can't read your data
+              </CardDescription>
+            </CardHeader>
+          </Card>
         </div>
-      </section>
+      </div>
     </main>
   );
 }

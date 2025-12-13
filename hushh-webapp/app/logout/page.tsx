@@ -18,10 +18,16 @@ export default function LogoutPage() {
   useEffect(() => {
     const handleLogout = async () => {
       try {
+        // Clear session storage (vault keys, user info)
+        sessionStorage.clear();
+        
+        // Sign out from Firebase
         await signOut(auth);
         router.push("/login");
       } catch (error) {
         console.error("Logout failed:", error);
+        // Still clear session and redirect even if Firebase logout fails
+        sessionStorage.clear();
         router.push("/login");
       }
     };

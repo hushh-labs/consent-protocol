@@ -4,8 +4,6 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
 import { Navbar } from "@/components/navbar";
-import { BottomNav } from "@/components/bottom-nav";
-import { Footer } from "@/components/footer";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -31,20 +29,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="h-full">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body className={`${inter.variable} font-sans antialiased min-h-screen flex flex-col`} style={{ background: "var(--color-background)" }}>
+      <body 
+        className={`${inter.variable} font-sans antialiased h-full flex flex-col`}
+        style={{ background: "var(--color-background)" }}
+      >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <AuthProvider>
             <Navbar />
-            <div className="pb-24 flex-1 flex flex-col">
+            <div className="pb-24 flex-1 flex flex-col" style={{ background: "var(--color-background)" }}>
               {children}
             </div>
-            <BottomNav />
-            <Footer />
           </AuthProvider>
         </ThemeProvider>
       </body>

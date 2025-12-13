@@ -1,16 +1,12 @@
 # Backend API for Food Dining Agent
-# Connects Next.js frontend to Python consent-protocol agent
+# Exposes consent-protocol agent as REST API
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-import sys
-import os
 
-# Add consent-protocol to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../consent-protocol'))
-
+# Import from parent consent-protocol directory
 from hushh_mcp.agents.food_dining import HushhFoodDiningAgent
 from hushh_mcp.types import EncryptedPayload
 

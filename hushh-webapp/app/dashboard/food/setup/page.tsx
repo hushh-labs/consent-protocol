@@ -9,8 +9,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { encryptData } from '@/lib/vault/encrypt';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/morphy-ux/morphy';
 
 const DIETARY_OPTIONS = [
   { value: 'vegetarian', label: '🥗 Vegetarian' },
@@ -88,10 +87,10 @@ export default function SetupPage() {
         throw new Error('Failed to save preferences');
       }
 
-      console.log('✅ Preferences saved');
+      console.log('✅ Preferences saved to vault');
       
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Redirect to food dashboard
+      router.push('/dashboard/food');
 
     } catch (error: any) {
       console.error('Error saving preferences:', error);
@@ -119,7 +118,7 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted p-4">
       <div className="max-w-2xl mx-auto py-8">
-        <Card className="glass">
+        <Card variant="none" effect="glass">
           <CardHeader>
             <CardTitle>🍽️ Your Food Preferences</CardTitle>
             <CardDescription>
@@ -205,6 +204,7 @@ export default function SetupPage() {
                 variant="gradient"
                 effect="glass"
                 size="lg"
+                showRipple
               >
                 {loading ? 'Saving...' : 'Save Preferences 🔒'}
               </Button>

@@ -86,31 +86,43 @@
   --activeShadowColor: var(--shadow1);
   --fadeGrey: #e5e7eb80;
   /* Hushh Brand Color Tokens (from hushh.ai) */
-  --morphy-primary-start: #0071E3;  /* Hushh Blue */
-  --morphy-primary-end: #BB62FC;    /* Hushh Purple (data sovereignty gradient) */
-  --morphy-secondary-start: #C0C0C0;  /* Silver gradient start */
-  --morphy-secondary-end: #E8E8E8;    /* Silver gradient end (FAQ style) */
-  
+  --morphy-primary-start: #0071e3; /* Hushh Blue */
+  --morphy-primary-end: #bb62fc; /* Hushh Purple (data sovereignty gradient) */
+  --morphy-secondary-start: #c0c0c0; /* Silver gradient start */
+  --morphy-secondary-end: #e8e8e8; /* Silver gradient end (FAQ style) */
+
   /* Alternative gold/accent gradient */
   --morphy-accent-start: #fbbf24;
   --morphy-accent-end: #f59e0b;
 
   /* Pre-computed gradients */
-  --morphy-primary-gradient: linear-gradient(to right, var(--morphy-primary-start), var(--morphy-primary-end));
-  --morphy-secondary-gradient: linear-gradient(to right, var(--morphy-secondary-start), var(--morphy-secondary-end));
-  --morphy-accent-gradient: linear-gradient(135deg, var(--morphy-accent-start), var(--morphy-accent-end));
+  --morphy-primary-gradient: linear-gradient(
+    to right,
+    var(--morphy-primary-start),
+    var(--morphy-primary-end)
+  );
+  --morphy-secondary-gradient: linear-gradient(
+    to right,
+    var(--morphy-secondary-start),
+    var(--morphy-secondary-end)
+  );
+  --morphy-accent-gradient: linear-gradient(
+    135deg,
+    var(--morphy-accent-start),
+    var(--morphy-accent-end)
+  );
 }
 
 /* Theme-aware gradient text - blue→purple in light mode, silver in dark mode */
 .hushh-gradient-text {
-  background-image: linear-gradient(to right, #0071E3, #BB62FC);
+  background-image: linear-gradient(to right, #0071e3, #bb62fc);
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
 }
 
 .dark .hushh-gradient-text {
-  background-image: linear-gradient(to right, #C0C0C0, #E8E8E8);
+  background-image: linear-gradient(to right, #c0c0c0, #e8e8e8);
 }
 
 .dark {
@@ -271,9 +283,7 @@
 .fade-enter-active {
   opacity: 1;
   visibility: visible;
-  transition:
-    opacity 0.3s ease-in-out,
-    visibility 0.3s ease-in-out;
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
 }
 
 .fade-exit {
@@ -284,9 +294,7 @@
 .fade-exit-active {
   opacity: 0;
   visibility: hidden;
-  transition:
-    opacity 0.3s ease-in-out,
-    visibility 0.3s ease-in-out;
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
 }
 
 /* Morphy Toast Fade Animation */
@@ -324,6 +332,22 @@
     opacity: 0;
     transform: scale(0.95);
   }
+}
+
+/* Ripple Animation for Morphy UI */
+@keyframes ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+.animate-ripple {
+  animation: ripple 0.6s linear;
 }
 
 /* Light mode morphy toast styling */

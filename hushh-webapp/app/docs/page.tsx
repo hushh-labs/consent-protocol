@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button, Card, CardTitle, CardDescription } from "@/lib/morphy-ux/morphy";
 
 import {
   BookOpenIcon,
