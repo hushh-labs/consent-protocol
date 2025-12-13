@@ -12,16 +12,16 @@ To build the infrastructure for **Personal Data Sovereignty**, enabling users to
 
 - [x] **Frontend Foundation:** Minimal Next.js UI established.
 - [x] **Protocol:** HushhMCP (Python) core logic available (Tokens, TrustLinks).
-- [ ] **Integration:** Connecting UI to Protocol (In Progress).
+- [x] **Monorepo Setup**: Consolidated `consent-protocol` and `hushh-webapp`.
+- [x] **Agent Infrastructure**: Established `hushh_mcp` agent framework (Google ADK).
+- [x] **Orchestrator**: Implemented central chat router.
+- [x] **Professional Profile**: First data collector agent.
 
-## Roadmap
-
-### Q1: The Loop (Integration)
+## Q1 2026: Expansion & Intelligence Loop (Integration)
 
 _Goal: End-to-end working demo of a user getting value from their data._
 
 - **Shopper Agent:** User grants consent -> Agent finds a deal -> User sees result.
-- **Local API:** Running the Python protocol locally to power the UI.
 
 ### Q2: The Vault (Storage)
 

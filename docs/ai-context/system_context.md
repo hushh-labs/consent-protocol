@@ -14,6 +14,20 @@
 - **Backend/Protocol:** Python 3.10+, HushhMCP (HMAC/Stateless), FastAPI (Planned).
 - **Storage:** Local Filesystem / SQLite (Planned Vault).
 
+### 3. Agentic Architecture (HushhMCP)
+
+- **Framework**: Google ADK (Agent Development Kit).
+- **Pattern**: Orchestrator-Workers.
+  - **Orchestrator**: Central router (`port 10003`). Receives user intent, delegates to domains.
+  - **Domain Agents**: Specialized workers (e.g., `Professional Profile` on `port 10004`).
+  - **Communication**: HTTP/A2A (Agent-to-Agent).
+- **Frontend Integration**: Next.js uses an API Proxy (`/api/chat`) to bridge the browser and the local Python agents.
+
+### 4. Data Privacy & Consent
+
+- **TrustLinks**: Agents must request delegation.
+- **Vault**: Data is stored locally/encrypted. Agents act as gatekeepers.
+
 ## Critical Guidelines
 
 1.  **Consent First:** No action happens without a Token.

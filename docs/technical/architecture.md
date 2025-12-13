@@ -37,7 +37,33 @@ Cryptographic proofs (`HUSHH_CT`) that authorize an Agent to perform an action f
 
 Signed relationships allowing Agent-to-Agent (A2A) communication and delegation.
 
-## 3. Data Flow
+### 3. Agent Architecture (Microservices)
+
+The system uses a **Split-Stack Architecture**:
+
+### A. Frontend (Next.js)
+
+- **Host**: `localhost:3000`
+- **Role**: UI, Auth, and Proxy.
+- **Hushh Webapp**: Components (`AgentChat`) render the conversation.
+- **Route**: `/api/chat` proxies requests to the active agent port.
+
+### B. Agents (Python/ADK)
+
+- **Framework**: Google ADK (`hushh-adk-agents` reference).
+- **Orchestrator** (`:10003`):
+  - Entry point for chat.
+  - Uses `LlmAgent` to analyze intent.
+  - Delegates via simulated TrustLinks.
+- **Professional Profile** (`:10004`):
+  - Domain expert for career data.
+  - Manages structured (Resume) and dynamic (Metadata) schema.
+
+### C. Communication Flow
+
+`User` -> `Next.js UI` -> `/api/chat` -> `Orchestrator` -> (Delegation) -> `Professional Agent`
+
+## 4. Data Flow
 
 1.  **User Action:** User clicks "Search Deals" in Next.js UI.
 2.  **Consent Request:** UI requests a Consent Token for `agent_shopper`.
@@ -49,6 +75,6 @@ Signed relationships allowing Agent-to-Agent (A2A) communication and delegation.
 
 ## 4. Directory Structure
 
-- `/hushh-experimental` -> Frontend application (Next.js)
+- `/hushh-webapp` -> Frontend application (Next.js)
 - `/consent-protocol` -> Core protocol logic (Python)
 - `/docs` -> System documentation

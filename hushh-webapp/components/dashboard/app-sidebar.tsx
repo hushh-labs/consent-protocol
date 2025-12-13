@@ -11,6 +11,7 @@ import {
   Dumbbell,
   Home,
   FileText,
+  UserCheck,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -26,10 +27,11 @@ import {
 } from '@/components/ui/sidebar';
 
 const domains = [
+
   {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: Home,
+    name: 'Professional Profile',
+    href: '/dashboard/professional',
+    icon: UserCheck,
     status: 'active',
   },
   {

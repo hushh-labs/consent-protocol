@@ -30,5 +30,5 @@ _Target Audience: LLMs, AI Assistants_
 
 ## How to Contribute
 
-- **Code:** See `hushh-experimental` (Frontend) or `consent-protocol` (Backend).
+- **Code:** See `hushh-webapp` (Frontend) or `consent-protocol` (Backend).
 - **Docs:** Update these files as the system evolves.

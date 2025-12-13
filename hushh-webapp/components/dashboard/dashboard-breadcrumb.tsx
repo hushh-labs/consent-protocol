@@ -2,6 +2,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Breadcrumb,
@@ -39,9 +40,11 @@ export function DashboardBreadcrumb() {
     <Breadcrumb className="mb-6">
       <BreadcrumbList>
         <BreadcrumbItem>
-          <BreadcrumbLink href="/dashboard" className="flex items-center gap-1">
-            <Home className="h-4 w-4" />
-            Dashboard
+          <BreadcrumbLink asChild>
+            <Link href="/dashboard" className="flex items-center gap-1">
+              <Home className="h-4 w-4" />
+              Dashboard
+            </Link>
           </BreadcrumbLink>
         </BreadcrumbItem>
         
@@ -57,7 +60,9 @@ export function DashboardBreadcrumb() {
                 {isLast ? (
                   <BreadcrumbPage>{label}</BreadcrumbPage>
                 ) : (
-                  <BreadcrumbLink href={href}>{label}</BreadcrumbLink>
+                  <BreadcrumbLink asChild>
+                    <Link href={href}>{label}</Link>
+                  </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
             </div>

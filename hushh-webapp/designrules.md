@@ -14,6 +14,23 @@ The brand name implies keeping things quiet until YOU decide to share.
 
 ## 1. Components - CRITICAL RULES
 
+### Navigation (Client-Side Routing)
+
+**ALWAYS** use `next/link` for internal navigation to prevent page reloads.
+
+```tsx
+import Link from "next/link";
+import { BreadcrumbLink } from "@/components/ui/breadcrumb";
+
+// ✅ CORRECT - Use asChild pattern
+<BreadcrumbLink asChild>
+  <Link href="/dashboard">Dashboard</Link>
+</BreadcrumbLink>
+
+// ❌ WRONG - Direct href (causes full reload)
+<BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
+```
+
 ### Button (PRIMARY INTERACTIVE ELEMENT)
 
 ```tsx
