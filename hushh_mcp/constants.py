@@ -5,27 +5,23 @@ from enum import Enum
 # ==================== Consent Scopes ====================
 
 class ConsentScope(str, Enum):
-    # Vault data READ access
+    # Vault READ scopes
     VAULT_READ_EMAIL = "vault.read.email"
     VAULT_READ_PHONE = "vault.read.phone"
     VAULT_READ_FINANCE = "vault.read.finance"
     VAULT_READ_CONTACTS = "vault.read.contacts"
-    VAULT_READ_FOOD = "vault.read.food"
     VAULT_READ_PREFERENCES = "vault.read.preferences"
 
-    # Vault data WRITE access
-    VAULT_WRITE_EMAIL = "vault.write.email"
-    VAULT_WRITE_PHONE = "vault.write.phone"
-    VAULT_WRITE_FINANCE = "vault.write.finance"
-    VAULT_WRITE_FOOD = "vault.write.food"
+    # Vault WRITE scopes (for saving user data to encrypted vault)
     VAULT_WRITE_PREFERENCES = "vault.write.preferences"
+    VAULT_WRITE_FOOD = "vault.write.food"
+    VAULT_WRITE_FINANCE = "vault.write.finance"
 
     # Agent permissioning
     AGENT_SHOPPING_PURCHASE = "agent.shopping.purchase"
     AGENT_FINANCE_ANALYZE = "agent.finance.analyze"
     AGENT_IDENTITY_VERIFY = "agent.identity.verify"
     AGENT_SALES_OPTIMIZE = "agent.sales.optimize"
-    AGENT_FOOD_RECOMMEND = "agent.food.recommend"
     AGENT_FOOD_COLLECT = "agent.food.collect"
 
     # Custom and extensible scopes
@@ -35,6 +31,18 @@ class ConsentScope(str, Enum):
     @classmethod
     def list(cls):
         return [scope.value for scope in cls]
+
+
+# ==================== Agent Configuration ====================
+
+# Port assignments for agent-to-agent communication
+AGENT_PORTS = {
+    "agent_orchestrator": 10000,
+    "agent_food_dining": 10001,
+    "agent_professional_profile": 10002,
+    "agent_identity": 10003,
+    "agent_shopper": 10004,
+}
 
 # ==================== Token & Link Prefixes ====================
 
@@ -48,19 +56,6 @@ USER_ID_PREFIX = "user_"
 # These are fallbacks — real defaults should come from config.py which loads from .env
 DEFAULT_CONSENT_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7     # 7 days
 DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30        # 30 days
-
-# ==================== Agent Port Mapping ====================
-# IMPORTANT: Reserve ports here to prevent conflicts when adding new agents
-
-AGENT_PORTS = {
-    "agent_orchestrator": 10003,
-    "agent_professional_profile": 10004,
-    "agent_food_dining": 10005,
-    "agent_finance": 10006,           # Reserved
-    "agent_health_wellness": 10007,   # Reserved
-    "agent_travel": 10008,            # Reserved
-    "agent_identity": 10009,          # Reserved
-}
 
 # ==================== Exports ====================
 
