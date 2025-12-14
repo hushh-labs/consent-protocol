@@ -35,30 +35,26 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* CTA Card */}
-        <Card className="glass border-2">
-          <CardContent className="pt-6 space-y-4">
-            <div className="flex justify-center gap-4">
-              <Link href="/login">
-                <Button variant="gradient" effect="glass" size="lg" showRipple>
-                  Get Started
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-              </Link>
-              <Link href="/docs">
-                <Button
-                  variant="none"
-                  effect="glass"
-                  size="lg"
-                  showRipple={false}
-                  className="border"
-                >
-                  Learn More
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+        {/* CTA Buttons */}
+        <div className="flex justify-center gap-4">
+          <Link href="/login">
+            <Button variant="gradient" effect="glass" size="lg" showRipple>
+              Get Started
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+          </Link>
+          <Link href="/docs">
+            <Button
+              variant="none"
+              effect="glass"
+              size="lg"
+              showRipple={false}
+              className="border"
+            >
+              Learn More
+            </Button>
+          </Link>
+        </div>
 
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

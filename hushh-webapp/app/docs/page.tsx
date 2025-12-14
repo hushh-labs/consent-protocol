@@ -43,24 +43,25 @@ export default function DocsPage() {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button
               variant="gradient"
               effect="glass"
               size="lg"
               showRipple
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto px-8"
             >
               Get Started
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </Link>
-          <Link href="/docs/developer-api">
+          <Link href="/api-docs">
             <Button
               variant="none"
               effect="glass"
               size="lg"
-              className="w-full sm:w-auto border border-gray-200 dark:border-gray-800"
+              showRipple={false}
+              className="w-full sm:w-auto border border-gray-200 dark:border-gray-800 px-8"
             >
               <Code className="mr-2 h-4 w-4" />
               Developer API
