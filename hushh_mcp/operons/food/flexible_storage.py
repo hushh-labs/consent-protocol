@@ -52,10 +52,10 @@ def store_custom_preference(
     # Determine expected scope based on domain
     scope_map = {
         "food": ConsentScope.VAULT_WRITE_FOOD,
-        "professional": ConsentScope.VAULT_WRITE_PREFERENCES,
+        "professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
         "finance": ConsentScope.VAULT_WRITE_FINANCE,
     }
-    expected_scope = scope_map.get(domain, ConsentScope.VAULT_WRITE_PREFERENCES)
+    expected_scope = scope_map.get(domain, ConsentScope.VAULT_WRITE_PROFESSIONAL)
     
     # Validate consent token
     valid, reason, token = validate_token(consent_token, expected_scope=expected_scope)

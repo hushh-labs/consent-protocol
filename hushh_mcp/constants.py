@@ -5,17 +5,18 @@ from enum import Enum
 # ==================== Consent Scopes ====================
 
 class ConsentScope(str, Enum):
-    # Vault READ scopes
+    # Vault READ scopes (domain-specific per Bible)
     VAULT_READ_EMAIL = "vault.read.email"
     VAULT_READ_PHONE = "vault.read.phone"
     VAULT_READ_FINANCE = "vault.read.finance"
     VAULT_READ_CONTACTS = "vault.read.contacts"
-    VAULT_READ_PREFERENCES = "vault.read.preferences"
+    VAULT_READ_FOOD = "vault.read.food"
+    VAULT_READ_PROFESSIONAL = "vault.read.professional"
 
-    # Vault WRITE scopes (for saving user data to encrypted vault)
-    VAULT_WRITE_PREFERENCES = "vault.write.preferences"
+    # Vault WRITE scopes (domain-specific per Bible)
     VAULT_WRITE_FOOD = "vault.write.food"
     VAULT_WRITE_FINANCE = "vault.write.finance"
+    VAULT_WRITE_PROFESSIONAL = "vault.write.professional"
 
     # Agent permissioning
     AGENT_SHOPPING_PURCHASE = "agent.shopping.purchase"

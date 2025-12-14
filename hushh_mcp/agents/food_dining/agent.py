@@ -673,7 +673,7 @@ class HushhFoodDiningAgent:
             consent_token = issue_token(
                 user_id=user_id,
                 agent_id=self.agent_id,
-                scope=ConsentScope.VAULT_WRITE_PREFERENCES
+                scope=ConsentScope.VAULT_WRITE_FOOD
             )
             
             import logging
@@ -694,7 +694,7 @@ class HushhFoodDiningAgent:
                 "is_complete": True,
                 # Include real consent token
                 "consent_token": consent_token.token,
-                "consent_scope": ConsentScope.VAULT_WRITE_PREFERENCES.value,
+                "consent_scope": ConsentScope.VAULT_WRITE_FOOD.value,
                 "consent_issued_at": consent_token.issued_at,
                 "consent_expires_at": consent_token.expires_at
             }
