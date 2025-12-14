@@ -1,26 +1,32 @@
-'use client';
+"use client";
 
 /**
  * Professional Profile Dashboard
- * 
+ *
  * Displays user's encrypted professional profile data.
  * Data is decrypted client-side, showing skills, experience, job preferences.
  */
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { decryptData, EncryptedPayload } from '@/lib/vault/encrypt';
-import { Button, Card, CardHeader, CardTitle, CardContent } from '@/lib/morphy-ux/morphy';
-import { 
-  User, 
-  Briefcase, 
-  Code, 
-  Target, 
-  TrendingUp, 
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { decryptData, EncryptedPayload } from "@/lib/vault/encrypt";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/lib/morphy-ux/morphy";
+import {
+  User,
+  Briefcase,
+  Code,
+  Target,
+  TrendingUp,
   Shield,
   Edit,
-  RefreshCw
-} from 'lucide-react';
+  RefreshCw,
+} from "lucide-react";
 
 interface ProfessionalProfile {
   professional_title: string;
@@ -33,7 +39,7 @@ export default function ProfessionalProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<ProfessionalProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     loadProfile();
@@ -42,63 +48,79 @@ export default function ProfessionalProfilePage() {
   async function loadProfile() {
     try {
       // Use localStorage first for cross-tab persistence
-      const userId = localStorage.getItem('user_id') || sessionStorage.getItem('user_id');
-      const vaultKey = localStorage.getItem('vault_key') || sessionStorage.getItem('vault_key');
+      const userId =
+        localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+      const vaultKey =
+        localStorage.getItem("vault_key") ||
+        sessionStorage.getItem("vault_key");
 
       if (!userId || !vaultKey) {
-        router.push('/login');
+        router.push("/login");
         return;
       }
 
       // Fetch all encrypted preferences (API returns all fields)
-      const response = await fetch(`/api/vault/get-preferences?userId=${userId}`);
-      
+      const response = await fetch(
+        `/api/vault/get-preferences?userId=${userId}`
+      );
+
       if (!response.ok) {
         if (response.status === 404) {
           // No profile yet, show empty state
           setLoading(false);
           return;
         }
-        throw new Error('Failed to load profile');
+        throw new Error("Failed to load profile");
       }
 
       const { preferences: encryptedPrefs } = await response.json();
 
       // Decrypt client-side
-      console.log('🔓 Decrypting professional profile...');
-      
+      console.log("🔓 Decrypting professional profile...");
+
       // Try to decrypt each field if it exists
       let profileData: ProfessionalProfile = {
-        professional_title: '',
+        professional_title: "",
         skills: [],
-        experience_level: '',
-        job_preferences: []
+        experience_level: "",
+        job_preferences: [],
       };
 
       if (encryptedPrefs.professional_title) {
-        const titleDecrypted = await decryptData(encryptedPrefs.professional_title, vaultKey);
+        const titleDecrypted = await decryptData(
+          encryptedPrefs.professional_title,
+          vaultKey
+        );
         profileData.professional_title = JSON.parse(titleDecrypted);
       }
 
       if (encryptedPrefs.skills) {
-        const skillsDecrypted = await decryptData(encryptedPrefs.skills, vaultKey);
+        const skillsDecrypted = await decryptData(
+          encryptedPrefs.skills,
+          vaultKey
+        );
         profileData.skills = JSON.parse(skillsDecrypted);
       }
 
       if (encryptedPrefs.experience_level) {
-        const expDecrypted = await decryptData(encryptedPrefs.experience_level, vaultKey);
+        const expDecrypted = await decryptData(
+          encryptedPrefs.experience_level,
+          vaultKey
+        );
         profileData.experience_level = JSON.parse(expDecrypted);
       }
 
       if (encryptedPrefs.job_preferences) {
-        const jobDecrypted = await decryptData(encryptedPrefs.job_preferences, vaultKey);
+        const jobDecrypted = await decryptData(
+          encryptedPrefs.job_preferences,
+          vaultKey
+        );
         profileData.job_preferences = JSON.parse(jobDecrypted);
       }
 
       setProfile(profileData);
-
     } catch (err: any) {
-      console.error('Profile load error:', err);
+      console.error("Profile load error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -123,11 +145,11 @@ export default function ProfessionalProfilePage() {
           <Briefcase className="h-16 w-16 mx-auto text-gray-400" />
           <h1 className="text-2xl font-bold">No Profile Yet</h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            You haven't set up your professional profile yet. 
-            Go to the main dashboard to create your profile through the chat flow.
+            You haven't set up your professional profile yet. Go to the main
+            dashboard to create your profile through the chat flow.
           </p>
           <Button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push("/dashboard")}
             variant="gradient"
             effect="glass"
             size="lg"
@@ -163,7 +185,9 @@ export default function ProfessionalProfilePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold">{profile.professional_title}</p>
+            <p className="text-2xl font-semibold">
+              {profile.professional_title}
+            </p>
           </CardContent>
         </Card>
 
@@ -178,7 +202,7 @@ export default function ProfessionalProfilePage() {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {profile.skills.map((skill, i) => (
-                <span 
+                <span
                   key={i}
                   className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-full text-sm"
                 >
@@ -213,7 +237,7 @@ export default function ProfessionalProfilePage() {
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {profile.job_preferences.map((pref, i) => (
-                <span 
+                <span
                   key={i}
                   className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full text-sm"
                 >
@@ -227,17 +251,11 @@ export default function ProfessionalProfilePage() {
 
       {/* Actions */}
       <div className="flex gap-4 justify-center">
-        <Button
-          onClick={() => router.push('/dashboard')}
-          variant="secondary"
-        >
+        <Button onClick={() => router.push("/dashboard")} variant="blue">
           <Edit className="h-4 w-4 mr-2" />
           Update Profile
         </Button>
-        <Button
-          onClick={loadProfile}
-          variant="none"
-        >
+        <Button onClick={loadProfile} variant="none">
           <RefreshCw className="h-4 w-4 mr-2" />
           Refresh
         </Button>

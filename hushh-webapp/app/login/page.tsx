@@ -1,102 +1,137 @@
-'use client';
+"use client";
 
 /**
  * Login Page - Hushh PDA
  * OAuth + E2EE Vault Setup with Shadcn Dialogs
+ *
+ * Auth Flow:
+ * 1. OAuth (Google) → Firebase auth
+ * 2. Passphrase / Passkey → Vault unlock
+ * 3. Recovery Key → Fallback if passphrase/passkey lost
  */
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
-import { createVault, unlockVault } from '@/lib/vault/e2ee';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/morphy-ux/morphy';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PassphraseDialog } from '@/components/vault/passphrase-dialog';
-import { RecoveryKeyDialog } from '@/components/vault/recovery-key-dialog';
-import { Shield, Lock, Key, Sparkles, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import {
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase/config";
+import { createVault, unlockVault } from "@/lib/vault/e2ee";
+import { isPasskeySupported } from "@/lib/vault/webauthn";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/lib/morphy-ux/morphy";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PassphraseDialog } from "@/components/vault/passphrase-dialog";
+import { RecoveryKeyDialog } from "@/components/vault/recovery-key-dialog";
+import { RecoveryLoginDialog } from "@/components/vault/recovery-login-dialog";
+import { PasskeySetupDialog } from "@/components/vault/passkey-setup-dialog";
+import {
+  Shield,
+  Lock,
+  Key,
+  Sparkles,
+  AlertCircle,
+  Fingerprint,
+} from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
-  // Redirect if already logged in
+  const [error, setError] = useState("");
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Check Firebase auth state on mount (fixes session persistence issue)
   useEffect(() => {
-    const userId = localStorage.getItem('user_id') || sessionStorage.getItem('user_id');
-    if (userId) {
-      router.push('/dashboard');
-    }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && localStorage.getItem("vault_key")) {
+        // User is logged in AND has vault unlocked
+        router.push("/dashboard");
+      }
+      setCheckingAuth(false);
+    });
+
+    return () => unsubscribe();
   }, [router]);
-  
+
   // Dialog states
   const [showPassphraseDialog, setShowPassphraseDialog] = useState(false);
   const [isCreatingVault, setIsCreatingVault] = useState(false);
   const [showRecoveryKeyDialog, setShowRecoveryKeyDialog] = useState(false);
-  const [recoveryKey, setRecoveryKey] = useState('');
-  
+  const [recoveryKey, setRecoveryKey] = useState("");
+
   // Temporary state for vault creation flow
-  const [tempUserId, setTempUserId] = useState('');
+  const [tempUserId, setTempUserId] = useState("");
   const [tempUserData, setTempUserData] = useState<any>(null);
 
   async function handleGoogleLogin() {
     setLoading(true);
-    setError('');
-    
+    setError("");
+
     try {
-      console.log('🔐 Starting OAuth login...');
-      
+      console.log("🔐 Starting OAuth login...");
+
       const provider = new GoogleAuthProvider();
-      
+
       // Center the OAuth popup
       const width = 500;
       const height = 600;
       const left = (window.screen.width - width) / 2;
       const top = (window.screen.height - height) / 2;
-      
+
       // Attempt sign in
       let result;
       try {
         result = await signInWithPopup(auth, provider);
       } catch (popupError: any) {
         // User closed popup or cancelled
-        if (popupError.code === 'auth/popup-closed-by-user' || popupError.code === 'auth/cancelled-popup-request') {
-          console.log('User cancelled login');
+        if (
+          popupError.code === "auth/popup-closed-by-user" ||
+          popupError.code === "auth/cancelled-popup-request"
+        ) {
+          console.log("User cancelled login");
           setLoading(false);
           return;
         }
         throw popupError;
       }
-      
+
       const user = result.user;
-      
+
       // Save ALL Firebase user data to BOTH localStorage and sessionStorage for cross-tab persistence
       const saveSession = (key: string, value: string) => {
         sessionStorage.setItem(key, value);
         localStorage.setItem(key, value);
       };
-      
-      saveSession('user_id', `google:${user.uid}`);
-      saveSession('user_uid', user.uid);
-      saveSession('user_email', user.email || '');
-      saveSession('user_displayName', user.displayName || '');
-      saveSession('user_photo', user.photoURL || '');
-      saveSession('user_emailVerified', user.emailVerified.toString());
-      saveSession('user_phoneNumber', user.phoneNumber || '');
-      saveSession('user_creationTime', user.metadata.creationTime || '');
-      saveSession('user_lastSignInTime', user.metadata.lastSignInTime || '');
-      saveSession('user_providerData', JSON.stringify(user.providerData));
-      
-      console.log('✅ OAuth successful, user data saved');
-      
+
+      saveSession("user_id", `google:${user.uid}`);
+      saveSession("user_uid", user.uid);
+      saveSession("user_email", user.email || "");
+      saveSession("user_displayName", user.displayName || "");
+      saveSession("user_photo", user.photoURL || "");
+      saveSession("user_emailVerified", user.emailVerified.toString());
+      saveSession("user_phoneNumber", user.phoneNumber || "");
+      saveSession("user_creationTime", user.metadata.creationTime || "");
+      saveSession("user_lastSignInTime", user.metadata.lastSignInTime || "");
+      saveSession("user_providerData", JSON.stringify(user.providerData));
+
+      console.log("✅ OAuth successful, user data saved");
+
       // Store temp data for vault flow
       setTempUserId(user.uid);
       setTempUserData(user);
-      
+
       // Check if vault exists
       const checkResponse = await fetch(`/api/vault/check?userId=${user.uid}`);
       const { hasVault } = await checkResponse.json();
-      
+
       if (!hasVault) {
         // New user - show create passphrase dialog
         setIsCreatingVault(true);
@@ -106,93 +141,91 @@ export default function LoginPage() {
         setIsCreatingVault(false);
         setShowPassphraseDialog(true);
       }
-      
+
       setLoading(false);
-      
     } catch (error: any) {
-      console.error('Login error:', error);
-      setError(error.message || 'Failed to sign in');
+      console.error("Login error:", error);
+      setError(error.message || "Failed to sign in");
       setLoading(false);
     }
   }
 
   async function handlePassphraseSubmit(passphrase: string) {
     setLoading(true);
-    
+
     try {
       if (isCreatingVault) {
         // Create new vault
-        console.log('🔑 Creating vault...');
+        console.log("🔑 Creating vault...");
         const vaultSetup = await createVault(passphrase);
-        
+
         // Store vault on server
-        const setupResponse = await fetch('/api/vault/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const setupResponse = await fetch("/api/vault/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId: tempUserId,
             encryptedVaultKey: vaultSetup.encryptedVaultKey,
             salt: vaultSetup.salt,
             iv: vaultSetup.iv,
-            authTag: vaultSetup.authTag
-          })
+            authTag: vaultSetup.authTag,
+          }),
         });
-        
+
         if (!setupResponse.ok) {
-          throw new Error('Failed to create vault');
+          throw new Error("Failed to create vault");
         }
-        
+
         // Store vault key in both session and local for cross-tab
-        sessionStorage.setItem('vault_key', vaultSetup.vaultKeyHex);
-        localStorage.setItem('vault_key', vaultSetup.vaultKeyHex);
-        
+        sessionStorage.setItem("vault_key", vaultSetup.vaultKeyHex);
+        localStorage.setItem("vault_key", vaultSetup.vaultKeyHex);
+
         // Show recovery key dialog
         setRecoveryKey(vaultSetup.backupKey);
         setShowPassphraseDialog(false);
         setShowRecoveryKeyDialog(true);
-        
       } else {
         // Unlock existing vault
-        console.log('🔓 Unlocking vault...');
-        const vaultDataResponse = await fetch(`/api/vault/get?userId=${tempUserId}`);
-        
+        console.log("🔓 Unlocking vault...");
+        const vaultDataResponse = await fetch(
+          `/api/vault/get?userId=${tempUserId}`
+        );
+
         if (!vaultDataResponse.ok) {
-          throw new Error('Failed to retrieve vault data');
+          throw new Error("Failed to retrieve vault data");
         }
-        
+
         const vaultData = await vaultDataResponse.json();
-        
+
         try {
           const vaultKey = await unlockVault(passphrase, {
             encryptedVaultKey: vaultData.encryptedVaultKey,
             salt: vaultData.salt,
             iv: vaultData.iv,
-            authTag: vaultData.authTag
+            authTag: vaultData.authTag,
           });
-          
+
           // Store vault key in both session and local for cross-tab
-          sessionStorage.setItem('vault_key', vaultKey);
-          localStorage.setItem('vault_key', vaultKey);
-          
+          sessionStorage.setItem("vault_key", vaultKey);
+          localStorage.setItem("vault_key", vaultKey);
+
           setShowPassphraseDialog(false);
-          
+
           // Redirect to dashboard (not food subdirectory)
-          console.log('✅ Vault unlocked, redirecting...');
-          router.push('/dashboard');
-          
+          console.log("✅ Vault unlocked, redirecting...");
+          router.push("/dashboard");
         } catch (unlockError: any) {
           // Wrong passphrase - show user-friendly error
-          setError('Incorrect passphrase. Please try again.');
+          setError("Incorrect passphrase. Please try again.");
           setShowPassphraseDialog(false);
-          throw new Error('Incorrect passphrase');
+          throw new Error("Incorrect passphrase");
         }
       }
-      
+
       setLoading(false);
-      
     } catch (error: any) {
-      console.error('Vault error:', error);
-      setError(error.message || 'Failed to process vault');
+      console.error("Vault error:", error);
+      setError(error.message || "Failed to process vault");
       setShowPassphraseDialog(false);
       setLoading(false);
     }
@@ -201,12 +234,12 @@ export default function LoginPage() {
   function handleRecoveryKeyContinue() {
     setShowRecoveryKeyDialog(false);
     // Redirect to setup preferences
-    router.push('/dashboard/food/setup');
+    router.push("/dashboard/food/setup");
   }
 
   function handlePassphraseCancel() {
     setShowPassphraseDialog(false);
-    setError('Login cancelled');
+    setError("Login cancelled");
     setLoading(false);
   }
 
@@ -300,7 +333,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-sm text-muted-foreground">
-          By continuing, you agree to our{' '}
+          By continuing, you agree to our{" "}
           <a href="/privacy" className="underline hover:text-foreground">
             Privacy Policy
           </a>
