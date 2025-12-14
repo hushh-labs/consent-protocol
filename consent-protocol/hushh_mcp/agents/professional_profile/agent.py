@@ -242,7 +242,7 @@ class ProfessionalProfileAgent:
                     ),
                     "state": state,
                     "ui_type": "buttons",
-                    "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
+                    "options": ["💾 Save Preference", "✏️ Edit"],
                     "needs_consent": True,
                     "consent_scope": [ConsentScope.VAULT_WRITE_PROFESSIONAL.value]
                 }
@@ -396,7 +396,7 @@ class ProfessionalProfileAgent:
                 ),
                 "state": state,
                 "ui_type": "buttons",
-                "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
+                "options": ["💾 Save Preference", "✏️ Edit"],
                 "needs_consent": True,
                 "consent_scope": [ConsentScope.VAULT_WRITE_PROFESSIONAL.value]
             }
@@ -541,7 +541,7 @@ class ProfessionalProfileAgent:
             ),
             "state": state,
             "ui_type": "buttons",
-            "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
+            "options": ["💾 Save Preference", "✏️ Edit"],
             "needs_consent": True,
             "consent_scope": [
                 ConsentScope.VAULT_WRITE_PROFESSIONAL.value
@@ -594,7 +594,7 @@ class ProfessionalProfileAgent:
                 "message": "Please choose **Save** or **Edit**.",
                 "state": state,
                 "ui_type": "buttons",
-                "options": ["💾 Save & Establish TrustLink", "✏️ Edit"]
+                "options": ["💾 Save Preference", "✏️ Edit"]
             }
     
     def _handle_complete_state(self, message: str, state: Dict) -> Dict:

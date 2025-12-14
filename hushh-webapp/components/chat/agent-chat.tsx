@@ -364,6 +364,10 @@ export function AgentChat({
     ]);
     setIsLoading(true);
 
+    // Get current user ID for proper consent token issuance
+    const userId =
+      localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+
     // Send to agent
     try {
       const response = await fetch("/api/chat", {
@@ -371,6 +375,7 @@ export function AgentChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
+          userId, // CRITICAL: Include userId for consent token matching
           agentId: activeAgent,
           sessionState: sessionState,
         }),

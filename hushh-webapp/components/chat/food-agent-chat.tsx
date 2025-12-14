@@ -2,7 +2,7 @@
 
 /**
  * Food Agent Chat Component
- * 
+ *
  * Specialized chat interface for food preference collection.
  * Features:
  * - Multi-turn conversation with session state
@@ -15,18 +15,19 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
-import { 
-  Send, 
-  Bot, 
-  User, 
-  Loader2, 
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
   Sparkles,
   ShieldCheck,
   UtensilsCrossed,
   Check,
-  X
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { encryptData } from "@/lib/vault/encrypt";
 
 interface Message {
   role: "user" | "agent";
@@ -46,19 +47,22 @@ interface FoodAgentChatProps {
   className?: string;
 }
 
-export function FoodAgentChat({ 
+export function FoodAgentChat({
   userId,
   onComplete,
-  className 
+  className,
 }: FoodAgentChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [needsConsent, setNeedsConsent] = useState(false);
-  const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
+  const [collectedData, setCollectedData] = useState<Record<string, unknown>>(
+    {}
+  );
+  const [consentToken, setConsentToken] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
@@ -77,52 +81,67 @@ export function FoodAgentChat({
 
     if (!isInitial) {
       setInput("");
-      setMessages(prev => [...prev, { 
-        role: "user", 
-        content: userMessage, 
-        timestamp: new Date() 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: userMessage,
+          timestamp: new Date(),
+        },
+      ]);
     }
-    
+
     setIsLoading(true);
 
     try {
       const response = await fetch("/api/agents/food-dining/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           userId,
           message: userMessage,
-          sessionState 
+          sessionState,
         }),
       });
 
       const data = await response.json();
-      
+
       // Update session state
       setSessionState(data.sessionState);
       setCollectedData(data.collectedData || {});
       setNeedsConsent(data.needsConsent || false);
-      
+      if (data.consent_token) {
+        setConsentToken(data.consent_token);
+      }
+
       // Add agent response
-      setMessages(prev => [...prev, { 
-        role: "agent", 
-        content: data.response, 
-        timestamp: new Date(),
-        type: data.needsConsent ? "consent_request" : data.isComplete ? "success" : "text"
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: data.response,
+          timestamp: new Date(),
+          type: data.needsConsent
+            ? "consent_request"
+            : data.isComplete
+            ? "success"
+            : "text",
+        },
+      ]);
 
       // If complete, trigger callback
       if (data.isComplete && onComplete) {
         onComplete(data.collectedData);
       }
-
     } catch (error) {
-      setMessages(prev => [...prev, { 
-        role: "agent", 
-        content: "Sorry, I encountered an error. Please try again.", 
-        timestamp: new Date() 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: "Sorry, I encountered an error. Please try again.",
+          timestamp: new Date(),
+        },
+      ]);
     }
 
     setIsLoading(false);
@@ -135,12 +154,62 @@ export function FoodAgentChat({
     }
   };
 
-  const handleConsentAction = (approve: boolean) => {
-    handleSend(approve ? "save" : "edit");
+  const handleConsentAction = async (approve: boolean) => {
+    if (!approve) {
+      handleSend("edit");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const vaultKey =
+        localStorage.getItem("vault_key") ||
+        sessionStorage.getItem("vault_key");
+
+      if (!vaultKey) {
+        throw new Error("No vault key found");
+      }
+
+      // Encrypt and save each field
+      for (const [key, value] of Object.entries(collectedData)) {
+        const stringValue =
+          typeof value === "string" ? value : JSON.stringify(value);
+        const encrypted = await encryptData(stringValue, vaultKey);
+
+        await fetch("/api/vault/food", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            fieldName: key,
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            tag: encrypted.tag,
+            consentTokenId: "temp_token_id",
+          }),
+        });
+      }
+
+      // Notify agent of success
+      await handleSend(
+        "I have approved the changes and saved them to my secure vault."
+      );
+    } catch (error) {
+      console.error("Vault save error:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: "❌ Error saving to vault. Please ensure you are logged in.",
+          timestamp: new Date(),
+        },
+      ]);
+      setIsLoading(false);
+    }
   };
 
   return (
-    <Card 
+    <Card
       className={cn(
         "flex flex-col h-[700px] w-full max-w-2xl mx-auto overflow-hidden",
         "border-0 shadow-2xl",
@@ -173,20 +242,22 @@ export function FoodAgentChat({
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
         {messages.map((msg, idx) => (
-          <div 
-            key={idx} 
+          <div
+            key={idx}
             className={cn(
               "flex gap-3 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-300",
               msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
             )}
           >
             {/* Avatar */}
-            <div className={cn(
-              "h-8 w-8 rounded-full flex items-center justify-center shrink-0 mt-1",
-              msg.role === "user" 
-                ? "bg-gray-200 dark:bg-gray-800" 
-                : "bg-gradient-to-br from-orange-500/20 to-amber-600/20 border border-orange-200 dark:border-orange-800"
-            )}>
+            <div
+              className={cn(
+                "h-8 w-8 rounded-full flex items-center justify-center shrink-0 mt-1",
+                msg.role === "user"
+                  ? "bg-gray-200 dark:bg-gray-800"
+                  : "bg-gradient-to-br from-orange-500/20 to-amber-600/20 border border-orange-200 dark:border-orange-800"
+              )}
+            >
               {msg.role === "user" ? (
                 <User className="h-4 w-4" />
               ) : (
@@ -195,37 +266,44 @@ export function FoodAgentChat({
             </div>
 
             {/* Bubble */}
-            <div className={cn(
-              "p-4 rounded-2xl text-sm leading-relaxed shadow-sm",
-              msg.role === "user"
-                ? "bg-orange-500 text-white rounded-tr-none"
-                : msg.type === "consent_request"
-                    ? "bg-amber-50 dark:bg-amber-900/30 border-2 border-amber-300 dark:border-amber-700 rounded-tl-none"
-                    : msg.type === "success"
-                        ? "bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-tl-none"
-                        : "bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-tl-none"
-            )}>
+            <div
+              className={cn(
+                "p-4 rounded-2xl text-sm leading-relaxed shadow-sm",
+                msg.role === "user"
+                  ? "bg-orange-500 text-white rounded-tr-none"
+                  : msg.type === "consent_request"
+                  ? "bg-amber-50 dark:bg-amber-900/30 border-2 border-amber-300 dark:border-amber-700 rounded-tl-none"
+                  : msg.type === "success"
+                  ? "bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-tl-none"
+                  : "bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-tl-none"
+              )}
+            >
               {/* Render markdown-like content with line breaks */}
-              {msg.content.split('\n').map((line, i) => (
+              {msg.content.split("\n").map((line, i) => (
                 <span key={i}>
-                  {line.startsWith('•') ? (
+                  {line.startsWith("•") ? (
                     <span className="block pl-2">{line}</span>
-                  ) : line.startsWith('---') ? (
+                  ) : line.startsWith("---") ? (
                     <hr className="my-2 border-gray-200 dark:border-gray-700" />
-                  ) : line.includes('**') ? (
-                    <span dangerouslySetInnerHTML={{ 
-                      __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') 
-                    }} />
+                  ) : line.includes("**") ? (
+                    <span
+                      dangerouslySetInnerHTML={{
+                        __html: line.replace(
+                          /\*\*(.*?)\*\*/g,
+                          "<strong>$1</strong>"
+                        ),
+                      }}
+                    />
                   ) : (
                     line
                   )}
-                  {i < msg.content.split('\n').length - 1 && <br />}
+                  {i < msg.content.split("\n").length - 1 && <br />}
                 </span>
               ))}
             </div>
           </div>
         ))}
-        
+
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex gap-3 max-w-[85%] mr-auto animate-pulse">
@@ -250,10 +328,7 @@ export function FoodAgentChat({
             <Check className="h-4 w-4 mr-2" />
             Save & Consent
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => handleConsentAction(false)}
-          >
+          <Button variant="outline" onClick={() => handleConsentAction(false)}>
             <X className="h-4 w-4 mr-2" />
             Edit
           </Button>
@@ -263,7 +338,7 @@ export function FoodAgentChat({
       {/* Input Area */}
       <div className="p-4 bg-white/50 dark:bg-black/30 border-t border-orange-100/50 dark:border-orange-900/30 backdrop-blur-md">
         <div className="relative flex items-center">
-          <Input 
+          <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -271,14 +346,14 @@ export function FoodAgentChat({
             className="pr-12 h-12 rounded-full border-orange-200 dark:border-orange-800/50 bg-white/80 dark:bg-black/50 shadow-inner focus-visible:ring-orange-500"
             disabled={isLoading}
           />
-          <Button 
+          <Button
             onClick={() => handleSend()}
             disabled={!input.trim() || isLoading}
             size="icon"
             className={cn(
               "absolute right-1.5 h-9 w-9 rounded-full transition-all",
-              input.trim() 
-                ? "bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-md scale-100" 
+              input.trim()
+                ? "bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-md scale-100"
                 : "bg-gray-200 dark:bg-gray-800 text-gray-400 scale-90 pointer-events-none"
             )}
           >

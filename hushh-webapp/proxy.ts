@@ -10,7 +10,7 @@ const PUBLIC_ROUTES = ["/", "/login", "/docs", "/logout", "/privacy"];
 // API routes are handled separately
 const API_PREFIX = "/api";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow all API routes (they handle their own auth)
