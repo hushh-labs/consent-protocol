@@ -2,11 +2,15 @@
 cryptography==42.0.5
 pyjwt[crypto]==2.8.0
 
-# 🧪 Validation
-pydantic==2.7.1
+# 🧪 Validation (use v2 binary wheel)
+pydantic>=2.0,<3.0
 
 # 🧬 Environment management
 python-dotenv==1.0.1
+
+# 🚀 Web Server
+fastapi==0.109.0
+uvicorn==0.27.0
 
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
 httpx==0.27.0

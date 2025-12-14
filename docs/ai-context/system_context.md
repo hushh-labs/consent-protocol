@@ -5,14 +5,16 @@
 ## Project Identity
 
 - **Name:** Hushh
-- **Mission:** Consent-first Personal Data Agents.
-- **Key Metaphor:** "Operons" (Biological units of logic).
+- **Mission:** Consent-first Personal Data Agents
+- **Key Metaphor:** "Operons" (Biological units of logic)
+- **Core Principles:** Consent First, Scoped Access, Data Vaulted, Server Never Sees Key, Auditability
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15, Tailwind CSS, Framer Motion, Shadcn UI + Morphy UX.
-- **Backend/Protocol:** Python 3.10+, HushhMCP (HMAC/Stateless), FastAPI.
-- **Storage:** PostgreSQL (Cloud SQL via GCP) for vault data.
+- **Frontend:** Next.js 15, Shadcn UI + Morphy UX, Tailwind CSS
+- **Backend/Protocol:** Python 3.10+, HushhMCP (HMAC/Stateless), FastAPI
+- **Storage:** PostgreSQL (Cloud SQL via GCP) for vault data
+- **Auth:** Firebase (Google OAuth) + Passphrase (PBKDF2)
 
 ## Code Location
 
@@ -42,21 +44,38 @@
 ## Data Flow
 
 ```
-User → Chat UI → /api/chat → Orchestrator (10003)
+User → Chat UI → /api/chat → Orchestrator (10000)
                                    ↓
                     Intent Detection → Domain Routing
                                    ↓
-                  Domain Agent (e.g., Food 10005)
+                  Domain Agent (e.g., Food 10001)
                                    ↓
                   Validate Consent → Encrypt → Vault (PostgreSQL)
 ```
 
+## Authentication Flow
+
+```
+New User:    OAuth → Create Passphrase → Recovery Key → Dashboard
+Return User: OAuth → Enter Passphrase → Dashboard
+Fallback:    Enter Recovery Key (HRK-XXXX-XXXX-XXXX-XXXX)
+```
+
+### Key Technical Details:
+
+- Passphrase → PBKDF2 (100k iterations) → AES-256 key
+- Vault key stored in **sessionStorage only** (cleared on tab close)
+- Server stores only encrypted vault key (zero-knowledge)
+- Recovery key is separate encrypted copy
+
 ## Critical Guidelines
 
-1.  **Consent First:** No action without valid `HushhConsentToken`.
-2.  **Use hushh_mcp Only:** No custom trust/consent logic.
-3.  **Stateless Protocol:** Every request carries cryptographic proof.
-4.  **UI Aesthetics:** Glass effects (Morphy UX), minimal gradients.
+1. **Consent First:** No action without valid `HushhConsentToken`
+2. **Use hushh_mcp Only:** No custom trust/consent logic
+3. **Stateless Protocol:** Every request carries cryptographic proof
+4. **UI Aesthetics:** Glass effects (Morphy UX), minimal gradients
+5. **Zero-Knowledge Auth:** Passphrase/vault key never sent to server
+6. **No localStorage for keys:** Vault keys in sessionStorage only
 
 ## Current Agents
 
@@ -65,6 +84,26 @@ User → Chat UI → /api/chat → Orchestrator (10003)
 | Orchestrator  | Intent detection, A2A delegation |
 | Professional  | Resume, skills, career data      |
 | Food & Dining | Dietary, cuisines, budget        |
+
+## Database Schema (Passphrase + Recovery)
+
+| Table              | Domain       | Description                     |
+| ------------------ | ------------ | ------------------------------- |
+| vault_keys         | Core         | Passphrase + recovery encrypted |
+| vault_food         | Food         | `VAULT_WRITE_FOOD` encrypted    |
+| vault_professional | Professional | `VAULT_WRITE_PROFESSIONAL`      |
+| consent_audit      | Audit        | Token audit trail               |
+
+## Compliance Checklist
+
+When implementing any vault write:
+
+- [ ] Call `issue_token()` first
+- [ ] User explicitly consents in UI
+- [ ] Token passed to agent
+- [ ] Agent calls `validate_token()` before write
+- [ ] Data encrypted with vault key (client-side)
+- [ ] Consent token ID stored in audit table
 
 ## File Map
 

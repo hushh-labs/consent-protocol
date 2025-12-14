@@ -2,24 +2,28 @@
 
 /**
  * Main Dashboard - Orchestrator Entry Point
- * 
+ *
  * The central hub for all agent interactions.
  * Chat flows through orchestrator which delegates to domain agents.
  */
 
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { AgentChat, PendingUI } from '@/components/chat/agent-chat';
-import { CollectedDataCard } from '@/components/chat/collected-data-card';
-import { Card, CardHeader, CardTitle, CardContent } from '@/lib/morphy-ux/morphy';
-import { 
-  Shield,
-  Sparkles
-} from 'lucide-react';
+import { useState } from "react";
+import { AgentChat, PendingUI } from "@/components/chat/agent-chat";
+import { CollectedDataCard } from "@/components/chat/collected-data-card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/lib/morphy-ux/morphy";
+import { Shield, Sparkles } from "lucide-react";
 
 export default function DashboardPage() {
-  const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
+  const [collectedData, setCollectedData] = useState<Record<string, unknown>>(
+    {}
+  );
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -32,7 +36,8 @@ export default function DashboardPage() {
         </h1>
         <p className="text-muted-foreground flex items-center gap-2">
           <Shield className="h-4 w-4 text-emerald-500" />
-          Chat with the orchestrator to set up your preferences. All data is encrypted in your vault.
+          Chat with the orchestrator to set up your preferences. All data is
+          encrypted in your vault.
         </p>
       </div>
 
@@ -40,16 +45,17 @@ export default function DashboardPage() {
       <div className="flex gap-6">
         {/* Main Chat */}
         <div className="flex-1">
-          <AgentChat 
-            agentId="agent_orchestrator" 
+          <AgentChat
+            agentId="agent_orchestrator"
             agentName="Hushh Orchestrator"
+            hideHeader={true}
             initialMessage={`Hi! I can help you with your personal data preferences.
 
 What would you like to set up?`}
             initialUI={{
-              ui_type: 'buttons',
-              options: ['🍽️ Food & Dining', '💼 Professional Profile'],
-              allow_custom: false
+              ui_type: "buttons",
+              options: ["🍽️ Food & Dining", "💼 Professional Profile"],
+              allow_custom: false,
             }}
             onCollectedDataChange={setCollectedData}
           />
@@ -58,10 +64,7 @@ What would you like to set up?`}
         {/* Dynamic Sidebar */}
         <div className="hidden lg:block w-80 space-y-4">
           {/* Collected Data Card - Shows preferences as they're collected */}
-          <CollectedDataCard 
-            data={collectedData}
-            domain="Current Session"
-          />
+          <CollectedDataCard data={collectedData} domain="Current Session" />
 
           {/* Empty state when no data collected yet */}
           {Object.keys(collectedData).length === 0 && (
@@ -69,15 +72,19 @@ What would you like to set up?`}
               <CardContent className="p-4 text-center">
                 <Sparkles className="h-8 w-8 mx-auto mb-2 text-blue-500 opacity-50" />
                 <p className="text-sm text-muted-foreground">
-                  Start chatting to collect your preferences.
-                  They'll appear here in real-time.
+                  Start chatting to collect your preferences. They'll appear
+                  here in real-time.
                 </p>
               </CardContent>
             </Card>
           )}
 
           {/* Security Info */}
-          <Card variant="none" effect="glass" className="border-emerald-200 dark:border-emerald-800">
+          <Card
+            variant="none"
+            effect="glass"
+            className="border-emerald-200 dark:border-emerald-800"
+          >
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
                 <span className="text-xl">🔐</span>
@@ -95,5 +102,3 @@ What would you like to set up?`}
     </div>
   );
 }
-
-

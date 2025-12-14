@@ -2,7 +2,7 @@
 
 /**
  * Checkbox Selector Component
- * 
+ *
  * Interactive selection UI for chat preferences.
  * Allows users to select from options + add custom text.
  */
@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Send, Plus } from "lucide-react";
+import { Send, Plus, Check } from "lucide-react";
 
 interface CheckboxSelectorProps {
   options: string[];
@@ -32,7 +32,7 @@ export function CheckboxSelector({
   customPlaceholder = "Add custom option...",
   submitLabel = "Continue",
   className,
-  multiSelect = true
+  multiSelect = true,
 }: CheckboxSelectorProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [customValue, setCustomValue] = useState("");
@@ -53,7 +53,7 @@ export function CheckboxSelector({
 
   const addCustom = () => {
     if (customValue.trim()) {
-      const formatted = customValue.trim().toLowerCase().replace(/\s+/g, '_');
+      const formatted = customValue.trim().toLowerCase().replace(/\s+/g, "_");
       setCustomItems([...customItems, formatted]);
       setSelected(new Set([...selected, formatted]));
       setCustomValue("");
@@ -77,75 +77,69 @@ export function CheckboxSelector({
   };
 
   return (
-    <div className={cn("space-y-4 p-4 rounded-xl border bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm", className)}>
+    <div className={cn("space-y-3", className)}>
       {/* Options Grid - Scrollable, max 2 rows */}
-      <div className="max-h-[120px] overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2">
+      <div className="max-h-[140px] overflow-y-auto overflow-x-hidden">
+        <div className="flex flex-wrap gap-2">
           {[...options, ...customItems].map((option) => {
             const isSelected = selected.has(option);
-            const displayName = option.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            
+            const displayName = option
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+
             return (
               <div
                 key={option}
                 onClick={() => toggleOption(option)}
                 className={cn(
-                  "flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all text-sm",
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer transition-all text-xs",
                   isSelected
-                    ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700"
-                    : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500"
                 )}
               >
-                <Checkbox 
-                  checked={isSelected}
-                  onCheckedChange={() => toggleOption(option)}
-                  className="pointer-events-none h-4 w-4"
-                />
-                <Label className="cursor-pointer text-xs font-medium truncate">
+                {isSelected && <Check className="h-3 w-3" />}
+                <span className="font-medium truncate max-w-[150px]">
                   {displayName}
-                </Label>
+                </span>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Custom Input */}
-      {allowCustom && (
-        <div className="flex gap-2">
-          <Input
-            value={customValue}
-            onChange={(e) => setCustomValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={customPlaceholder}
-            className="flex-1"
-          />
-          <Button 
-            variant="outline" 
-            size="icon"
-            onClick={addCustom}
-            disabled={!customValue.trim()}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      {/* Custom Input & Submit Row */}
+      <div className="flex gap-2 items-center">
+        {allowCustom && (
+          <div className="flex-1 flex gap-2">
+            <Input
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={customPlaceholder}
+              className="h-8 text-xs bg-white dark:bg-gray-800/50"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={addCustom}
+              disabled={!customValue.trim()}
+              className="h-8 w-8 text-muted-foreground hover:text-primary"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
-      {/* Submit Button */}
-      <Button 
-        onClick={handleSubmit}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-      >
-        {submitLabel}
-        <Send className="ml-2 h-4 w-4" />
-      </Button>
-
-      {/* None option */}
-      {selected.size === 0 && (
-        <p className="text-xs text-center text-muted-foreground">
-          Select options above, or click Continue for "None"
-        </p>
-      )}
+        <Button
+          onClick={handleSubmit}
+          size="sm"
+          className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 ml-auto"
+        >
+          {submitLabel}
+          <Send className="ml-2 h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }

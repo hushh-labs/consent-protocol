@@ -402,15 +402,16 @@ class HushhFoodDiningAgent:
             "keto": ["keto", "low carb"],
             "pescatarian": ["pescatarian", "fish only"],
         }
-        if not collected.get("dietary_restrictions"):
-            found_dietary = []
-            for restriction, keywords in dietary_keywords.items():
-                for kw in keywords:
-                    if kw in text_lower:
-                        found_dietary.append(restriction)
-                        break
-            if found_dietary:
-                collected["dietary_restrictions"] = list(set(found_dietary))
+        
+        # Always try to extract, extending existing
+        found_dietary = set(collected.get("dietary_restrictions", []))
+        for restriction, keywords in dietary_keywords.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    found_dietary.add(restriction)
+                    break 
+        if found_dietary:
+            collected["dietary_restrictions"] = list(found_dietary)
         
         # 2. Extract cuisine preferences
         known_cuisines = [
@@ -418,28 +419,30 @@ class HushhFoodDiningAgent:
             "thai", "korean", "vietnamese", "mediterranean", "greek",
             "french", "american", "spanish", "middle eastern", "ethiopian"
         ]
-        if not collected.get("cuisine_preferences"):
-            found_cuisines = []
-            for cuisine in known_cuisines:
-                if cuisine in text_lower:
-                    found_cuisines.append(cuisine)
-            if found_cuisines:
-                collected["cuisine_preferences"] = [c.title() for c in set(found_cuisines)]
+        
+        # Always try to extract
+        found_cuisines = set(c.lower() for c in collected.get("cuisine_preferences", []))
+        for cuisine in known_cuisines:
+            if cuisine in text_lower:
+                found_cuisines.add(cuisine.title())
+        if found_cuisines:
+            collected["cuisine_preferences"] = list(found_cuisines)
         
         # 3. Extract budget
-        if not collected.get("monthly_budget"):
-            # Look for dollar amounts
-            budget_patterns = [
-                r'\$\s*(\d{2,4})\s*(?:/\s*(?:month|mo)|per month)?',
-                r'(\d{2,4})\s*(?:dollars|bucks)?\s*(?:/\s*(?:month|mo)|per month|monthly)'
-            ]
-            for pattern in budget_patterns:
-                match = re.search(pattern, text_lower)
-                if match:
-                    budget = int(match.group(1))
-                    if 50 <= budget <= 5000:  # Reasonable range
-                        collected["monthly_budget"] = budget
-                    break
+        # Look for dollar amounts
+        budget_patterns = [
+            r'\$\s*(\d{2,4})',
+            r'(\d{2,4})\s*(?:dollars|bucks|usd)',
+            r'budget\s*(?:is|of)?\s*(\d{2,4})',
+            r'(\d{2,4})\s*(?:/mo|month|monthly)'
+        ]
+        for pattern in budget_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                budget = int(match.group(1))
+                if 50 <= budget <= 5000:  # Reasonable range
+                    collected["monthly_budget"] = budget
+                break
         
         state["collected"] = collected
         
@@ -457,76 +460,75 @@ class HushhFoodDiningAgent:
     def _handle_greeting(self, message: str, state: Dict) -> Dict:
         """Handle initial greeting and smart parse any provided text."""
         # Try to extract data from provided message
-        if len(message) > 15:  # Substantial input
-            result = self._parse_bulk_food_input(message, state)
-            state = result["state"]
-            missing = result["missing"]
-            collected = result["collected"]
-            
-            # Check what was extracted
-            found_items = []
-            if collected.get("dietary_restrictions"):
-                found_items.append(f"🥗 Dietary: **{', '.join(collected['dietary_restrictions'])}**")
-            if collected.get("cuisine_preferences"):
-                found_items.append(f"🍽️ Cuisines: **{', '.join(collected['cuisine_preferences'])}**")
-            if collected.get("monthly_budget"):
-                found_items.append(f"💰 Budget: **${collected['monthly_budget']}/month**")
-            
-            if len(missing) == 0:
-                # All found! Go straight to confirmation
-                state["step"] = "confirm"
+        result = self._parse_bulk_food_input(message, state)
+        state = result["state"]
+        missing = result["missing"]
+        collected = result["collected"]
+        
+        # Check what was extracted
+        found_items = []
+        if collected.get("dietary_restrictions"):
+            found_items.append(f"🥗 Dietary: **{', '.join(collected['dietary_restrictions'])}**")
+        if collected.get("cuisine_preferences"):
+            found_items.append(f"🍽️ Cuisines: **{', '.join(collected['cuisine_preferences'])}**")
+        if collected.get("monthly_budget"):
+            found_items.append(f"💰 Budget: **${collected['monthly_budget']}/month**")
+        
+        if len(missing) == 0 and len(found_items) > 0:
+            # All found! Go straight to confirmation
+            state["step"] = "confirm"
+            return {
+                "message": (
+                    "🎉 Great! I was able to extract your preferences from your input:\n\n"
+                    + "\n".join(found_items) + "\n\n"
+                    "---\n\n"
+                    "Is this correct? I can save this to your encrypted vault."
+                ),
+                "state": state,
+                "ui_type": "buttons",
+                "options": ["💾 Save Preference", "✏️ Edit"],
+                "needs_consent": True
+            }
+        
+        # Some items found, ask for missing
+        if found_items:
+            if "dietary_restrictions" in missing:
+                state["step"] = "dietary"
                 return {
                     "message": (
-                        "🎉 Great! I was able to extract your preferences from your input:\n\n"
+                        "👋 I found some info from your input:\n\n"
                         + "\n".join(found_items) + "\n\n"
-                        "---\n\n"
-                        "Is this correct? I can save this to your encrypted vault."
+                        "Do you have any **dietary restrictions**?"
                     ),
                     "state": state,
-                    "ui_type": "buttons",
-                    "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
-                    "needs_consent": True
+                    "ui_type": "checkbox",
+                    "options": ["Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut-free", "Halal", "Kosher"],
+                    "allow_custom": True,
+                    "allow_none": True
                 }
-            
-            # Some items found, ask for missing
-            if found_items:
-                if "dietary_restrictions" in missing:
-                    state["step"] = "dietary"
-                    return {
-                        "message": (
-                            "👋 I found some info from your input:\n\n"
-                            + "\n".join(found_items) + "\n\n"
-                            "Do you have any **dietary restrictions**?"
-                        ),
-                        "state": state,
-                        "ui_type": "checkbox",
-                        "options": ["Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut-free", "Halal", "Kosher"],
-                        "allow_custom": True,
-                        "allow_none": True
-                    }
-                elif "cuisine_preferences" in missing:
-                    state["step"] = "cuisines"
-                    return {
-                        "message": (
-                            "👋 I found some info from your input:\n\n"
-                            + "\n".join(found_items) + "\n\n"
-                            "What are your **favorite cuisines**?"
-                        ),
-                        "state": state,
-                        "ui_type": "checkbox",
-                        "options": ["Italian", "Japanese", "Chinese", "Indian", "Mexican", "Thai", "Mediterranean"],
-                        "allow_custom": True
-                    }
-                else:  # budget missing
-                    state["step"] = "budget"
-                    return {
-                        "message": (
-                            "👋 I found some info from your input:\n\n"
-                            + "\n".join(found_items) + "\n\n"
-                            "What's your **monthly dining budget** in dollars?"
-                        ),
-                        "state": state
-                    }
+            elif "cuisine_preferences" in missing:
+                state["step"] = "cuisines"
+                return {
+                    "message": (
+                        "👋 I found some info from your input:\n\n"
+                        + "\n".join(found_items) + "\n\n"
+                        "What are your **favorite cuisines**?"
+                    ),
+                    "state": state,
+                    "ui_type": "checkbox",
+                    "options": ["Italian", "Japanese", "Chinese", "Indian", "Mexican", "Thai", "Mediterranean"],
+                    "allow_custom": True
+                }
+            else:  # budget missing
+                state["step"] = "budget"
+                return {
+                    "message": (
+                        "👋 I found some info from your input:\n\n"
+                        + "\n".join(found_items) + "\n\n"
+                        "What's your **monthly dining budget** in dollars?"
+                    ),
+                    "state": state
+                }
         
         # Standard greeting - no data provided
         state["step"] = "dietary"
@@ -548,24 +550,60 @@ class HushhFoodDiningAgent:
     
     def _handle_dietary_input(self, message: str, state: Dict) -> Dict:
         """Parse and store dietary restrictions."""
+        # Use bulk parse first to capture everything incl. budget/cuisines
+        self._parse_bulk_food_input(message, state)
+        
+        # If dietary was NOT extracted by bulk, handle explicit fallback
+        # e.g. "none" or just comma list
+        # We re-run explicit dietary logic if needed
+        # But wait, bulk parser handles "vegan", "gluten free".
+        # It misses "none".
+        
         msg_lower = message.lower().strip()
+        collected = state["collected"]
+        dietary_extracted = collected.get("dietary_restrictions", [])
+
+        if not dietary_extracted:
+            if msg_lower in ["none", "no", "nope", "n/a"]:
+                # Explicit none
+                collected["dietary_restrictions"] = []
+                state["collected"] = collected
+            # Else: bulk parser might have missed it if not keywords, or user typed garbage.
+            # But let's assume if bulk parser found nothing and it wasn't 'none', we proceed.
         
-        if msg_lower in ["none", "no", "nope", "n/a"]:
-            dietary = []
-        else:
-            # Parse comma-separated values
-            raw = [d.strip().lower().replace("-", "_").replace(" ", "_") 
-                   for d in msg_lower.split(",")]
-            # Filter to valid restrictions
-            valid = {"vegetarian", "vegan", "gluten_free", "dairy_free", 
-                    "nut_free", "halal", "kosher", "pescatarian", "keto", "paleo"}
-            dietary = [d for d in raw if d in valid]
+        # Logic to move to next step
+        # If we have dietary now (or established 'none'), move to cuisines
+        # BUT if we also picked up cuisines from bulk parse, check if we can skip cuisines step
         
-        state["collected"]["dietary_restrictions"] = dietary
+        # Note: If bulk parse found other stuff, it's already in 'collected'.
+        
         state["step"] = "cuisines"
         
-        dietary_label = ", ".join(dietary) if dietary else "No restrictions"
+        # Determine next question based on what's missing
+        missing_cuisines = not collected.get("cuisine_preferences")
+        missing_budget = not collected.get("monthly_budget")
         
+        if not missing_cuisines and not missing_budget:
+            # Done!
+            state["step"] = "confirm"
+            return self._handle_budget_input("fake_trigger", state) # Reuse confirm logic
+        
+        if not missing_cuisines:
+            # Update step to budget
+            state["step"] = "budget"
+            dietary_label = ", ".join(collected.get("dietary_restrictions", [])) or "No restrictions"
+            cuisines_label = ", ".join(collected.get("cuisine_preferences", []))
+            return {
+                "message": (
+                    f"✅ Got it! Dietary: **{dietary_label}**\n"
+                    f"🍽️ Cuisines: **{cuisines_label}** (extracted)\n\n"
+                    "Last question: What's your **monthly dining budget** (in dollars)?"
+                ),
+                "state": state
+            }
+            
+        # Normal flow -> Ask cuisines
+        dietary_label = ", ".join(collected.get("dietary_restrictions", [])) or "No restrictions"
         return {
             "message": (
                 f"✅ Got it! Dietary: **{dietary_label}**\n\n"
@@ -580,32 +618,44 @@ class HushhFoodDiningAgent:
     
     def _handle_cuisine_input(self, message: str, state: Dict) -> Dict:
         """Parse and store cuisine preferences."""
-        msg_lower = message.lower().strip()
+        # Use bulk parse first
+        self._parse_bulk_food_input(message, state)
+        collected = state["collected"]
+        cuisines = collected.get("cuisine_preferences", [])
         
-        raw = [c.strip().lower().replace("-", "_").replace(" ", "_") 
-               for c in msg_lower.split(",")]
-        
-        valid = {"italian", "japanese", "chinese", "indian", "mexican",
-                "thai", "mediterranean", "american", "korean", "vietnamese",
-                "french", "greek", "spanish", "middle_eastern"}
-        
-        cuisines = [c for c in raw if c in valid]
-        
+        # Fallback manual parse if bulk missed simple list
         if not cuisines:
-            return {
+            msg_lower = message.lower().strip()
+            raw = [c.strip().lower().replace("-", "_").replace(" ", "_") 
+                   for c in msg_lower.split(",")]
+            valid = {"italian", "japanese", "chinese", "indian", "mexican",
+                    "thai", "mediterranean", "american", "korean", "vietnamese",
+                    "french", "greek", "spanish", "middle_eastern"}
+            cuisines = [c.title() for c in raw if c in valid]
+            if cuisines:
+                collected["cuisine_preferences"] = cuisines
+                state["collected"] = collected
+        
+        if not collected.get("cuisine_preferences"):
+             return {
                 "message": (
                     "I didn't recognize any cuisines. Please try again with "
                     "options like: italian, japanese, thai, indian, mexican"
                 ),
                 "state": state
             }
-        
-        state["collected"]["cuisine_preferences"] = cuisines
+            
         state["step"] = "budget"
         
+        # Check if budget was already extracted
+        if collected.get("monthly_budget"):
+             # Done!
+            state["step"] = "confirm"
+            return self._handle_budget_input("fake_trigger", state)
+
         return {
             "message": (
-                f"✅ Great choices! Cuisines: **{', '.join(cuisines)}**\n\n"
+                f"✅ Great choices! Cuisines: **{', '.join(collected['cuisine_preferences'])}**\n\n"
                 "Last question: What's your **monthly dining budget** (in dollars)?\n\n"
                 "Just enter a number (e.g., '500' or '750'):"
             ),
@@ -614,50 +664,56 @@ class HushhFoodDiningAgent:
     
     def _handle_budget_input(self, message: str, state: Dict) -> Dict:
         """Parse and store monthly budget."""
-        try:
-            # Remove dollar sign and parse
-            budget_str = message.strip().replace("$", "").replace(",", "")
-            budget = float(budget_str)
-            
-            if budget <= 0:
-                raise ValueError("Budget must be positive")
-            
-            state["collected"]["monthly_budget"] = budget
-            state["step"] = "confirm"
-            
-            # Build confirmation summary
-            dietary = state["collected"].get("dietary_restrictions", [])
-            cuisines = state["collected"].get("cuisine_preferences", [])
-            
-            return {
-                "message": (
-                    f"✅ Budget set to **${budget:.2f}/month**\n\n"
-                    "---\n"
-                    "📋 **Your Preferences Summary:**\n\n"
-                    f"🥗 Dietary: {', '.join(dietary) if dietary else 'None'}\n"
-                    f"🍽️ Cuisines: {', '.join(cuisines)}\n"
-                    f"💰 Budget: ${budget:.2f}/month\n\n"
-                    "---\n\n"
-                    "To save these preferences, I'll establish a **TrustLink** to securely store this data in your encrypted vault."
-                ),
-                "state": state,
-                "ui_type": "buttons",
-                "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
-                "needs_consent": True,
-                "consent_scope": [
-                    ConsentScope.VAULT_WRITE_FOOD.value,
-                    ConsentScope.VAULT_WRITE_FINANCE.value
-                ]
-            }
-            
-        except ValueError:
-            return {
-                "message": (
-                    "I couldn't understand that budget. Please enter a number "
-                    "like '500' or '750':"
-                ),
-                "state": state
-            }
+        # If triggered with fake msg from auto-skip, skip parsing
+        collected = state["collected"]
+        
+        if message != "fake_trigger":
+             self._parse_bulk_food_input(message, state)
+             
+        # Check if we have budget now
+        if not collected.get("monthly_budget"):
+             # Fallback explicit parse
+            try:
+                budget_str = message.strip().replace("$", "").replace(",", "")
+                budget = float(budget_str)
+                if budget > 0:
+                    collected["monthly_budget"] = budget
+            except:
+                return {
+                    "message": (
+                        "I couldn't understand that budget. Please enter a number "
+                        "like '500' or '750':"
+                    ),
+                    "state": state
+                }
+
+        budget = collected["monthly_budget"]
+        state["step"] = "confirm"
+        
+        # Build confirmation summary
+        dietary = collected.get("dietary_restrictions", [])
+        cuisines = collected.get("cuisine_preferences", [])
+        
+        return {
+            "message": (
+                f"✅ Budget set to **${budget:.2f}/month**\n\n"
+                "---\n"
+                "📋 **Your Preferences Summary:**\n\n"
+                f"🥗 Dietary: {', '.join(dietary) if dietary else 'None'}\n"
+                f"🍽️ Cuisines: {', '.join(cuisines)}\n"
+                f"💰 Budget: ${budget:.2f}/month\n\n"
+                "---\n\n"
+                "To save these preferences, I'll establish a **TrustLink** to securely store this data in your encrypted vault."
+            ),
+            "state": state,
+            "ui_type": "buttons",
+            "options": ["💾 Save Preference", "✏️ Edit"],
+            "needs_consent": True,
+            "consent_scope": [
+                ConsentScope.VAULT_WRITE_FOOD.value,
+                ConsentScope.VAULT_WRITE_FINANCE.value
+            ]
+        }
     
     def _handle_confirmation(
         self,

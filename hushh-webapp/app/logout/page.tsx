@@ -1,8 +1,9 @@
 /**
  * Logout Page
  * ===========
- * 
- * Handles user logout - signs out from Firebase and redirects to login.
+ *
+ * Handles user logout - clears ALL vault data and signs out from Firebase.
+ * SECURITY: Must clear localStorage + sessionStorage for vault security.
  */
 
 "use client";
@@ -18,15 +19,34 @@ export default function LogoutPage() {
   useEffect(() => {
     const handleLogout = async () => {
       try {
-        // Clear session storage (vault keys, user info)
+        console.log("🔐 Logging out and clearing all vault data...");
+
+        // CRITICAL: Clear ALL vault-related data from localStorage
+        localStorage.removeItem("vault_key");
+        localStorage.removeItem("user_id");
+        localStorage.removeItem("user_uid");
+        localStorage.removeItem("user_email");
+        localStorage.removeItem("user_displayName");
+        localStorage.removeItem("user_photo");
+        localStorage.removeItem("user_emailVerified");
+        localStorage.removeItem("user_phoneNumber");
+        localStorage.removeItem("user_creationTime");
+        localStorage.removeItem("user_lastSignInTime");
+        localStorage.removeItem("user_providerData");
+        localStorage.removeItem("passkey_credential_id");
+
+        // Clear session storage
         sessionStorage.clear();
-        
+
         // Sign out from Firebase
         await signOut(auth);
+
+        console.log("✅ Logged out successfully");
         router.push("/login");
       } catch (error) {
         console.error("Logout failed:", error);
-        // Still clear session and redirect even if Firebase logout fails
+        // Still clear storage and redirect even if Firebase logout fails
+        localStorage.clear();
         sessionStorage.clear();
         router.push("/login");
       }
@@ -39,7 +59,10 @@ export default function LogoutPage() {
     <main className="flex-1 flex items-center justify-center">
       <div className="text-center">
         <div className="text-4xl mb-4 animate-pulse">👋</div>
-        <p className="text-muted-foreground">Logging out...</p>
+        <p className="text-muted-foreground">Securely logging out...</p>
+        <p className="text-xs text-muted-foreground mt-2">
+          Clearing vault keys...
+        </p>
       </div>
     </main>
   );
