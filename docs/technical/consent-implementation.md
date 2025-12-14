@@ -65,12 +65,13 @@ HCT:base64(user_id|agent_id|scope|issued_at|expires_at).hmac_sha256_signature
 
 ## ConsentScope Values
 
-Used from `hushh_mcp/constants.py`:
+Used from `hushh_mcp/constants.py` (domain-specific per Bible):
 
-- `VAULT_READ_PREFERENCES`
-- `VAULT_WRITE_PREFERENCES`
-- `VAULT_READ_EMAIL`
-- `AGENT_IDENTITY_VERIFY`
+- `VAULT_READ_FOOD` / `VAULT_WRITE_FOOD`
+- `VAULT_READ_PROFESSIONAL` / `VAULT_WRITE_PROFESSIONAL`
+- `VAULT_READ_FINANCE` / `VAULT_WRITE_FINANCE`
+- `VAULT_READ_EMAIL`, `VAULT_READ_PHONE`, `VAULT_READ_CONTACTS`
+- `AGENT_IDENTITY_VERIFY`, `AGENT_FOOD_COLLECT`
 
 ---
 
@@ -87,7 +88,8 @@ The following files in `consent-protocol/` are **READ-ONLY** reference:
 
 ---
 
-## Next Steps
+## Implementation Status
 
-1. **Phase 2**: Validate token before vault writes
-2. **Phase 3**: TrustLinks for agent-to-agent delegation
+- ✅ **Phase 1**: Token issuance on save
+- ✅ **Phase 2**: Token validation before vault writes (in storage operons)
+- ✅ **Phase 3**: TrustLinks for A2A delegation (in orchestrator)

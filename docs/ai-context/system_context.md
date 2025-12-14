@@ -30,15 +30,14 @@
 
 ### Agent Port Mapping
 
-| Port  | Agent                    | Status     |
-| ----- | ------------------------ | ---------- |
-| 10003 | Orchestrator             | Active     |
-| 10004 | Professional Profile     | Active     |
-| 10005 | Food & Dining            | Active     |
-| 10006 | Finance                  | Planned    |
-| 10007 | Health & Wellness        | Planned    |
-| 10008 | Travel                   | Planned    |
-| 8000  | FastAPI (Food Agent API) | Dev Server |
+| Port  | Agent                | Status     |
+| ----- | -------------------- | ---------- |
+| 10000 | Orchestrator         | Active     |
+| 10001 | Food & Dining        | Active     |
+| 10002 | Professional Profile | Active     |
+| 10003 | Identity             | Active     |
+| 10004 | Shopping             | Active     |
+| 8000  | FastAPI Dev Server   | Dev Server |
 
 ## Data Flow
 

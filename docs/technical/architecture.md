@@ -41,11 +41,12 @@ Signed relationships allowing Agent-to-Agent (A2A) communication and delegation.
 
 | Port  | Agent                | Description               |
 | ----- | -------------------- | ------------------------- |
-| 10003 | Orchestrator         | Intent detection, routing |
-| 10004 | Professional Profile | Career data management    |
-| 10005 | Food & Dining        | Dietary/cuisine/budget    |
-| 10006 | Finance (planned)    | Spending/budgets          |
-| 8000  | FastAPI Dev Server   | Food agent REST API       |
+| 10000 | Orchestrator         | Intent detection, routing |
+| 10001 | Food & Dining        | Dietary/cuisine/budget    |
+| 10002 | Professional Profile | Career data management    |
+| 10003 | Identity             | Identity verification     |
+| 10004 | Shopping             | Purchase management       |
+| 8000  | FastAPI Dev Server   | REST API                  |
 
 ## 4. Agentic Data Collection Flow
 

@@ -56,8 +56,8 @@ class ProfessionalProfileAgent:
             "version": "1.0.0",
             "description": "Collects professional profile data via conversation",
             "scopes_required": [
-                ConsentScope.VAULT_READ_PREFERENCES.value,
-                ConsentScope.VAULT_WRITE_PREFERENCES.value
+                ConsentScope.VAULT_READ_PROFESSIONAL.value,
+                ConsentScope.VAULT_WRITE_PROFESSIONAL.value
             ]
         }
         logger.info("💼 Professional Profile Agent initialized")
@@ -244,7 +244,7 @@ class ProfessionalProfileAgent:
                     "ui_type": "buttons",
                     "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
                     "needs_consent": True,
-                    "consent_scope": [ConsentScope.VAULT_WRITE_PREFERENCES.value]
+                    "consent_scope": [ConsentScope.VAULT_WRITE_PROFESSIONAL.value]
                 }
             
             # Some items found, some missing
@@ -398,7 +398,7 @@ class ProfessionalProfileAgent:
                 "ui_type": "buttons",
                 "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
                 "needs_consent": True,
-                "consent_scope": [ConsentScope.VAULT_WRITE_PREFERENCES.value]
+                "consent_scope": [ConsentScope.VAULT_WRITE_PROFESSIONAL.value]
             }
         
         # Ask for the first missing field
@@ -544,7 +544,7 @@ class ProfessionalProfileAgent:
             "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
             "needs_consent": True,
             "consent_scope": [
-                ConsentScope.VAULT_WRITE_PREFERENCES.value
+                ConsentScope.VAULT_WRITE_PROFESSIONAL.value
             ]
         }
     
@@ -557,7 +557,7 @@ class ProfessionalProfileAgent:
             consent_token = issue_token(
                 user_id=user_id,
                 agent_id=self.manifest["name"],
-                scope=ConsentScope.VAULT_WRITE_PREFERENCES
+                scope=ConsentScope.VAULT_WRITE_PROFESSIONAL
             )
             
             logger.info(f"🔐 Issued consent token for user {user_id}: {consent_token.token[:50]}...")
@@ -575,7 +575,7 @@ class ProfessionalProfileAgent:
                 "is_complete": True,
                 # Include real consent token
                 "consent_token": consent_token.token,
-                "consent_scope": ConsentScope.VAULT_WRITE_PREFERENCES.value,
+                "consent_scope": ConsentScope.VAULT_WRITE_PROFESSIONAL.value,
                 "consent_issued_at": consent_token.issued_at,
                 "consent_expires_at": consent_token.expires_at
             }
