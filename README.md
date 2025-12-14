@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Protocol-v1.0-success?style=flat-square" alt="Protocol"/>
   <img src="https://img.shields.io/badge/Encryption-AES--256--GCM-blue?style=flat-square" alt="Encryption"/>
   <img src="https://img.shields.io/badge/Zero_Knowledge-✓-green?style=flat-square" alt="Zero Knowledge"/>
-  <img src="https://img.shields.io/badge/Next.js-15-black?style=flat-square" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square" alt="Next.js"/>
   <img src="https://img.shields.io/badge/Python-FastAPI-009688?style=flat-square" alt="FastAPI"/>
 </p>
 
@@ -34,7 +34,7 @@ Hushh:           You → Encrypt → Vault → Agents (with YOUR permission)
 
 | Layer        | Technology           | Purpose                          |
 | ------------ | -------------------- | -------------------------------- |
-| **Frontend** | Next.js 15, React    | Chat UI, Dashboard               |
+| **Frontend** | Next.js 16, React 19 | Chat UI, Dashboard               |
 | **Protocol** | HushhMCP (Python)    | Consent tokens, TrustLinks       |
 | **Agents**   | FastAPI              | Food, Professional, Orchestrator |
 | **Storage**  | PostgreSQL + AES-256 | Encrypted vault                  |
