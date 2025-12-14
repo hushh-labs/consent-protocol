@@ -1,80 +1,77 @@
-# Install dependencies only when needed
-FROM node:22-alpine AS deps
+# ============================================
+# Hushh WebApp - Next.js Production Dockerfile
+# ============================================
+# Optimized multi-stage build for Cloud Run
+
+# Stage 1: Dependencies
+FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
+
+# Copy package files
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
-# Rebuild the source code only when needed
-FROM node:22-alpine AS builder
+# Stage 2: Builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Accept build arguments for environment variables needed at build time
-# Note: Sensitive values should be passed at runtime, not baked into the image
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build arguments for environment variables
+ARG NEXT_PUBLIC_FIREBASE_API_KEY
+ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ARG NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ARG NEXT_PUBLIC_FIREBASE_APP_ID
+ARG NEXT_PUBLIC_BACKEND_URL
 ARG DATABASE_URL
-ARG RECAPTCHA_SITE_KEY
-ARG RECAPTCHA_SECRET_KEY
-ARG NEXT_PUBLIC_GA_MEASUREMENT_ID
 
 # Set environment variables for build
+ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
+ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ENV NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=$NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
 ENV DATABASE_URL=$DATABASE_URL
-ENV RECAPTCHA_SITE_KEY=$RECAPTCHA_SITE_KEY
-ENV RECAPTCHA_SECRET_KEY=$RECAPTCHA_SECRET_KEY
-ENV NEXT_PUBLIC_GA_MEASUREMENT_ID=$NEXT_PUBLIC_GA_MEASUREMENT_ID
 
-COPY . .
-COPY --from=deps /app/node_modules ./node_modules
-
-# Generate Prisma client (outputs to prisma/generated/client)
-RUN npx prisma generate
+# Disable telemetry during build
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build the application
 RUN npm run build
 
-# Production image, copy only necessary files
-FROM node:22-alpine AS runner
+# Stage 3: Runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Create a non-root user for security
+# Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy necessary files
+# Copy necessary files from builder
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-# Copy Prisma files (schema + generated client + config)
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-
-# Set correct permissions
+# Set ownership
 RUN chown -R nextjs:nodejs /app
+
+# Switch to non-root user
 USER nextjs
 
+# Expose port (Cloud Run uses PORT env var)
 EXPOSE 3000
-
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Runtime environment variables are passed via:
-# - docker run -e VAR=value
-# - docker-compose.yml environment section
-# - Azure App Service Application Settings
-# 
-# Required runtime env vars:
-# - DATABASE_URL
-# - ADMIN_EMAIL
-# - ADMIN_USERNAME
-# - ADMIN_PASSWORD
-# - EMAIL_SENDER
-# - EMAIL_PASSWORD
-# - SMTP_SERVER
-# - SMTP_PORT
-# - RECAPTCHA_SITE_KEY
-# - RECAPTCHA_SECRET_KEY
-# - CSRF_PROTECTION
-
-CMD ["npm", "start"]
+# Start the application
+CMD ["node", "server.js"]

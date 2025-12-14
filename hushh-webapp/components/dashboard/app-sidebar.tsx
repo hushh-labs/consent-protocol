@@ -163,34 +163,6 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* Resources Group */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Resources</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/docs"}>
-                  <Link href="/docs">
-                    <FileText className="h-4 w-4" />
-                    <span>Documentation</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={pathname === "/docs/developer-api"}
-                >
-                  <Link href="/docs/developer-api">
-                    <Code className="h-4 w-4" />
-                    <span>Developer API</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
     </Sidebar>
   );

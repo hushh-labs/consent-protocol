@@ -57,6 +57,8 @@ import {
   Lock,
   Copy,
   Check,
+  Download,
+  Loader2,
 } from "lucide-react";
 
 // ============================================================================
@@ -184,6 +186,7 @@ export default function LoginPage() {
 
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
@@ -363,8 +366,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="mx-auto h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <Sparkles className="h-6 w-6 text-white" />
+          <div className="mx-auto h-16 w-16 rounded-2xl bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+            <span className="text-3xl">🤫</span>
           </div>
           <h1 className="text-2xl font-bold">Welcome to Hushh</h1>
           <p className="text-muted-foreground">
@@ -422,9 +425,14 @@ export default function LoginPage() {
 
             {/* Step: OAuth Loading */}
             {step === "oauth_loading" && (
-              <div className="text-center py-4">
-                <div className="animate-spin text-4xl mb-4">🔐</div>
-                <p className="text-muted-foreground">Signing in...</p>
+              <div className="text-center py-8">
+                <div className="relative mx-auto w-16 h-16 mb-4">
+                  <div className="absolute inset-0 rounded-full bg-linear-to-br from-blue-500 to-purple-600 opacity-20 animate-pulse" />
+                  <div className="absolute inset-2 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 text-white animate-spin" />
+                  </div>
+                </div>
+                <p className="text-muted-foreground">Verifying identity...</p>
               </div>
             )}
 
@@ -623,23 +631,46 @@ export default function LoginPage() {
               </code>
             </div>
 
-            <Button
-              variant="none"
-              className="w-full"
-              onClick={handleCopyRecoveryKey}
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy to Clipboard
-                </>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="none"
+                className="flex-1 border border-gray-200 dark:border-gray-700"
+                onClick={handleCopyRecoveryKey}
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2 text-green-500" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="none"
+                className="flex-1 border border-gray-200 dark:border-gray-700"
+                onClick={() => {
+                  const blob = new Blob(
+                    [
+                      `Hushh Recovery Key\n\n${recoveryKey}\n\nStore this file securely. This is the ONLY way to recover your vault if you forget your passphrase.`,
+                    ],
+                    { type: "text/plain" }
+                  );
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "hushh-recovery-key.txt";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            </div>
           </div>
 
           <DialogFooter>

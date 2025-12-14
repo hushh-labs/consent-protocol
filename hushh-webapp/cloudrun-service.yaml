@@ -1,0 +1,67 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hushh-webapp
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Minimum 1 instance always running (prevents cold starts)
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        # CPU allocation even when not processing requests
+        run.googleapis.com/cpu-throttling: "false"
+        # Startup/liveness probes
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: hushh-webapp-sa@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: gcr.io/PROJECT_ID/hushh-webapp:latest
+          ports:
+            - name: http1
+              containerPort: 3000
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            # Secrets from Secret Manager
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: DATABASE_URL
+            - name: NEXT_PUBLIC_BACKEND_URL
+              valueFrom:
+                secretKeyRef:
+                  key: latest
+                  name: BACKEND_URL
+          # Health check
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -1,423 +1,276 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { Button, Card, CardTitle, CardDescription } from "@/lib/morphy-ux/morphy";
-
 import {
-  BookOpenIcon,
-  ShieldCheckIcon,
-  BrainIcon,
-  UsersIcon,
-  HandshakeIcon,
-  ClockIcon,
-  CodeIcon,
-  RocketIcon,
-  LockIcon,
-  EyeIcon,
-  ArrowRightIcon,
-  ChatCircleIcon,
-  GearIcon,
-} from "@phosphor-icons/react";
-
-// Sidebar sections
-const docsSections = [
-  {
-    title: "Introduction",
-    items: [
-      { id: "about", label: "About Hushh", icon: BookOpenIcon },
-      { id: "philosophy", label: "The 🤫 Promise", icon: ShieldCheckIcon },
-    ],
-  },
-  {
-    title: "Core Concepts",
-    items: [
-      { id: "consent", label: "Consent Flow", icon: HandshakeIcon },
-      { id: "data", label: "Data Categories", icon: UsersIcon },
-      { id: "agents", label: "Agent Modes", icon: BrainIcon },
-    ],
-  },
-  {
-    title: "API Reference",
-    items: [
-      { id: "endpoints", label: "Endpoints", icon: CodeIcon },
-      { id: "examples", label: "Examples", icon: RocketIcon },
-    ],
-  },
-];
-
-// Data categories
-const dataCategories = [
-  { name: "Financial", icon: "💰", color: "#10b981", desc: "Spending, budgets" },
-  { name: "Calendar", icon: "📅", color: "#0071e3", desc: "Events, meetings" },
-  { name: "Professional", icon: "💼", color: "#BF5AF2", desc: "Skills, career" },
-  { name: "Health", icon: "❤️", color: "#FF453A", desc: "Fitness, wellness" },
-  { name: "Preferences", icon: "⚙️", color: "#FF9F0A", desc: "Likes, style" },
-  { name: "Network", icon: "👥", color: "#0d7590", desc: "Contacts" },
-];
-
-// Agent modes
-const agentModes = [
-  { id: "optimizer", name: "Optimizer", icon: "📈", endpoint: "/kai", desc: "Find deals, maximize value" },
-  { id: "curator", name: "Curator", icon: "🎯", endpoint: "/nav", desc: "Organize data, insights" },
-  { id: "professional", name: "Professional", icon: "💼", endpoint: "/kushal", desc: "Career context" },
-  { id: "orchestrator", name: "Orchestrator", icon: "🔗", endpoint: "/", desc: "Coordinate agents" },
-];
-
-// Consent flow steps
-const consentSteps = [
-  { step: 1, title: "Agent Requests Data", time: "Instant" },
-  { step: 2, title: "System Checks Permission", time: "Instant" },
-  { step: 3, title: "User Sees Approval Request", time: "3 min window" },
-  { step: 4, title: "Pending if No Response", time: "24 hours" },
-  { step: 5, title: "Access Granted or Denied", time: "Immediate" },
-];
+  Button,
+  Card,
+  CardTitle,
+  CardDescription,
+} from "@/lib/morphy-ux/morphy";
+import {
+  ShieldCheck,
+  Lock,
+  Zap,
+  Code,
+  ArrowRight,
+  Database,
+  Key,
+  Eye,
+} from "lucide-react";
 
 export default function DocsPage() {
-  const [activeSection, setActiveSection] = useState("about");
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const sections = docsSections.flatMap((s) => s.items.map((i) => i.id));
-      for (const id of sections) {
-        const el = document.getElementById(id);
-        if (el) {
-          const rect = el.getBoundingClientRect();
-          if (rect.top <= 150 && rect.bottom > 150) {
-            setActiveSection(id);
-            break;
-          }
-        }
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
   return (
-    <main className="min-h-screen flex" style={{ background: "var(--color-background)" }}>
-      {/* Sidebar */}
-      <aside 
-        className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 glass-prominent overflow-y-auto z-40"
-        style={{ borderRight: "0.5px solid rgba(0,0,0,0.06)" }}
-      >
-        {/* Logo */}
-        <div className="p-6 border-b" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-          <Link href="/" className="flex items-center gap-3">
-            <div className="agent-avatar" style={{ width: 40, height: 40 }}>
-              <span className="text-xl">🤫</span>
-            </div>
-            <div>
-              <span className="font-semibold text-primary">Hushh</span>
-              <p className="text-xs text-secondary">Documentation</p>
-            </div>
-          </Link>
+    <main className="min-h-screen bg-background">
+      {/* Hero Section */}
+      <section className="relative px-4 py-16 md:py-24 max-w-5xl mx-auto text-center">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-sm font-medium mb-6">
+          <Lock className="h-4 w-4" />
+          <span>Consent Protocol v1.0</span>
         </div>
 
-        {/* Navigation */}
-        <nav className="p-4">
-          {docsSections.map((section) => (
-            <div key={section.title} className="mb-6">
-              <h3 className="text-small uppercase tracking-wider mb-3 px-3" style={{ color: "var(--color-hushh-teal)" }}>
-                {section.title}
-              </h3>
-              <ul className="space-y-1">
-                {section.items.map((item) => (
-                  <li key={item.id}>
-                    <a
-                      href={`#${item.id}`}
-                      onClick={() => setActiveSection(item.id)}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${
-                        activeSection === item.id
-                          ? "glass text-primary font-medium"
-                          : "text-secondary hover:text-primary hover:bg-white/50"
-                      }`}
-                    >
-                      <item.icon weight="regular" className="w-4 h-4" />
-                      {item.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
+        <h1 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
+          Your Data.{" "}
+          <span className="bg-linear-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+            Your Vault.
+          </span>{" "}
+          Your Agents.
+        </h1>
 
-        {/* CTA */}
-        <div className="p-4 border-t" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-          <Link href="/jarvis">
-            <Button variant="gradient" effect="glass" showRipple className="w-full">
-              Launch Agent →
+        <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
+          Hushh is a consent-first personal data platform where AI works{" "}
+          <strong>for you</strong>, not against you. Every action requires your
+          explicit cryptographic permission.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <Link href="/dashboard">
+            <Button
+              variant="gradient"
+              effect="glass"
+              size="lg"
+              showRipple
+              className="w-full sm:w-auto"
+            >
+              Get Started
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+          <Link href="/docs/developer-api">
+            <Button
+              variant="none"
+              effect="glass"
+              size="lg"
+              className="w-full sm:w-auto border border-gray-200 dark:border-gray-800"
+            >
+              <Code className="mr-2 h-4 w-4" />
+              Developer API
             </Button>
           </Link>
         </div>
-      </aside>
+      </section>
 
-      {/* Main Content */}
-      <div className="flex-1 ml-64">
-        {/* Breadcrumb */}
-        <div className="max-w-4xl mx-auto px-8 py-4 flex items-center gap-2 text-sm text-secondary">
-          <span>Documentation</span>
-          <span>/</span>
-          <span className="text-primary font-medium">
-            {docsSections.flatMap(s => s.items).find(i => i.id === activeSection)?.label}
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-success)" }} />
-            <span className="text-xs" style={{ color: "var(--color-success)" }}>Online</span>
-          </div>
+      {/* How It Works */}
+      <section className="px-4 py-16 max-w-5xl mx-auto">
+        <h2 className="text-2xl md:text-3xl font-bold text-center mb-4">
+          How It Works
+        </h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-xl mx-auto">
+          Traditional AI sends your data to servers. Hushh keeps it encrypted
+          locally.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            {
+              icon: ShieldCheck,
+              title: "Consent First",
+              desc: "Every action requires your explicit permission via signed consent tokens.",
+              color: "from-emerald-500 to-teal-500",
+            },
+            {
+              icon: Lock,
+              title: "Zero Knowledge",
+              desc: "Your data is encrypted in your browser. The server only sees ciphertext.",
+              color: "from-blue-500 to-cyan-500",
+            },
+            {
+              icon: Database,
+              title: "Encrypted Vault",
+              desc: "AES-256-GCM encryption with keys only you control.",
+              color: "from-purple-500 to-pink-500",
+            },
+          ].map((item) => (
+            <Card
+              key={item.title}
+              variant="none"
+              effect="glass"
+              className="p-6 text-center"
+            >
+              <div
+                className={`h-14 w-14 rounded-2xl bg-linear-to-br ${item.color} flex items-center justify-center mx-auto mb-4`}
+              >
+                <item.icon className="h-7 w-7 text-white" />
+              </div>
+              <CardTitle className="text-lg mb-2">{item.title}</CardTitle>
+              <CardDescription>{item.desc}</CardDescription>
+            </Card>
+          ))}
         </div>
+      </section>
 
-        {/* Content */}
-        <div className="max-w-4xl mx-auto px-8 pb-16">
-          {/* About Section */}
-          <section id="about" className="mb-20">
-            <div className="animate-fade-in-up">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="agent-avatar" style={{ width: 56, height: 56 }}>
-                  <span className="text-3xl">🤫</span>
-                </div>
-                <div>
-                  <h1 className="text-headline">Hushh Agent Platform</h1>
-                  <p className="text-caption mt-1">Personal AI with privacy at its core</p>
-                </div>
+      {/* The Promise */}
+      <section className="px-4 py-16 bg-muted/30">
+        <div className="max-w-4xl mx-auto">
+          <Card
+            variant="none"
+            effect="glass"
+            className="p-8 md:p-12 relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-linear-to-bl from-blue-500/10 to-transparent rounded-full -mr-32 -mt-32" />
+
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-6">
+                <span className="text-5xl">🤫</span>
+                <h2 className="text-2xl md:text-3xl font-bold">
+                  The Hushh Promise
+                </h2>
               </div>
 
-              <Card variant="none" effect="glass" className="mb-8">
-                <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
-                  Hushh is a personal AI system that remembers everything about you, learns from your context, 
-                  and works exclusively for your benefit—with privacy as the foundation.
-                </p>
-              </Card>
+              <blockquote className="text-xl md:text-2xl italic text-muted-foreground mb-8 border-l-4 border-blue-500 pl-6">
+                "Your data stays quiet until YOU decide to share it."
+              </blockquote>
 
-              {/* Feature Cards */}
-              <div className="grid md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
-                  { icon: BrainIcon, title: "Persistent Memory", desc: "Context that compounds over time" },
-                  { icon: LockIcon, title: "Consent-First", desc: "You control every data access" },
-                  { icon: RocketIcon, title: "Instant Action", desc: "Question to action in seconds" },
-                ].map((feature) => (
-                  <Card
-                    key={feature.title}
-                    variant="none"
-                    effect="glass"
-                    icon={{ icon: feature.icon, gradient: true }}
-                  >
-                    <CardTitle className="text-sm mt-2">{feature.title}</CardTitle>
-                    <CardDescription>{feature.desc}</CardDescription>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Philosophy Section */}
-          <section id="philosophy" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-6">The 🤫 Promise</h2>
-              
-              <Card variant="none" effect="glass" className="mb-6" style={{ borderLeft: "3px solid var(--color-hushh-blue)" }}>
-                <p className="text-lg italic mb-4" style={{ color: "var(--color-text-primary)" }}>
-                  &quot;Your data stays quiet until YOU decide to share it.&quot;
-                </p>
-                <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
-                  The name <strong>Hushh</strong> isn&apos;t just branding—it&apos;s a commitment. 
-                  The 🤫 emoji represents our core belief: privacy should be the default, not the exception.
-                </p>
-              </Card>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                {[
-                  { icon: ShieldCheckIcon, title: "Data Sovereignty", desc: "Your data belongs to YOU, not us" },
-                  { icon: EyeIcon, title: "Full Transparency", desc: "See exactly what data is used" },
-                  { icon: ArrowRightIcon, title: "Exit Anytime", desc: "Export or delete everything" },
-                  { icon: LockIcon, title: "Zero Exploitation", desc: "We never sell your data" },
+                  { icon: Key, text: "You own your encryption keys" },
+                  { icon: Eye, text: "Full visibility into data usage" },
+                  { icon: ArrowRight, text: "Export or delete anytime" },
+                  { icon: ShieldCheck, text: "We never sell your data" },
                 ].map((item) => (
-                  <Card key={item.title} variant="none" effect="glass" icon={{ icon: item.icon }}>
-                    <CardTitle className="text-sm">{item.title}</CardTitle>
-                    <CardDescription>{item.desc}</CardDescription>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Consent Flow Section */}
-          <section id="consent" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-2">Consent Flow</h2>
-              <p className="text-caption mb-6">How data access permissions work</p>
-
-              <div className="space-y-4">
-                {consentSteps.map((item) => (
-                  <Card key={item.step} variant="none" effect="glass" className="flex items-center gap-4">
-                    <div 
-                      className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
-                      style={{ background: "var(--color-hushh-blue)" }}
-                    >
-                      {item.step}
-                    </div>
-                    <div className="flex-1">
-                      <CardTitle className="text-sm">{item.title}</CardTitle>
-                    </div>
-                    <span className="text-small px-3 py-1 rounded-full" style={{ background: "rgba(13, 117, 144, 0.15)", color: "var(--color-hushh-teal)" }}>
-                      {item.time}
-                    </span>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Data Categories Section */}
-          <section id="data" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-2">Data Categories</h2>
-              <p className="text-caption mb-6">Types of personal data your agent can access with consent</p>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                {dataCategories.map((cat) => (
-                  <div 
-                    key={cat.name}
-                    className="data-card flex items-center gap-4"
+                  <div
+                    key={item.text}
+                    className="flex items-center gap-3 text-sm md:text-base"
                   >
-                    <div 
-                      className="data-card-icon"
-                      style={{ background: `${cat.color}15` }}
-                    >
-                      {cat.icon}
+                    <div className="h-8 w-8 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0">
+                      <item.icon className="h-4 w-4 text-green-600" />
                     </div>
-                    <div>
-                      <h4 className="font-medium text-primary">{cat.name}</h4>
-                      <p className="text-small">{cat.desc}</p>
-                    </div>
+                    <span>{item.text}</span>
                   </div>
                 ))}
               </div>
-
-              <div className="mt-6 text-center">
-                <Link href="/consent" className="text-caption hover:underline" style={{ color: "var(--color-accent-blue)" }}>
-                  Manage your permissions →
-                </Link>
-              </div>
             </div>
-          </section>
-
-          {/* Agent Modes Section */}
-          <section id="agents" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-2">Agent Modes</h2>
-              <p className="text-caption mb-6">Switch between specialized modes for different tasks</p>
-
-              <div className="space-y-3">
-                {agentModes.map((mode) => (
-                  <Card key={mode.id} variant="none" effect="glass" className="flex items-center gap-4">
-                    <div className={`agent-avatar ${mode.id}`} style={{ width: 48, height: 48 }}>
-                      {mode.icon}
-                    </div>
-                    <div className="flex-1">
-                      <CardTitle className="text-sm">{mode.name}</CardTitle>
-                      <CardDescription>{mode.desc}</CardDescription>
-                    </div>
-                    <code className="text-xs px-3 py-1 rounded-lg" style={{ background: "rgba(0, 113, 227, 0.1)", color: "var(--color-hushh-blue)" }}>
-                      {mode.endpoint}
-                    </code>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Endpoints Section */}
-          <section id="endpoints" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-2">API Endpoints</h2>
-              <p className="text-caption mb-6">Core endpoints for interacting with the agent</p>
-
-              <div className="space-y-3">
-                {[
-                  { method: "POST", path: "/api/chat", desc: "Send message to agent" },
-                  { method: "GET", path: "/api/chat", desc: "Health check" },
-                  { method: "POST", path: "/api/consent/request", desc: "Request data consent" },
-                  { method: "GET", path: "/api/consent/status", desc: "Check consent status" },
-                ].map((ep) => (
-                  <Card key={`${ep.method}-${ep.path}`} variant="none" effect="glass" className="flex items-center gap-4">
-                    <span 
-                      className="text-xs font-mono font-bold px-2 py-1 rounded"
-                      style={{ 
-                        background: ep.method === "POST" ? "rgba(48, 209, 88, 0.15)" : "rgba(0, 122, 255, 0.15)",
-                        color: ep.method === "POST" ? "var(--color-success)" : "var(--color-info)"
-                      }}
-                    >
-                      {ep.method}
-                    </span>
-                    <code className="font-mono text-sm text-primary">{ep.path}</code>
-                    <span className="text-caption flex-1 text-right">{ep.desc}</span>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          {/* Examples Section */}
-          <section id="examples" className="mb-20">
-            <div className="animate-fade-in-up">
-              <h2 className="text-title mb-2">Code Examples</h2>
-              <p className="text-caption mb-6">Common request patterns</p>
-
-              <Card variant="none" effect="glass" className="mb-4">
-                <p className="text-small mb-2" style={{ color: "var(--color-text-tertiary)" }}># Send a message</p>
-                <pre className="text-sm overflow-x-auto" style={{ color: "var(--color-text-primary)" }}>
-{`curl -X POST /api/chat \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "message": "Check my spending",
-    "mode": "curator",
-    "sessionId": "user-123"
-  }'`}
-                </pre>
-              </Card>
-
-              <Card variant="none" effect="glass">
-                <p className="text-small mb-2" style={{ color: "var(--color-text-tertiary)" }}># Response</p>
-                <pre className="text-sm overflow-x-auto" style={{ color: "var(--color-text-primary)" }}>
-{`{
-  "response": "Based on your data...",
-  "mode": "curator",
-  "dataUsed": ["Financial"],
-  "sessionId": "user-123"
-}`}
-                </pre>
-              </Card>
-            </div>
-          </section>
-
-          {/* CTA */}
-          <section className="mb-12">
-            <Card variant="none" effect="glass" className="text-center py-12">
-              <div className="agent-avatar mx-auto mb-4" style={{ width: 64, height: 64 }}>
-                <span className="text-3xl">🤫</span>
-              </div>
-              <h3 className="text-title mb-2">Ready to Begin?</h3>
-              <p className="text-caption mb-6">Your privacy-first AI agent is waiting</p>
-              <Link href="/jarvis">
-                <Button variant="gradient" effect="glass" showRipple size="lg">
-                  <ChatCircleIcon className="mr-2 h-5 w-5" weight="regular" />
-                  Launch Agent
-                </Button>
-              </Link>
-            </Card>
-          </section>
+          </Card>
         </div>
+      </section>
 
-        {/* Footer */}
-        <footer className="border-t px-8 py-6" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-          <div className="max-w-4xl mx-auto flex items-center justify-between text-small">
-            <span>🤫 Hushh Agent Platform</span>
-            <span>Powered by Google ADK</span>
+      {/* Active Agents */}
+      <section className="px-4 py-16 max-w-5xl mx-auto">
+        <h2 className="text-2xl md:text-3xl font-bold text-center mb-4">
+          Your Personal Agents
+        </h2>
+        <p className="text-muted-foreground text-center mb-12 max-w-xl mx-auto">
+          Specialized AI agents that work within your consent boundaries.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {[
+            {
+              emoji: "🍽️",
+              name: "Food & Dining",
+              desc: "Dietary preferences, cuisines, and budget tracking",
+              status: "Active",
+            },
+            {
+              emoji: "💼",
+              name: "Professional Profile",
+              desc: "Skills, experience, and career goals",
+              status: "Active",
+            },
+            {
+              emoji: "🛍️",
+              name: "Shopping",
+              desc: "Purchase preferences and style",
+              status: "Coming Soon",
+            },
+            {
+              emoji: "✈️",
+              name: "Travel",
+              desc: "Trip preferences and destinations",
+              status: "Coming Soon",
+            },
+          ].map((agent) => (
+            <Card
+              key={agent.name}
+              variant="none"
+              effect="glass"
+              className="p-5 flex items-start gap-4"
+            >
+              <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center text-2xl shrink-0">
+                {agent.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold truncate">{agent.name}</h3>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${
+                      agent.status === "Active"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                    }`}
+                  >
+                    {agent.status}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{agent.desc}</p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="px-4 py-16 max-w-3xl mx-auto text-center">
+        <Card variant="none" effect="glass" className="p-8 md:p-12">
+          <span className="text-5xl mb-4 block">🔐</span>
+          <h2 className="text-2xl md:text-3xl font-bold mb-4">
+            Ready to Take Control?
+          </h2>
+          <p className="text-muted-foreground mb-8">
+            Your privacy-first AI agents are waiting. Start building your
+            encrypted vault today.
+          </p>
+          <Link href="/login">
+            <Button variant="gradient" effect="glass" size="lg" showRipple>
+              Create Your Vault
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </Card>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t px-4 py-8">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🤫</span>
+            <span>Hushh - Personal Data Agents</span>
           </div>
-        </footer>
-      </div>
+          <div className="flex gap-6">
+            <Link
+              href="/docs/developer-api"
+              className="hover:text-foreground transition-colors"
+            >
+              Developer API
+            </Link>
+            <a
+              href="https://github.com/hushh"
+              className="hover:text-foreground transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

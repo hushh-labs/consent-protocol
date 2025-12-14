@@ -1,175 +1,323 @@
 # Hushh System Architecture
 
-## 1. Overview
+> Technical deep-dive into the consent-first Personal Data Agent system.
 
-Hushh is a **Consent-First Personal Data Agent System** designed to give users control over their digital context.
+---
 
-> **Core Principles**: Consent First, Scoped Access, Data is Vaulted, Server Never Sees Key, Auditability
+## 🎯 Overview
+
+Hushh is a **Consent-First Personal Data Agent System** that gives users complete control over their digital context through cryptographic consent primitives.
+
+### Design Philosophy
+
+```
+"Agents should serve the person — and only when asked to."
+```
 
 ### The Stack
 
-- **Frontend:** Next.js 15 (React) - User Interface for managing Agents and Consent
-- **Protocol:** HushhMCP (Python) - Cryptographic backbone for Permissions and Agent Logic
-- **Backend:** FastAPI (Python) - Exposes HushhMCP agents via REST/A2A
-- **Storage:** PostgreSQL (Cloud SQL) - Encrypted vault for user data
+| Layer        | Technology                  | Purpose                    |
+| ------------ | --------------------------- | -------------------------- |
+| **Frontend** | Next.js 15, React, Tailwind | User interface             |
+| **Protocol** | HushhMCP (Python)           | Consent tokens, TrustLinks |
+| **API**      | FastAPI                     | Agent chat endpoints       |
+| **Storage**  | PostgreSQL + AES-256-GCM    | Encrypted vault            |
+| **Auth**     | Firebase + PBKDF2           | Identity + Key derivation  |
 
 ---
 
-## 2. Core Concepts (HushhMCP)
-
-### Operons
-
-Atomic units of logic (pure, stateless, testable functions). Think of them as the "Genes" of an Agent.
-
-### Agents
-
-Modular orchestrators that act on behalf of the user:
-
-- **Orchestrator** - Routes user intent to domain agents
-- **Food & Dining** - Manages dietary preferences, budgets
-- **Professional** - Manages career/resume data
-
-### Consent Tokens
-
-Cryptographic proofs (`HCT:...`) that authorize an Agent to perform an action for a specific scope.
-
-- **Stateless:** Validated via HMAC signature
-- **Scoped:** Access is limited (e.g., `vault.read.food`)
-- **Short-lived:** Tokens expire to limit risk
-
-### TrustLinks
-
-Signed relationships allowing Agent-to-Agent (A2A) communication and delegation.
-
----
-
-## 3. Authentication Flow (Passphrase + Recovery)
+## 🏗️ System Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                  BANKING-LEVEL SECURITY                          │
-│                                                                  │
-│  New User:                                                       │
-│    1. Google OAuth (Identity)                                    │
-│    2. Create Passphrase (Vault Encryption)                       │
-│    3. Receive Recovery Key (HRK-XXXX-XXXX-XXXX-XXXX)            │
-│    4. Redirect to Dashboard                                      │
-│                                                                  │
-│  Return User:                                                    │
-│    1. Google OAuth (Identity)                                    │
-│    2. Enter Passphrase (Unlock Vault)                           │
-│    3. Redirect to Dashboard                                      │
-│                                                                  │
-│  Fallback (forgot passphrase):                                   │
-│    1. Enter Recovery Key                                         │
-│    2. Vault decrypted from recovery-encrypted copy              │
-│                                                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                KEY DERIVATION                              │  │
-│  │                                                            │  │
-│  │  Passphrase → PBKDF2 (100k iterations) → AES-256 Key      │  │
-│  │                        ↓                                   │  │
-│  │              Vault Key (in sessionStorage only)            │  │
-│  │                                                            │  │
-│  │  Recovery Key → PBKDF2 → Separate AES-256 Key             │  │
-│  │                        ↓                                   │  │
-│  │              Backup encrypted vault key                    │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  Zero-Knowledge: Server NEVER sees vault key or passphrase      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 4. Agentic Data Collection Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        USER CHAT UI                              │
-│                    (Next.js localhost:3000)                      │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ POST /api/chat
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      ORCHESTRATOR (10000)                        │
-│                                                                  │
-│  1. Receive user message                                         │
-│  2. Classify intent → identify domain                            │
-│  3. Create TrustLink for delegation                              │
-│  4. Route to domain agent                                        │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ A2A Delegation + TrustLink
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    DOMAIN AGENT (e.g., 10001)                    │
-│                                                                  │
-│  1. Receive delegated task + TrustLink                           │
-│  2. Collect data via conversation                                │
-│  3. Request consent token from user                              │
-│  4. Validate token with hushh_mcp                                │
-│  5. Encrypt data with vault key                                  │
-│  6. Store to PostgreSQL vault                                    │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    POSTGRESQL VAULT (Cloud SQL)                  │
-│                                                                  │
-│  Core Tables:                                                    │
-│  - vault_keys: Passphrase + Recovery authentication             │
-│    · encrypted_vault_key: Passphrase-encrypted vault key        │
-│    · recovery_encrypted_vault_key: Recovery-encrypted copy      │
-│                                                                  │
-│  Domain Tables (Bible-Compliant Scoped Access):                  │
-│  - vault_food: 🍽️ VAULT_WRITE_FOOD scope required               │
-│  - vault_professional: 💼 VAULT_WRITE_PROFESSIONAL required      │
-│                                                                  │
-│  Audit Tables:                                                   │
-│  - consent_audit: Consent token audit trail                      │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              USER LAYER                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    Next.js Frontend (localhost:3000)                 │   │
+│   │                                                                      │   │
+│   │   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │   │
+│   │   │   Login +    │  │   AgentChat  │  │   Dashboard              │  │   │
+│   │   │   Passphrase │  │   Component  │  │   (Decrypted View)       │  │   │
+│   │   └──────────────┘  └──────────────┘  └──────────────────────────┘  │   │
+│   │            │                │                        │               │   │
+│   │            ▼                ▼                        ▼               │   │
+│   │   ┌──────────────────────────────────────────────────────────────┐  │   │
+│   │   │                 lib/vault/encrypt.ts                          │  │   │
+│   │   │         (Client-side AES-256-GCM encryption)                  │  │   │
+│   │   └──────────────────────────────────────────────────────────────┘  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+└────────────────────────────────────┼─────────────────────────────────────────┘
+                                     │ POST /api/chat
+                                     │ (userId + message + sessionState)
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            PROTOCOL LAYER                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │            FastAPI Server (server.py) - localhost:8000               │   │
+│   │                                                                      │   │
+│   │   ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐   │   │
+│   │   │  /api/agents/  │  │  /api/agents/  │  │  /api/v1/          │   │   │
+│   │   │  food-dining/  │  │  professional- │  │  (Developer API)   │   │   │
+│   │   │  chat          │  │  profile/chat  │  │  request-consent   │   │   │
+│   │   └───────┬────────┘  └───────┬────────┘  └─────────┬──────────┘   │   │
+│   │           │                   │                      │              │   │
+│   │           ▼                   ▼                      ▼              │   │
+│   │   ┌─────────────────────────────────────────────────────────────┐  │   │
+│   │   │                      HushhMCP Core                           │  │   │
+│   │   │                                                              │  │   │
+│   │   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │  │   │
+│   │   │  │   consent/  │  │   trust/    │  │   vault/            │  │  │   │
+│   │   │  │   token.py  │  │   link.py   │  │   encrypt.py        │  │  │   │
+│   │   │  │             │  │             │  │                     │  │  │   │
+│   │   │  │ issue_token │  │ create_     │  │ encrypt_data        │  │  │   │
+│   │   │  │ validate_   │  │ trust_link  │  │ decrypt_data        │  │  │   │
+│   │   │  │ token       │  │ verify_     │  │                     │  │  │   │
+│   │   │  │ revoke_     │  │ trust_link  │  │                     │  │  │   │
+│   │   │  │ token       │  │             │  │                     │  │  │   │
+│   │   │  └─────────────┘  └─────────────┘  └─────────────────────┘  │  │   │
+│   │   └─────────────────────────────────────────────────────────────┘  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+└────────────────────────────────────┼─────────────────────────────────────────┘
+                                     │ Encrypted writes only
+                                     │ (Validated by consent token)
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            STORAGE LAYER                                      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │               PostgreSQL (Cloud SQL) - Encrypted Vault               │   │
+│   │                                                                      │   │
+│   │   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │   │
+│   │   │   vault_keys    │  │   vault_food    │  │   vault_professional│ │   │
+│   │   │                 │  │                 │  │                     │ │   │
+│   │   │ user_id         │  │ user_id         │  │ user_id             │ │   │
+│   │   │ encrypted_      │  │ dietary_        │  │ professional_       │ │   │
+│   │   │ vault_key       │  │ restrictions    │  │ title               │ │   │
+│   │   │ recovery_       │  │ (encrypted)     │  │ (encrypted)         │ │   │
+│   │   │ encrypted_      │  │ cuisine_prefs   │  │ skills              │ │   │
+│   │   │ vault_key       │  │ (encrypted)     │  │ (encrypted)         │ │   │
+│   │   │                 │  │ monthly_budget  │  │ experience_level    │ │   │
+│   │   │                 │  │ (encrypted)     │  │ (encrypted)         │ │   │
+│   │   └─────────────────┘  └─────────────────┘  └─────────────────────┘ │   │
+│   │                                                                      │   │
+│   │   ⚠️ Server only stores ciphertext - cannot decrypt without key     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. Agent Port Mapping
+## 🔐 Consent Protocol Flow
 
-| Port  | Agent                | Description               |
-| ----- | -------------------- | ------------------------- |
-| 10000 | Orchestrator         | Intent detection, routing |
-| 10001 | Food & Dining        | Dietary/cuisine/budget    |
-| 10002 | Professional Profile | Career data management    |
-| 10003 | Identity             | Identity verification     |
-| 10004 | Shopping             | Purchase management       |
-| 8000  | FastAPI Dev Server   | REST API                  |
-
----
-
-## 6. Security Principles Compliance
-
-| Principle                 | Implementation                                     |
-| ------------------------- | -------------------------------------------------- |
-| **Consent First**         | `issue_token()` before any vault write             |
-| **Scoped Access**         | Domain-specific scopes (VAULT_WRITE_FOOD, etc.)    |
-| **Data is Vaulted**       | AES-256-GCM encrypted, server only sees ciphertext |
-| **Server Never Sees Key** | Passphrase → PBKDF2 → Key (client-side only)       |
-| **Auditability**          | consent_audit table logs all token operations      |
-
----
-
-## 7. Communication Flow
+### Data Collection Flow
 
 ```
-User → Next.js UI → /api/chat → Orchestrator → TrustLink → Domain Agent → Vault
+┌──────────┐   ┌─────────────┐   ┌───────────────┐   ┌────────────────┐   ┌───────────┐
+│   User   │   │   Next.js   │   │  Orchestrator │   │  Domain Agent  │   │   Vault   │
+│          │   │  /api/chat  │   │    (10000)    │   │  (10001/10002) │   │           │
+└────┬─────┘   └──────┬──────┘   └───────┬───────┘   └───────┬────────┘   └─────┬─────┘
+     │                │                   │                   │                  │
+     │ "Set up food"  │                   │                   │                  │
+     │───────────────►│                   │                   │                  │
+     │                │    POST /agent/   │                   │                  │
+     │                │────────chat───────►                   │                  │
+     │                │                   │                   │                  │
+     │                │                   │ Classify intent   │                  │
+     │                │                   │ Create TrustLink  │                  │
+     │                │                   │──────────────────►│                  │
+     │                │                   │                   │                  │
+     │                │◄──────Delegation info + TrustLink─────│                  │
+     │                │                   │                   │                  │
+     │◄───Agent starts conversation───────│                   │                  │
+     │                │                   │                   │                  │
+     │ Multi-turn conversation            │                   │                  │
+     │◄──────────────►│                   │                   │                  │
+     │                │                   │                   │ (collecting data)│
+     │                │                   │                   │                  │
+     │ "Save"         │                   │                   │                  │
+     │───────────────►│                   │                   │                  │
+     │                │───────────────────┼───────────────────►                  │
+     │                │                   │                   │                  │
+     │                │                   │                   │ issue_token()    │
+     │                │                   │                   │──────────────────►
+     │                │                   │                   │                  │
+     │◄────────consent_token + collected_data─────────────────│                  │
+     │                │                   │                   │                  │
+     │ Encrypt locally│                   │                   │                  │
+     │ (vault key)    │                   │                   │                  │
+     │                │                   │                   │                  │
+     │ POST /api/vault/store-preferences──►                   │                  │
+     │ (userId, encrypted_data, consent_token)                │                  │
+     │                │                   │                   │                  │
+     │                │ validate_token()  │                   │                  │
+     │                │───────────────────┼───────────────────┼─────────────────►│
+     │                │                   │                   │                  │
+     │                │                   │                   │ if valid: INSERT │
+     │                │                   │                   │                  │
+     │◄───────────────"Saved successfully"─────────────────────────────────────┘
+     │
 ```
 
 ---
 
-## 8. Directory Structure
+## 🔑 Key Derivation
 
-- `/hushh-webapp` → Frontend application (Next.js)
-- `/consent-protocol` → Core protocol logic (Python) **← Active code**
-- `/consent-protocol/hushh_mcp/agents/` → Agent implementations
-- `/consent-protocol/hushh_mcp/operons/` → Reusable logic units
-- `/hushh-adk-agents` → Reference implementations (not active)
-- `/docs` → System documentation
+### Passphrase to Vault Key
+
+```
+User Passphrase
+      │
+      ▼
+  PBKDF2
+  ├── Iterations: 100,000
+  ├── Salt: User-specific
+  └── Algorithm: SHA-256
+      │
+      ▼
+AES-256 Vault Key
+      │
+      ├── Stored in sessionStorage (browser only)
+      └── NEVER sent to server
+```
+
+### Recovery Key Flow
+
+```
+Random 256-bit Recovery Key
+      │
+      ├── Display to user: HRK-XXXX-XXXX-XXXX-XXXX
+      │
+      ▼
+  PBKDF2 (100k iterations)
+      │
+      ▼
+AES-256 Recovery Key
+      │
+      ▼
+Encrypt(Vault Key, Recovery Key) → recovery_encrypted_vault_key
+      │
+      └── Stored in database (allows key recovery)
+```
+
+---
+
+## 🤖 Agent Port Mapping
+
+| Port      | Agent         | Scope                                                 |
+| --------- | ------------- | ----------------------------------------------------- |
+| **10000** | Orchestrator  | Intent detection, routing                             |
+| **10001** | Food & Dining | `VAULT_WRITE_FOOD`, `VAULT_READ_FOOD`                 |
+| **10002** | Professional  | `VAULT_WRITE_PROFESSIONAL`, `VAULT_READ_PROFESSIONAL` |
+| 10003     | Identity      | `AGENT_IDENTITY_VERIFY`                               |
+| 10004     | Shopping      | `AGENT_SHOPPING_PURCHASE`                             |
+| **8000**  | FastAPI Dev   | All agent endpoints                                   |
+
+---
+
+## 📦 HushhMCP Core Modules
+
+### consent/token.py
+
+```python
+def issue_token(user_id, agent_id, scope) -> HushhConsentToken:
+    """Issue a signed consent token."""
+    raw = f"{user_id}|{agent_id}|{scope}|{issued_at}|{expires_at}"
+    signature = hmac.new(SECRET_KEY, raw, sha256).hexdigest()
+    return HushhConsentToken(token=f"HCT:{base64(raw)}.{signature}")
+
+def validate_token(token_str, expected_scope) -> Tuple[bool, str, HushhConsentToken]:
+    """Validate signature, scope, and expiration."""
+    if token in revoked_tokens: return False, "Revoked", None
+    if not hmac.compare_digest(sig, expected): return False, "Invalid", None
+    if scope != expected_scope: return False, "Scope mismatch", None
+    if expired: return False, "Expired", None
+    return True, None, token
+
+def revoke_token(token_str) -> None:
+    """Add token to revocation registry."""
+    _revoked_tokens.add(token_str)
+```
+
+### trust/link.py
+
+```python
+def create_trust_link(source_agent, target_agent, scope, duration) -> TrustLink:
+    """Create A2A delegation link."""
+    pass
+
+def verify_trust_link(link) -> bool:
+    """Verify TrustLink signature and validity."""
+    pass
+```
+
+---
+
+## 🔒 Security Compliance
+
+| Principle          | Implementation                                        |
+| ------------------ | ----------------------------------------------------- |
+| **Consent First**  | `issue_token()` before any vault write                |
+| **Scoped Access**  | Domain-specific scopes enforced by `validate_token()` |
+| **Data Vaulted**   | AES-256-GCM encryption, server only sees ciphertext   |
+| **Zero-Knowledge** | Passphrase → PBKDF2 → Key (client-only)               |
+| **Auditability**   | `consent_audit` table logs all token operations       |
+
+---
+
+## 📂 Directory Structure
+
+```
+consent-protocol/
+├── server.py              # FastAPI server
+└── hushh_mcp/
+    ├── agents/
+    │   ├── orchestrator/  # Intent routing
+    │   ├── food_dining/   # 786 lines
+    │   │   ├── agent.py   # HushhFoodDiningAgent
+    │   │   └── manifest.py
+    │   └── professional_profile/  # 624 lines
+    │       ├── agent.py   # ProfessionalProfileAgent
+    │       └── manifest.py
+    ├── consent/
+    │   └── token.py       # issue, validate, revoke
+    ├── trust/
+    │   └── link.py        # TrustLinks for A2A
+    ├── vault/
+    │   └── encrypt.py     # Encryption primitives
+    ├── operons/
+    │   └── food/          # Reusable food logic
+    ├── constants.py       # ConsentScope, AGENT_PORTS
+    ├── config.py          # Environment loading
+    └── types.py           # HushhConsentToken, etc.
+```
+
+---
+
+## 🧪 API Endpoints
+
+### Agent Chat
+
+```bash
+POST /api/agents/food-dining/chat
+POST /api/agents/professional-profile/chat
+```
+
+### Developer API (v1)
+
+```bash
+POST /api/v1/request-consent   # Request user consent
+POST /api/v1/food-data         # Get food data (with token)
+POST /api/v1/professional-data # Get professional data (with token)
+GET  /api/v1/list-scopes       # List available scopes
+```
+
+---
+
+_Version: 2.0 | Updated: 2024-12-14_

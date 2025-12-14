@@ -1,4 +1,3 @@
-
 // components/navbar.tsx
 // Bottom Pill Navigation for Hushh PDA
 
@@ -10,7 +9,14 @@ import Link from "next/link";
 import { Card } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Home, FileText, LayoutDashboard, LogIn, LogOut } from "lucide-react";
+import {
+  Home,
+  FileText,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Code,
+} from "lucide-react";
 
 interface NavItem {
   label: string;
@@ -22,32 +28,43 @@ interface NavItem {
 const navigationItems: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
   { label: "Docs", href: "/docs", icon: FileText },
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, requiresAuth: true },
+  { label: "API", href: "/api-docs", icon: Code },
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    requiresAuth: true,
+  },
 ];
 
-const NavButton = ({ 
-  item, 
-  isActive, 
-  onClick 
-}: { 
-  item: NavItem; 
+const NavButton = ({
+  item,
+  isActive,
+  onClick,
+}: {
+  item: NavItem;
   isActive: boolean;
   onClick?: () => void;
 }) => {
   const Icon = item.icon;
-  
+
   const content = (
     <div
       className={cn(
-        "flex flex-col items-center justify-center px-4 py-2 rounded-xl transition-all cursor-pointer",
+        "flex flex-col items-center justify-center px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer",
         isActive
-          ? "bg-gradient-to-br from-blue-500 to-purple-600 dark:from-gray-300 dark:to-gray-500 text-white dark:text-black shadow-lg"
+          ? "bg-linear-to-br from-blue-500 to-purple-600 dark:from-gray-300 dark:to-gray-500 text-white dark:text-black shadow-lg"
           : "text-muted-foreground hover:text-foreground hover:bg-accent"
       )}
       onClick={onClick}
     >
-      <Icon className={cn("h-5 w-5 mb-1", isActive && "dark:text-black")} />
-      <span className="text-xs font-medium">{item.label}</span>
+      <Icon
+        className={cn(
+          "h-4 w-4 sm:h-5 sm:w-5 mb-0.5",
+          isActive && "dark:text-black"
+        )}
+      />
+      <span className="text-[10px] sm:text-xs font-medium">{item.label}</span>
     </div>
   );
 
@@ -67,28 +84,28 @@ export const Navbar = () => {
 
   React.useEffect(() => {
     const checkAuth = () => {
-      const userId = sessionStorage.getItem('user_id');
+      const userId = sessionStorage.getItem("user_id");
       setIsLoggedIn(!!userId);
     };
-    
+
     // Check on mount
     checkAuth();
-    
+
     // Check periodically (in case sessionStorage changes)
     const interval = setInterval(checkAuth, 1000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
   const handleLogout = () => {
     sessionStorage.clear();
     setIsLoggedIn(false);
-    router.push('/logout');
+    router.push("/logout");
   };
 
   // Filter navigation items based on auth status
   const filteredItems = navigationItems.filter(
-    item => !item.requiresAuth || isLoggedIn
+    (item) => !item.requiresAuth || isLoggedIn
   );
 
   return (
@@ -101,13 +118,10 @@ export const Navbar = () => {
         <div className="flex items-center gap-1">
           {/* Navigation Items */}
           {filteredItems.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+            const isActive =
+              pathname === item.href || pathname?.startsWith(item.href + "/");
             return (
-              <NavButton
-                key={item.href}
-                item={item}
-                isActive={isActive}
-              />
+              <NavButton key={item.href} item={item} isActive={isActive} />
             );
           })}
 

@@ -1,0 +1,87 @@
+# Cloud Build configuration for Hushh WebApp
+# Deploys Next.js frontend to Cloud Run
+
+substitutions:
+  _SERVICE_NAME: hushh-webapp
+  _REGION: us-central1
+  _MIN_INSTANCES: "1"
+  _MAX_INSTANCES: "10"
+  _MEMORY: "1Gi"
+  _CPU: "1"
+
+steps:
+  # Build the Docker image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_API_KEY=${_FIREBASE_API_KEY}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_FIREBASE_AUTH_DOMAIN}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${_FIREBASE_STORAGE_BUCKET}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_FIREBASE_MESSAGING_SENDER_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_APP_ID=${_FIREBASE_APP_ID}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_BACKEND_URL=${_BACKEND_URL}"
+      - "--build-arg"
+      - "DATABASE_URL=${_DATABASE_URL}"
+      - "-f"
+      - "Dockerfile"
+      - "."
+    dir: "hushh-webapp"
+
+  # Push the image to Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest"
+
+  # Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA"
+      - "--region"
+      - "${_REGION}"
+      - "--platform"
+      - "managed"
+      - "--min-instances"
+      - "${_MIN_INSTANCES}"
+      - "--max-instances"
+      - "${_MAX_INSTANCES}"
+      - "--memory"
+      - "${_MEMORY}"
+      - "--cpu"
+      - "${_CPU}"
+      - "--allow-unauthenticated"
+      - "--set-env-vars"
+      - "NODE_ENV=production"
+      - "--set-secrets"
+      - "DATABASE_URL=DATABASE_URL:latest"
+
+images:
+  - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: "1800s"

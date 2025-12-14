@@ -1,13 +1,20 @@
-'use client';
+"use client";
 
 /**
  * Home Page - Hushh PDA
  * Compact landing page with quick access
  */
 
-import Link from 'next/link';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/morphy-ux/morphy';
-import { Shield, Lock, Key, Sparkles, ArrowRight } from 'lucide-react';
+import Link from "next/link";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/lib/morphy-ux/morphy";
+import { Shield, Lock, Key, Sparkles, ArrowRight } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -33,13 +40,19 @@ export default function HomePage() {
           <CardContent className="pt-6 space-y-4">
             <div className="flex justify-center gap-4">
               <Link href="/login">
-                <Button variant="gradient" effect="glass" size="lg">
+                <Button variant="gradient" effect="glass" size="lg" showRipple>
                   Get Started
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
               <Link href="/docs">
-                <Button variant="link" size="lg">
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="lg"
+                  showRipple={false}
+                  className="border"
+                >
                   Learn More
                 </Button>
               </Link>
