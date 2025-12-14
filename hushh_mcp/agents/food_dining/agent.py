@@ -739,7 +739,7 @@ class HushhFoodDiningAgent:
             # Mark as complete - include token for vault operations
             return {
                 "message": (
-                    "🎉 **TrustLink Established! Preferences saved successfully!**\n\n"
+                    "🎉 **Preferences saved successfully!**\n\n"
                     "I'll now use these to give you personalized restaurant "
                     "recommendations that match your dietary needs, favorite "
                     "cuisines, and budget.\n\n"
