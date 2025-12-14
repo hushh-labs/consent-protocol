@@ -248,30 +248,6 @@ export default function DocsPage() {
           </Link>
         </Card>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t px-4 py-8">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🤫</span>
-            <span>Hushh - Personal Data Agents</span>
-          </div>
-          <div className="flex gap-6">
-            <Link
-              href="/docs/developer-api"
-              className="hover:text-foreground transition-colors"
-            >
-              Developer API
-            </Link>
-            <a
-              href="https://github.com/hushh"
-              className="hover:text-foreground transition-colors"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
-      </footer>
     </main>
   );
 }

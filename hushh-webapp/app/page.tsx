@@ -18,7 +18,7 @@ import { Shield, Lock, Key, Sparkles, ArrowRight } from "lucide-react";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <main className="flex-1 min-h-full flex items-center justify-center p-4 bg-background">
       <div className="w-full max-w-2xl space-y-6">
         {/* Hero Section */}
         <div className="text-center space-y-4">

@@ -27,8 +27,12 @@ const PORT_MAP: Record<string, number> = {
   agent_travel: 10007,
 };
 
-// Food agent uses different endpoint structure
-const FOOD_AGENT_URL = process.env.FOOD_AGENT_URL || "http://127.0.0.1:8000";
+// Backend URL - use server-side env var or fallback to client-side or localhost
+const BACKEND_URL =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://127.0.0.1:8000";
+console.log(`[API] Using BACKEND_URL: ${BACKEND_URL}`);
 
 interface ChatRequest {
   message: string;
@@ -227,14 +231,11 @@ async function callFoodAgentChat(
   sessionState: Record<string, unknown> | null
 ) {
   try {
-    const response = await fetch(
-      `${FOOD_AGENT_URL}/api/agents/food-dining/chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, message, sessionState }),
-      }
-    );
+    const response = await fetch(`${BACKEND_URL}/api/agents/food-dining/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, message, sessionState }),
+    });
 
     if (response.ok) {
       return await response.json();
@@ -261,7 +262,7 @@ async function callProfessionalAgentChat(
 ) {
   try {
     const response = await fetch(
-      `${FOOD_AGENT_URL}/api/agents/professional-profile/chat`,
+      `${BACKEND_URL}/api/agents/professional-profile/chat`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

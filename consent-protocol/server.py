@@ -26,10 +26,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - Allow Next.js frontend
+# CORS - Allow Next.js frontend (local and deployed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://hushh-webapp-1006304528804.us-central1.run.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
