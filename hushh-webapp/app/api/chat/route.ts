@@ -70,7 +70,32 @@ export async function POST(req: NextRequest) {
           ui_type: foodResponse.ui_type || null,
           options: foodResponse.options || null,
           allow_custom: foodResponse.allow_custom,
-          allow_none: foodResponse.allow_none
+          allow_none: foodResponse.allow_none,
+          // CONSENT PROTOCOL: Pass through consent token
+          consent_token: foodResponse.consent_token,
+          consent_issued_at: foodResponse.consent_issued_at,
+          consent_expires_at: foodResponse.consent_expires_at
+        });
+      }
+      
+      // For professional profile agent
+      if (target_agent === 'agent_professional_profile') {
+        const profResponse = await callProfessionalAgentChat(message, userId, null);
+        return NextResponse.json({
+          content: profResponse.response,
+          delegation: orchestratorResponse.delegation,
+          sessionState: profResponse.sessionState,
+          agentId: 'agent_professional_profile',
+          needsConsent: profResponse.needsConsent || false,
+          isComplete: profResponse.isComplete || false,
+          ui_type: profResponse.ui_type || null,
+          options: profResponse.options || null,
+          allow_custom: profResponse.allow_custom,
+          allow_none: profResponse.allow_none,
+          // CONSENT PROTOCOL: Pass through consent token
+          consent_token: profResponse.consent_token,
+          consent_issued_at: profResponse.consent_issued_at,
+          consent_expires_at: profResponse.consent_expires_at
         });
       }
       
@@ -190,6 +215,36 @@ async function callFoodAgentChat(
 }
 
 /**
+ * Call Professional Profile Agent Chat endpoint (conversational flow)
+ */
+async function callProfessionalAgentChat(
+  message: string, 
+  userId: string, 
+  sessionState: Record<string, unknown> | null
+) {
+  try {
+    const response = await fetch(`${FOOD_AGENT_URL}/api/agents/professional-profile/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, message, sessionState })
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (e) {
+    console.log("[API] Professional agent not running");
+  }
+  
+  return {
+    response: "The Professional Profile Agent is being set up. Please try again in a moment.",
+    sessionState: { step: "error" },
+    needsConsent: false,
+    isComplete: false
+  };
+}
+
+/**
  * Handle domain agent chat continuation
  */
 async function handleDomainAgentChat(
@@ -209,11 +264,35 @@ async function handleDomainAgentChat(
       ui_type: response.ui_type || null,
       options: response.options || null,
       allow_custom: response.allow_custom,
-      allow_none: response.allow_none
+      allow_none: response.allow_none,
+      // CONSENT PROTOCOL: Pass through consent token
+      consent_token: response.consent_token,
+      consent_issued_at: response.consent_issued_at,
+      consent_expires_at: response.consent_expires_at
     });
   }
   
-  // Other domain agents - to be implemented
+  // Professional profile agent
+  if (agentId === 'agent_professional_profile') {
+    const response = await callProfessionalAgentChat(message, userId, sessionState);
+    return NextResponse.json({
+      content: response.response,
+      sessionState: response.sessionState,
+      agentId: 'agent_professional_profile',
+      needsConsent: response.needsConsent || false,
+      isComplete: response.isComplete || false,
+      ui_type: response.ui_type || null,
+      options: response.options || null,
+      allow_custom: response.allow_custom,
+      allow_none: response.allow_none,
+      // CONSENT PROTOCOL: Pass through consent token
+      consent_token: response.consent_token,
+      consent_issued_at: response.consent_issued_at,
+      consent_expires_at: response.consent_expires_at
+    });
+  }
+  
+  // Other domain agents - not yet implemented
   return NextResponse.json({
     content: "This agent is not yet available.",
     agentId

@@ -23,7 +23,7 @@ export default function LoginPage() {
   
   // Redirect if already logged in
   useEffect(() => {
-    const userId = sessionStorage.getItem('user_id');
+    const userId = localStorage.getItem('user_id') || sessionStorage.getItem('user_id');
     if (userId) {
       router.push('/dashboard');
     }
@@ -70,17 +70,22 @@ export default function LoginPage() {
       
       const user = result.user;
       
-      // Save ALL Firebase user data to sessionStorage
-      sessionStorage.setItem('user_id', `google:${user.uid}`);
-      sessionStorage.setItem('user_uid', user.uid);
-      sessionStorage.setItem('user_email', user.email || '');
-      sessionStorage.setItem('user_displayName', user.displayName || '');
-      sessionStorage.setItem('user_photo', user.photoURL || '');
-      sessionStorage.setItem('user_emailVerified', user.emailVerified.toString());
-      sessionStorage.setItem('user_phoneNumber', user.phoneNumber || '');
-      sessionStorage.setItem('user_creationTime', user.metadata.creationTime || '');
-      sessionStorage.setItem('user_lastSignInTime', user.metadata.lastSignInTime || '');
-      sessionStorage.setItem('user_providerData', JSON.stringify(user.providerData));
+      // Save ALL Firebase user data to BOTH localStorage and sessionStorage for cross-tab persistence
+      const saveSession = (key: string, value: string) => {
+        sessionStorage.setItem(key, value);
+        localStorage.setItem(key, value);
+      };
+      
+      saveSession('user_id', `google:${user.uid}`);
+      saveSession('user_uid', user.uid);
+      saveSession('user_email', user.email || '');
+      saveSession('user_displayName', user.displayName || '');
+      saveSession('user_photo', user.photoURL || '');
+      saveSession('user_emailVerified', user.emailVerified.toString());
+      saveSession('user_phoneNumber', user.phoneNumber || '');
+      saveSession('user_creationTime', user.metadata.creationTime || '');
+      saveSession('user_lastSignInTime', user.metadata.lastSignInTime || '');
+      saveSession('user_providerData', JSON.stringify(user.providerData));
       
       console.log('✅ OAuth successful, user data saved');
       
@@ -137,8 +142,9 @@ export default function LoginPage() {
           throw new Error('Failed to create vault');
         }
         
-        // Store vault key in session
+        // Store vault key in both session and local for cross-tab
         sessionStorage.setItem('vault_key', vaultSetup.vaultKeyHex);
+        localStorage.setItem('vault_key', vaultSetup.vaultKeyHex);
         
         // Show recovery key dialog
         setRecoveryKey(vaultSetup.backupKey);
@@ -164,8 +170,9 @@ export default function LoginPage() {
             authTag: vaultData.authTag
           });
           
-          // Store vault key in session
+          // Store vault key in both session and local for cross-tab
           sessionStorage.setItem('vault_key', vaultKey);
+          localStorage.setItem('vault_key', vaultKey);
           
           setShowPassphraseDialog(false);
           

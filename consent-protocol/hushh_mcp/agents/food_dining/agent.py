@@ -16,7 +16,7 @@ This agent demonstrates:
 from typing import List, Dict, Optional
 import json
 
-from hushh_mcp.consent.token import validate_token
+from hushh_mcp.consent.token import validate_token, issue_token
 from hushh_mcp.vault.encrypt import decrypt_data
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID, EncryptedPayload
@@ -351,7 +351,11 @@ class HushhFoodDiningAgent:
             "ui_type": response.get("ui_type"),
             "options": response.get("options"),
             "allow_custom": response.get("allow_custom"),
-            "allow_none": response.get("allow_none")
+            "allow_none": response.get("allow_none"),
+            # Consent token (issued when user confirms save)
+            "consent_token": response.get("consent_token"),
+            "consent_issued_at": response.get("consent_issued_at"),
+            "consent_expires_at": response.get("consent_expires_at")
         }
     
     def _process_conversation_step(
@@ -377,13 +381,161 @@ class HushhFoodDiningAgent:
         else:
             return self._handle_greeting(message, state)
     
+    def _parse_bulk_food_input(self, text: str, state: Dict) -> Dict[str, any]:
+        """
+        Smart parsing: Extract food preferences from any text.
+        Returns dict with found fields and list of missing fields.
+        """
+        import re
+        text_lower = text.lower()
+        collected = state.get("collected", {})
+        
+        # 1. Extract dietary restrictions
+        dietary_keywords = {
+            "vegetarian": ["vegetarian", "no meat"],
+            "vegan": ["vegan", "plant-based", "plant based"],
+            "gluten_free": ["gluten-free", "gluten free", "no gluten", "celiac"],
+            "dairy_free": ["dairy-free", "dairy free", "no dairy", "lactose"],
+            "nut_free": ["nut-free", "nut free", "no nuts", "nut allergy"],
+            "halal": ["halal"],
+            "kosher": ["kosher"],
+            "keto": ["keto", "low carb"],
+            "pescatarian": ["pescatarian", "fish only"],
+        }
+        if not collected.get("dietary_restrictions"):
+            found_dietary = []
+            for restriction, keywords in dietary_keywords.items():
+                for kw in keywords:
+                    if kw in text_lower:
+                        found_dietary.append(restriction)
+                        break
+            if found_dietary:
+                collected["dietary_restrictions"] = list(set(found_dietary))
+        
+        # 2. Extract cuisine preferences
+        known_cuisines = [
+            "italian", "japanese", "chinese", "indian", "mexican",
+            "thai", "korean", "vietnamese", "mediterranean", "greek",
+            "french", "american", "spanish", "middle eastern", "ethiopian"
+        ]
+        if not collected.get("cuisine_preferences"):
+            found_cuisines = []
+            for cuisine in known_cuisines:
+                if cuisine in text_lower:
+                    found_cuisines.append(cuisine)
+            if found_cuisines:
+                collected["cuisine_preferences"] = [c.title() for c in set(found_cuisines)]
+        
+        # 3. Extract budget
+        if not collected.get("monthly_budget"):
+            # Look for dollar amounts
+            budget_patterns = [
+                r'\$\s*(\d{2,4})\s*(?:/\s*(?:month|mo)|per month)?',
+                r'(\d{2,4})\s*(?:dollars|bucks)?\s*(?:/\s*(?:month|mo)|per month|monthly)'
+            ]
+            for pattern in budget_patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    budget = int(match.group(1))
+                    if 50 <= budget <= 5000:  # Reasonable range
+                        collected["monthly_budget"] = budget
+                    break
+        
+        state["collected"] = collected
+        
+        # Determine what's missing
+        missing = []
+        if not collected.get("dietary_restrictions") and "no restrictions" not in text_lower and "none" not in text_lower:
+            missing.append("dietary_restrictions")
+        if not collected.get("cuisine_preferences"):
+            missing.append("cuisine_preferences")
+        if not collected.get("monthly_budget"):
+            missing.append("monthly_budget")
+        
+        return {"collected": collected, "missing": missing, "state": state}
+    
     def _handle_greeting(self, message: str, state: Dict) -> Dict:
-        """Handle initial greeting and start collection."""
+        """Handle initial greeting and smart parse any provided text."""
+        # Try to extract data from provided message
+        if len(message) > 15:  # Substantial input
+            result = self._parse_bulk_food_input(message, state)
+            state = result["state"]
+            missing = result["missing"]
+            collected = result["collected"]
+            
+            # Check what was extracted
+            found_items = []
+            if collected.get("dietary_restrictions"):
+                found_items.append(f"🥗 Dietary: **{', '.join(collected['dietary_restrictions'])}**")
+            if collected.get("cuisine_preferences"):
+                found_items.append(f"🍽️ Cuisines: **{', '.join(collected['cuisine_preferences'])}**")
+            if collected.get("monthly_budget"):
+                found_items.append(f"💰 Budget: **${collected['monthly_budget']}/month**")
+            
+            if len(missing) == 0:
+                # All found! Go straight to confirmation
+                state["step"] = "confirm"
+                return {
+                    "message": (
+                        "🎉 Great! I was able to extract your preferences from your input:\n\n"
+                        + "\n".join(found_items) + "\n\n"
+                        "---\n\n"
+                        "Is this correct? I can save this to your encrypted vault."
+                    ),
+                    "state": state,
+                    "ui_type": "buttons",
+                    "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
+                    "needs_consent": True
+                }
+            
+            # Some items found, ask for missing
+            if found_items:
+                if "dietary_restrictions" in missing:
+                    state["step"] = "dietary"
+                    return {
+                        "message": (
+                            "👋 I found some info from your input:\n\n"
+                            + "\n".join(found_items) + "\n\n"
+                            "Do you have any **dietary restrictions**?"
+                        ),
+                        "state": state,
+                        "ui_type": "checkbox",
+                        "options": ["Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut-free", "Halal", "Kosher"],
+                        "allow_custom": True,
+                        "allow_none": True
+                    }
+                elif "cuisine_preferences" in missing:
+                    state["step"] = "cuisines"
+                    return {
+                        "message": (
+                            "👋 I found some info from your input:\n\n"
+                            + "\n".join(found_items) + "\n\n"
+                            "What are your **favorite cuisines**?"
+                        ),
+                        "state": state,
+                        "ui_type": "checkbox",
+                        "options": ["Italian", "Japanese", "Chinese", "Indian", "Mexican", "Thai", "Mediterranean"],
+                        "allow_custom": True
+                    }
+                else:  # budget missing
+                    state["step"] = "budget"
+                    return {
+                        "message": (
+                            "👋 I found some info from your input:\n\n"
+                            + "\n".join(found_items) + "\n\n"
+                            "What's your **monthly dining budget** in dollars?"
+                        ),
+                        "state": state
+                    }
+        
+        # Standard greeting - no data provided
         state["step"] = "dietary"
         return {
             "message": (
                 "👋 Hi! I'm your Food & Dining assistant. I'll help you set up your "
                 "dining preferences so I can give you personalized recommendations.\n\n"
+                "**Tip:** You can describe all your preferences in one message and "
+                "I'll extract them automatically! (e.g., 'I'm vegan, love Italian, $500/mo')\n\n"
                 "Let's start with **dietary restrictions**.\n\n"
                 "Select any that apply:"
             ),
@@ -513,23 +665,38 @@ class HushhFoodDiningAgent:
         state: Dict,
         user_id: UserID
     ) -> Dict:
-        """Handle save confirmation."""
+        """Handle save confirmation - ISSUES CONSENT TOKEN on save."""
         msg_lower = message.lower().strip()
         
         if msg_lower in ["save", "yes", "confirm", "ok", "y"]:
-            # Mark as complete - the frontend/API will handle actual storage
-            # with consent token
+            # === CONSENT PROTOCOL: Issue signed token ===
+            consent_token = issue_token(
+                user_id=user_id,
+                agent_id=self.agent_id,
+                scope=ConsentScope.VAULT_WRITE_PREFERENCES
+            )
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"🔐 Issued consent token for user {user_id}: {consent_token.token[:50]}...")
+            
+            # Mark as complete - include token for vault operations
             return {
                 "message": (
                     "🎉 **TrustLink Established! Preferences saved successfully!**\n\n"
                     "I'll now use these to give you personalized restaurant "
                     "recommendations that match your dietary needs, favorite "
                     "cuisines, and budget.\n\n"
-                    "🔐 *Private and secure via Hushh Protocol*\n\n"
+                    "🔐 *Private and secure via Hushh Consent Protocol*\n\n"
                     "Try asking me: 'Find me a good restaurant for dinner!'"
                 ),
                 "state": {"step": "complete", "collected": state["collected"]},
-                "is_complete": True
+                "is_complete": True,
+                # Include real consent token
+                "consent_token": consent_token.token,
+                "consent_scope": ConsentScope.VAULT_WRITE_PREFERENCES.value,
+                "consent_issued_at": consent_token.issued_at,
+                "consent_expires_at": consent_token.expires_at
             }
         elif msg_lower in ["edit", "change", "redo"]:
             # Clear collected data and restart from dietary question

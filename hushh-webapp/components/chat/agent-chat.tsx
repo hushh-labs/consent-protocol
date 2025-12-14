@@ -21,58 +21,81 @@ import { encryptData } from "@/lib/vault/encrypt";
 
 /**
  * Save collected data to encrypted vault
+ * CONSENT PROTOCOL: Requires valid consent token from agent
  */
-async function saveToVault(collectedData: Record<string, unknown>): Promise<boolean> {
+async function saveToVault(
+  collectedData: Record<string, unknown>,
+  consentToken: string
+): Promise<boolean> {
   try {
-    const userId = sessionStorage.getItem('user_id');
-    const vaultKey = sessionStorage.getItem('vault_key');
+    // Try localStorage first (persists across tabs), fallback to sessionStorage
+    const userId = localStorage.getItem('user_id') || sessionStorage.getItem('user_id');
+    const vaultKey = localStorage.getItem('vault_key') || sessionStorage.getItem('vault_key');
 
     if (!userId || !vaultKey) {
       console.error('Session expired. Missing user_id or vault_key');
       return false;
     }
 
-    console.log('🔒 Encrypting preferences for vault...');
+    if (!consentToken) {
+      console.error('❌ CONSENT PROTOCOL VIOLATION: No consent token provided');
+      return false;
+    }
 
-    // Extract and encrypt each preference
-    const dietary = collectedData.dietary_restrictions || [];
-    const cuisines = collectedData.cuisine_preferences || [];
-    const budget = collectedData.monthly_budget || 0;
+    console.log('🔐 Consent token received:', consentToken.substring(0, 30) + '...');
+    console.log('🔒 Encrypting preferences for vault...', collectedData);
 
-    const dietaryEncrypted = await encryptData(
-      JSON.stringify(dietary),
-      vaultKey
-    );
+    // Detect which domain based on collected data keys
+    const isFood = collectedData.dietary_restrictions || collectedData.cuisine_preferences || collectedData.monthly_budget;
+    const isProfessional = collectedData.professional_title || collectedData.skills || collectedData.experience_level;
 
-    const cuisineEncrypted = await encryptData(
-      JSON.stringify(cuisines),
-      vaultKey
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const preferences: Record<string, any> = {};
 
-    const budgetEncrypted = await encryptData(
-      JSON.stringify(budget),
-      vaultKey
-    );
+    if (isFood) {
+      // Encrypt food fields
+      const dietary = collectedData.dietary_restrictions || [];
+      const cuisines = collectedData.cuisine_preferences || [];
+      const budget = collectedData.monthly_budget || 0;
 
-    // Store encrypted data
+      preferences.dietary_restrictions = await encryptData(JSON.stringify(dietary), vaultKey);
+      preferences.cuisine_preferences = await encryptData(JSON.stringify(cuisines), vaultKey);
+      preferences.monthly_food_budget = await encryptData(JSON.stringify(budget), vaultKey);
+    }
+
+    if (isProfessional) {
+      // Encrypt professional profile fields
+      const title = collectedData.professional_title || '';
+      const skills = collectedData.skills || [];
+      const experience = collectedData.experience_level || '';
+      const jobPrefs = collectedData.job_preferences || [];
+
+      preferences.professional_title = await encryptData(JSON.stringify(title), vaultKey);
+      preferences.skills = await encryptData(JSON.stringify(skills), vaultKey);
+      preferences.experience_level = await encryptData(JSON.stringify(experience), vaultKey);
+      preferences.job_preferences = await encryptData(JSON.stringify(jobPrefs), vaultKey);
+    }
+
+    console.log('📦 Saving fields:', Object.keys(preferences));
+
+    // Store encrypted data WITH consent token
     const response = await fetch('/api/vault/store-preferences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        preferences: {
-          dietary_restrictions: dietaryEncrypted,
-          cuisine_preferences: cuisineEncrypted,
-          monthly_food_budget: budgetEncrypted
-        }
+      body: JSON.stringify({ 
+        userId, 
+        preferences,
+        consentToken  // CONSENT PROTOCOL: Include token for validation
       })
     });
 
     if (!response.ok) {
-      throw new Error('Failed to save to vault');
+      const error = await response.json();
+      console.error('❌ Vault write failed:', error);
+      throw new Error(error.error || 'Failed to save to vault');
     }
 
-    console.log('✅ Preferences saved to encrypted vault');
+    console.log('✅ Preferences saved to encrypted vault (consent verified)');
     return true;
 
   } catch (error) {
@@ -197,15 +220,28 @@ export function AgentChat({
         { role: "agent", content: data.content, timestamp: new Date(), isStreaming: false }
       ]);
       
-      // If flow is complete, save collected data to vault
+      // If flow is complete, save collected data to vault WITH consent token
       if (data.isComplete && data.sessionState?.collected) {
-        console.log('🎉 Flow complete - saving to vault...');
-        const saved = await saveToVault(data.sessionState.collected);
-        if (saved) {
+        if (!data.consent_token) {
+          console.error('❌ CONSENT PROTOCOL VIOLATION: Flow complete but no consent token received!');
           setMessages(prev => [
             ...prev,
-            { role: "agent", content: "✅ Your preferences have been securely saved to your encrypted vault.", timestamp: new Date(), type: "system_event" }
+            { role: "agent", content: "⚠️ Save failed: No consent token received from agent.", timestamp: new Date(), type: "system_event" }
           ]);
+        } else {
+          console.log('🎉 Flow complete - saving to vault with consent token...');
+          const saved = await saveToVault(data.sessionState.collected, data.consent_token);
+          if (saved) {
+            setMessages(prev => [
+              ...prev,
+              { role: "agent", content: "✅ Your preferences have been securely saved to your encrypted vault (consent verified).", timestamp: new Date(), type: "system_event" }
+            ]);
+          } else {
+            setMessages(prev => [
+              ...prev,
+              { role: "agent", content: "⚠️ Failed to save preferences. Please try again.", timestamp: new Date(), type: "system_event" }
+            ]);
+          }
         }
       }
       
@@ -283,15 +319,28 @@ export function AgentChat({
         { role: "agent", content: data.content, timestamp: new Date(), isStreaming: false }
       ]);
       
-      // If flow is complete, save collected data to vault
+      // If flow is complete, save collected data to vault WITH consent token
       if (data.isComplete && data.sessionState?.collected) {
-        console.log('🎉 Flow complete - saving to vault...');
-        const saved = await saveToVault(data.sessionState.collected);
-        if (saved) {
+        if (!data.consent_token) {
+          console.error('❌ CONSENT PROTOCOL VIOLATION: Flow complete but no consent token received!');
           setMessages(prev => [
             ...prev,
-            { role: "agent", content: "✅ Your preferences have been securely saved to your encrypted vault.", timestamp: new Date(), type: "system_event" }
+            { role: "agent", content: "⚠️ Save failed: No consent token received from agent.", timestamp: new Date(), type: "system_event" }
           ]);
+        } else {
+          console.log('🎉 Flow complete (selection) - saving with consent token...');
+          const saved = await saveToVault(data.sessionState.collected, data.consent_token);
+          if (saved) {
+            setMessages(prev => [
+              ...prev,
+              { role: "agent", content: "✅ Your preferences have been securely saved to your encrypted vault (consent verified).", timestamp: new Date(), type: "system_event" }
+            ]);
+          } else {
+            setMessages(prev => [
+              ...prev,
+              { role: "agent", content: "⚠️ Failed to save preferences. Please try again.", timestamp: new Date(), type: "system_event" }
+            ]);
+          }
         }
       }
       

@@ -78,34 +78,36 @@ export function CheckboxSelector({
 
   return (
     <div className={cn("space-y-4 p-4 rounded-xl border bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm", className)}>
-      {/* Options Grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {[...options, ...customItems].map((option) => {
-          const isSelected = selected.has(option);
-          const displayName = option.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-          
-          return (
-            <div
-              key={option}
-              onClick={() => toggleOption(option)}
-              className={cn(
-                "flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-all",
-                isSelected
-                  ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700"
-                  : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-              )}
-            >
-              <Checkbox 
-                checked={isSelected}
-                onCheckedChange={() => toggleOption(option)}
-                className="pointer-events-none"
-              />
-              <Label className="cursor-pointer text-sm font-medium">
-                {displayName}
-              </Label>
-            </div>
-          );
-        })}
+      {/* Options Grid - Scrollable, max 2 rows */}
+      <div className="max-h-[120px] overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2">
+          {[...options, ...customItems].map((option) => {
+            const isSelected = selected.has(option);
+            const displayName = option.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            
+            return (
+              <div
+                key={option}
+                onClick={() => toggleOption(option)}
+                className={cn(
+                  "flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all text-sm",
+                  isSelected
+                    ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700"
+                    : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                )}
+              >
+                <Checkbox 
+                  checked={isSelected}
+                  onCheckedChange={() => toggleOption(option)}
+                  className="pointer-events-none h-4 w-4"
+                />
+                <Label className="cursor-pointer text-xs font-medium truncate">
+                  {displayName}
+                </Label>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Custom Input */}

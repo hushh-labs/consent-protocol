@@ -1,21 +1,21 @@
 # 🔐 Crypto + Signing
-cryptography>=42.0.5
-pyjwt[crypto]>=2.8.0
+cryptography==42.0.5
+pyjwt[crypto]==2.8.0
 
 # 🧪 Validation
-pydantic>=2.9.0
+pydantic==2.7.1
 
 # 🧬 Environment management
-python-dotenv>=1.0.1
+python-dotenv==1.0.1
 
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
-httpx>=0.27.0
+httpx==0.27.0
 
 # 🛠️ CLI + scripting
-# argparse is built-in for Python 3.2+
+argparse==1.4.0
 
 # 🧪 Testing
-pytest>=8.3.0
+pytest==8.2.2
 
 # 📦 Optional OAuth / Apple ID agents
-requests>=2.32.3
+requests==2.32.3

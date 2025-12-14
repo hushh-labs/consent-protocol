@@ -1,58 +1,246 @@
-import { AgentChat } from "@/components/chat/agent-chat";
-import { User, Shield, UserCheck } from "lucide-react";
+'use client';
 
-export default function SelfProfilePage() {
+/**
+ * Professional Profile Dashboard
+ * 
+ * Displays user's encrypted professional profile data.
+ * Data is decrypted client-side, showing skills, experience, job preferences.
+ */
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { decryptData, EncryptedPayload } from '@/lib/vault/encrypt';
+import { Button, Card, CardHeader, CardTitle, CardContent } from '@/lib/morphy-ux/morphy';
+import { 
+  User, 
+  Briefcase, 
+  Code, 
+  Target, 
+  TrendingUp, 
+  Shield,
+  Edit,
+  RefreshCw
+} from 'lucide-react';
+
+interface ProfessionalProfile {
+  professional_title: string;
+  skills: string[];
+  experience_level: string;
+  job_preferences: string[];
+}
+
+export default function ProfessionalProfilePage() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<ProfessionalProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  async function loadProfile() {
+    try {
+      // Use localStorage first for cross-tab persistence
+      const userId = localStorage.getItem('user_id') || sessionStorage.getItem('user_id');
+      const vaultKey = localStorage.getItem('vault_key') || sessionStorage.getItem('vault_key');
+
+      if (!userId || !vaultKey) {
+        router.push('/login');
+        return;
+      }
+
+      // Fetch all encrypted preferences (API returns all fields)
+      const response = await fetch(`/api/vault/get-preferences?userId=${userId}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // No profile yet, show empty state
+          setLoading(false);
+          return;
+        }
+        throw new Error('Failed to load profile');
+      }
+
+      const { preferences: encryptedPrefs } = await response.json();
+
+      // Decrypt client-side
+      console.log('🔓 Decrypting professional profile...');
+      
+      // Try to decrypt each field if it exists
+      let profileData: ProfessionalProfile = {
+        professional_title: '',
+        skills: [],
+        experience_level: '',
+        job_preferences: []
+      };
+
+      if (encryptedPrefs.professional_title) {
+        const titleDecrypted = await decryptData(encryptedPrefs.professional_title, vaultKey);
+        profileData.professional_title = JSON.parse(titleDecrypted);
+      }
+
+      if (encryptedPrefs.skills) {
+        const skillsDecrypted = await decryptData(encryptedPrefs.skills, vaultKey);
+        profileData.skills = JSON.parse(skillsDecrypted);
+      }
+
+      if (encryptedPrefs.experience_level) {
+        const expDecrypted = await decryptData(encryptedPrefs.experience_level, vaultKey);
+        profileData.experience_level = JSON.parse(expDecrypted);
+      }
+
+      if (encryptedPrefs.job_preferences) {
+        const jobDecrypted = await decryptData(encryptedPrefs.job_preferences, vaultKey);
+        profileData.job_preferences = JSON.parse(jobDecrypted);
+      }
+
+      setProfile(profileData);
+
+    } catch (err: any) {
+      console.error('Profile load error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="space-y-4 text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+          <p className="text-muted-foreground">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile || !profile.professional_title) {
+    return (
+      <div className="container mx-auto max-w-3xl py-12 space-y-8">
+        <div className="text-center space-y-4">
+          <Briefcase className="h-16 w-16 mx-auto text-gray-400" />
+          <h1 className="text-2xl font-bold">No Profile Yet</h1>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            You haven't set up your professional profile yet. 
+            Go to the main dashboard to create your profile through the chat flow.
+          </p>
+          <Button
+            onClick={() => router.push('/dashboard')}
+            variant="gradient"
+            effect="glass"
+            size="lg"
+          >
+            Set Up Profile
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto max-w-5xl py-8 space-y-8">
-      {/* Header Section */}
+    <div className="container mx-auto max-w-4xl py-8 space-y-8">
+      {/* Header */}
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight bg-linear-to-r from-blue-600 to-emerald-500 bg-clip-text text-transparent">
-          Professional Profile Orchestrator
+        <h1 className="text-3xl font-bold tracking-tight bg-linear-to-r from-purple-600 to-blue-500 bg-clip-text text-transparent">
+          Professional Profile
         </h1>
         <p className="text-muted-foreground flex items-center gap-2">
           <Shield className="h-4 w-4 text-emerald-500" />
-          Securely build your digital twin. Data stays within your vault.
+          Your encrypted career data. Decrypted locally.
         </p>
       </div>
 
-      {/* Chat Interface */}
-      <div className="flex gap-6">
-        {/* Main Chat */}
-        <div className="flex-1">
-          <AgentChat 
-            agentId="agent_orchestrator" 
-            agentName="Hushh Orchestrator"
-          />
-        </div>
+      {/* Profile Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Title Card */}
+        <Card variant="none" effect="glass" className="col-span-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5 text-blue-500" />
+              Professional Title
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold">{profile.professional_title}</p>
+          </CardContent>
+        </Card>
 
-        {/* Info Sidebar (Optional, hidden on mobile) */}
-        <div className="hidden lg:block w-72 space-y-4">
-          <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-black/50 backdrop-blur-sm">
-            <h3 className="font-semibold mb-2 flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Collected Data
-            </h3>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <div className="flex justify-between">
-                <span>Dietary</span>
-                <span className="text-emerald-500">Known</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Career</span>
-                <span className="text-amber-500">Incomplete</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Travel</span>
-                <span className="text-gray-400">Unknown</span>
-              </div>
+        {/* Skills Card */}
+        <Card variant="none" effect="glass">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Code className="h-5 w-5 text-emerald-500" />
+              Skills ({profile.skills.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {profile.skills.map((skill, i) => (
+                <span 
+                  key={i}
+                  className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-full text-sm"
+                >
+                  {skill}
+                </span>
+              ))}
             </div>
-            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-gray-800/50">
-               <p className="text-xs leading-relaxed">
-                 This agent will ask you questions to fill these gaps. It may also request to contact other agents (like the Kushal Agent) to auto-fill data.
-               </p>
+          </CardContent>
+        </Card>
+
+        {/* Experience Card */}
+        <Card variant="none" effect="glass">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-purple-500" />
+              Experience Level
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-lg font-medium">{profile.experience_level}</p>
+          </CardContent>
+        </Card>
+
+        {/* Job Preferences Card */}
+        <Card variant="none" effect="glass" className="col-span-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-orange-500" />
+              Looking For
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {profile.job_preferences.map((pref, i) => (
+                <span 
+                  key={i}
+                  className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full text-sm"
+                >
+                  {pref}
+                </span>
+              ))}
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-4 justify-center">
+        <Button
+          onClick={() => router.push('/dashboard')}
+          variant="secondary"
+        >
+          <Edit className="h-4 w-4 mr-2" />
+          Update Profile
+        </Button>
+        <Button
+          onClick={loadProfile}
+          variant="none"
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
     </div>
   );

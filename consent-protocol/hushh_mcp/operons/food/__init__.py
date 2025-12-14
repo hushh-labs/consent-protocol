@@ -10,12 +10,6 @@ Each operon is stateless, testable, and composable.
 from .dietary import validate_dietary_restrictions, is_compatible_with_diet, get_dietary_label
 from .preferences import calculate_cuisine_match_score, get_top_cuisine_matches
 from .budget import calculate_meal_budget, filter_by_price_range
-from .storage import (
-    store_dietary_restrictions,
-    store_cuisine_preferences,
-    store_monthly_budget,
-    store_all_food_preferences
-)
 
 __all__ = [
     # Dietary operons
@@ -28,9 +22,4 @@ __all__ = [
     # Budget operons
     "calculate_meal_budget",
     "filter_by_price_range",
-    # Storage operons (write)
-    "store_dietary_restrictions",
-    "store_cuisine_preferences",
-    "store_monthly_budget",
-    "store_all_food_preferences"
 ]
