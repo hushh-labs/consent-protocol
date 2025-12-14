@@ -308,3 +308,255 @@ class HushhFoodDiningAgent:
             "status": "active",
             "version": self.manifest["version"]
         }
+    
+    # =========================================================================
+    # CONVERSATIONAL DATA COLLECTION (Agentic Flow)
+    # =========================================================================
+    
+    def handle_message(
+        self,
+        message: str,
+        user_id: UserID,
+        session_state: Optional[Dict] = None
+    ) -> Dict[str, any]:
+        """
+        Handle conversational message for preference collection.
+        
+        This is the main entry point for the agentic flow.
+        It manages multi-turn conversation to collect:
+        - Dietary restrictions
+        - Cuisine preferences
+        - Monthly budget
+        
+        Args:
+            message: User's message
+            user_id: User identifier
+            session_state: Current conversation state (for multi-turn)
+            
+        Returns:
+            Dict with response, updated state, and any collected data
+        """
+        state = session_state or {"step": "greeting", "collected": {}}
+        
+        response = self._process_conversation_step(message, state, user_id)
+        
+        return {
+            "response": response["message"],
+            "session_state": response["state"],
+            "collected_data": state.get("collected", {}),
+            "is_complete": response.get("is_complete", False),
+            "needs_consent": response.get("needs_consent", False),
+            "consent_scope": response.get("consent_scope", None),
+            # UI hints for frontend
+            "ui_type": response.get("ui_type"),
+            "options": response.get("options"),
+            "allow_custom": response.get("allow_custom"),
+            "allow_none": response.get("allow_none")
+        }
+    
+    def _process_conversation_step(
+        self,
+        message: str,
+        state: Dict,
+        user_id: UserID
+    ) -> Dict:
+        """Process a single step in the conversation."""
+        step = state.get("step", "greeting")
+        collected = state.get("collected", {})
+        
+        if step == "greeting":
+            return self._handle_greeting(message, state)
+        elif step == "dietary":
+            return self._handle_dietary_input(message, state)
+        elif step == "cuisines":
+            return self._handle_cuisine_input(message, state)
+        elif step == "budget":
+            return self._handle_budget_input(message, state)
+        elif step == "confirm":
+            return self._handle_confirmation(message, state, user_id)
+        else:
+            return self._handle_greeting(message, state)
+    
+    def _handle_greeting(self, message: str, state: Dict) -> Dict:
+        """Handle initial greeting and start collection."""
+        state["step"] = "dietary"
+        return {
+            "message": (
+                "👋 Hi! I'm your Food & Dining assistant. I'll help you set up your "
+                "dining preferences so I can give you personalized recommendations.\n\n"
+                "Let's start with **dietary restrictions**.\n\n"
+                "Select any that apply:"
+            ),
+            "state": state,
+            "ui_type": "checkbox",
+            "options": ["Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut-free", "Halal", "Kosher"],
+            "allow_custom": True,
+            "allow_none": True
+        }
+    
+    def _handle_dietary_input(self, message: str, state: Dict) -> Dict:
+        """Parse and store dietary restrictions."""
+        msg_lower = message.lower().strip()
+        
+        if msg_lower in ["none", "no", "nope", "n/a"]:
+            dietary = []
+        else:
+            # Parse comma-separated values
+            raw = [d.strip().lower().replace("-", "_").replace(" ", "_") 
+                   for d in msg_lower.split(",")]
+            # Filter to valid restrictions
+            valid = {"vegetarian", "vegan", "gluten_free", "dairy_free", 
+                    "nut_free", "halal", "kosher", "pescatarian", "keto", "paleo"}
+            dietary = [d for d in raw if d in valid]
+        
+        state["collected"]["dietary_restrictions"] = dietary
+        state["step"] = "cuisines"
+        
+        dietary_label = ", ".join(dietary) if dietary else "No restrictions"
+        
+        return {
+            "message": (
+                f"✅ Got it! Dietary: **{dietary_label}**\n\n"
+                "Now, what are your **favorite cuisines**?\n\n"
+                "Select your favorites:"
+            ),
+            "state": state,
+            "ui_type": "checkbox",
+            "options": ["Italian", "Japanese", "Chinese", "Indian", "Mexican", "Thai", "Mediterranean", "American", "Korean", "Vietnamese"],
+            "allow_custom": True
+        }
+    
+    def _handle_cuisine_input(self, message: str, state: Dict) -> Dict:
+        """Parse and store cuisine preferences."""
+        msg_lower = message.lower().strip()
+        
+        raw = [c.strip().lower().replace("-", "_").replace(" ", "_") 
+               for c in msg_lower.split(",")]
+        
+        valid = {"italian", "japanese", "chinese", "indian", "mexican",
+                "thai", "mediterranean", "american", "korean", "vietnamese",
+                "french", "greek", "spanish", "middle_eastern"}
+        
+        cuisines = [c for c in raw if c in valid]
+        
+        if not cuisines:
+            return {
+                "message": (
+                    "I didn't recognize any cuisines. Please try again with "
+                    "options like: italian, japanese, thai, indian, mexican"
+                ),
+                "state": state
+            }
+        
+        state["collected"]["cuisine_preferences"] = cuisines
+        state["step"] = "budget"
+        
+        return {
+            "message": (
+                f"✅ Great choices! Cuisines: **{', '.join(cuisines)}**\n\n"
+                "Last question: What's your **monthly dining budget** (in dollars)?\n\n"
+                "Just enter a number (e.g., '500' or '750'):"
+            ),
+            "state": state
+        }
+    
+    def _handle_budget_input(self, message: str, state: Dict) -> Dict:
+        """Parse and store monthly budget."""
+        try:
+            # Remove dollar sign and parse
+            budget_str = message.strip().replace("$", "").replace(",", "")
+            budget = float(budget_str)
+            
+            if budget <= 0:
+                raise ValueError("Budget must be positive")
+            
+            state["collected"]["monthly_budget"] = budget
+            state["step"] = "confirm"
+            
+            # Build confirmation summary
+            dietary = state["collected"].get("dietary_restrictions", [])
+            cuisines = state["collected"].get("cuisine_preferences", [])
+            
+            return {
+                "message": (
+                    f"✅ Budget set to **${budget:.2f}/month**\n\n"
+                    "---\n"
+                    "📋 **Your Preferences Summary:**\n\n"
+                    f"🥗 Dietary: {', '.join(dietary) if dietary else 'None'}\n"
+                    f"🍽️ Cuisines: {', '.join(cuisines)}\n"
+                    f"💰 Budget: ${budget:.2f}/month\n\n"
+                    "---\n\n"
+                    "To save these preferences, I'll establish a **TrustLink** to securely store this data in your encrypted vault."
+                ),
+                "state": state,
+                "ui_type": "buttons",
+                "options": ["💾 Save & Establish TrustLink", "✏️ Edit"],
+                "needs_consent": True,
+                "consent_scope": [
+                    ConsentScope.VAULT_WRITE_FOOD.value,
+                    ConsentScope.VAULT_WRITE_FINANCE.value
+                ]
+            }
+            
+        except ValueError:
+            return {
+                "message": (
+                    "I couldn't understand that budget. Please enter a number "
+                    "like '500' or '750':"
+                ),
+                "state": state
+            }
+    
+    def _handle_confirmation(
+        self,
+        message: str,
+        state: Dict,
+        user_id: UserID
+    ) -> Dict:
+        """Handle save confirmation."""
+        msg_lower = message.lower().strip()
+        
+        if msg_lower in ["save", "yes", "confirm", "ok", "y"]:
+            # Mark as complete - the frontend/API will handle actual storage
+            # with consent token
+            return {
+                "message": (
+                    "🎉 **TrustLink Established! Preferences saved successfully!**\n\n"
+                    "I'll now use these to give you personalized restaurant "
+                    "recommendations that match your dietary needs, favorite "
+                    "cuisines, and budget.\n\n"
+                    "🔐 *Private and secure via Hushh Protocol*\n\n"
+                    "Try asking me: 'Find me a good restaurant for dinner!'"
+                ),
+                "state": {"step": "complete", "collected": state["collected"]},
+                "is_complete": True
+            }
+        elif msg_lower in ["edit", "change", "redo"]:
+            # Clear collected data and restart from dietary question
+            new_state = {"step": "dietary", "collected": {}}
+            return {
+                "message": (
+                    "No problem! Let's start over.\n\n"
+                    "**Dietary Restrictions**\n\n"
+                    "Do you have any of these?\n"
+                    "• Vegetarian\n"
+                    "• Vegan\n"
+                    "• Gluten-free\n"
+                    "• Dairy-free\n"
+                    "• Nut-free\n"
+                    "• Halal\n"
+                    "• Kosher\n"
+                    "• None\n\n"
+                    "Just type them (e.g., 'vegan, gluten-free') or 'none':"
+                ),
+                "state": new_state
+            }
+        else:
+            return {
+                "message": "Please type **'save'** to establish TrustLink or **'edit'** to start over:",
+                "state": state
+            }
+
+
+# Create default instance
+food_dining_agent = HushhFoodDiningAgent()

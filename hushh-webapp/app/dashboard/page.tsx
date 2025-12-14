@@ -1,83 +1,99 @@
 // app/dashboard/page.tsx
 
+/**
+ * Main Dashboard - Orchestrator Entry Point
+ * 
+ * The central hub for all agent interactions.
+ * Chat flows through orchestrator which delegates to domain agents.
+ */
+
 'use client';
 
-import { UserProfile } from '@/components/dashboard/user-profile';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/morphy-ux/morphy';
-import { Badge } from '@/components/ui/badge';
-import Link from 'next/link';
-import { Utensils, ShoppingBag, CreditCard, Plane, MessageCircle, Dumbbell, ArrowRight } from 'lucide-react';
-
-const domainStats = [
-  {
-    name: 'Food & Dining',
-    icon: Utensils,
-    status: 'active',
-    count: '1 vault',
-    color: 'text-orange-500',
-    href: '/dashboard/food'
-  },
-  {
-    name: 'Fashion',
-    icon: ShoppingBag,
-    status: 'soon',
-    count: '—',
-    color: 'text-pink-500',
-    href: '/dashboard/fashion'
-  },
-  {
-    name: 'Transactions',
-    icon: CreditCard,
-    status: 'soon',
-    count: '—',
-    color: 'text-green-500',
-    href: '/dashboard/transactions'
-  },
-  {
-    name: 'Travel',
-    icon: Plane,
-    status: 'soon',
-    count: '—',
-    color: 'text-blue-500',
-    href: '/dashboard/travel'
-  },
-  {
-    name: 'Social Media',
-    icon: MessageCircle,
-    status: 'soon',
-    count: '—',
-    color: 'text-purple-500',
-    href: '/dashboard/social'
-  },
-  {
-    name: 'Fitness',
-    icon: Dumbbell,
-    status: 'soon',
-    count: '—',
-    color: 'text-red-500',
-    href: '/dashboard/fitness'
-  }
-];
+import { useState } from 'react';
+import { AgentChat, PendingUI } from '@/components/chat/agent-chat';
+import { CollectedDataCard } from '@/components/chat/collected-data-card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/lib/morphy-ux/morphy';
+import { 
+  Shield,
+  Sparkles
+} from 'lucide-react';
 
 export default function DashboardPage() {
-  return (
-    <div className="space-y-8">
-      <UserProfile />
+  const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
 
-      {/* Security Badge */}
-      <Card variant="none" effect="glass" className="border-accent">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">🔐</span>
-            <div className="flex-1 text-sm">
-              <p className="font-medium mb-1">End-to-End Encrypted</p>
-              <p className="text-muted-foreground">
-                All your data is encrypted client-side before storage. We cannot read your data.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  return (
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">
+          <span className="bg-linear-to-r from-blue-600 to-emerald-500 bg-clip-text text-transparent">
+            Hushh Orchestrator
+          </span>
+        </h1>
+        <p className="text-muted-foreground flex items-center gap-2">
+          <Shield className="h-4 w-4 text-emerald-500" />
+          Chat with the orchestrator to set up your preferences. All data is encrypted in your vault.
+        </p>
+      </div>
+
+      {/* Main Content: Chat + Sidebar */}
+      <div className="flex gap-6">
+        {/* Main Chat */}
+        <div className="flex-1">
+          <AgentChat 
+            agentId="agent_orchestrator" 
+            agentName="Hushh Orchestrator"
+            initialMessage={`Hi! I can help you with your personal data preferences.
+
+What would you like to set up?`}
+            initialUI={{
+              ui_type: 'buttons',
+              options: ['🍽️ Food & Dining', '💼 Professional Profile'],
+              allow_custom: false
+            }}
+            onCollectedDataChange={setCollectedData}
+          />
+        </div>
+
+        {/* Dynamic Sidebar */}
+        <div className="hidden lg:block w-80 space-y-4">
+          {/* Collected Data Card - Shows preferences as they're collected */}
+          <CollectedDataCard 
+            data={collectedData}
+            domain="Current Session"
+          />
+
+          {/* Empty state when no data collected yet */}
+          {Object.keys(collectedData).length === 0 && (
+            <Card variant="none" effect="glass">
+              <CardContent className="p-4 text-center">
+                <Sparkles className="h-8 w-8 mx-auto mb-2 text-blue-500 opacity-50" />
+                <p className="text-sm text-muted-foreground">
+                  Start chatting to collect your preferences.
+                  They'll appear here in real-time.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Security Info */}
+          <Card variant="none" effect="glass" className="border-emerald-200 dark:border-emerald-800">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">🔐</span>
+                <div className="text-xs">
+                  <p className="font-medium mb-1">End-to-End Encrypted</p>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Your data is encrypted in your browser. We cannot read it.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
+
+

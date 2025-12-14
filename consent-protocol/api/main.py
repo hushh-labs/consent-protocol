@@ -115,6 +115,72 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "agent": "food_dining"}
 
+
+# ============================================================================
+# CONVERSATIONAL CHAT ENDPOINT
+# ============================================================================
+
+class ChatRequest(BaseModel):
+    """Request for conversational chat."""
+    userId: str
+    message: str
+    sessionState: Optional[Dict] = None
+
+class ChatResponse(BaseModel):
+    """Response from conversational chat."""
+    response: str
+    sessionState: Dict
+    collectedData: Dict
+    isComplete: bool
+    needsConsent: bool
+    consentScope: Optional[List[str]] = None
+    # UI hints for frontend
+    ui_type: Optional[str] = None  # 'checkbox', 'buttons', etc.
+    options: Optional[List[str]] = None
+    allow_custom: Optional[bool] = None
+    allow_none: Optional[bool] = None
+
+@app.post("/api/agents/food-dining/chat", response_model=ChatResponse)
+async def chat_with_agent(request: ChatRequest):
+    """
+    Conversational chat endpoint for collecting preferences.
+    
+    Flow:
+    1. User sends message
+    2. Agent responds with next question
+    3. Session state tracks conversation progress
+    4. On completion, collected data is ready for vault storage
+    
+    Example session:
+        POST /chat { userId: "user_123", message: "hi", sessionState: null }
+        -> { response: "Let's set up preferences...", sessionState: {step: "dietary"} }
+        
+        POST /chat { userId: "user_123", message: "vegan", sessionState: {step: "dietary"} }
+        -> { response: "Got it! Now cuisines...", sessionState: {step: "cuisines", collected: {dietary: ["vegan"]}} }
+    """
+    try:
+        result = food_agent.handle_message(
+            message=request.message,
+            user_id=request.userId,
+            session_state=request.sessionState
+        )
+        
+        return ChatResponse(
+            response=result["response"],
+            sessionState=result["session_state"],
+            collectedData=result.get("collected_data", {}),
+            isComplete=result.get("is_complete", False),
+            needsConsent=result.get("needs_consent", False),
+            consentScope=result.get("consent_scope"),
+            ui_type=result.get("ui_type"),
+            options=result.get("options"),
+            allow_custom=result.get("allow_custom"),
+            allow_none=result.get("allow_none")
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
 # ============================================================================
 # MOCK DATA
 # ============================================================================

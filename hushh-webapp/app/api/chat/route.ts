@@ -1,48 +1,92 @@
+// app/api/chat/route.ts
+
+/**
+ * Unified Chat API Route
+ * 
+ * ALL chat traffic goes through here → Orchestrator → Domain Agents
+ * 
+ * Flow:
+ * 1. User message → Orchestrator (10003)
+ * 2. Orchestrator classifies intent → returns delegation info
+ * 3. If delegated → follow up with domain agent
+ * 4. Return consolidated response
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
+
+// Agent Port Mapping - Keep in sync with consent-protocol/hushh_mcp/constants.py AGENT_PORTS
+const PORT_MAP: Record<string, number> = {
+  'agent_orchestrator': 10003,
+  'agent_professional_profile': 10004,
+  'agent_food_dining': 10005,
+  'agent_finance': 10006,
+  'agent_health_wellness': 10007,
+  'agent_travel': 10008,
+  'agent_identity': 10009,
+};
+
+// Food agent uses different endpoint structure
+const FOOD_AGENT_URL = process.env.FOOD_AGENT_URL || 'http://127.0.0.1:8000';
+
+interface ChatRequest {
+  message: string;
+  userId?: string;
+  sessionState?: Record<string, unknown>;
+  agentId?: string;  // Optional: for explicit routing (bypass orchestrator)
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { message, agentId } = body;
+    const body: ChatRequest = await req.json();
+    const { message, userId = "user_mock_001", sessionState, agentId } = body;
 
-    // Agent Port Mapping - Keep in sync with consent-protocol/hushh_mcp/constants.py AGENT_PORTS
-    const PORT_MAP: Record<string, number> = {
-      'agent_orchestrator': 10003,
-      'agent_professional_profile': 10004,
-      'agent_food_dining': 10005,
-      'agent_finance': 10006,           // Reserved
-      'agent_health_wellness': 10007,   // Reserved
-      'agent_travel': 10008,            // Reserved
-      'agent_identity': 10009,          // Reserved
-    };
-
-    const port = PORT_MAP[agentId] || 10003; // Default to orchestrator
-    const apiUrl = `http://127.0.0.1:${port}/agent/chat`; // ADK standard endpoint
-
-    console.log(`[API] Proxying message to ${agentId} on port ${port}...`);
-
-    // Call the Python Agent
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: message,
-        // In a real app, passing user_id token here for consent
-        user_id: "user_mock_001" 
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Agent service returned ${response.status}`);
+    // If explicit agentId provided and it's a domain agent with active session, 
+    // continue that conversation
+    if (agentId && agentId !== 'agent_orchestrator' && sessionState?.step) {
+      return handleDomainAgentChat(agentId, message, userId, sessionState);
     }
 
-    const data = await response.json();
+    // Default: Route through Orchestrator
+    console.log(`[API] Routing to Orchestrator: "${message.slice(0, 50)}..."`);
     
-    // The ADK usually returns { response: "text" }
-    return NextResponse.json({ 
-      content: data.response || data.text || "No response text found.",
-      // If the agent returned delegation metadata, pass it through
-      delegation: data.delegation || null
+    const orchestratorResponse = await callOrchestrator(message, userId);
+    
+    // Check if orchestrator delegated to a domain agent
+    if (orchestratorResponse.delegation) {
+      const { target_agent, target_port } = orchestratorResponse.delegation;
+      
+      console.log(`[API] Orchestrator delegated to ${target_agent} (port ${target_port})`);
+      
+      // For food agent, start the conversational flow
+      if (target_agent === 'agent_food_dining') {
+        const foodResponse = await callFoodAgentChat(message, userId, null);
+        return NextResponse.json({
+          content: foodResponse.response,
+          delegation: orchestratorResponse.delegation,
+          sessionState: foodResponse.sessionState,
+          agentId: 'agent_food_dining',
+          needsConsent: foodResponse.needsConsent || false,
+          isComplete: foodResponse.isComplete || false,
+          ui_type: foodResponse.ui_type || null,
+          options: foodResponse.options || null,
+          allow_custom: foodResponse.allow_custom,
+          allow_none: foodResponse.allow_none
+        });
+      }
+      
+      // For other agents, return delegation info (frontend can follow up)
+      return NextResponse.json({
+        content: orchestratorResponse.response,
+        delegation: orchestratorResponse.delegation,
+        agentId: target_agent
+      });
+    }
+    
+    // No delegation - orchestrator handled directly
+    return NextResponse.json({
+      content: orchestratorResponse.response,
+      delegation: null,
+      agentId: 'agent_orchestrator'
     });
 
   } catch (error) {
@@ -52,4 +96,126 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Call the Orchestrator agent
+ */
+async function callOrchestrator(message: string, userId: string) {
+  try {
+    // Try Python orchestrator first
+    const response = await fetch(`http://127.0.0.1:${PORT_MAP.agent_orchestrator}/agent/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: message, user_id: userId })
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (e) {
+    console.log("[API] Orchestrator not running, using fallback");
+  }
+  
+  // Fallback: Use intent classification directly
+  return fallbackIntentClassification(message);
+}
+
+/**
+ * Fallback intent classification when Python orchestrator is unavailable
+ */
+function fallbackIntentClassification(message: string) {
+  const msg = message.toLowerCase();
+  
+  // Simple keyword matching
+  if (msg.includes('food') || msg.includes('diet') || msg.includes('restaurant') || 
+      msg.includes('cuisine') || msg.includes('eat') || msg.includes('preference')) {
+    return {
+      response: "I'll connect you to our Food & Dining specialist.",
+      delegation: {
+        target_agent: 'agent_food_dining',
+        target_port: 10005,
+        domain: 'food_dining'
+      }
+    };
+  }
+  
+  if (msg.includes('resume') || msg.includes('job') || msg.includes('career') || 
+      msg.includes('skill') || msg.includes('professional')) {
+    return {
+      response: "I'll connect you to our Professional Profile specialist.",
+      delegation: {
+        target_agent: 'agent_professional_profile',
+        target_port: 10004,
+        domain: 'professional'
+      }
+    };
+  }
+  
+  // No specific domain detected
+  return {
+    response: "Hi! I can help you with:\n\n• 🍽️ Food & Dining preferences\n• 💼 Professional profile\n\nWhat would you like to set up?",
+    delegation: null
+  };
+}
+
+/**
+ * Call Food Agent Chat endpoint (conversational flow)
+ */
+async function callFoodAgentChat(
+  message: string, 
+  userId: string, 
+  sessionState: Record<string, unknown> | null
+) {
+  try {
+    const response = await fetch(`${FOOD_AGENT_URL}/api/agents/food-dining/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, message, sessionState })
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (e) {
+    console.log("[API] Food agent not running");
+  }
+  
+  return {
+    response: "The Food Agent is being set up. Please try again in a moment.",
+    sessionState: { step: "error" },
+    needsConsent: false,
+    isComplete: false
+  };
+}
+
+/**
+ * Handle domain agent chat continuation
+ */
+async function handleDomainAgentChat(
+  agentId: string,
+  message: string,
+  userId: string,
+  sessionState: Record<string, unknown>
+) {
+  if (agentId === 'agent_food_dining') {
+    const response = await callFoodAgentChat(message, userId, sessionState);
+    return NextResponse.json({
+      content: response.response,
+      sessionState: response.sessionState,
+      agentId: 'agent_food_dining',
+      needsConsent: response.needsConsent || false,
+      isComplete: response.isComplete || false,
+      ui_type: response.ui_type || null,
+      options: response.options || null,
+      allow_custom: response.allow_custom,
+      allow_none: response.allow_none
+    });
+  }
+  
+  // Other domain agents - to be implemented
+  return NextResponse.json({
+    content: "This agent is not yet available.",
+    agentId
+  });
 }
