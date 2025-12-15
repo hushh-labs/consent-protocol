@@ -28,10 +28,6 @@ const nextConfig: NextConfig = {
     reactStrictMode: false, // Disabled to prevent hydration issues
     // Disable source maps in production for security
     productionBrowserSourceMaps: false,
-    // Hide Next.js version in error pages for security
-    outputFileTracingExcludes: {
-      "*": ["**/node_modules/@next/**"],
-    },
   }),
   // Headers are now handled in middleware.ts to avoid conflicts
 };
