@@ -1,0 +1,48 @@
+# .gcloudignore
+# Excludes files from Cloud Build upload
+
+# Git
+.git/
+.gitignore
+
+# Dependencies (will be installed during build)
+node_modules/
+**/node_modules/
+
+# Python virtual environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Development files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# Build outputs (will be generated during build)
+.next/
+out/
+dist/
+build/
+
+# Documentation and artifacts
+docs/
+.gemini/
+*.md
+!README.md
+
+# Test files
+tests/
+test/
+**/*.test.ts
+**/*.test.tsx
+
+# Local development files
+*.log
+.DS_Store
+Thumbs.db

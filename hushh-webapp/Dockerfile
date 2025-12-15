@@ -1,26 +1,19 @@
-# ============================================
-# Hushh WebApp - Next.js Production Dockerfile
-# ============================================
-# Optimized multi-stage build for Cloud Run
-
-# Stage 1: Dependencies
+# ---------- deps ----------
 FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
-
-# Copy package files
+RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
-# Stage 2: Builder
+# ---------- builder ----------
 FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Copy dependencies from deps stage
+# copy only deps we need for build
 COPY --from=deps /app/node_modules ./node_modules
+# copy source (ensure .dockerignore excludes node_modules and .next)
 COPY . .
-
-# Build arguments for environment variables
+ENV NEXT_TELEMETRY_DISABLED=1
+# use build-time args (only if truly needed for build)
 ARG NEXT_PUBLIC_FIREBASE_API_KEY
 ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
@@ -28,52 +21,33 @@ ARG NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
 ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_BACKEND_URL
-ARG DATABASE_URL
-
-# Set environment variables for build
-ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
-ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
-ENV NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=$NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
-ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
-ENV DATABASE_URL=$DATABASE_URL
-
-# Disable telemetry during build
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build the application
+# do NOT include DATABASE_URL here if it is a runtime secret
 RUN npm run build
 
-# Stage 3: Runner
+# ---------- runner ----------
 FROM node:20-alpine AS runner
 WORKDIR /app
-
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Install libc6-compat in runner in case native modules need it at runtime
+RUN apk add --no-cache libc6-compat
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# create non-root user
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nextjs
 
-# Copy necessary files from builder
-COPY --from=builder /app/public ./public
+# Copy only what the standalone output needs
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-# Copy node_modules for any edge cases
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
 
-# Set ownership
+# The standalone output includes a package.json and a node_modules folder inside it.
+# You should NOT copy /app/node_modules from builder to runner — duplicate and large.
+# Set ownership and drop root
 RUN chown -R nextjs:nodejs /app
-
-# Switch to non-root user
 USER nextjs
 
-# Expose port (Cloud Run uses PORT env var)
-EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-# Start the application
+# Cloud Run sets PORT at runtime; default to 8080 for conv.
+EXPOSE 8080
+ENV PORT=8080
 CMD ["node", "server.js"]

@@ -63,6 +63,7 @@ Located in `consent-protocol/docs/`:
 
 ## AI Context
 
-| Document                                          | Description        |
-| ------------------------------------------------- | ------------------ |
-| [system_context.md](ai-context/system_context.md) | LLM system context |
+| Document                                          | Description          |
+| ------------------------------------------------- | -------------------- |
+| [system_context.md](ai-context/system_context.md) | LLM system context   |
+| [deployment.md](ai-context/deployment.md)         | Cloud Run deployment |

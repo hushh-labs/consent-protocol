@@ -166,6 +166,51 @@ hushh-research/
 └── docker-compose.yml      # Local dev containers
 ```
 
+## Deployment to Cloud Run
+
+### Build and Deploy
+
+```powershell
+# 1. Build Docker image with Firebase env vars
+cd hushh-webapp
+docker build `
+  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="your-api-key" `
+  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your-project.firebaseapp.com" `
+  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-project-id" `
+  --build-arg NEXT_PUBLIC_BACKEND_URL="https://your-service.run.app" `
+  -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest .
+
+# 2. Push to Artifact Registry
+docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
+
+# 3. Deploy to Cloud Run
+gcloud run deploy hushh-webapp `
+  --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest `
+  --region us-central1 `
+  --allow-unauthenticated `
+  --set-secrets DATABASE_URL=DATABASE_URL:latest `
+  --port 8080 `
+  --add-cloudsql-instances hushh-pda:us-central1:hushh-vault-db
+```
+
+### Prerequisites for Deployment
+
+1. **Secret Manager**: Create DATABASE_URL secret
+
+   ```bash
+   gcloud secrets create DATABASE_URL --data-file=-
+   # Paste: postgresql://hushh_app:password@/hushh_vault?host=/cloudsql/hushh-pda:us-central1:hushh-vault-db
+   ```
+
+2. **Grant access**:
+   ```bash
+   gcloud secrets add-iam-policy-binding DATABASE_URL \
+     --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
+
+---
+
 ## Next Steps
 
 - [Architecture](docs/technical/architecture.md) - System design
