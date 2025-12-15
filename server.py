@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,20 +21,36 @@ logger = logging.getLogger(__name__)
 from hushh_mcp.agents.food_dining.agent import food_dining_agent
 from hushh_mcp.agents.professional_profile.agent import professional_agent, ProfessionalProfileAgent
 
+# Dynamic root_path for Swagger docs in production
+# Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
+root_path = os.environ.get("ROOT_PATH", "")
+
 app = FastAPI(
     title="Hushh Consent Protocol API",
     description="Agent endpoints for the Hushh Personal Data Agent system",
-    version="1.0.0"
+    version="1.0.0",
+    root_path=root_path,
 )
 
-# CORS - Allow Next.js frontend (local and deployed)
+# CORS - Dynamic origins based on environment
+# Add FRONTEND_URL env var for production deployments
+cors_origins = [
+    "http://localhost:3000", 
+    "http://127.0.0.1:3000",
+]
+
+# Add production frontend URL if set
+frontend_url = os.environ.get("FRONTEND_URL")
+if frontend_url:
+    cors_origins.append(frontend_url)
+    logger.info(f"✅ Added CORS origin from FRONTEND_URL: {frontend_url}")
+
+# Also keep the hardcoded Cloud Run URL for backward compatibility
+cors_origins.append("https://hushh-webapp-1006304528804.us-central1.run.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "https://hushh-webapp-1006304528804.us-central1.run.app"
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
