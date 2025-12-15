@@ -17,6 +17,8 @@ import {
   LogOut,
   Code,
 } from "lucide-react";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase/config";
 
 interface NavItem {
   label: string;
@@ -97,10 +99,11 @@ export const Navbar = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     sessionStorage.clear();
+    await signOut(auth);
     setIsLoggedIn(false);
-    router.push("/logout");
+    router.push("/login");
   };
 
   // Filter navigation items based on auth status

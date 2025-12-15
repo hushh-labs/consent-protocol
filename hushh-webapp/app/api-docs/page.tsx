@@ -117,7 +117,9 @@ export default function ApiDocsPage() {
           </div>
           <div className="ml-auto">
             <a
-              href="http://localhost:8000/docs"
+              href={`${
+                process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+              }/docs`}
               target="_blank"
               rel="noopener noreferrer"
               className="cursor-pointer"

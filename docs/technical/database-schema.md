@@ -317,4 +317,66 @@ ORDER BY count DESC;
 
 ---
 
-_Version: 1.0 | Updated: 2024-12-14_
+## 🍽️ Domain: Food & Dining
+
+Stored in `vault_food` table as encrypted JSON.
+
+### Data Types
+
+| Type                    | Fields                                                               |
+| ----------------------- | -------------------------------------------------------------------- |
+| `DietaryProfile`        | diet_type, allergies, intolerances, restrictions, calorie_target     |
+| `FoodPreferences`       | favorite_cuisines, disliked_cuisines, spice_tolerance, cooking_skill |
+| `RestaurantPreferences` | price_range, ambiance, location_radius, favorites                    |
+
+### Consent Scopes
+
+| Scope              | Description            |
+| ------------------ | ---------------------- |
+| `vault.read.food`  | Read food preferences  |
+| `vault.write.food` | Write food preferences |
+
+### Example Decrypted Data
+
+```json
+{
+  "dietary_restrictions": ["Vegetarian", "Gluten-Free"],
+  "cuisine_preferences": ["Italian", "Mexican", "Japanese"],
+  "monthly_food_budget": 500,
+  "spice_tolerance": "medium"
+}
+```
+
+---
+
+## 💼 Domain: Professional Profile
+
+Stored in `vault_professional` table as encrypted JSON.
+
+### Data Types
+
+| Type                  | Fields                                           |
+| --------------------- | ------------------------------------------------ |
+| `ProfessionalProfile` | title, skills, experience_level, job_preferences |
+
+### Consent Scopes
+
+| Scope                      | Description             |
+| -------------------------- | ----------------------- |
+| `vault.read.professional`  | Read professional data  |
+| `vault.write.professional` | Write professional data |
+
+### Example Decrypted Data
+
+```json
+{
+  "professional_title": "Senior Software Engineer",
+  "skills": ["Python", "React", "AWS"],
+  "experience_level": "Senior (5-8 years)",
+  "job_preferences": ["Full-time", "Remote"]
+}
+```
+
+---
+
+_Version: 1.1 | Updated: 2024-12-14_

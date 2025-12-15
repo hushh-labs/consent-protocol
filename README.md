@@ -64,12 +64,12 @@ uvicorn server:app --reload --port 8000
 
 | Document                                                              | Description                |
 | --------------------------------------------------------------------- | -------------------------- |
+| [**🚀 Getting Started**](./GETTING_STARTED.md)                        | Setup and run locally      |
 | [**📖 Main Docs**](./docs/README.md)                                  | Complete documentation hub |
 | [**🏗️ Architecture**](./docs/technical/architecture.md)               | System design & flows      |
 | [**🔐 Consent Protocol**](./docs/technical/consent-implementation.md) | Token lifecycle            |
 | [**🔧 Developer API**](./docs/technical/developer-api.md)             | External API access        |
 | [**💾 Database Schema**](./docs/technical/database-schema.md)         | PostgreSQL tables          |
-| [**🎨 Design System**](./docs/design-system.md)                       | Morphy-UX components       |
 
 ---
 

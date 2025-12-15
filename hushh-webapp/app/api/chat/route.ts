@@ -151,15 +151,12 @@ export async function POST(req: NextRequest) {
  */
 async function callOrchestrator(message: string, userId: string) {
   try {
-    // Try Python orchestrator first
-    const response = await fetch(
-      `http://127.0.0.1:${PORT_MAP.agent_orchestrator}/agent/chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: message, user_id: userId }),
-      }
-    );
+    // Try Python orchestrator - use BACKEND_URL for cloud compatibility
+    const response = await fetch(`${BACKEND_URL}/agent/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: message, user_id: userId }),
+    });
 
     if (response.ok) {
       return await response.json();
