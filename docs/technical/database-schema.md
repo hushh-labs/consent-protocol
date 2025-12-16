@@ -180,31 +180,48 @@ Immutable audit log of all consent token operations.
 
 ```sql
 CREATE TABLE consent_audit (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-
-    -- What agent requested/used consent
-    agent_id VARCHAR(128) NOT NULL,
-
-    -- Which scope was authorized
-    scope VARCHAR(128) NOT NULL,
-
-    -- What action was performed
-    action VARCHAR(32) NOT NULL CHECK (action IN ('issued', 'validated', 'revoked', 'denied')),
-
-    -- Hash of token for correlation (not the actual token)
-    token_hash CHAR(64) NOT NULL,
-
-    -- Timestamp of action
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    id SERIAL PRIMARY KEY,
+    token_id TEXT NOT NULL UNIQUE,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    action TEXT NOT NULL,
+    issued_at BIGINT NOT NULL,
+    expires_at BIGINT,
+    revoked_at BIGINT,
+    metadata JSONB,
+    -- Added for consent protocol
+    token_type VARCHAR(20) DEFAULT 'consent',
+    ip_address VARCHAR(45),
+    user_agent TEXT
 );
 
-CREATE INDEX idx_consent_audit_user_id ON consent_audit(user_id);
-CREATE INDEX idx_consent_audit_agent_id ON consent_audit(agent_id);
-CREATE INDEX idx_consent_audit_created_at ON consent_audit(created_at);
+CREATE INDEX idx_consent_user ON consent_audit(user_id);
+CREATE INDEX idx_consent_token ON consent_audit(token_id);
+CREATE INDEX idx_consent_audit_created ON consent_audit(issued_at DESC);
+```
 
-COMMENT ON COLUMN consent_audit.token_hash IS
-    'SHA-256 hash of consent token for correlation without storing secret';
+---
+
+### session_tokens
+
+Tracks active user session tokens (issued after passphrase verification).
+
+```sql
+CREATE TABLE session_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,
+    scope TEXT DEFAULT 'session',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT TRUE,
+    ip_address VARCHAR(45),
+    user_agent TEXT
+);
+
+CREATE INDEX idx_session_tokens_user ON session_tokens(user_id);
+CREATE INDEX idx_session_tokens_active ON session_tokens(user_id, is_active);
 ```
 
 ---
