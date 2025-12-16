@@ -17,20 +17,22 @@
 
 ### Core
 
-| Document                                                         | Description                  |
-| ---------------------------------------------------------------- | ---------------------------- |
-| [architecture.md](technical/architecture.md)                     | System design, flow diagrams |
-| [consent-implementation.md](technical/consent-implementation.md) | Token lifecycle, validation  |
-| [developer-api.md](technical/developer-api.md)                   | External API integration     |
+| Document                                                         | Description                            |
+| ---------------------------------------------------------------- | -------------------------------------- |
+| [architecture.md](technical/architecture.md)                     | System design, flow diagrams           |
+| [consent-implementation.md](technical/consent-implementation.md) | Session token flow, 4-layer security   |
+| [developer-api.md](technical/developer-api.md)                   | External developer consent request API |
+| [system_context.md](technical/system_context.md)                 | AI/LLM development context             |
+| [deployment.md](technical/deployment.md)                         | Cloud Run deployment guide             |
 
 ### Schemas
 
-| Document                                             | Description                      |
-| ---------------------------------------------------- | -------------------------------- |
-| [database-schema.md](technical/database-schema.md)   | PostgreSQL tables + domain types |
-| [base-user-schema.md](technical/base-user-schema.md) | Hushh platform card model        |
+| Document                                             | Description                       |
+| ---------------------------------------------------- | --------------------------------- |
+| [database-schema.md](technical/database-schema.md)   | PostgreSQL tables, session_tokens |
+| [base-user-schema.md](technical/base-user-schema.md) | Hushh platform card model         |
 
-### Platform
+### Frontend
 
 | Document                                                         | Description          |
 | ---------------------------------------------------------------- | -------------------- |
@@ -58,12 +60,3 @@ Located in `consent-protocol/docs/`:
 | ----------------------------------- | ---------------------- |
 | [overview.md](business/overview.md) | Non-technical overview |
 | [roadmap.md](business/roadmap.md)   | Development roadmap    |
-
----
-
-## AI Context
-
-| Document                                          | Description          |
-| ------------------------------------------------- | -------------------- |
-| [system_context.md](ai-context/system_context.md) | LLM system context   |
-| [deployment.md](ai-context/deployment.md)         | Cloud Run deployment |

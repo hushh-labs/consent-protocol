@@ -100,6 +100,22 @@ export const Navbar = () => {
   }, []);
 
   const handleLogout = async () => {
+    // Destroy session tokens via consent protocol
+    const userId = sessionStorage.getItem("user_id");
+    if (userId) {
+      try {
+        await fetch("/api/consent/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        });
+        console.log("✅ Session tokens destroyed");
+      } catch (err) {
+        console.warn("⚠️ Failed to destroy session tokens:", err);
+      }
+    }
+
+    // Clear local storage and sign out
     sessionStorage.clear();
     await signOut(auth);
     setIsLoggedIn(false);

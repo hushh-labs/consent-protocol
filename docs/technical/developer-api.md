@@ -41,18 +41,33 @@ curl -X POST https://api.hushh.ai/api/v1/request-consent \
   }'
 ```
 
-### 3. Receive Consent Token
+### 3. Response: Pending (User Must Approve)
 
 ```json
 {
-  "status": "granted",
-  "message": "Consent granted. Token expires in 24 hours.",
+  "status": "pending",
+  "message": "Consent request submitted. User must approve in their dashboard. Request ID: abc12345"
+}
+```
+
+> **Note:** Consent is NOT auto-granted. User must approve in `/dashboard/consents`.
+
+### 4. Poll for Approval or Webhook (Coming Soon)
+
+Once user approves, the consent token becomes available.
+
+### 5. Receive Consent Token (After User Approval)
+
+```json
+{
+  "status": "approved",
+  "message": "Consent granted to Partner App",
   "consent_token": "HCT:dXNlcl9...",
   "expires_at": 1702656000000
 }
 ```
 
-### 4. Access Data
+### 6. Access Data
 
 ```bash
 curl -X POST https://api.hushh.ai/api/v1/food-data \
@@ -76,13 +91,16 @@ Development: http://localhost:8000
 
 ### Endpoints
 
-| Method | Endpoint                    | Description                          |
-| ------ | --------------------------- | ------------------------------------ |
-| `POST` | `/api/v1/request-consent`   | Request user consent for data access |
-| `POST` | `/api/v1/food-data`         | Get user's food preferences          |
-| `POST` | `/api/v1/professional-data` | Get user's professional profile      |
-| `GET`  | `/api/v1/list-scopes`       | List all available consent scopes    |
-| `POST` | `/api/validate-token`       | Validate a consent token             |
+| Method | Endpoint                       | Description                            |
+| ------ | ------------------------------ | -------------------------------------- |
+| `POST` | `/api/v1/request-consent`      | Request user consent (returns pending) |
+| `GET`  | `/api/consent/pending`         | Get pending consent requests for user  |
+| `POST` | `/api/consent/pending/approve` | User approves a pending request        |
+| `POST` | `/api/consent/pending/deny`    | User denies a pending request          |
+| `POST` | `/api/v1/food-data`            | Get user's food preferences            |
+| `POST` | `/api/v1/professional-data`    | Get user's professional profile        |
+| `GET`  | `/api/v1/list-scopes`          | List all available consent scopes      |
+| `POST` | `/api/validate-token`          | Validate a consent token               |
 
 ---
 
@@ -113,14 +131,21 @@ Development: http://localhost:8000
 }
 ```
 
-**Response (Success):**
+**Response (Pending - User Must Approve):**
 
 ```json
 {
-  "status": "granted",
-  "message": "Consent granted. Token expires in 24 hours.",
-  "consent_token": "HCT:base64payload.hmac_signature",
-  "expires_at": 1702656000000
+  "status": "pending",
+  "message": "Consent request submitted. User must approve in their dashboard. Request ID: abc12345"
+}
+```
+
+**Response (Already Pending):**
+
+```json
+{
+  "status": "pending",
+  "message": "Consent request already pending. Waiting for user approval."
 }
 ```
 

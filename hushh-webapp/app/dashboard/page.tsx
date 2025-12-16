@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { AgentChat, PendingUI } from "@/components/chat/agent-chat";
 import { CollectedDataCard } from "@/components/chat/collected-data-card";
+import { ConsentStatusBar } from "@/components/consent/status-bar";
 import {
   Card,
   CardHeader,
@@ -27,6 +28,9 @@ export default function DashboardPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
+      {/* Consent Status Bar */}
+      <ConsentStatusBar className="mb-2" />
+
       {/* Header */}
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">
