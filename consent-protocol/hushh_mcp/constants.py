@@ -12,6 +12,7 @@ class ConsentScope(str, Enum):
     VAULT_READ_CONTACTS = "vault.read.contacts"
     VAULT_READ_FOOD = "vault.read.food"
     VAULT_READ_PROFESSIONAL = "vault.read.professional"
+    VAULT_READ_ALL = "vault.read.all"  # Session scope - all vault access
 
     # Vault WRITE scopes (domain-specific per Bible)
     VAULT_WRITE_FOOD = "vault.write.food"

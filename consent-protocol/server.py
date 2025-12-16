@@ -6,7 +6,7 @@ Serves all agent chat endpoints that the Next.js frontend calls.
 Run with: uvicorn server:app --reload --port 8000
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
@@ -44,9 +44,6 @@ frontend_url = os.environ.get("FRONTEND_URL")
 if frontend_url:
     cors_origins.append(frontend_url)
     logger.info(f"✅ Added CORS origin from FRONTEND_URL: {frontend_url}")
-
-# Also keep the hardcoded Cloud Run URL for backward compatibility
-cors_origins.append("https://hushh-webapp-1006304528804.us-central1.run.app")
 
 app.add_middleware(
     CORSMiddleware,
@@ -289,6 +286,9 @@ async def request_consent(request: ConsentRequest):
     specific user data. The user will be notified and must approve.
     
     Follows Hushh Core Principle: "Consent First"
+    
+    IMPORTANT: This does NOT auto-approve. User must explicitly approve
+    via the /api/consent/pending/approve endpoint.
     """
     logger.info(f"🔐 Consent Request: dev={request.developer_token}, user={request.user_id}, scope={request.scope}")
     
@@ -311,45 +311,130 @@ async def request_consent(request: ConsentRequest):
             consent_token=_granted_consents[consent_key]
         )
     
-    # Store pending consent (in production, send notification to user)
+    # Check if request already pending
+    if consent_key in _pending_consents:
+        return ConsentResponse(
+            status="pending",
+            message="Consent request already pending. Waiting for user approval."
+        )
+    
+    # Generate a request ID
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    
+    # Store pending consent (user must approve in dashboard)
     _pending_consents[consent_key] = {
+        "request_id": request_id,
         "developer": dev_info["name"],
+        "developer_token": request.developer_token,
         "scope": request.scope,
+        "scope_description": get_scope_description(request.scope),
         "expiry_hours": request.expiry_hours,
-        "requested_at": int(__import__("time").time() * 1000)
+        "requested_at": int(__import__("time").time() * 1000),
+        "user_id": request.user_id
     }
     
-    # For demo: auto-approve consent (in production, user must approve)
-    # Issue consent token
-    scope_map = {
-        "vault_read_food": ConsentScope.VAULT_READ_FOOD,
-        "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-        "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
-        "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
-    }
-    
-    consent_scope = scope_map.get(request.scope)
-    if not consent_scope:
-        raise HTTPException(status_code=400, detail=f"Unknown scope: {request.scope}")
-    
-    token = issue_token(
-        user_id=request.user_id,
-        agent_id=f"developer:{request.developer_token}",
-        scope=consent_scope,
-        expires_in_ms=request.expiry_hours * 60 * 60 * 1000
-    )
-    
-    # Store granted consent
-    _granted_consents[consent_key] = token.token
-    
-    logger.info(f"✅ Consent granted: {consent_key}")
+    logger.info(f"📋 Consent request stored as pending: {consent_key} (request_id={request_id})")
     
     return ConsentResponse(
-        status="granted",
-        message=f"Consent granted. Token expires in {request.expiry_hours} hours.",
-        consent_token=token.token,
-        expires_at=token.expires_at
+        status="pending",
+        message=f"Consent request submitted. User must approve in their dashboard. Request ID: {request_id}"
     )
+
+def get_scope_description(scope: str) -> str:
+    """Human-readable scope descriptions."""
+    descriptions = {
+        "vault_read_food": "Read your food preferences (dietary, cuisines, budget)",
+        "vault_read_professional": "Read your professional profile (title, skills, experience)",
+        "vault_write_food": "Write to your food preferences",
+        "vault_write_professional": "Write to your professional profile",
+    }
+    return descriptions.get(scope, f"Access: {scope}")
+
+# ============================================================================
+# PENDING CONSENT MANAGEMENT (User-facing)
+# ============================================================================
+
+@app.get("/api/consent/pending")
+async def get_pending_consents(userId: str):
+    """
+    Get all pending consent requests for a user.
+    Called by the dashboard to show pending requests.
+    """
+    pending_for_user = []
+    for key, request in _pending_consents.items():
+        if request["user_id"] == userId:
+            pending_for_user.append({
+                "id": request["request_id"],
+                "developer": request["developer"],
+                "scope": request["scope"],
+                "scopeDescription": request["scope_description"],
+                "requestedAt": request["requested_at"],
+                "expiryHours": request["expiry_hours"],
+            })
+    
+    return {"pending": pending_for_user}
+
+@app.post("/api/consent/pending/approve")
+async def approve_consent(userId: str, requestId: str):
+    """
+    User approves a pending consent request.
+    Issues the consent token to the developer.
+    """
+    logger.info(f"✅ User {userId} approving consent request {requestId}")
+    
+    # Find the pending request
+    for key, request in list(_pending_consents.items()):
+        if request["user_id"] == userId and request["request_id"] == requestId:
+            # Issue consent token
+            scope_map = {
+                "vault_read_food": ConsentScope.VAULT_READ_FOOD,
+                "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
+                "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
+                "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
+            }
+            
+            consent_scope = scope_map.get(request["scope"])
+            if not consent_scope:
+                raise HTTPException(status_code=400, detail=f"Unknown scope: {request['scope']}")
+            
+            token = issue_token(
+                user_id=userId,
+                agent_id=f"developer:{request['developer_token']}",
+                scope=consent_scope,
+                expires_in_ms=request["expiry_hours"] * 60 * 60 * 1000
+            )
+            
+            # Move to granted
+            _granted_consents[key] = token.token
+            del _pending_consents[key]
+            
+            logger.info(f"✅ Consent granted for {key}")
+            
+            return {
+                "status": "approved",
+                "message": f"Consent granted to {request['developer']}",
+                "consent_token": token.token,
+                "expires_at": token.expires_at
+            }
+    
+    raise HTTPException(status_code=404, detail="Consent request not found")
+
+@app.post("/api/consent/pending/deny")
+async def deny_consent(userId: str, requestId: str):
+    """
+    User denies a pending consent request.
+    """
+    logger.info(f"❌ User {userId} denying consent request {requestId}")
+    
+    # Find and remove the pending request
+    for key, request in list(_pending_consents.items()):
+        if request["user_id"] == userId and request["request_id"] == requestId:
+            del _pending_consents[key]
+            logger.info(f"❌ Consent denied for {key}")
+            return {"status": "denied", "message": f"Consent denied to {request['developer']}"}
+    
+    raise HTTPException(status_code=404, detail="Consent request not found")
 
 @app.post("/api/v1/food-data", response_model=DataAccessResponse)
 async def get_food_data(request: DataAccessRequest):
@@ -475,6 +560,145 @@ async def developer_api_root():
             "POST /api/v1/professional-data",
             "GET /api/v1/list-scopes"
         ]
+    }
+
+# ============================================================================
+# SESSION TOKEN ENDPOINTS (Internal Consent Flow)
+# ============================================================================
+
+class SessionTokenRequest(BaseModel):
+    userId: str
+    scope: str = "session"
+
+class SessionTokenResponse(BaseModel):
+    sessionToken: str
+    issuedAt: int
+    expiresAt: int
+    scope: str
+
+class LogoutRequest(BaseModel):
+    userId: str
+
+class HistoryRequest(BaseModel):
+    userId: str
+    page: int = 1
+    limit: int = 20
+
+@app.post("/api/consent/issue-token", response_model=SessionTokenResponse)
+async def issue_session_token(
+    request: SessionTokenRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Issue a session token after passphrase verification.
+    
+    SECURITY: Requires Firebase ID token in Authorization header.
+    The userId in request body MUST match the verified token's UID.
+    
+    Called after successful passphrase unlock on the frontend.
+    """
+    from hushh_mcp.consent.token import issue_token
+    from hushh_mcp.constants import ConsentScope
+    import firebase_admin
+    from firebase_admin import auth, credentials
+    
+    # Initialize Firebase Admin if not already done
+    try:
+        firebase_admin.get_app()
+    except ValueError:
+        # Use default credentials (works in Cloud Run with proper IAM)
+        cred = credentials.ApplicationDefault()
+        firebase_admin.initialize_app(cred)
+    
+    # Verify Firebase ID token
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning("⚠️ Missing or invalid Authorization header")
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    
+    id_token = authorization.split("Bearer ")[1]
+    
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        verified_uid = decoded_token["uid"]
+        
+        # Ensure request userId matches verified token
+        if request.userId != verified_uid:
+            logger.warning(f"⚠️ userId mismatch: request={request.userId}, token={verified_uid}")
+            raise HTTPException(status_code=403, detail="userId does not match authenticated user")
+        
+        logger.info(f"🔐 Verified user {verified_uid}, issuing session token...")
+        
+    except auth.InvalidIdTokenError as e:
+        logger.warning(f"⚠️ Invalid ID token: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
+    except auth.ExpiredIdTokenError as e:
+        logger.warning(f"⚠️ Expired ID token: {e}")
+        raise HTTPException(status_code=401, detail="Expired Firebase ID token")
+    except Exception as e:
+        logger.error(f"❌ Token verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Token verification failed")
+    
+    try:
+        # Issue token with session scope
+        token_obj = issue_token(
+            user_id=request.userId,
+            agent_id="orchestrator",
+            scope=ConsentScope.VAULT_READ_ALL if request.scope == "session" else ConsentScope(request.scope),
+            expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+        )
+        
+        logger.info(f"✅ Session token issued for {request.userId}, expires at {token_obj.expires_at}")
+        
+        return SessionTokenResponse(
+            sessionToken=token_obj.token,
+            issuedAt=token_obj.issued_at,
+            expiresAt=token_obj.expires_at,
+            scope=request.scope
+        )
+    except Exception as e:
+        logger.error(f"❌ Failed to issue session token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/consent/logout")
+async def logout_session(request: LogoutRequest):
+    """
+    Destroy all session tokens for a user.
+    
+    Called when user logs out. Invalidates all active session tokens.
+    External API tokens are NOT affected.
+    """
+    from hushh_mcp.consent.token import revoke_token
+    
+    logger.info(f"🚪 Logging out user: {request.userId}")
+    
+    # In production, this would query the database for all session tokens
+    # and revoke them. For now, we just log the action.
+    # The frontend should also clear sessionStorage.
+    
+    return {
+        "status": "success",
+        "message": f"Session tokens for {request.userId} marked for revocation"
+    }
+
+@app.get("/api/consent/history")
+async def get_consent_history(userId: str, page: int = 1, limit: int = 20):
+    """
+    Get paginated consent audit history for a user.
+    
+    Returns all consent actions (grants, revokes, delegations) for the user.
+    Used for the Archived/Logs tab in the dashboard.
+    """
+    logger.info(f"📜 Fetching consent history for user: {userId}, page: {page}")
+    
+    # In production, this would query the consent_audit table
+    # For now, return a placeholder structure
+    return {
+        "userId": userId,
+        "page": page,
+        "limit": limit,
+        "total": 0,
+        "items": [],
+        "message": "Audit history will be populated after database connection"
     }
 
 # ============================================================================

@@ -5,10 +5,11 @@
  *
  * Shows:
  * 1. Pending consent requests from developers
- * 2. Already granted consents with option to revoke
+ * 2. Active session tokens
+ * 3. Consent audit history (logs)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Button,
   Card,
@@ -24,75 +25,158 @@ import {
   RefreshCw,
   Bell,
   CheckCircle2,
-  Info,
+  History,
+  Key,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
-interface ConsentRequest {
+interface PendingConsent {
   id: string;
   developer: string;
   scope: string;
   scopeDescription: string;
-  requestedAt: string;
+  requestedAt: number;
   expiryHours: number;
-  status: "pending" | "granted" | "denied";
 }
 
-// Mock data - in production this comes from the backend
-const MOCK_PENDING: ConsentRequest[] = [
-  {
-    id: "req-001",
-    developer: "Partner App",
-    scope: "vault_read_food",
-    scopeDescription: "Read your food preferences (dietary, cuisines, budget)",
-    requestedAt: new Date().toISOString(),
-    expiryHours: 24,
-    status: "pending",
-  },
-];
+interface ConsentAuditEntry {
+  id: string;
+  token_id: string;
+  agent_id: string;
+  scope: string;
+  action: string;
+  issued_at: number;
+  expires_at: number | null;
+  token_type: string;
+}
 
-const MOCK_GRANTED: ConsentRequest[] = [
-  {
-    id: "grant-001",
-    developer: "Restaurant Finder Pro",
-    scope: "vault_read_food",
-    scopeDescription: "Read your food preferences (dietary, cuisines, budget)",
-    requestedAt: new Date(Date.now() - 86400000).toISOString(),
-    expiryHours: 168,
-    status: "granted",
-  },
-  {
-    id: "grant-002",
-    developer: "Job Match AI",
-    scope: "vault_read_professional",
-    scopeDescription:
-      "Read your professional profile (title, skills, experience)",
-    requestedAt: new Date(Date.now() - 172800000).toISOString(),
-    expiryHours: 720,
-    status: "granted",
-  },
-];
+interface SessionInfo {
+  isActive: boolean;
+  expiresAt: number | null;
+  token: string | null;
+  scope: string;
+}
 
 export default function ConsentsPage() {
-  const [pending, setPending] = useState<ConsentRequest[]>(MOCK_PENDING);
-  const [granted, setGranted] = useState<ConsentRequest[]>(MOCK_GRANTED);
-  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<PendingConsent[]>([]);
+  const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
+  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  const handleApprove = (id: string) => {
-    const request = pending.find((r) => r.id === id);
-    if (request) {
-      setGranted([...granted, { ...request, status: "granted" }]);
-      setPending(pending.filter((r) => r.id !== id));
+  const fetchPendingConsents = useCallback(async (uid: string) => {
+    try {
+      const response = await fetch(`/api/consent/pending?userId=${uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPending(data.pending || []);
+      }
+    } catch (err) {
+      console.error("Error fetching pending consents:", err);
+    }
+  }, []);
+
+  const fetchAuditLog = useCallback(async (uid: string) => {
+    try {
+      const response = await fetch(
+        `/api/consent/history?userId=${uid}&page=1&limit=50`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setAuditLog(data.items || []);
+      }
+    } catch (err) {
+      console.error("Error fetching audit log:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Load session info from sessionStorage
+    const token = sessionStorage.getItem("session_token");
+    const expiresAt = sessionStorage.getItem("session_token_expires");
+    const uid = sessionStorage.getItem("user_id");
+
+    if (uid) {
+      setUserId(uid);
+      fetchPendingConsents(uid);
+      fetchAuditLog(uid);
+    }
+
+    if (token && expiresAt) {
+      const expiryTime = parseInt(expiresAt, 10);
+      setSession({
+        isActive: Date.now() < expiryTime,
+        expiresAt: expiryTime,
+        token,
+        scope: "vault.read.all",
+      });
+    }
+
+    setLoading(false);
+  }, [fetchPendingConsents, fetchAuditLog]);
+
+  const handleApprove = async (requestId: string) => {
+    if (!userId) return;
+    setActionLoading(requestId);
+
+    try {
+      const response = await fetch("/api/consent/pending/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, requestId }),
+      });
+
+      if (response.ok) {
+        await fetchPendingConsents(userId);
+        await fetchAuditLog(userId);
+      } else {
+        console.error("Failed to approve consent");
+      }
+    } catch (err) {
+      console.error("Error approving consent:", err);
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const handleDeny = (id: string) => {
-    setPending(pending.filter((r) => r.id !== id));
+  const handleDeny = async (requestId: string) => {
+    if (!userId) return;
+    setActionLoading(requestId);
+
+    try {
+      const response = await fetch("/api/consent/pending/deny", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, requestId }),
+      });
+
+      if (response.ok) {
+        await fetchPendingConsents(userId);
+      } else {
+        console.error("Failed to deny consent");
+      }
+    } catch (err) {
+      console.error("Error denying consent:", err);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const handleRevoke = (id: string) => {
-    setGranted(granted.filter((r) => r.id !== id));
+  const getTimeRemaining = (expiresAt: number): string => {
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) return "Expired";
+
+    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  const formatDate = (timestamp: number): string => {
+    return new Date(timestamp).toLocaleString();
   };
 
   const getScopeColor = (scope: string): string => {
@@ -100,18 +184,15 @@ export default function ConsentsPage() {
       return "bg-orange-500/10 text-orange-600 border-orange-500/20";
     if (scope.includes("professional"))
       return "bg-blue-500/10 text-blue-600 border-blue-500/20";
-    if (scope.includes("finance"))
-      return "bg-green-500/10 text-green-600 border-green-500/20";
+    if (scope.includes("all"))
+      return "bg-purple-500/10 text-purple-600 border-purple-500/20";
     return "bg-gray-500/10 text-gray-600 border-gray-500/20";
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="space-y-4 text-center">
-          <RefreshCw className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-          <p className="text-muted-foreground">Loading consents...</p>
-        </div>
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -131,40 +212,29 @@ export default function ConsentsPage() {
         </div>
       </div>
 
-      {/* Mock Data Banner */}
-      <div className="flex items-center gap-3 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400">
-        <Info className="h-5 w-5 flex-shrink-0" />
-        <div className="text-sm">
-          <span className="font-semibold">Demo Mode:</span> This screen displays
-          mock data for demonstration purposes. In production, consent requests
-          will come from external developers via the API.
-        </div>
-      </div>
-
       {/* Tabs */}
       <Tabs defaultValue="pending" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pending" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
-            Pending Requests
+            Pending
             {pending.length > 0 && (
               <Badge variant="destructive" className="ml-1">
                 {pending.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="granted" className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Granted Access
-            {granted.length > 0 && (
-              <Badge variant="secondary" className="ml-1">
-                {granted.length}
-              </Badge>
-            )}
+          <TabsTrigger value="session" className="flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            Session
+          </TabsTrigger>
+          <TabsTrigger value="history" className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Audit Log
           </TabsTrigger>
         </TabsList>
 
-        {/* Pending Requests */}
+        {/* Pending Requests Tab */}
         <TabsContent value="pending" className="space-y-4 mt-4">
           {pending.length === 0 ? (
             <Card>
@@ -216,14 +286,20 @@ export default function ConsentsPage() {
                       onClick={() => handleApprove(request.id)}
                       variant="gradient"
                       className="flex-1"
+                      disabled={actionLoading === request.id}
                     >
-                      <Check className="h-4 w-4 mr-2" />
+                      {actionLoading === request.id ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4 mr-2" />
+                      )}
                       Approve
                     </Button>
                     <Button
                       onClick={() => handleDeny(request.id)}
                       variant="none"
                       className="flex-1 border border-destructive text-destructive hover:bg-destructive/10"
+                      disabled={actionLoading === request.id}
                     >
                       <X className="h-4 w-4 mr-2" />
                       Deny
@@ -235,59 +311,103 @@ export default function ConsentsPage() {
           )}
         </TabsContent>
 
-        {/* Granted Access */}
-        <TabsContent value="granted" className="space-y-4 mt-4">
-          {granted.length === 0 ? (
+        {/* Active Session Tab */}
+        <TabsContent value="session" className="space-y-4 mt-4">
+          {session ? (
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      Session Active
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Authenticated via passphrase
+                    </p>
+                  </div>
+                  <Badge className={getScopeColor(session.scope)}>
+                    {session.scope}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">
+                      Time Remaining
+                    </p>
+                    <p className="text-lg font-semibold flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      {session.expiresAt
+                        ? getTimeRemaining(session.expiresAt)
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Expires At</p>
+                    <p className="text-sm font-medium">
+                      {session.expiresAt
+                        ? new Date(session.expiresAt).toLocaleTimeString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground">Session Token</p>
+                  <p className="text-xs font-mono truncate">
+                    {session.token?.slice(0, 40)}...
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
             <Card>
               <CardContent className="py-12 text-center">
-                <Shield className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold">No Active Consents</h3>
+                <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-semibold">No Active Session</h3>
                 <p className="text-muted-foreground mt-2">
-                  You haven&apos;t granted any data access to developers yet.
+                  Enter your passphrase to start a new session.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Audit Log Tab */}
+        <TabsContent value="history" className="space-y-4 mt-4">
+          {auditLog.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <History className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-semibold">No Audit History</h3>
+                <p className="text-muted-foreground mt-2">
+                  Consent actions will be recorded here.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            granted.map((consent) => (
-              <Card key={consent.id} className="border-l-4 border-l-green-500">
-                <CardHeader className="pb-2">
+            <div className="space-y-3">
+              {auditLog.map((entry) => (
+                <Card key={entry.id} className="p-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-lg">
-                        {consent.developer}
-                      </CardTitle>
+                      <p className="font-medium">{entry.action}</p>
                       <p className="text-sm text-muted-foreground">
-                        Granted{" "}
-                        {new Date(consent.requestedAt).toLocaleDateString()}
+                        Agent: {entry.agent_id}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(entry.issued_at)}
                       </p>
                     </div>
-                    <Badge className={getScopeColor(consent.scope)}>
-                      {consent.scope
-                        .replace("vault_read_", "")
-                        .replace("_", " ")}
+                    <Badge className={getScopeColor(entry.scope)}>
+                      {entry.scope}
                     </Badge>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="p-3 rounded-lg bg-green-500/5 border border-green-500/10">
-                    <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                      ✓ Active Access
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {consent.scopeDescription}
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={() => handleRevoke(consent.id)}
-                    variant="none"
-                    className="w-full border border-destructive text-destructive hover:bg-destructive/10"
-                  >
-                    Revoke Access
-                  </Button>
-                </CardContent>
-              </Card>
-            ))
+                </Card>
+              ))}
+            </div>
           )}
         </TabsContent>
       </Tabs>

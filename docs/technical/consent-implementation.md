@@ -1,290 +1,203 @@
 # Consent Protocol Implementation
 
-> How agents issue and validate consent tokens in the Hushh system.
+> How the Hushh system implements consent-driven authentication and data access.
 
 ---
 
 ## 🎯 Overview
 
-The consent protocol ensures that **every action on user data requires explicit, cryptographic permission**. This document explains how agents implement the protocol.
+The consent protocol ensures that **every action on user data requires explicit, cryptographic permission**. This is implemented through a multi-layer security model.
 
 ---
 
-## 🔐 Token Lifecycle
+## 🔐 Security Layers
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   REQUIRE   │────►│    ISSUE    │────►│   VALIDATE  │────►│   REVOKE    │
-│   Consent   │     │   Token     │     │   Token     │     │   (Optional)│
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-       │                   │                   │                   │
-       │                   │                   │                   │
-User confirms       Agent calls         Vault API calls      User or system
-"Save" in UI        issue_token()       validate_token()     invalidates
+┌─────────────────────────────────────────────────────────────────┐
+│                     User Authentication                          │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 1: Firebase Auth     → Identity verification (who you are)│
+│ Layer 2: Passphrase        → Knowledge verification (zero-know) │
+│ Layer 3: Firebase ID Token → Backend validates identity         │
+│ Layer 4: Session Token     → Signed proof of consent            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Implementation Steps
+## 📋 Session Token Flow
 
-### 1. Agent Collects Data
+### 1. User Login (Firebase)
 
-```python
-class HushhFoodDiningAgent:
-    def handle_message(self, message, user_id, session_state):
-        # Multi-turn conversation to collect:
-        # - Dietary restrictions
-        # - Cuisine preferences
-        # - Monthly budget
-        state = session_state or {"step": "greeting", "collected": {}}
-
-        # ... conversation logic ...
-
-        return {
-            "response": response_message,
-            "session_state": state,
-            "collected_data": state.get("collected", {}),
-            "is_complete": False,
-            "needs_consent": False
-        }
-```
-
-### 2. Show Confirmation Before Save
-
-```python
-def _handle_budget_input(self, message, state):
-    # Parse and store budget
-    state["collected"]["monthly_budget"] = parsed_budget
-    state["step"] = "confirm"
-
-    return {
-        "message": (
-            "📋 **Summary:**\n\n"
-            f"🥗 Dietary: {dietary}\n"
-            f"🍜 Cuisines: {cuisines}\n"
-            f"💰 Budget: ${budget}\n\n"
-            "Save to your encrypted vault?"
-        ),
-        "state": state,
-        "ui_type": "buttons",
-        "options": ["💾 Save Preference", "✏️ Edit"],
-        "needs_consent": True,  # Signal frontend
-        "consent_scope": [ConsentScope.VAULT_WRITE_FOOD.value]
-    }
-```
-
-### 3. Issue Token on Confirmation
-
-```python
-from hushh_mcp.consent.token import issue_token
-from hushh_mcp.constants import ConsentScope
-
-def _handle_confirmation(self, message, state, user_id):
-    msg_lower = message.lower().strip()
-
-    if msg_lower in ["save", "yes", "confirm"]:
-        # === CONSENT PROTOCOL: Issue signed token ===
-        consent_token = issue_token(
-            user_id=user_id,
-            agent_id=self.manifest["name"],  # "agent_food_dining"
-            scope=ConsentScope.VAULT_WRITE_FOOD
-        )
-
-        logger.info(f"🔐 Issued consent token for {user_id}")
-
-        return {
-            "message": "🎉 Preferences saved successfully!",
-            "state": {"step": "complete", "collected": state["collected"]},
-            "is_complete": True,
-            # Return token to frontend
-            "consent_token": consent_token.token,
-            "consent_scope": ConsentScope.VAULT_WRITE_FOOD.value,
-            "consent_issued_at": consent_token.issued_at,
-            "consent_expires_at": consent_token.expires_at
-        }
-```
-
-### 4. Frontend Encrypts & Sends to Vault
+User authenticates via Google OAuth. Firebase issues an ID token.
 
 ```typescript
-// Frontend: agent-chat.tsx
-if (data.isComplete && data.consent_token) {
-  // Encrypt data locally
-  const encrypted = await encryptData(
-    JSON.stringify(data.sessionState.collected),
-    vaultKey // sessionStorage - never sent to server
-  );
-
-  // Send to vault with consent token
-  await fetch("/api/vault/store-preferences", {
-    method: "POST",
-    body: JSON.stringify({
-      userId,
-      preferences: encrypted,
-      consentToken: data.consent_token, // For validation
-    }),
-  });
-}
+// Firebase handles OAuth
+const result = await signInWithPopup(auth, googleProvider);
+const idToken = await result.user.getIdToken();
 ```
 
-### 5. Vault Validates Token Before Write
+### 2. Passphrase Verification (Frontend)
+
+User enters passphrase to unlock vault. This is **zero-knowledge** - passphrase never sent to server.
 
 ```typescript
-// API: /api/vault/store-preferences/route.ts
-export async function POST(req: NextRequest) {
-  const { userId, preferences, consentToken } = await req.json();
-
-  // Validate consent token
-  const validation = await fetch("http://localhost:8000/api/validate-token", {
-    method: "POST",
-    body: JSON.stringify({ token: consentToken }),
-  });
-  const result = await validation.json();
-
-  if (!result.valid) {
-    return NextResponse.json(
-      { error: `Consent validation failed: ${result.reason}` },
-      { status: 403 }
-    );
-  }
-
-  // Verify token is for this user
-  if (result.user_id !== userId) {
-    return NextResponse.json({ error: "User mismatch" }, { status: 403 });
-  }
-
-  // Only now perform the write
-  await db.vault_food.upsert({
-    where: { user_id: userId },
-    data: preferences, // Already encrypted
-  });
-
-  return NextResponse.json({ success: true });
-}
+// app/login/page.tsx - handleUnlockPassphrase()
+const vaultKeyHex = await unlockVaultWithPassphrase(
+  passphrase,
+  vaultData.encryptedVaultKey,
+  vaultData.salt,
+  vaultData.iv
+);
+sessionStorage.setItem("vault_key", vaultKeyHex);
 ```
 
----
+### 3. Session Token Issuance (Backend)
 
-## 🔑 Token Format
+After passphrase succeeds, frontend requests session token with Firebase ID token:
 
-```
-HCT:base64(user_id|agent_id|scope|issued_at|expires_at).hmac_sha256_signature
-```
-
-### Example Token
-
-```
-HCT:dXNlcl9tb2NrXzAwMXxhZ2VudF9mb29kX2RpbmluZ3x2YXVsdC53cml0ZS5mb29kfDE3MDI1NjAwMDAwMDB8MTcwMjY0NjQwMDAwMA==.a1b2c3d4e5f6...
-```
-
-### Decoded Payload
-
-```
-user_mock_001|agent_food_dining|vault.write.food|1702560000000|1702646400000
+```typescript
+// Frontend sends both userId AND Firebase ID token
+const idToken = await auth.currentUser.getIdToken();
+const response = await fetch("/api/consent/session-token", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${idToken}`,
+  },
+  body: JSON.stringify({ userId }),
+});
 ```
 
----
+### 4. Backend Verification
 
-## ✅ Validation Logic
+Python backend verifies Firebase ID token before issuing session token:
 
 ```python
-# hushh_mcp/consent/token.py
+# consent-protocol/server.py
+from firebase_admin import auth
 
-def validate_token(token_str, expected_scope=None):
-    # 1. Check if revoked
-    if token_str in _revoked_tokens:
-        return False, "Token has been revoked", None
+# Verify Firebase ID token
+decoded_token = auth.verify_id_token(id_token)
+verified_uid = decoded_token["uid"]
 
-    # 2. Parse token
-    prefix, signed_part = token_str.split(":")
-    encoded, signature = signed_part.split(".")
+# Ensure request userId matches verified token
+if request.userId != verified_uid:
+    raise HTTPException(status_code=403, detail="userId mismatch")
 
-    # 3. Verify prefix
-    if prefix != CONSENT_TOKEN_PREFIX:  # "HCT"
-        return False, "Invalid token prefix", None
+# Issue session token
+token_obj = issue_token(
+    user_id=request.userId,
+    agent_id="orchestrator",
+    scope=ConsentScope.VAULT_READ_ALL,
+    expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+)
+```
 
-    # 4. Decode payload
-    decoded = base64.urlsafe_b64decode(encoded).decode()
-    user_id, agent_id, scope_str, issued_at, expires_at = decoded.split("|")
+### 5. Session Storage
 
-    # 5. Verify signature
-    raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at}|{expires_at}"
-    expected_sig = hmac.new(SECRET_KEY, raw, sha256).hexdigest()
+Frontend stores session token for dashboard use:
 
-    if not hmac.compare_digest(signature, expected_sig):
-        return False, "Invalid signature", None
+```typescript
+sessionStorage.setItem("session_token", tokenData.sessionToken);
+sessionStorage.setItem("session_token_expires", String(tokenData.expiresAt));
+```
 
-    # 6. Check scope
-    if expected_scope and scope_str != expected_scope.value:
-        return False, "Scope mismatch", None
+### 6. Logout
 
-    # 7. Check expiration
-    if int(time.time() * 1000) > int(expires_at):
-        return False, "Token expired", None
+On logout, tokens are destroyed:
 
-    # Valid!
-    return True, None, HushhConsentToken(...)
+```typescript
+// components/navbar.tsx - handleLogout()
+await fetch("/api/consent/logout", {
+  method: "POST",
+  body: JSON.stringify({ userId }),
+});
+sessionStorage.clear();
+await signOut(auth);
 ```
 
 ---
 
-## 📊 ConsentScope Values
+## 🗄️ Database Tables
 
-```python
-class ConsentScope(str, Enum):
-    # Food & Dining
-    VAULT_READ_FOOD = "vault.read.food"
-    VAULT_WRITE_FOOD = "vault.write.food"
-    AGENT_FOOD_COLLECT = "agent.food.collect"
+### session_tokens
 
-    # Professional Profile
-    VAULT_READ_PROFESSIONAL = "vault.read.professional"
-    VAULT_WRITE_PROFESSIONAL = "vault.write.professional"
-    AGENT_PROFESSIONAL_COLLECT = "agent.professional.collect"
+Tracks active session tokens:
 
-    # Finance
-    VAULT_READ_FINANCE = "vault.read.finance"
-    VAULT_WRITE_FINANCE = "vault.write.finance"
+```sql
+CREATE TABLE session_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token_hash VARCHAR(64) NOT NULL,
+  scope TEXT DEFAULT 'session',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  is_active BOOLEAN DEFAULT TRUE,
+  ip_address VARCHAR(45),
+  user_agent TEXT
+);
+```
 
-    # Identity
-    AGENT_IDENTITY_VERIFY = "agent.identity.verify"
+### consent_audit
+
+Logs all consent actions:
+
+```sql
+CREATE TABLE consent_audit (
+  id SERIAL PRIMARY KEY,
+  token_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  action TEXT NOT NULL,
+  issued_at BIGINT NOT NULL,
+  expires_at BIGINT,
+  revoked_at BIGINT,
+  metadata JSONB,
+  token_type VARCHAR(20) DEFAULT 'consent',
+  ip_address VARCHAR(45),
+  user_agent TEXT
+);
 ```
 
 ---
 
-## 📁 File References
+## 🔗 API Endpoints
 
-| File                         | Purpose                     |
-| ---------------------------- | --------------------------- |
-| `hushh_mcp/consent/token.py` | issue, validate, revoke     |
-| `hushh_mcp/constants.py`     | ConsentScope enum           |
-| `hushh_mcp/types.py`         | HushhConsentToken type      |
-| `hushh_mcp/config.py`        | SECRET_KEY, expiry settings |
-
----
-
-## 🚫 Anti-Patterns
-
-| DON'T                          | DO                                 |
-| ------------------------------ | ---------------------------------- |
-| Skip consent for "convenience" | Always issue_token() before writes |
-| Use hardcoded user IDs         | Pass real Firebase userId          |
-| Store vault keys server-side   | Keep in sessionStorage only        |
-| Ignore validation errors       | Return 403 on any failure          |
+| Endpoint                     | Method | Purpose                                          |
+| ---------------------------- | ------ | ------------------------------------------------ |
+| `/api/consent/session-token` | POST   | Issue session token (requires Firebase ID token) |
+| `/api/consent/logout`        | POST   | Destroy all session tokens for user              |
+| `/api/consent/history`       | GET    | Get paginated consent audit history              |
 
 ---
 
-## 📈 Implementation Status
+## 🎛️ UI Components
 
-| Feature           | Status         |
-| ----------------- | -------------- |
-| Token issuance    | ✅ Complete    |
-| Token validation  | ✅ Complete    |
-| Token revocation  | ✅ Complete    |
-| Scope enforcement | ✅ Complete    |
-| TrustLinks (A2A)  | 🔧 In Progress |
-| Audit logging     | 🔧 Planned     |
+### ConsentStatusBar
+
+Shows active session status in dashboard:
+
+```tsx
+// components/consent/status-bar.tsx
+<Badge variant="default">
+  <Shield className="h-3 w-3" />
+  Session Active
+</Badge>
+<Badge variant="outline">
+  <Clock className="h-3 w-3" />
+  23h 45m remaining
+</Badge>
+```
 
 ---
 
-_Version: 2.0 | Updated: 2024-12-14_
+## 🛡️ Security Guarantees
+
+1. **No passphrase on server** - Zero-knowledge design
+2. **Firebase ID token verification** - Backend validates identity
+3. **Token binding** - userId in request must match verified token UID
+4. **Session expiry** - Tokens expire after 24 hours
+5. **Logout destroys tokens** - No lingering access
+6. **Audit trail** - All actions logged to consent_audit table

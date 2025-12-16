@@ -291,6 +291,48 @@ export default function LoginPage() {
       );
 
       sessionStorage.setItem("vault_key", vaultKeyHex);
+      sessionStorage.setItem("user_id", userId); // Store for consents page
+
+      // Issue session token via consent protocol
+      console.log("🔐 Issuing session token via consent protocol...");
+      try {
+        // Get Firebase ID token for authentication
+        const user = auth.currentUser;
+        const idToken = user ? await user.getIdToken() : null;
+
+        if (!idToken) {
+          console.warn("⚠️ No Firebase ID token available");
+        } else {
+          const tokenResponse = await fetch("/api/consent/session-token", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ userId }),
+          });
+
+          if (tokenResponse.ok) {
+            const tokenData = await tokenResponse.json();
+            sessionStorage.setItem("session_token", tokenData.sessionToken);
+            sessionStorage.setItem(
+              "session_token_expires",
+              String(tokenData.expiresAt)
+            );
+            console.log(
+              "✅ Session token issued, expires:",
+              new Date(tokenData.expiresAt).toISOString()
+            );
+          } else {
+            console.warn(
+              "⚠️ Session token issuance failed, continuing without token"
+            );
+          }
+        }
+      } catch (tokenErr) {
+        console.warn("⚠️ Session token issuance error:", tokenErr);
+        // Continue without token - vault is still unlocked
+      }
 
       setStep("success");
       router.push("/dashboard");
