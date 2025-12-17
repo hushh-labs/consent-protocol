@@ -23,3 +23,6 @@ pytest==8.2.2
 
 # 📦 Optional OAuth / Apple ID agents
 requests==2.32.3
+
+# 🔌 MCP Server SDK (Model Context Protocol)
+mcp>=0.9.0
