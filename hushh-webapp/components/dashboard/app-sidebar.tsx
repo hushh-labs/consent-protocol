@@ -27,6 +27,7 @@ import {
   SidebarMenuBadge,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { usePendingConsentCount } from "@/components/consent/notification-provider";
 
 const domains = [
   {
@@ -75,6 +76,7 @@ const domains = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const pendingCount = usePendingConsentCount();
 
   return (
     <Sidebar>
@@ -159,6 +161,11 @@ export function AppSidebar() {
                     <span>Consents</span>
                   </Link>
                 </SidebarMenuButton>
+                {pendingCount > 0 && (
+                  <SidebarMenuBadge className="bg-red-500 text-white">
+                    {pendingCount}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
