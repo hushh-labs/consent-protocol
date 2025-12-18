@@ -52,8 +52,12 @@ from hushh_mcp.types import UserID, AgentID, HushhConsentToken, TrustLink
 # CONFIGURATION
 # ============================================================================
 
-# FastAPI backend URL (for pending consent flow)
+# FastAPI backend URL (for consent API calls)
 FASTAPI_URL = os.environ.get("CONSENT_API_URL", "http://localhost:8000")
+
+# Frontend URL (for user-facing links - MUST match your deployment)
+# This is shown to users for signup, consent approval, etc.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # Production mode: requires user approval via dashboard
 # Demo mode: auto-issues tokens (for testing)
@@ -67,11 +71,11 @@ MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desk
 # ============================================================================
 
 # How long to wait for user to approve consent (in seconds)
-# Default: 10 seconds for quick feedback; set higher for production
-CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "10"))
+# Default: 120 seconds (2 minutes) - reasonable time for user to check dashboard
+CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 # How often to poll for consent approval (in seconds)
-CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "2"))
+CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "3"))
 
 
 
@@ -438,19 +442,22 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             # Continue with original user_id
     
     # Map string scope to internal format
+    # SECURITY: vault.read.all is NOT available via MCP - only per-domain scopes
+    # Full data access requires the user's own portal session
     scope_api_map = {
         "vault.read.food": "vault_read_food",
         "vault.read.professional": "vault_read_professional",
         "vault.read.finance": "vault_read_finance",
-        "vault.read.all": "vault_read_all",
+        # "vault.read.all" - DISABLED for MCP (security)
     }
     
     scope_enum_map = {
         "vault.read.food": ConsentScope.VAULT_READ_FOOD,
         "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
         "vault.read.finance": ConsentScope.VAULT_READ_FINANCE,
-        "vault.read.all": ConsentScope.VAULT_READ_ALL,
+        # "vault.read.all" - DISABLED for MCP (security)
     }
+
     
     scope_api = scope_api_map.get(scope_str)
     scope_enum = scope_enum_map.get(scope_str)
@@ -1006,14 +1013,8 @@ async def handle_list_scopes() -> list[TextContent]:
             "data_fields": ["monthly_budget", "spending_categories", "savings_goals"],
             "sensitivity": "high"
         },
-        {
-            "scope": "vault.read.all",
-            "emoji": "🔓",
-            "description": "Session scope - access all vault data (internal/admin use only)",
-            "data_fields": ["*"],
-            "sensitivity": "critical",
-            "note": "This scope should only be used for authenticated session access"
-        },
+        # NOTE: vault.read.all is NOT available via MCP for security
+        # Full vault access requires authenticated session on Hushh portal
     ]
     
     return [TextContent(type="text", text=json.dumps({
@@ -1021,8 +1022,10 @@ async def handle_list_scopes() -> list[TextContent]:
         "total_scopes": len(scopes),
         "usage": "Call request_consent with user_id and desired scope to obtain a consent token",
         "privacy_principle": "Each scope requires separate, explicit user consent",
+        "security_note": "vault.read.all is NOT available via MCP - full data access requires the Hushh portal.",
         "hushh_promise": "Your data is never accessed without your permission."
     }))]
+
 
 
 # ============================================================================
