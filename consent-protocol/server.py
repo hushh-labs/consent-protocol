@@ -254,7 +254,10 @@ class DataAccessResponse(BaseModel):
 REGISTERED_DEVELOPERS = {
     "dev-hushh-001": {"name": "Hushh Internal", "approved_scopes": ["*"]},
     "dev-partner-001": {"name": "Partner App", "approved_scopes": ["vault_read_food", "vault_read_professional"]},
+    # MCP Server developer (Claude Desktop, Cursor, etc.)
+    "mcp_dev_claude_desktop": {"name": "Claude Desktop (MCP)", "approved_scopes": ["*"]},
 }
+
 
 # Mock user data store (in production, comes from encrypted vault)
 MOCK_USER_DATA = {

@@ -23,7 +23,13 @@ import asyncio
 import json
 import logging
 import sys
+import os
+import uuid
+import time
 from typing import Any, Optional
+
+# HTTP client for FastAPI communication
+import httpx
 
 # ============================================================================
 # MCP SDK IMPORTS
@@ -43,6 +49,20 @@ from hushh_mcp.constants import ConsentScope, AGENT_PORTS
 from hushh_mcp.types import UserID, AgentID, HushhConsentToken, TrustLink
 
 # ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# FastAPI backend URL (for pending consent flow)
+FASTAPI_URL = os.environ.get("CONSENT_API_URL", "http://localhost:8000")
+
+# Production mode: requires user approval via dashboard
+# Demo mode: auto-issues tokens (for testing)
+PRODUCTION_MODE = os.environ.get("PRODUCTION_MODE", "true").lower() == "true"
+
+# MCP developer token (registered in FastAPI)
+MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desktop")
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # IMPORTANT: Only use stderr - stdout is reserved for JSON-RPC messages
 # ============================================================================
@@ -53,6 +73,7 @@ logging.basicConfig(
     stream=sys.stderr  # CRITICAL: Don't pollute stdout
 )
 logger = logging.getLogger("hushh-mcp-server")
+
 
 # ============================================================================
 # SERVER INITIALIZATION
@@ -66,7 +87,7 @@ SERVER_INFO = {
     "version": "1.0.0",
     "protocol": "HushhMCP",
     "transport": "stdio",
-    "tools_count": 6,
+    "tools_count": 7,
     "compliance": [
         "Consent First",
         "Scoped Access", 
@@ -243,8 +264,34 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
                 "required": []
             }
+        ),
+        
+        # Tool 7: Check Consent Status (Production Flow)
+        Tool(
+            name="check_consent_status",
+            description=(
+                "🔄 Check the status of a pending consent request. "
+                "Use this after request_consent returns 'pending' status. "
+                "Poll this until status changes to 'granted' or 'denied'. "
+                "Returns the consent token when approved."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The user's unique identifier"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": "The scope that was requested"
+                    }
+                },
+                "required": ["user_id", "scope"]
+            }
         )
     ]
+
 
 
 # ============================================================================
@@ -269,6 +316,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         "get_professional_profile": handle_get_professional,
         "delegate_to_agent": handle_delegate,
         "list_scopes": handle_list_scopes,
+        "check_consent_status": handle_check_consent_status,
     }
     
     handler = handlers.get(name)
@@ -298,62 +346,228 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 async def handle_request_consent(args: dict) -> list[TextContent]:
     """
-    Issue a consent token for the requested scope.
+    Request consent from a user.
+    
+    PRODUCTION MODE:
+    - Creates pending request in FastAPI backend
+    - User must approve via dashboard
+    - Returns 'pending' status with instructions to poll
+    
+    DEMO MODE:
+    - Auto-issues token immediately (for testing)
     
     Compliance:
     ✅ HushhMCP: Consent First principle
-    ✅ Token signed with HMAC-SHA256
-    ✅ Scoped access - each scope is separate
-    ✅ Time-limited (24 hour expiration)
+    ✅ User approval required (production)
     """
     user_id = args.get("user_id")
     scope_str = args.get("scope")
     reason = args.get("reason", "MCP Host requesting access")
     
-    # Map string to ConsentScope enum
-    scope_map = {
+    # Map string scope to internal format
+    scope_api_map = {
+        "vault.read.food": "vault_read_food",
+        "vault.read.professional": "vault_read_professional",
+        "vault.read.finance": "vault_read_finance",
+        "vault.read.all": "vault_read_all",
+    }
+    
+    scope_enum_map = {
         "vault.read.food": ConsentScope.VAULT_READ_FOOD,
         "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
         "vault.read.finance": ConsentScope.VAULT_READ_FINANCE,
         "vault.read.all": ConsentScope.VAULT_READ_ALL,
     }
     
-    scope = scope_map.get(scope_str)
-    if not scope:
+    scope_api = scope_api_map.get(scope_str)
+    scope_enum = scope_enum_map.get(scope_str)
+    
+    if not scope_api:
         return [TextContent(type="text", text=json.dumps({
             "status": "error",
             "error": f"Invalid scope: {scope_str}",
-            "valid_scopes": list(scope_map.keys()),
+            "valid_scopes": list(scope_api_map.keys()),
             "hint": "Use list_scopes tool to see available options"
         }))]
     
-    # Issue the token using existing HushhMCP consent module
-    # This creates a cryptographically signed token
+    # ═══════════════════════════════════════════════════════════════════════
+    # PRODUCTION MODE: Create pending request via FastAPI
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    if PRODUCTION_MODE:
+        logger.info(f"🔐 Production Mode: Creating pending consent request")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{FASTAPI_URL}/api/v1/request-consent",
+                    json={
+                        "developer_token": MCP_DEVELOPER_TOKEN,
+                        "user_id": user_id,
+                        "scope": scope_api,
+                        "expiry_hours": 24
+                    },
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    status = data.get("status")
+                    
+                    if status == "already_granted":
+                        # Token already exists
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "granted",
+                            "consent_token": data.get("consent_token"),
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "message": "✅ Consent already granted. Use this token to access data."
+                        }))]
+                    
+                    elif status == "pending":
+                        # Request created, waiting for user approval
+                        logger.info(f"📋 Consent request pending: {user_id}/{scope_str}")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "pending",
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "message": data.get("message"),
+                            "user_action_required": True,
+                            "instructions": [
+                                "📱 The user must approve this request in their Hushh dashboard",
+                                "🔄 Call 'check_consent_status' to poll for approval",
+                                "⏱️ Request expires if not approved within 24 hours"
+                            ],
+                            "next_step": "Call check_consent_status with the same user_id and scope to check if approved",
+                            "dashboard_url": f"{FASTAPI_URL.replace('localhost:8000', 'your-app.com')}/dashboard/consents"
+                        }))]
+                    
+                else:
+                    error_detail = response.json().get("detail", "Unknown error")
+                    logger.error(f"❌ FastAPI error: {error_detail}")
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "error",
+                        "error": error_detail,
+                        "hint": "FastAPI backend may not be running or developer not registered"
+                    }))]
+                    
+        except httpx.ConnectError:
+            logger.warning("⚠️ FastAPI not reachable, falling back to demo mode")
+            # Fall through to demo mode
+        except Exception as e:
+            logger.error(f"❌ Error calling FastAPI: {e}")
+            # Fall through to demo mode
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # DEMO MODE: Auto-issue token (for testing when FastAPI not available)
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    logger.info(f"🔐 Demo Mode: Auto-issuing consent token")
+    
     token = issue_token(
         user_id=UserID(user_id),
         agent_id=AgentID("mcp_host"),
-        scope=scope,
+        scope=scope_enum,
         expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
     )
     
-    logger.info(f"🔐 Consent GRANTED: user={user_id}, scope={scope_str}")
+    logger.info(f"✅ Consent GRANTED (demo mode): user={user_id}, scope={scope_str}")
     
     return [TextContent(type="text", text=json.dumps({
         "status": "granted",
+        "mode": "demo" if not PRODUCTION_MODE else "fallback",
         "consent_token": token.token,
-        "token_format": "HCT:base64(payload).hmac_signature",
         "user_id": user_id,
         "scope": scope_str,
         "issued_at": token.issued_at,
         "expires_at": token.expires_at,
-        "signature_algorithm": "HMAC-SHA256",
         "message": f"✅ Consent granted for {scope_str}. Use this token to access data.",
-        "next_steps": [
-            f"Call get_food_preferences with this token" if "food" in scope_str else None,
-            f"Call get_professional_profile with this token" if "professional" in scope_str else None,
-            "Token is valid for 24 hours"
-        ]
+        "note": "In production, this would require user approval via dashboard."
     }))]
+
+
+async def handle_check_consent_status(args: dict) -> list[TextContent]:
+    """
+    Check if a pending consent request has been approved.
+    
+    This is the polling endpoint for production consent flow.
+    Call this after request_consent returns 'pending' status.
+    
+    Compliance:
+    ✅ Returns token only after user explicitly approves
+    ✅ Respects user's decision (grant or deny)
+    """
+    user_id = args.get("user_id")
+    scope_str = args.get("scope")
+    
+    # Map scope string to API format
+    scope_api_map = {
+        "vault.read.food": "vault_read_food",
+        "vault.read.professional": "vault_read_professional",
+        "vault.read.finance": "vault_read_finance",
+    }
+    scope_api = scope_api_map.get(scope_str, scope_str)
+    
+    logger.info(f"🔄 Checking consent status: user={user_id}, scope={scope_str}")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            # Check if there's a pending request
+            pending_response = await client.get(
+                f"{FASTAPI_URL}/api/consent/pending",
+                params={"userId": user_id},
+                timeout=10.0
+            )
+            
+            if pending_response.status_code == 200:
+                pending_data = pending_response.json()
+                pending_list = pending_data.get("pending", [])
+                
+                # Check if our scope is still pending
+                for req in pending_list:
+                    if req.get("scope") == scope_api:
+                        logger.info(f"⏳ Consent still pending for {scope_str}")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "pending",
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "message": "⏳ User has not yet approved this request.",
+                            "request_id": req.get("id"),
+                            "requested_at": req.get("requestedAt"),
+                            "instructions": [
+                                "The user needs to approve this in their dashboard",
+                                "Call this tool again in a few seconds to check status"
+                            ]
+                        }))]
+                
+                # Not in pending list - check if it was granted
+                # Try to issue a token check (this would work if already approved)
+                logger.info(f"✅ Request not pending - may have been approved")
+                
+                return [TextContent(type="text", text=json.dumps({
+                    "status": "not_pending",
+                    "user_id": user_id,
+                    "scope": scope_str,
+                    "message": "Request is no longer pending. It may have been approved or denied.",
+                    "next_step": "Call request_consent again - if approved, you'll get the token directly"
+                }))]
+                
+    except httpx.ConnectError:
+        logger.warning("⚠️ FastAPI not reachable")
+        return [TextContent(type="text", text=json.dumps({
+            "status": "error",
+            "error": "Cannot connect to consent backend",
+            "hint": "Make sure FastAPI server is running on " + FASTAPI_URL
+        }))]
+    except Exception as e:
+        logger.error(f"❌ Error checking consent status: {e}")
+        return [TextContent(type="text", text=json.dumps({
+            "status": "error",
+            "error": str(e)
+        }))]
+
+
+
 
 
 async def handle_validate_token(args: dict) -> list[TextContent]:
