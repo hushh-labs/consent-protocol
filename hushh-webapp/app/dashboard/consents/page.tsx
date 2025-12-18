@@ -131,10 +131,81 @@ export default function ConsentsPage() {
     setActionLoading(requestId);
 
     try {
+      // Find the pending request to get scope
+      const pendingRequest = pending.find((p) => p.id === requestId);
+      if (!pendingRequest) {
+        console.error("Pending request not found");
+        return;
+      }
+
+      // Get vault key from session storage
+      const vaultKey = sessionStorage.getItem("vault_key");
+      if (!vaultKey) {
+        console.error("Vault key not found - user must unlock vault first");
+        return;
+      }
+
+      // Fetch the scope data from vault
+      const scopeDataEndpoint = getScopeDataEndpoint(pendingRequest.scope);
+      let scopeData: Record<string, unknown> = {};
+
+      if (scopeDataEndpoint) {
+        const dataResponse = await fetch(
+          `${scopeDataEndpoint}?userId=${userId}`
+        );
+        if (dataResponse.ok) {
+          const data = await dataResponse.json();
+          // Decrypt the data with vault key
+          const { decryptData } = await import("@/lib/vault/encrypt");
+          const decryptedFields: Record<string, unknown> = {};
+
+          // Handle food/professional domain data format
+          const preferences = data.preferences || data.data || [];
+          if (Array.isArray(preferences)) {
+            for (const field of preferences) {
+              try {
+                const decrypted = await decryptData(
+                  {
+                    ciphertext: field.ciphertext,
+                    iv: field.iv,
+                    tag: field.tag,
+                    encoding: "base64",
+                    algorithm: "aes-256-gcm",
+                  },
+                  vaultKey
+                );
+                decryptedFields[field.field_name] = JSON.parse(decrypted);
+              } catch {
+                console.warn(`Failed to decrypt field: ${field.field_name}`);
+              }
+            }
+          }
+          scopeData = decryptedFields;
+        }
+      }
+
+      // Generate export key and encrypt the scope data
+      const { generateExportKey, encryptForExport } = await import(
+        "@/lib/vault/export-encrypt"
+      );
+      const exportKey = await generateExportKey();
+      const encrypted = await encryptForExport(
+        JSON.stringify(scopeData),
+        exportKey
+      );
+
+      // Send to server with encrypted data and export key
       const response = await fetch("/api/consent/pending/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, requestId }),
+        body: JSON.stringify({
+          userId,
+          requestId,
+          exportKey, // Server will embed this in token
+          encryptedData: encrypted.ciphertext,
+          encryptedIv: encrypted.iv,
+          encryptedTag: encrypted.tag,
+        }),
       });
 
       if (response.ok) {
@@ -148,6 +219,16 @@ export default function ConsentsPage() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  // Map scope to data endpoint
+  const getScopeDataEndpoint = (scope: string): string | null => {
+    const scopeMap: Record<string, string> = {
+      vault_read_food: "/api/vault/food",
+      vault_read_professional: "/api/vault/professional",
+      vault_read_finance: "/api/vault/finance",
+    };
+    return scopeMap[scope] || null;
   };
 
   const handleDeny = async (requestId: string) => {
