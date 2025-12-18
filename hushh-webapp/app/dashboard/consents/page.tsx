@@ -102,6 +102,15 @@ export default function ConsentsPage() {
       setUserId(uid);
       fetchPendingConsents(uid);
       fetchAuditLog(uid);
+
+      // Auto-poll every 5 seconds for real-time updates
+      const pollInterval = setInterval(() => {
+        fetchPendingConsents(uid);
+        fetchAuditLog(uid);
+      }, 5000);
+
+      // Cleanup interval on unmount
+      return () => clearInterval(pollInterval);
     }
 
     if (token && expiresAt) {

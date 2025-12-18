@@ -797,6 +797,23 @@ async def handle_get_food(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     consent_token = args.get("consent_token")
     
+    # Email resolution: if user_id looks like email, resolve to UID
+    if user_id and "@" in user_id:
+        try:
+            async with httpx.AsyncClient() as client:
+                lookup_response = await client.get(
+                    f"{FASTAPI_URL}/api/user/lookup",
+                    params={"email": user_id},
+                    timeout=5.0
+                )
+                if lookup_response.status_code == 200:
+                    lookup_data = lookup_response.json()
+                    if lookup_data.get("exists"):
+                        user_id = lookup_data["user_id"]
+                        logger.info(f"✅ Resolved email to UID: {user_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Email lookup failed: {e}")
+    
     # ═══════════════════════════════════════════════════════════════════════
     # COMPLIANCE CHECK: Validate consent BEFORE any data access
     # This is the core of the Hushh privacy promise
@@ -806,6 +823,7 @@ async def handle_get_food(args: dict) -> list[TextContent]:
         consent_token,
         expected_scope=ConsentScope.VAULT_READ_FOOD
     )
+
     
     if not valid:
         logger.warning(f"🚫 ACCESS DENIED (food): {reason}")
@@ -870,6 +888,23 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     consent_token = args.get("consent_token")
     
+    # Email resolution: if user_id looks like email, resolve to UID
+    if user_id and "@" in user_id:
+        try:
+            async with httpx.AsyncClient() as client:
+                lookup_response = await client.get(
+                    f"{FASTAPI_URL}/api/user/lookup",
+                    params={"email": user_id},
+                    timeout=5.0
+                )
+                if lookup_response.status_code == 200:
+                    lookup_data = lookup_response.json()
+                    if lookup_data.get("exists"):
+                        user_id = lookup_data["user_id"]
+                        logger.info(f"✅ Resolved email to UID: {user_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Email lookup failed: {e}")
+    
     # ═══════════════════════════════════════════════════════════════════════
     # COMPLIANCE CHECK: Must have vault.read.professional scope
     # A food token will be REJECTED here
@@ -879,6 +914,7 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
         consent_token,
         expected_scope=ConsentScope.VAULT_READ_PROFESSIONAL  # NOT food!
     )
+
     
     if not valid:
         logger.warning(f"🚫 ACCESS DENIED (professional): {reason}")
