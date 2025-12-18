@@ -52,6 +52,7 @@ export default function RootLayout({
         />
       </head>
       <body
+        suppressHydrationWarning
         className={`${inter.variable} ${quicksand.variable} ${exo2.variable} font-sans antialiased h-full flex flex-col`}
         style={{
           background: "var(--color-background)",
