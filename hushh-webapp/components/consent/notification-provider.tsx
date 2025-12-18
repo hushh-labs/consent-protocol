@@ -89,6 +89,106 @@ export function ConsentNotificationProvider({
     }
   }, []);
 
+  // Map scope to data endpoint
+  const getScopeDataEndpoint = (scope: string): string | null => {
+    const scopeMap: Record<string, string> = {
+      vault_read_food: "/api/vault/food",
+      vault_read_professional: "/api/vault/professional",
+      vault_read_finance: "/api/vault/finance",
+    };
+    return scopeMap[scope] || null;
+  };
+
+  const handleApproveWithExport = useCallback(
+    async (consent: PendingConsent) => {
+      const userId = sessionStorage.getItem("user_id");
+      const vaultKey = sessionStorage.getItem("vault_key");
+      if (!userId || !vaultKey) {
+        toast.error("Vault not unlocked", {
+          description: "Please unlock your vault to approve this request.",
+        });
+        return;
+      }
+
+      try {
+        // Fetch the scope data from vault
+        const scopeDataEndpoint = getScopeDataEndpoint(consent.scope);
+        let scopeData: Record<string, unknown> = {};
+
+        if (scopeDataEndpoint) {
+          const dataResponse = await fetch(
+            `${scopeDataEndpoint}?userId=${userId}`
+          );
+          if (dataResponse.ok) {
+            const data = await dataResponse.json();
+            // Decrypt the data with vault key
+            const { decryptData } = await import("@/lib/vault/encrypt");
+            const decryptedFields: Record<string, unknown> = {};
+
+            const preferences = data.preferences || data.data || [];
+            if (Array.isArray(preferences)) {
+              for (const field of preferences) {
+                try {
+                  const decrypted = await decryptData(
+                    {
+                      ciphertext: field.ciphertext,
+                      iv: field.iv,
+                      tag: field.tag,
+                      encoding: "base64",
+                      algorithm: "aes-256-gcm",
+                    },
+                    vaultKey
+                  );
+                  decryptedFields[field.field_name] = JSON.parse(decrypted);
+                } catch {
+                  console.warn(`Failed to decrypt field: ${field.field_name}`);
+                }
+              }
+            }
+            scopeData = decryptedFields;
+          }
+        }
+
+        // Generate export key and encrypt
+        const { generateExportKey, encryptForExport } = await import(
+          "@/lib/vault/export-encrypt"
+        );
+        const exportKey = await generateExportKey();
+        const encrypted = await encryptForExport(
+          JSON.stringify(scopeData),
+          exportKey
+        );
+
+        // Send to server
+        const response = await fetch("/api/consent/pending/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            requestId: consent.id,
+            exportKey,
+            encryptedData: encrypted.ciphertext,
+            encryptedIv: encrypted.iv,
+            encryptedTag: encrypted.tag,
+          }),
+        });
+
+        if (response.ok) {
+          toast.success("Consent approved!", {
+            description: "The application can now access your data securely.",
+            icon: <Check className="h-4 w-4 text-emerald-500" />,
+          });
+        } else {
+          toast.error("Failed to approve consent");
+        }
+      } catch (err) {
+        console.error("Error approving consent:", err);
+        toast.error("Network error");
+      }
+    },
+    []
+  );
+
   const showConsentToast = useCallback(
     (consent: PendingConsent) => {
       const { label, emoji } = formatScope(consent.scope);
@@ -108,7 +208,7 @@ export function ConsentNotificationProvider({
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => {
-                handleApprove(consent.id);
+                handleApproveWithExport(consent);
                 toast.dismiss(consent.id);
               }}
               className="flex-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-md flex items-center justify-center gap-1"
@@ -128,7 +228,7 @@ export function ConsentNotificationProvider({
         </div>,
         {
           id: consent.id,
-          duration: Infinity, // Keep until user dismisses
+          duration: Infinity,
           position: "top-center",
           icon: <AlertCircle className="h-5 w-5 text-amber-500" />,
           action: {
@@ -138,7 +238,7 @@ export function ConsentNotificationProvider({
         }
       );
     },
-    [handleApprove, handleDeny, router]
+    [handleApproveWithExport, handleDeny, router]
   );
 
   // Poll for pending consents
