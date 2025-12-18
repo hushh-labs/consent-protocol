@@ -21,6 +21,7 @@
 | ---------------------------------------------------------------- | -------------------------------------- |
 | [architecture.md](technical/architecture.md)                     | System design, flow diagrams           |
 | [consent-implementation.md](technical/consent-implementation.md) | Session token flow, 4-layer security   |
+| [mcp-integration.md](technical/mcp-integration.md)               | MCP zero-knowledge vault access        |
 | [developer-api.md](technical/developer-api.md)                   | External developer consent request API |
 | [system_context.md](technical/system_context.md)                 | AI/LLM development context             |
 | [deployment.md](technical/deployment.md)                         | Cloud Run deployment guide             |
