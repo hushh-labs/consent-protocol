@@ -131,8 +131,13 @@ export default function ProfessionalProfilePage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="space-y-4 text-center">
-          <RefreshCw className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-          <p className="text-muted-foreground">Loading your profile...</p>
+          <div className="relative">
+            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
+              <Briefcase className="h-8 w-8 text-white" />
+            </div>
+            <RefreshCw className="h-5 w-5 animate-spin absolute -bottom-1 -right-1 text-blue-600 bg-white rounded-full p-0.5" />
+          </div>
+          <p className="text-muted-foreground">Unlocking your profile...</p>
         </div>
       </div>
     );
@@ -140,38 +145,62 @@ export default function ProfessionalProfilePage() {
 
   if (!profile || !profile.professional_title) {
     return (
-      <div className="container mx-auto max-w-3xl py-12 space-y-8">
-        <div className="text-center space-y-4">
-          <Briefcase className="h-16 w-16 mx-auto text-gray-400" />
-          <h1 className="text-2xl font-bold">No Profile Yet</h1>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            You haven't set up your professional profile yet. Go to the main
-            dashboard to create your profile through the chat flow.
-          </p>
-          <Button
-            onClick={() => router.push("/dashboard")}
-            variant="gradient"
-            effect="glass"
-            size="lg"
-          >
-            Set Up Profile
-          </Button>
-        </div>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-lg" variant="none" effect="glass">
+          <CardContent className="p-10 text-center space-y-6">
+            <div className="h-24 w-24 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center shadow-lg">
+              <Briefcase className="h-12 w-12 text-white" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold">
+                No Professional Profile Yet
+              </h1>
+              <p className="text-muted-foreground">
+                Set up your professional profile including title, skills, and
+                job preferences to help us match you with opportunities.
+              </p>
+            </div>
+            <Button
+              onClick={() => router.push("/dashboard")}
+              variant="gradient"
+              effect="glass"
+              size="lg"
+              showRipple
+              className="bg-gradient-to-r from-blue-500 to-purple-500"
+            >
+              <User className="h-4 w-4 mr-2" />
+              Set Up Profile
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto max-w-4xl py-8 space-y-8">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight bg-linear-to-r from-purple-600 to-blue-500 bg-clip-text text-transparent">
-          Professional Profile
-        </h1>
-        <p className="text-muted-foreground flex items-center gap-2">
-          <Shield className="h-4 w-4 text-emerald-500" />
-          Your encrypted career data. Decrypted locally.
-        </p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center shadow-lg">
+            <Briefcase className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Professional Profile</h1>
+            <p className="text-sm text-muted-foreground">
+              Your encrypted career data
+            </p>
+          </div>
+        </div>
+        <Button
+          onClick={() => router.push("/dashboard")}
+          variant="none"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Edit className="h-4 w-4 mr-2" />
+          Edit Profile
+        </Button>
       </div>
 
       {/* Profile Cards Grid */}

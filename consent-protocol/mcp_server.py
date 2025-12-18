@@ -67,11 +67,13 @@ MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desk
 # ============================================================================
 
 # How long to wait for user to approve consent (in seconds)
-# Recommended: 300 seconds (5 minutes) for production
-CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "300"))
+# Default: 10 seconds for quick feedback; set higher for production
+CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "10"))
 
 # How often to poll for consent approval (in seconds)
-CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "3"))
+CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "2"))
+
+
 
 
 
@@ -379,6 +381,53 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     scope_str = args.get("scope")
     reason = args.get("reason", "MCP Host requesting access")
     
+    # ═══════════════════════════════════════════════════════════════════════
+    # EMAIL RESOLUTION: If user_id looks like email, resolve to Firebase UID
+    # ═══════════════════════════════════════════════════════════════════════
+    
+    original_identifier = user_id
+    user_email = None
+    user_display_name = None
+    
+    if user_id and "@" in user_id:
+        # This is an email address, need to look up the UID
+        logger.info(f"📧 Detected email address: {user_id}")
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                lookup_response = await client.get(
+                    f"{FASTAPI_URL}/api/user/lookup",
+                    params={"email": user_id},
+                    timeout=5.0
+                )
+                
+                if lookup_response.status_code == 200:
+                    lookup_data = lookup_response.json()
+                    
+                    if lookup_data.get("exists"):
+                        # User found! Replace email with UID
+                        user_id = lookup_data["user_id"]
+                        user_email = lookup_data["email"]
+                        user_display_name = lookup_data.get("display_name", user_email.split("@")[0])
+                        logger.info(f"✅ Resolved {original_identifier} → {user_id} ({user_display_name})")
+                    else:
+                        # User doesn't exist - return friendly message
+                        logger.info(f"⚠️ User not found: {user_id}")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "user_not_found",
+                            "email": original_identifier,
+                            "message": lookup_data.get("message", f"No Hushh account found for {original_identifier}"),
+                            "suggestion": "Ask the user to create a Hushh account first at the login page.",
+                            "action_required": "User must sign up before data can be requested."
+                        }))]
+                else:
+                    logger.warning(f"⚠️ User lookup failed with status {lookup_response.status_code}")
+                    # Continue with original user_id (might be a UID already)
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Email lookup failed: {e} - continuing with original user_id")
+            # Continue with original user_id
+    
     # Map string scope to internal format
     scope_api_map = {
         "vault.read.food": "vault_read_food",
@@ -410,8 +459,10 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     # ═══════════════════════════════════════════════════════════════════════
     
     if PRODUCTION_MODE:
-        logger.info(f"🔐 PRODUCTION MODE: Requesting consent for {user_id}/{scope_str}")
+        display_id = user_display_name or user_email or user_id
+        logger.info(f"🔐 PRODUCTION MODE: Requesting consent for {display_id}/{scope_str}")
         logger.info(f"   ⏱️ Timeout: {CONSENT_TIMEOUT_SECONDS}s, Poll interval: {CONSENT_POLL_INTERVAL_SECONDS}s")
+
         
         try:
             async with httpx.AsyncClient() as client:
