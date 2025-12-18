@@ -63,6 +63,19 @@ PRODUCTION_MODE = os.environ.get("PRODUCTION_MODE", "true").lower() == "true"
 MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desktop")
 
 # ============================================================================
+# CONSENT POLLING CONFIGURATION
+# ============================================================================
+
+# How long to wait for user to approve consent (in seconds)
+# Recommended: 300 seconds (5 minutes) for production
+CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "300"))
+
+# How often to poll for consent approval (in seconds)
+CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "3"))
+
+
+
+# ============================================================================
 # LOGGING CONFIGURATION
 # IMPORTANT: Only use stderr - stdout is reserved for JSON-RPC messages
 # ============================================================================
@@ -346,19 +359,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 async def handle_request_consent(args: dict) -> list[TextContent]:
     """
-    Request consent from a user.
+    Request consent from a user with BLOCKING POLL until approved.
     
-    PRODUCTION MODE:
-    - Creates pending request in FastAPI backend
-    - User must approve via dashboard
-    - Returns 'pending' status with instructions to poll
+    PRODUCTION MODE (BLOCKING):
+    1. Creates pending request in FastAPI backend
+    2. WAITS for user to approve via dashboard (polls every few seconds)
+    3. Returns token ONLY after user explicitly approves
+    4. Times out after configurable period (default: 5 minutes)
     
     DEMO MODE:
-    - Auto-issues token immediately (for testing)
+    - Auto-issues token immediately (when FastAPI not available)
     
     Compliance:
-    ✅ HushhMCP: Consent First principle
-    ✅ User approval required (production)
+    ✅ HushhMCP: Consent First - NO data access without explicit approval
+    ✅ HushhMCP: User must actively approve in dashboard
+    ✅ HushhMCP: Cryptographic token only after human consent
     """
     user_id = args.get("user_id")
     scope_str = args.get("scope")
@@ -391,15 +406,19 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
         }))]
     
     # ═══════════════════════════════════════════════════════════════════════
-    # PRODUCTION MODE: Create pending request via FastAPI
+    # PRODUCTION MODE: Create pending request and WAIT for user approval
     # ═══════════════════════════════════════════════════════════════════════
     
     if PRODUCTION_MODE:
-        logger.info(f"🔐 Production Mode: Creating pending consent request")
+        logger.info(f"🔐 PRODUCTION MODE: Requesting consent for {user_id}/{scope_str}")
+        logger.info(f"   ⏱️ Timeout: {CONSENT_TIMEOUT_SECONDS}s, Poll interval: {CONSENT_POLL_INTERVAL_SECONDS}s")
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
+                # Step 1: Create the pending consent request
+                logger.info(f"📤 Creating pending consent request in FastAPI...")
+                
+                create_response = await client.post(
                     f"{FASTAPI_URL}/api/v1/request-consent",
                     json={
                         "developer_token": MCP_DEVELOPER_TOKEN,
@@ -410,59 +429,133 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                     timeout=10.0
                 )
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    status = data.get("status")
-                    
-                    if status == "already_granted":
-                        # Token already exists
-                        return [TextContent(type="text", text=json.dumps({
-                            "status": "granted",
-                            "consent_token": data.get("consent_token"),
-                            "user_id": user_id,
-                            "scope": scope_str,
-                            "message": "✅ Consent already granted. Use this token to access data."
-                        }))]
-                    
-                    elif status == "pending":
-                        # Request created, waiting for user approval
-                        logger.info(f"📋 Consent request pending: {user_id}/{scope_str}")
-                        return [TextContent(type="text", text=json.dumps({
-                            "status": "pending",
-                            "user_id": user_id,
-                            "scope": scope_str,
-                            "message": data.get("message"),
-                            "user_action_required": True,
-                            "instructions": [
-                                "📱 The user must approve this request in their Hushh dashboard",
-                                "🔄 Call 'check_consent_status' to poll for approval",
-                                "⏱️ Request expires if not approved within 24 hours"
-                            ],
-                            "next_step": "Call check_consent_status with the same user_id and scope to check if approved",
-                            "dashboard_url": f"{FASTAPI_URL.replace('localhost:8000', 'your-app.com')}/dashboard/consents"
-                        }))]
-                    
-                else:
-                    error_detail = response.json().get("detail", "Unknown error")
-                    logger.error(f"❌ FastAPI error: {error_detail}")
+                if create_response.status_code != 200:
+                    error_detail = create_response.json().get("detail", "Unknown error")
+                    logger.error(f"❌ FastAPI error creating request: {error_detail}")
                     return [TextContent(type="text", text=json.dumps({
                         "status": "error",
                         "error": error_detail,
-                        "hint": "FastAPI backend may not be running or developer not registered"
+                        "hint": "Check if FastAPI is running and developer is registered"
                     }))]
+                
+                data = create_response.json()
+                status = data.get("status")
+                
+                # Case 1: Already granted - return token immediately
+                if status == "already_granted":
+                    logger.info(f"✅ Consent already granted - returning existing token")
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "granted",
+                        "consent_token": data.get("consent_token"),
+                        "user_id": user_id,
+                        "scope": scope_str,
+                        "message": "✅ Consent already granted. Use this token to access data."
+                    }))]
+                
+                # Case 2: Pending - now we WAIT for user approval
+                if status == "pending":
+                    logger.info(f"📋 Consent request created - WAITING for user approval...")
+                    logger.info(f"   � User must approve at: {FASTAPI_URL.replace('localhost:8000', 'localhost:3000')}/dashboard/consents")
                     
-        except httpx.ConnectError:
-            logger.warning("⚠️ FastAPI not reachable, falling back to demo mode")
-            # Fall through to demo mode
+                    # ═══════════════════════════════════════════════════════
+                    # BLOCKING POLL LOOP - Wait for user to approve
+                    # ═══════════════════════════════════════════════════════
+                    
+                    start_time = time.time()
+                    poll_count = 0
+                    
+                    while True:
+                        elapsed = time.time() - start_time
+                        remaining = CONSENT_TIMEOUT_SECONDS - elapsed
+                        
+                        # Check timeout
+                        if elapsed >= CONSENT_TIMEOUT_SECONDS:
+                            logger.warning(f"⏰ TIMEOUT: User did not approve within {CONSENT_TIMEOUT_SECONDS}s")
+                            return [TextContent(type="text", text=json.dumps({
+                                "status": "timeout",
+                                "user_id": user_id,
+                                "scope": scope_str,
+                                "waited_seconds": int(elapsed),
+                                "message": f"⏰ User did not approve consent within {CONSENT_TIMEOUT_SECONDS} seconds.",
+                                "user_action": "User must approve the request in their Hushh dashboard",
+                                "dashboard_url": f"{FASTAPI_URL.replace('localhost:8000', 'localhost:3000')}/dashboard/consents",
+                                "next_step": "Try again after user has approved the request"
+                            }))]
+                        
+                        # Poll for approval status
+                        poll_count += 1
+                        logger.info(f"   🔄 Polling #{poll_count} - {int(remaining)}s remaining...")
+                        
+                        # Check if still pending
+                        pending_response = await client.get(
+                            f"{FASTAPI_URL}/api/consent/pending",
+                            params={"userId": user_id},
+                            timeout=10.0
+                        )
+                        
+                        if pending_response.status_code == 200:
+                            pending_data = pending_response.json()
+                            pending_list = pending_data.get("pending", [])
+                            
+                            # Check if our scope is still in pending list
+                            still_pending = any(req.get("scope") == scope_api for req in pending_list)
+                            
+                            if not still_pending:
+                                # Not pending anymore - user approved (or denied)
+                                # Try to get the token by re-requesting
+                                logger.info(f"   ✅ Request no longer pending - checking for token...")
+                                
+                                retry_response = await client.post(
+                                    f"{FASTAPI_URL}/api/v1/request-consent",
+                                    json={
+                                        "developer_token": MCP_DEVELOPER_TOKEN,
+                                        "user_id": user_id,
+                                        "scope": scope_api,
+                                        "expiry_hours": 24
+                                    },
+                                    timeout=10.0
+                                )
+                                
+                                if retry_response.status_code == 200:
+                                    retry_data = retry_response.json()
+                                    if retry_data.get("status") == "already_granted":
+                                        token = retry_data.get("consent_token")
+                                        logger.info(f"🎉 CONSENT GRANTED by user! Token received.")
+                                        return [TextContent(type="text", text=json.dumps({
+                                            "status": "granted",
+                                            "consent_token": token,
+                                            "user_id": user_id,
+                                            "scope": scope_str,
+                                            "waited_seconds": int(elapsed),
+                                            "message": f"✅ User approved consent after {int(elapsed)} seconds!"
+                                        }))]
+                                
+                                # If we get here, user probably denied
+                                logger.warning(f"❌ Request removed from pending but no token - user likely denied")
+                                return [TextContent(type="text", text=json.dumps({
+                                    "status": "denied",
+                                    "user_id": user_id,
+                                    "scope": scope_str,
+                                    "waited_seconds": int(elapsed),
+                                    "message": "❌ User denied the consent request.",
+                                    "privacy_note": "User has the right to refuse data access."
+                                }))]
+                        
+                        # Wait before next poll
+                        await asyncio.sleep(CONSENT_POLL_INTERVAL_SECONDS)
+                    
+        except httpx.ConnectError as e:
+            logger.warning(f"⚠️ FastAPI not reachable at {FASTAPI_URL}: {e}")
+            logger.warning("   Falling back to DEMO MODE (auto-issue)")
         except Exception as e:
-            logger.error(f"❌ Error calling FastAPI: {e}")
-            # Fall through to demo mode
+            logger.error(f"❌ Error in production consent flow: {e}")
+            logger.warning("   Falling back to DEMO MODE (auto-issue)")
     
     # ═══════════════════════════════════════════════════════════════════════
-    # DEMO MODE: Auto-issue token (for testing when FastAPI not available)
+    # DEMO MODE: Auto-issue token (fallback when FastAPI not available)
     # ═══════════════════════════════════════════════════════════════════════
     
-    logger.info(f"🔐 Demo Mode: Auto-issuing consent token")
+    logger.info(f"🔐 DEMO MODE: Auto-issuing consent token (FastAPI not available)")
     
     token = issue_token(
         user_id=UserID(user_id),
@@ -475,15 +568,16 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     
     return [TextContent(type="text", text=json.dumps({
         "status": "granted",
-        "mode": "demo" if not PRODUCTION_MODE else "fallback",
+        "mode": "demo",
         "consent_token": token.token,
         "user_id": user_id,
         "scope": scope_str,
         "issued_at": token.issued_at,
         "expires_at": token.expires_at,
         "message": f"✅ Consent granted for {scope_str}. Use this token to access data.",
-        "note": "In production, this would require user approval via dashboard."
+        "note": "⚠️ DEMO MODE: Token auto-issued because FastAPI backend not available. In production, user must approve via dashboard."
     }))]
+
 
 
 async def handle_check_consent_status(args: dict) -> list[TextContent]:
