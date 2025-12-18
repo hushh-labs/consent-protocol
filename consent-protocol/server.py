@@ -705,6 +705,71 @@ async def get_consent_history(userId: str, page: int = 1, limit: int = 20):
     }
 
 # ============================================================================
+# USER LOOKUP (Email to UID)
+# ============================================================================
+
+@app.get("/api/user/lookup")
+async def lookup_user_by_email(email: str):
+    """
+    Look up a user by email and return their Firebase UID.
+    
+    Used by MCP server to allow consent requests using human-readable
+    email addresses instead of Firebase UIDs.
+    
+    Returns:
+    - user_id: Firebase UID
+    - email: The email address
+    - display_name: User's display name (if set)
+    - exists: True if user exists
+    
+    Or for non-existent users:
+    - exists: False
+    - message: Friendly error message
+    """
+    import firebase_admin
+    from firebase_admin import auth, credentials
+    
+    # Initialize Firebase Admin if not already done
+    try:
+        firebase_admin.get_app()
+    except ValueError:
+        cred = credentials.ApplicationDefault()
+        firebase_admin.initialize_app(cred)
+    
+    logger.info(f"🔍 Looking up user by email: {email}")
+    
+    try:
+        user_record = auth.get_user_by_email(email)
+        logger.info(f"✅ Found user: {user_record.uid}")
+        
+        return {
+            "exists": True,
+            "user_id": user_record.uid,
+            "email": user_record.email,
+            "display_name": user_record.display_name or email.split("@")[0],
+            "photo_url": user_record.photo_url,
+            "email_verified": user_record.email_verified
+        }
+        
+    except auth.UserNotFoundError:
+        logger.info(f"⚠️ User not found with email: {email}")
+        return {
+            "exists": False,
+            "email": email,
+            "message": f"No Hushh account found for {email}. The user needs to sign up first.",
+            "suggestion": "Ask the user to create a Hushh account at the login page."
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error looking up user: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error looking up user: {str(e)}"
+        )
+
+
+
+# ============================================================================
 # RUN
 # ============================================================================
 
