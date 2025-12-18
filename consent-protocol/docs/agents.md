@@ -13,13 +13,14 @@ All real work in the Hushh PDA Hackathon happens inside **agents/**. This is whe
 
 Every agent should be:
 
-| Principle       | Description |
-|------------------|-------------|
-| **Consent-First** | The agent **must never act** without verifying a valid `HushhConsentToken` |
-| **Scoped**        | It should act only on scopes it was given permission for |
-| **Modular**       | Agent logic should be clean, testable, and reuse operons where possible |
-| **Auditable**     | The agent’s actions should be explainable through logs or output |
-| **Composable**    | Agents can delegate to each other using TrustLinks |
+| Principle         | Description                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- |
+| **Consent-First** | The agent **must never act** without verifying a valid `HushhConsentToken`   |
+| **Scoped**        | It should act only on scopes it was given permission for                     |
+| **Modular**       | Agent logic should be clean, testable, and reuse operons where possible      |
+| **Auditable**     | The agent’s actions should be explainable through logs or output             |
+| **Composable**    | Agents can delegate to each other using TrustLinks                           |
+| **MCP-Exposed**   | Agents can be accessed by external AI hosts via MCP Server (`mcp_server.py`) |
 
 ---
 
@@ -34,7 +35,7 @@ hushh_mcp/
 │       ├── index.py         # Main logic
 │       ├── manifest.py      # Metadata and scope declarations
 │       └── utils.py         # Optional helper file
-````
+```
 
 ### Example:
 
@@ -128,9 +129,9 @@ Examples:
 
 The judges will audit your agent. If it:
 
-* Does not validate consent
-* Ignores scope checks
-* Uses hardcoded trust
+- Does not validate consent
+- Ignores scope checks
+- Uses hardcoded trust
 
 It will be disqualified — no exceptions.
 
@@ -148,22 +149,22 @@ It will be disqualified — no exceptions.
 
 ## 💡 Tips for Success
 
-* Keep each agent focused (single responsibility)
-* Use `print()` logs for debugging — logs matter!
-* Run tests using `pytest` before submitting
-* Don’t build your own protocol — use `hushh_mcp`
+- Keep each agent focused (single responsibility)
+- Use `print()` logs for debugging — logs matter!
+- Run tests using `pytest` before submitting
+- Don’t build your own protocol — use `hushh_mcp`
 
 ---
 
 ## ✅ Checklist Before Submission
 
-* [ ] Agent lives inside `hushh_mcp/agents/<your_agent>/`
-* [ ] Includes `manifest.py` with correct metadata
-* [ ] Validates consent token using `validate_token()`
-* [ ] Enforces scope from the token
-* [ ] (Optional) Delegates trust via `create_trust_link()`
-* [ ] Agent has a test in `tests/test_agents.py`
-* [ ] Your `README.md` explains how it works and how to run it
+- [ ] Agent lives inside `hushh_mcp/agents/<your_agent>/`
+- [ ] Includes `manifest.py` with correct metadata
+- [ ] Validates consent token using `validate_token()`
+- [ ] Enforces scope from the token
+- [ ] (Optional) Delegates trust via `create_trust_link()`
+- [ ] Agent has a test in `tests/test_agents.py`
+- [ ] Your `README.md` explains how it works and how to run it
 
 ---
 
@@ -172,5 +173,7 @@ Build with consent.
 
 —
 Team Hushh
+
+```
 
 ```
