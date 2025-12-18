@@ -184,9 +184,75 @@ export default function ConsentsPage() {
       return "bg-orange-500/10 text-orange-600 border-orange-500/20";
     if (scope.includes("professional"))
       return "bg-blue-500/10 text-blue-600 border-blue-500/20";
+    if (scope.includes("finance"))
+      return "bg-green-500/10 text-green-600 border-green-500/20";
     if (scope.includes("all"))
       return "bg-purple-500/10 text-purple-600 border-purple-500/20";
     return "bg-gray-500/10 text-gray-600 border-gray-500/20";
+  };
+
+  // Human-readable scope labels with emojis
+  const formatScope = (
+    scope: string
+  ): { emoji: string; label: string; description: string } => {
+    const scopeMap: Record<
+      string,
+      { emoji: string; label: string; description: string }
+    > = {
+      // API format (underscores)
+      vault_read_food: {
+        emoji: "🍽️",
+        label: "Food Preferences",
+        description: "Dietary restrictions, cuisines, and dining budget",
+      },
+      vault_read_professional: {
+        emoji: "💼",
+        label: "Professional Profile",
+        description: "Job title, skills, and career preferences",
+      },
+      vault_read_finance: {
+        emoji: "💰",
+        label: "Financial Data",
+        description: "Budget and spending preferences",
+      },
+      vault_write_food: {
+        emoji: "🍽️",
+        label: "Save Food Preferences",
+        description: "Store your dietary and cuisine preferences",
+      },
+      vault_write_professional: {
+        emoji: "💼",
+        label: "Save Professional Profile",
+        description: "Store your career data",
+      },
+      vault_read_all: {
+        emoji: "🔓",
+        label: "All Data Access",
+        description: "Full vault access (admin)",
+      },
+      // Dot format (from MCP)
+      "vault.read.food": {
+        emoji: "🍽️",
+        label: "Food Preferences",
+        description: "Dietary restrictions, cuisines, and dining budget",
+      },
+      "vault.read.professional": {
+        emoji: "💼",
+        label: "Professional Profile",
+        description: "Job title, skills, and career preferences",
+      },
+    };
+
+    return (
+      scopeMap[scope] || {
+        emoji: "🔐",
+        label: scope
+          .replace(/[_\.]/g, " ")
+          .replace("vault read ", "")
+          .replace("vault write ", ""),
+        description: `Access: ${scope}`,
+      }
+    );
   };
 
   if (loading) {
@@ -262,9 +328,8 @@ export default function ConsentsPage() {
                       </p>
                     </div>
                     <Badge className={getScopeColor(request.scope)}>
-                      {request.scope
-                        .replace("vault_read_", "")
-                        .replace("_", " ")}
+                      {formatScope(request.scope).emoji}{" "}
+                      {formatScope(request.scope).label}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -272,7 +337,8 @@ export default function ConsentsPage() {
                   <div className="p-3 rounded-lg bg-muted/50">
                     <p className="text-sm font-medium">Requesting access to:</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {request.scopeDescription}
+                      {request.scopeDescription ||
+                        formatScope(request.scope).description}
                     </p>
                   </div>
 
