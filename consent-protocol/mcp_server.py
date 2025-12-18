@@ -411,15 +411,24 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         user_display_name = lookup_data.get("display_name", user_email.split("@")[0])
                         logger.info(f"✅ Resolved {original_identifier} → {user_id} ({user_display_name})")
                     else:
-                        # User doesn't exist - return friendly message
+                        # User doesn't exist - return friendly message with signup URL
                         logger.info(f"⚠️ User not found: {user_id}")
+                        frontend_url = FASTAPI_URL.replace(":8000", ":3000")  # Frontend is on 3000
                         return [TextContent(type="text", text=json.dumps({
                             "status": "user_not_found",
                             "email": original_identifier,
-                            "message": lookup_data.get("message", f"No Hushh account found for {original_identifier}"),
-                            "suggestion": "Ask the user to create a Hushh account first at the login page.",
-                            "action_required": "User must sign up before data can be requested."
+                            "message": f"No Hushh account found for {original_identifier}",
+                            "signup_url": f"{frontend_url}/login",
+                            "suggestion": f"The user needs to create a Hushh account first at {frontend_url}/login",
+                            "action_required": "User must sign up before data can be requested.",
+                            "next_steps": [
+                                f"1. Ask the user to visit {frontend_url}/login",
+                                "2. They can sign in with Google or email",
+                                "3. Complete the passphrase setup to secure their vault",
+                                "4. Then request consent again"
+                            ]
                         }))]
+
                 else:
                     logger.warning(f"⚠️ User lookup failed with status {lookup_response.status_code}")
                     # Continue with original user_id (might be a UID already)
