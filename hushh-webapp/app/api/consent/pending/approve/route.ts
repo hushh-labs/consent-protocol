@@ -1,9 +1,10 @@
 // app/api/consent/pending/approve/route.ts
 
 /**
- * Approve Pending Consent Request API
+ * Approve Pending Consent Request API (Zero-Knowledge)
  *
- * User approves a pending consent request from a developer.
+ * User approves a consent request. Browser decrypts data, re-encrypts with
+ * export key, and sends encrypted payload. Server never sees plaintext.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,7 +15,14 @@ const BACKEND_URL =
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, requestId } = body;
+    const {
+      userId,
+      requestId,
+      exportKey,
+      encryptedData,
+      encryptedIv,
+      encryptedTag,
+    } = body;
 
     if (!userId || !requestId) {
       return NextResponse.json(
@@ -24,14 +32,21 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[API] User ${userId} approving consent request: ${requestId}`);
+    console.log(`[API] Export data present: ${!!encryptedData}`);
 
-    const response = await fetch(
-      `${BACKEND_URL}/api/consent/pending/approve?userId=${userId}&requestId=${requestId}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    // Forward to FastAPI with encrypted export
+    const response = await fetch(`${BACKEND_URL}/api/consent/pending/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId,
+        requestId,
+        exportKey,
+        encryptedData,
+        encryptedIv,
+        encryptedTag,
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.text();
@@ -43,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    console.log(`[API] Consent approved: ${JSON.stringify(data)}`);
+    console.log(`[API] Consent approved with token`);
 
     return NextResponse.json(data);
   } catch (error) {
