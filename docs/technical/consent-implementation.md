@@ -193,6 +193,111 @@ Shows active session status in dashboard:
 
 ---
 
+## 🤖 MCP External Consent (Third-Party Agents)
+
+When external AI agents (Claude Desktop, Cursor, etc.) request access to user data, a special **zero-knowledge export** flow is used.
+
+### Architecture: Token-Embedded Export Key
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    MCP CONSENT FLOW (ZERO-KNOWLEDGE)                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   MCP Agent                Dashboard                     Server              │
+│   (Claude)                 (Browser)                   (FastAPI)             │
+│      │                        │                           │                  │
+│      │ 1. request_consent     │                           │                  │
+│      │───────────────────────►│ Pending Request Stored    │                  │
+│      │                        │                           │                  │
+│      │                        │ 2. Toast: "Approve?"      │                  │
+│      │                        │    ┌─────────────────┐    │                  │
+│      │                        │    │ User Clicks     │    │                  │
+│      │                        │    │  ✅ Approve     │    │                  │
+│      │                        │    └─────────────────┘    │                  │
+│      │                        │                           │                  │
+│      │                        │ 3. Browser decrypts       │                  │
+│      │                        │    with vault key         │                  │
+│      │                        │                           │                  │
+│      │                        │ 4. Generate export key    │                  │
+│      │                        │    (random AES-256)       │                  │
+│      │                        │                           │                  │
+│      │                        │ 5. Re-encrypt with        │                  │
+│      │                        │    export key             │                  │
+│      │                        │                           │                  │
+│      │                        │ 6. Send encrypted ───────►│ Store in        │
+│      │                        │    + export key           │ _consent_exports │
+│      │                        │                           │                  │
+│      │ 7. Polling returns token                           │                  │
+│      │◄──────────────────────────────────────────────────│                  │
+│      │                                                    │                  │
+│      │ 8. get_food_preferences(token)                     │                  │
+│      │──────────────────────────────────────────────────►│ Return encrypted │
+│      │                                                    │ export           │
+│      │                                                    │                  │
+│      │ 9. MCP decrypts with export key                    │                  │
+│      │                                                    │                  │
+│      │ 10. Return plaintext to user ✅                    │                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Security Properties
+
+| Property                  | Implementation                                            |
+| ------------------------- | --------------------------------------------------------- |
+| **Server Zero-Knowledge** | Server stores only encrypted export, never sees plaintext |
+| **Export Key Isolation**  | Random per-consent, embedded in token for MCP decryption  |
+| **Time-Limited**          | Export expires with consent token (24h default)           |
+| **Scope-Limited**         | Only consented data domain is exported                    |
+| **Audit Trail**           | All exports logged with access count                      |
+
+### Code: Frontend Export Encryption
+
+```typescript
+// lib/vault/export-encrypt.ts
+export async function encryptForExport(
+  plaintext: string,
+  exportKeyHex: string
+): Promise<{ ciphertext: string; iv: string; tag: string }> {
+  const keyBytes = new Uint8Array(
+    exportKeyHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+  );
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"]
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoder.encode(plaintext)
+  );
+  // Split ciphertext and tag...
+}
+```
+
+### Code: MCP Decryption
+
+```python
+# mcp_server.py - handle_get_food()
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+# Fetch encrypted export from FastAPI
+export_response = await client.get(f"{FASTAPI_URL}/api/consent/data", params={"consent_token": consent_token})
+
+# Decrypt with export key
+key_bytes = bytes.fromhex(export_key_hex)
+aesgcm = AESGCM(key_bytes)
+plaintext = aesgcm.decrypt(iv_bytes, combined, None)
+food_data = json.loads(plaintext.decode('utf-8'))
+```
+
+---
+
 ## 🛡️ Security Guarantees
 
 1. **No passphrase on server** - Zero-knowledge design
@@ -201,3 +306,4 @@ Shows active session status in dashboard:
 4. **Session expiry** - Tokens expire after 24 hours
 5. **Logout destroys tokens** - No lingering access
 6. **Audit trail** - All actions logged to consent_audit table
+7. **Export zero-knowledge** - MCP access never exposes plaintext to server
