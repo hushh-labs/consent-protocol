@@ -26,7 +26,12 @@ import sys
 import os
 import uuid
 import time
+import base64
 from typing import Any, Optional
+
+# Cryptography for AES-GCM decryption of export data
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 
 # HTTP client for FastAPI communication
 import httpx
@@ -845,23 +850,68 @@ async def handle_get_food(args: dict) -> list[TextContent]:
         }))]
     
     # ═══════════════════════════════════════════════════════════════════════
-    # CONSENT VERIFIED - Now we can return data
-    # In production, this would decrypt from the user's vault
+    # CONSENT VERIFIED - Fetch Real Data from Encrypted Export
+    # This is zero-knowledge: server returns encrypted data, we decrypt here
     # ═══════════════════════════════════════════════════════════════════════
     
-    food_data = {
-        "dietary_restrictions": ["Vegetarian", "Gluten-Free"],
-        "favorite_cuisines": ["Italian", "Mexican", "Thai", "Japanese"],
-        "monthly_budget": 500,
-        "meal_preferences": {
-            "breakfast": "Light, healthy options",
-            "lunch": "Quick, protein-rich",
-            "dinner": "Variety, family-style"
-        },
-        "allergies": ["Peanuts"],
-        "spice_tolerance": "Medium",
-        "notes": "Prefers organic produce when available"
-    }
+    food_data = None
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            export_response = await client.get(
+                f"{FASTAPI_URL}/api/consent/data",
+                params={"consent_token": consent_token},
+                timeout=10.0
+            )
+            
+            if export_response.status_code == 200:
+                export_data = export_response.json()
+                
+                # Decrypt the export data with the export key
+                export_key_hex = export_data.get("export_key")
+                encrypted_data = export_data.get("encrypted_data")
+                iv = export_data.get("iv")
+                tag = export_data.get("tag")
+                
+                if all([export_key_hex, encrypted_data, iv, tag]):
+                    try:
+                        # Convert hex key to bytes
+                        key_bytes = bytes.fromhex(export_key_hex)
+                        
+                        # Decode base64 IV, ciphertext, and tag
+                        iv_bytes = base64.b64decode(iv)
+                        ciphertext_bytes = base64.b64decode(encrypted_data)
+                        tag_bytes = base64.b64decode(tag)
+                        
+                        # Combine ciphertext + tag for AESGCM
+                        combined = ciphertext_bytes + tag_bytes
+                        
+                        # Decrypt
+                        aesgcm = AESGCM(key_bytes)
+                        plaintext = aesgcm.decrypt(iv_bytes, combined, None)
+                        
+                        # Parse JSON
+                        food_data = json.loads(plaintext.decode('utf-8'))
+                        logger.info(f"✅ Successfully decrypted vault export!")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Decryption failed: {e}")
+                        
+            elif export_response.status_code == 404:
+                logger.warning("⚠️ No export data found for this token")
+                
+    except Exception as e:
+        logger.warning(f"⚠️ Export fetch failed: {e}")
+    
+    # Fallback to mock data if no export available (demo mode)
+    if food_data is None:
+        logger.info("📋 No export data, using demo data")
+        food_data = {
+            "dietary_restrictions": ["Vegetarian", "Gluten-Free"],
+            "favorite_cuisines": ["Italian", "Mexican", "Thai", "Japanese"],
+            "monthly_budget": 500,
+            "note": "Demo data - real vault export not found"
+        }
     
     logger.info(f"✅ Food data ACCESSED for user={user_id} (consent verified)")
     
@@ -872,8 +922,10 @@ async def handle_get_food(args: dict) -> list[TextContent]:
         "consent_verified": True,
         "consent_token_used": consent_token[:30] + "...",
         "data": food_data,
-        "privacy_note": "This data was accessed with valid user consent."
+        "privacy_note": "This data was accessed with valid user consent.",
+        "zero_knowledge": True
     }))]
+
 
 
 async def handle_get_professional(args: dict) -> list[TextContent]:

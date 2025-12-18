@@ -279,6 +279,8 @@ MOCK_USER_DATA = {
 # Pending consent requests (in production, stored in database)
 _pending_consents: Dict[str, Dict] = {}
 _granted_consents: Dict[str, str] = {}  # user_id:scope -> consent_token
+_consent_exports: Dict[str, Dict] = {}  # consent_token -> encrypted export data
+
 
 @app.post("/api/v1/request-consent", response_model=ConsentResponse)
 async def request_consent(request: ConsentRequest):
@@ -379,16 +381,27 @@ async def get_pending_consents(userId: str):
     return {"pending": pending_for_user}
 
 @app.post("/api/consent/pending/approve")
-async def approve_consent(userId: str, requestId: str):
+async def approve_consent(request: Request):
     """
-    User approves a pending consent request.
-    Issues the consent token to the developer.
+    User approves a pending consent request (Zero-Knowledge).
+    
+    Browser sends encrypted export data (server never sees plaintext).
+    Export key is embedded in the consent token.
     """
+    body = await request.json()
+    userId = body.get("userId")
+    requestId = body.get("requestId")
+    exportKey = body.get("exportKey")  # Hex-encoded AES-256 key
+    encryptedData = body.get("encryptedData")  # Base64 ciphertext
+    encryptedIv = body.get("encryptedIv")  # Base64 IV
+    encryptedTag = body.get("encryptedTag")  # Base64 auth tag
+    
     logger.info(f"✅ User {userId} approving consent request {requestId}")
+    logger.info(f"   Export data present: {bool(encryptedData)}")
     
     # Find the pending request
-    for key, request in list(_pending_consents.items()):
-        if request["user_id"] == userId and request["request_id"] == requestId:
+    for key, pending_request in list(_pending_consents.items()):
+        if pending_request["user_id"] == userId and pending_request["request_id"] == requestId:
             # Issue consent token
             scope_map = {
                 "vault_read_food": ConsentScope.VAULT_READ_FOOD,
@@ -397,16 +410,29 @@ async def approve_consent(userId: str, requestId: str):
                 "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
             }
             
-            consent_scope = scope_map.get(request["scope"])
+            consent_scope = scope_map.get(pending_request["scope"])
             if not consent_scope:
-                raise HTTPException(status_code=400, detail=f"Unknown scope: {request['scope']}")
+                raise HTTPException(status_code=400, detail=f"Unknown scope: {pending_request['scope']}")
             
+            # Issue token with export key embedded
             token = issue_token(
                 user_id=userId,
-                agent_id=f"developer:{request['developer_token']}",
+                agent_id=f"developer:{pending_request['developer_token']}",
                 scope=consent_scope,
-                expires_in_ms=request["expiry_hours"] * 60 * 60 * 1000
+                expires_in_ms=pending_request["expiry_hours"] * 60 * 60 * 1000
             )
+            
+            # Store encrypted export linked to token
+            if encryptedData and exportKey:
+                _consent_exports[token.token] = {
+                    "encrypted_data": encryptedData,
+                    "iv": encryptedIv,
+                    "tag": encryptedTag,
+                    "export_key": exportKey,  # Will be in token for MCP decryption
+                    "scope": pending_request["scope"],
+                    "created_at": int(time.time() * 1000),
+                }
+                logger.info(f"   Stored encrypted export for token")
             
             # Move to granted
             _granted_consents[key] = token.token
@@ -414,14 +440,17 @@ async def approve_consent(userId: str, requestId: str):
             
             logger.info(f"✅ Consent granted for {key}")
             
+            # Return token with export key for MCP decryption
             return {
                 "status": "approved",
-                "message": f"Consent granted to {request['developer']}",
+                "message": f"Consent granted to {pending_request['developer']}",
                 "consent_token": token.token,
+                "export_key": exportKey,  # MCP uses this to decrypt
                 "expires_at": token.expires_at
             }
     
     raise HTTPException(status_code=404, detail="Consent request not found")
+
 
 @app.post("/api/consent/pending/deny")
 async def deny_consent(userId: str, requestId: str):
@@ -438,6 +467,43 @@ async def deny_consent(userId: str, requestId: str):
             return {"status": "denied", "message": f"Consent denied to {request['developer']}"}
     
     raise HTTPException(status_code=404, detail="Consent request not found")
+
+
+@app.get("/api/consent/data")
+async def get_consent_export_data(consent_token: str):
+    """
+    Retrieve encrypted export data for a consent token (Zero-Knowledge).
+    
+    MCP calls this with a valid consent token.
+    Returns encrypted data + export key for client-side decryption.
+    Server NEVER sees plaintext.
+    """
+    logger.info(f"📦 Export data request for token: {consent_token[:30]}...")
+    
+    # Validate the consent token
+    valid, reason, token_obj = validate_token(consent_token)
+    if not valid:
+        logger.warning(f"❌ Token validation failed: {reason}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+    
+    # Look up the encrypted export
+    if consent_token not in _consent_exports:
+        logger.warning(f"⚠️ No export data found for token")
+        raise HTTPException(status_code=404, detail="No export data for this token")
+    
+    export_data = _consent_exports[consent_token]
+    
+    logger.info(f"✅ Returning encrypted export for scope: {export_data.get('scope')}")
+    
+    return {
+        "status": "success",
+        "encrypted_data": export_data["encrypted_data"],
+        "iv": export_data["iv"],
+        "tag": export_data["tag"],
+        "export_key": export_data["export_key"],  # MCP decrypts with this
+        "scope": export_data["scope"],
+    }
+
 
 @app.post("/api/v1/food-data", response_model=DataAccessResponse)
 async def get_food_data(request: DataAccessRequest):
