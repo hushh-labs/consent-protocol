@@ -6,7 +6,7 @@ Serves all agent chat endpoints that the Next.js frontend calls.
 Run with: uvicorn server:app --reload --port 8000
 """
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
