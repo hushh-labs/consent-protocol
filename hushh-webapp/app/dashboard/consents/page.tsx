@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 interface PendingConsent {
   id: string;
@@ -100,8 +101,13 @@ export default function ConsentsPage() {
 
     if (uid) {
       setUserId(uid);
-      fetchPendingConsents(uid);
-      fetchAuditLog(uid);
+
+      // Initial fetch - set loading false after complete
+      Promise.all([fetchPendingConsents(uid), fetchAuditLog(uid)]).finally(
+        () => {
+          setLoading(false);
+        }
+      );
 
       // Auto-poll every 5 seconds for real-time updates
       const pollInterval = setInterval(() => {
@@ -123,6 +129,7 @@ export default function ConsentsPage() {
       });
     }
 
+    // No user ID, stop loading
     setLoading(false);
   }, [fetchPendingConsents, fetchAuditLog]);
 
@@ -150,18 +157,59 @@ export default function ConsentsPage() {
       let scopeData: Record<string, unknown> = {};
 
       if (scopeDataEndpoint) {
+        console.log(
+          `[Consent] Fetching data from: ${scopeDataEndpoint}?userId=${userId}`
+        );
         const dataResponse = await fetch(
           `${scopeDataEndpoint}?userId=${userId}`
         );
+
         if (dataResponse.ok) {
           const data = await dataResponse.json();
+          console.log("[Consent] Vault response:", Object.keys(data));
+
           // Decrypt the data with vault key
           const { decryptData } = await import("@/lib/vault/encrypt");
           const decryptedFields: Record<string, unknown> = {};
 
-          // Handle food/professional domain data format
-          const preferences = data.preferences || data.data || [];
-          if (Array.isArray(preferences)) {
+          // Handle object format: { field_name: { ciphertext, iv, tag, algorithm, encoding } }
+          const preferences = data.preferences || data.data || {};
+
+          if (
+            preferences &&
+            typeof preferences === "object" &&
+            !Array.isArray(preferences)
+          ) {
+            // Object format (actual vault data)
+            for (const [fieldName, encryptedField] of Object.entries(
+              preferences
+            )) {
+              try {
+                const field = encryptedField as {
+                  ciphertext: string;
+                  iv: string;
+                  tag: string;
+                  algorithm?: string;
+                  encoding?: string;
+                };
+                const decrypted = await decryptData(
+                  {
+                    ciphertext: field.ciphertext,
+                    iv: field.iv,
+                    tag: field.tag,
+                    encoding: (field.encoding || "base64") as "base64",
+                    algorithm: (field.algorithm ||
+                      "aes-256-gcm") as "aes-256-gcm",
+                  },
+                  vaultKey
+                );
+                decryptedFields[fieldName] = JSON.parse(decrypted);
+              } catch (err) {
+                console.warn(`Failed to decrypt field: ${fieldName}`, err);
+              }
+            }
+          } else if (Array.isArray(preferences)) {
+            // Array format (legacy)
             for (const field of preferences) {
               try {
                 const decrypted = await decryptData(
@@ -180,7 +228,14 @@ export default function ConsentsPage() {
               }
             }
           }
+
           scopeData = decryptedFields;
+          console.log("[Consent] Decrypted fields:", Object.keys(scopeData));
+        } else {
+          console.error(
+            "[Consent] Failed to fetch scope data:",
+            dataResponse.status
+          );
         }
       }
 
@@ -193,6 +248,8 @@ export default function ConsentsPage() {
         JSON.stringify(scopeData),
         exportKey
       );
+
+      console.log("[Consent] Sending approval request...");
 
       // Send to server with encrypted data and export key
       const response = await fetch("/api/consent/pending/approve", {
@@ -209,13 +266,24 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
+        console.log("[Consent] ✅ Consent approved successfully");
+        toast.success("Consent Approved", {
+          description: "The application can now access your data securely.",
+        });
         await fetchPendingConsents(userId);
         await fetchAuditLog(userId);
       } else {
-        console.error("Failed to approve consent");
+        const errorText = await response.text();
+        console.error("[Consent] Failed to approve consent:", errorText);
+        toast.error("Approval Failed", {
+          description: errorText || "Server error occurred",
+        });
       }
     } catch (err) {
-      console.error("Error approving consent:", err);
+      console.error("[Consent] Error approving consent:", err);
+      toast.error("Network Error", {
+        description: err instanceof Error ? err.message : "Connection failed",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -356,16 +424,32 @@ export default function ConsentsPage() {
   return (
     <div className="container mx-auto max-w-4xl py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
-          <Shield className="h-6 w-6 text-white" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
+            <Shield className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Consent Management</h1>
+            <p className="text-muted-foreground">
+              Control who can access your data
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">Consent Management</h1>
-          <p className="text-muted-foreground">
-            Control who can access your data
-          </p>
-        </div>
+        <Button
+          onClick={() => {
+            if (userId) {
+              fetchPendingConsents(userId);
+              fetchAuditLog(userId);
+            }
+          }}
+          variant="none"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       {/* Tabs */}
