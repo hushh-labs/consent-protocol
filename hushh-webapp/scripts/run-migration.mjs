@@ -186,21 +186,42 @@ async function runConsentMigration(pool) {
     "CREATE INDEX IF NOT EXISTS idx_session_tokens_active ON session_tokens(user_id, is_active)"
   );
 
-  // Add new columns to consent_audit if they don't exist
+  // Add new columns to consent_audit for pending request tracking
   console.log("   Adding columns to consent_audit (if not exist)...");
   await pool.query(`
     DO $$
     BEGIN
+      -- Request ID for linking REQUESTED to resolution
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                     WHERE table_name = 'consent_audit' AND column_name = 'request_id') THEN
+        ALTER TABLE consent_audit ADD COLUMN request_id VARCHAR(32);
+      END IF;
+      
+      -- Scope description for display
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                     WHERE table_name = 'consent_audit' AND column_name = 'scope_description') THEN
+        ALTER TABLE consent_audit ADD COLUMN scope_description TEXT;
+      END IF;
+      
+      -- Poll timeout for MCP waiting
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                     WHERE table_name = 'consent_audit' AND column_name = 'poll_timeout_at') THEN
+        ALTER TABLE consent_audit ADD COLUMN poll_timeout_at BIGINT;
+      END IF;
+      
+      -- Token type (consent, session, pending)
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                      WHERE table_name = 'consent_audit' AND column_name = 'token_type') THEN
         ALTER TABLE consent_audit ADD COLUMN token_type VARCHAR(20) DEFAULT 'consent';
       END IF;
       
+      -- IP address for audit
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                      WHERE table_name = 'consent_audit' AND column_name = 'ip_address') THEN
         ALTER TABLE consent_audit ADD COLUMN ip_address VARCHAR(45);
       END IF;
       
+      -- User agent for audit
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                      WHERE table_name = 'consent_audit' AND column_name = 'user_agent') THEN
         ALTER TABLE consent_audit ADD COLUMN user_agent TEXT;
@@ -208,8 +229,18 @@ async function runConsentMigration(pool) {
     END $$
   `);
 
+  // Create indexes for efficient queries
   await pool.query(
     "CREATE INDEX IF NOT EXISTS idx_consent_audit_created ON consent_audit(issued_at DESC)"
+  );
+  await pool.query(
+    "CREATE INDEX IF NOT EXISTS idx_consent_audit_user_action ON consent_audit(user_id, action)"
+  );
+  await pool.query(
+    "CREATE INDEX IF NOT EXISTS idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL"
+  );
+  await pool.query(
+    "CREATE INDEX IF NOT EXISTS idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED'"
   );
 
   console.log("✅ Consent protocol tables ready!");

@@ -26,3 +26,6 @@ requests==2.32.3
 
 # 🔌 MCP Server SDK (Model Context Protocol)
 mcp>=0.9.0
+
+# 🗄️ PostgreSQL Database (async)
+asyncpg>=0.29.0

@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 
 interface PendingConsent {
   id: string;
@@ -59,19 +58,9 @@ interface SessionInfo {
   scope: string;
 }
 
-interface ActiveConsent {
-  id: string;
-  scope: string;
-  developer: string;
-  issued_at: number;
-  expires_at: number;
-  time_remaining_ms: number;
-}
-
 export default function ConsentsPage() {
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
-  const [activeConsents, setActiveConsents] = useState<ActiveConsent[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -103,18 +92,6 @@ export default function ConsentsPage() {
     }
   }, []);
 
-  const fetchActiveConsents = useCallback(async (uid: string) => {
-    try {
-      const response = await fetch(`/api/consent/active?userId=${uid}`);
-      if (response.ok) {
-        const data = await response.json();
-        setActiveConsents(data.active || []);
-      }
-    } catch (err) {
-      console.error("Error fetching active consents:", err);
-    }
-  }, []);
-
   useEffect(() => {
     // Load session info from sessionStorage
     const token = sessionStorage.getItem("session_token");
@@ -123,21 +100,13 @@ export default function ConsentsPage() {
 
     if (uid) {
       setUserId(uid);
-
-      // Initial fetch - set loading false after complete
-      Promise.all([
-        fetchPendingConsents(uid),
-        fetchAuditLog(uid),
-        fetchActiveConsents(uid),
-      ]).finally(() => {
-        setLoading(false);
-      });
+      fetchPendingConsents(uid);
+      fetchAuditLog(uid);
 
       // Auto-poll every 5 seconds for real-time updates
       const pollInterval = setInterval(() => {
         fetchPendingConsents(uid);
         fetchAuditLog(uid);
-        fetchActiveConsents(uid);
       }, 5000);
 
       // Cleanup interval on unmount
@@ -154,7 +123,6 @@ export default function ConsentsPage() {
       });
     }
 
-    // No user ID, stop loading
     setLoading(false);
   }, [fetchPendingConsents, fetchAuditLog]);
 
@@ -182,59 +150,18 @@ export default function ConsentsPage() {
       let scopeData: Record<string, unknown> = {};
 
       if (scopeDataEndpoint) {
-        console.log(
-          `[Consent] Fetching data from: ${scopeDataEndpoint}?userId=${userId}`
-        );
         const dataResponse = await fetch(
           `${scopeDataEndpoint}?userId=${userId}`
         );
-
         if (dataResponse.ok) {
           const data = await dataResponse.json();
-          console.log("[Consent] Vault response:", Object.keys(data));
-
           // Decrypt the data with vault key
           const { decryptData } = await import("@/lib/vault/encrypt");
           const decryptedFields: Record<string, unknown> = {};
 
-          // Handle object format: { field_name: { ciphertext, iv, tag, algorithm, encoding } }
-          const preferences = data.preferences || data.data || {};
-
-          if (
-            preferences &&
-            typeof preferences === "object" &&
-            !Array.isArray(preferences)
-          ) {
-            // Object format (actual vault data)
-            for (const [fieldName, encryptedField] of Object.entries(
-              preferences
-            )) {
-              try {
-                const field = encryptedField as {
-                  ciphertext: string;
-                  iv: string;
-                  tag: string;
-                  algorithm?: string;
-                  encoding?: string;
-                };
-                const decrypted = await decryptData(
-                  {
-                    ciphertext: field.ciphertext,
-                    iv: field.iv,
-                    tag: field.tag,
-                    encoding: (field.encoding || "base64") as "base64",
-                    algorithm: (field.algorithm ||
-                      "aes-256-gcm") as "aes-256-gcm",
-                  },
-                  vaultKey
-                );
-                decryptedFields[fieldName] = JSON.parse(decrypted);
-              } catch (err) {
-                console.warn(`Failed to decrypt field: ${fieldName}`, err);
-              }
-            }
-          } else if (Array.isArray(preferences)) {
-            // Array format (legacy)
+          // Handle food/professional domain data format
+          const preferences = data.preferences || data.data || [];
+          if (Array.isArray(preferences)) {
             for (const field of preferences) {
               try {
                 const decrypted = await decryptData(
@@ -253,14 +180,7 @@ export default function ConsentsPage() {
               }
             }
           }
-
           scopeData = decryptedFields;
-          console.log("[Consent] Decrypted fields:", Object.keys(scopeData));
-        } else {
-          console.error(
-            "[Consent] Failed to fetch scope data:",
-            dataResponse.status
-          );
         }
       }
 
@@ -273,8 +193,6 @@ export default function ConsentsPage() {
         JSON.stringify(scopeData),
         exportKey
       );
-
-      console.log("[Consent] Sending approval request...");
 
       // Send to server with encrypted data and export key
       const response = await fetch("/api/consent/pending/approve", {
@@ -291,24 +209,13 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
-        console.log("[Consent] ✅ Consent approved successfully");
-        toast.success("Consent Approved", {
-          description: "The application can now access your data securely.",
-        });
         await fetchPendingConsents(userId);
         await fetchAuditLog(userId);
       } else {
-        const errorText = await response.text();
-        console.error("[Consent] Failed to approve consent:", errorText);
-        toast.error("Approval Failed", {
-          description: errorText || "Server error occurred",
-        });
+        console.error("Failed to approve consent");
       }
     } catch (err) {
-      console.error("[Consent] Error approving consent:", err);
-      toast.error("Network Error", {
-        description: err instanceof Error ? err.message : "Connection failed",
-      });
+      console.error("Error approving consent:", err);
     } finally {
       setActionLoading(null);
     }
@@ -336,45 +243,12 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
-        toast.info("Access Denied", {
-          description: "The consent request has been rejected.",
-        });
         await fetchPendingConsents(userId);
-        await fetchAuditLog(userId);
       } else {
-        toast.error("Failed to deny consent");
+        console.error("Failed to deny consent");
       }
     } catch (err) {
       console.error("Error denying consent:", err);
-      toast.error("Network error");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleRevoke = async (scope: string) => {
-    if (!userId) return;
-    setActionLoading(scope);
-
-    try {
-      const response = await fetch("/api/consent/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, scope }),
-      });
-
-      if (response.ok) {
-        toast.success("Access Revoked", {
-          description: "The application can no longer access your data.",
-        });
-        await fetchActiveConsents(userId);
-        await fetchAuditLog(userId);
-      } else {
-        toast.error("Failed to revoke access");
-      }
-    } catch (err) {
-      console.error("Error revoking consent:", err);
-      toast.error("Network error");
     } finally {
       setActionLoading(null);
     }
@@ -530,32 +404,16 @@ export default function ConsentsPage() {
   return (
     <div className="container mx-auto max-w-4xl py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
-            <Shield className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Consent Management</h1>
-            <p className="text-muted-foreground">
-              Control who can access your data
-            </p>
-          </div>
+      <div className="flex items-center gap-4">
+        <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
+          <Shield className="h-6 w-6 text-white" />
         </div>
-        <Button
-          onClick={() => {
-            if (userId) {
-              fetchPendingConsents(userId);
-              fetchAuditLog(userId);
-            }
-          }}
-          variant="none"
-          size="sm"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">Consent Management</h1>
+          <p className="text-muted-foreground">
+            Control who can access your data
+          </p>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -657,98 +515,53 @@ export default function ConsentsPage() {
           )}
         </TabsContent>
 
-        {/* Active Sessions Tab - Shows granted consent tokens */}
+        {/* Active Session Tab */}
         <TabsContent value="session" className="space-y-4 mt-4">
-          {activeConsents.length > 0 ? (
-            <div className="space-y-4">
-              {activeConsents.map((consent) => {
-                const scopeInfo = formatScope(consent.scope);
-                return (
-                  <Card
-                    key={consent.id}
-                    className="border-l-4 border-l-green-500"
-                  >
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{scopeInfo.emoji}</span>
-                          <div>
-                            <CardTitle className="text-lg">
-                              {consent.developer || "Unknown App"}
-                            </CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                              {scopeInfo.label} • {scopeInfo.description}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                          Active
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <p className="text-xs text-muted-foreground">
-                            Time Remaining
-                          </p>
-                          <p className="text-lg font-semibold flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
-                            {getTimeRemaining(consent.expires_at)}
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <p className="text-xs text-muted-foreground">
-                            Expires At
-                          </p>
-                          <p className="text-sm font-medium">
-                            {new Date(consent.expires_at).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="p-3 rounded-lg bg-muted/50">
-                        <p className="text-xs text-muted-foreground">
-                          Token ID
-                        </p>
-                        <p className="text-xs font-mono truncate">
-                          {consent.id}
-                        </p>
-                      </div>
-
-                      <Button
-                        onClick={() => handleRevoke(consent.scope)}
-                        variant="none"
-                        className="w-full border border-destructive text-destructive hover:bg-destructive/10"
-                        disabled={actionLoading === consent.scope}
-                      >
-                        {actionLoading === consent.scope ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <X className="h-4 w-4 mr-2" />
-                        )}
-                        Revoke Access
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : session ? (
-            <Card className="border-l-4 border-l-blue-500">
+          {session ? (
+            <Card className="border-l-4 border-l-green-500">
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-blue-500" />
-                  Vault Session Active
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Authenticated via passphrase
-                </p>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      Session Active
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Authenticated via passphrase
+                    </p>
+                  </div>
+                  <Badge className={getScopeColor(session.scope)}>
+                    {session.scope}
+                  </Badge>
+                </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">
+                      Time Remaining
+                    </p>
+                    <p className="text-lg font-semibold flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      {session.expiresAt
+                        ? getTimeRemaining(session.expiresAt)
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground">Expires At</p>
+                    <p className="text-sm font-medium">
+                      {session.expiresAt
+                        ? new Date(session.expiresAt).toLocaleTimeString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">
-                    No app consent tokens issued yet.
+                  <p className="text-xs text-muted-foreground">Session Token</p>
+                  <p className="text-xs font-mono truncate">
+                    {session.token?.slice(0, 40)}...
                   </p>
                 </div>
               </CardContent>
@@ -757,9 +570,9 @@ export default function ConsentsPage() {
             <Card>
               <CardContent className="py-12 text-center">
                 <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold">No Active Sessions</h3>
+                <h3 className="text-lg font-semibold">No Active Session</h3>
                 <p className="text-muted-foreground mt-2">
-                  Approve a consent request to grant app access.
+                  Enter your passphrase to start a new session.
                 </p>
               </CardContent>
             </Card>
@@ -815,7 +628,7 @@ export default function ConsentsPage() {
                         {/* Timeline line */}
                         <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-muted-foreground/20" />
 
-                        {entries.map((entry, index) => {
+                        {entries.map((entry) => {
                           const actionInfo = getActionInfo(entry.action);
                           return (
                             <div
