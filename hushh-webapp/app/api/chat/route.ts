@@ -13,19 +13,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-
-// Agent Port Mapping - Keep in sync with consent-protocol/hushh_mcp/constants.py AGENT_PORTS
-const PORT_MAP: Record<string, number> = {
-  agent_orchestrator: 10000,
-  agent_food_dining: 10001,
-  agent_professional_profile: 10002,
-  agent_identity: 10003,
-  agent_shopper: 10004,
-  // Future agents (placeholders)
-  agent_finance: 10005,
-  agent_health_wellness: 10006,
-  agent_travel: 10007,
-};
+import { validateFirebaseToken } from "@/lib/auth/validate";
+import { isDevelopment, logSecurityEvent } from "@/lib/config";
+import { AGENT_PORTS } from "@/lib/agents/ports";
 
 // Backend URL - use server-side env var or fallback to client-side or localhost
 const BACKEND_URL =
@@ -53,6 +43,36 @@ export async function POST(req: NextRequest) {
         { content: "Authentication required. Please log in." },
         { status: 401 }
       );
+    }
+
+    // =========================================================================
+    // FIREBASE AUTH: Verify identity before allowing chat
+    // =========================================================================
+    const authHeader = req.headers.get("Authorization");
+
+    if (!authHeader && !isDevelopment()) {
+      logSecurityEvent("CHAT_REJECTED", { reason: "No auth header", userId });
+      return NextResponse.json(
+        {
+          content: "Authorization required. Please log in.",
+          code: "AUTH_REQUIRED",
+        },
+        { status: 401 }
+      );
+    }
+
+    if (authHeader) {
+      const validation = await validateFirebaseToken(authHeader);
+      if (!validation.valid) {
+        logSecurityEvent("CHAT_REJECTED", { reason: validation.error, userId });
+        return NextResponse.json(
+          {
+            content: `Authentication failed: ${validation.error}`,
+            code: "AUTH_INVALID",
+          },
+          { status: 401 }
+        );
+      }
     }
 
     // If explicit agentId provided and it's a domain agent with active session,

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import logging
 import os
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -280,6 +281,7 @@ MOCK_USER_DATA = {
 _pending_consents: Dict[str, Dict] = {}
 _granted_consents: Dict[str, str] = {}  # user_id:scope -> consent_token
 _consent_exports: Dict[str, Dict] = {}  # consent_token -> encrypted export data
+_consent_audit_log: List[Dict] = []  # Audit trail of all consent actions
 
 
 @app.post("/api/v1/request-consent", response_model=ConsentResponse)
@@ -327,6 +329,10 @@ async def request_consent(request: ConsentRequest):
     import uuid
     request_id = str(uuid.uuid4())[:8]
     
+    now_ms = int(time.time() * 1000)
+    poll_timeout_ms = 5 * 60 * 1000  # 5 minutes for MCP to poll
+    token_expiry_ms = request.expiry_hours * 60 * 60 * 1000
+    
     # Store pending consent (user must approve in dashboard)
     _pending_consents[consent_key] = {
         "request_id": request_id,
@@ -335,9 +341,24 @@ async def request_consent(request: ConsentRequest):
         "scope": request.scope,
         "scope_description": get_scope_description(request.scope),
         "expiry_hours": request.expiry_hours,
-        "requested_at": int(__import__("time").time() * 1000),
+        "requested_at": now_ms,
+        "poll_timeout_at": now_ms + poll_timeout_ms,  # MCP poll timeout
+        "token_expires_at": now_ms + token_expiry_ms,  # Token expiry if approved
         "user_id": request.user_id
     }
+    
+    # Log REQUESTED action to audit trail
+    _consent_audit_log.append({
+        "id": str(len(_consent_audit_log) + 1),
+        "token_id": "N/A",
+        "user_id": request.user_id,
+        "agent_id": dev_info["name"],
+        "scope": request.scope,
+        "action": "REQUESTED",
+        "issued_at": now_ms,
+        "expires_at": None,
+        "token_type": "pending"
+    })
     
     logger.info(f"📋 Consent request stored as pending: {consent_key} (request_id={request_id})")
     
@@ -402,6 +423,29 @@ async def approve_consent(request: Request):
     # Find the pending request
     for key, pending_request in list(_pending_consents.items()):
         if pending_request["user_id"] == userId and pending_request["request_id"] == requestId:
+            # Check if MCP poll timeout has expired
+            now_ms = int(time.time() * 1000)
+            poll_timeout_at = pending_request.get("poll_timeout_at", 0)
+            
+            if poll_timeout_at and now_ms > poll_timeout_at:
+                # Timeout - MCP is no longer waiting
+                del _pending_consents[key]
+                
+                _consent_audit_log.append({
+                    "id": str(len(_consent_audit_log) + 1),
+                    "token_id": "N/A",
+                    "user_id": userId,
+                    "agent_id": pending_request["developer"],
+                    "scope": pending_request["scope"],
+                    "action": "TIMED_OUT",
+                    "issued_at": now_ms,
+                    "expires_at": None,
+                    "token_type": "expired"
+                })
+                
+                logger.info(f"⏰ Consent request timed out for {key}")
+                return {"status": "timed_out", "message": "MCP poll timeout expired. The requesting application is no longer waiting."}
+            
             # Issue consent token
             scope_map = {
                 "vault_read_food": ConsentScope.VAULT_READ_FOOD,
@@ -438,6 +482,19 @@ async def approve_consent(request: Request):
             _granted_consents[key] = token.token
             del _pending_consents[key]
             
+            # Log to audit trail
+            _consent_audit_log.append({
+                "id": str(len(_consent_audit_log) + 1),
+                "token_id": token.token[:20] + "...",
+                "user_id": userId,
+                "agent_id": pending_request["developer"],
+                "scope": pending_request["scope"],
+                "action": "CONSENT_GRANTED",
+                "issued_at": int(time.time() * 1000),
+                "expires_at": token.expires_at,
+                "token_type": "consent"
+            })
+            
             logger.info(f"✅ Consent granted for {key}")
             
             # Return token with export key for MCP decryption
@@ -453,20 +510,132 @@ async def approve_consent(request: Request):
 
 
 @app.post("/api/consent/pending/deny")
-async def deny_consent(userId: str, requestId: str):
+async def deny_consent(request: Request):
     """
     User denies a pending consent request.
     """
+    body = await request.json()
+    userId = body.get("userId")
+    requestId = body.get("requestId")
+    
     logger.info(f"❌ User {userId} denying consent request {requestId}")
     
     # Find and remove the pending request
-    for key, request in list(_pending_consents.items()):
-        if request["user_id"] == userId and request["request_id"] == requestId:
+    for key, pending_request in list(_pending_consents.items()):
+        if pending_request["user_id"] == userId and pending_request["request_id"] == requestId:
             del _pending_consents[key]
+            
+            # Log to audit trail
+            _consent_audit_log.append({
+                "id": str(len(_consent_audit_log) + 1),
+                "token_id": "N/A",
+                "user_id": userId,
+                "agent_id": pending_request["developer"],
+                "scope": pending_request["scope"],
+                "action": "CONSENT_DENIED",
+                "issued_at": int(time.time() * 1000),
+                "expires_at": None,
+                "token_type": "denied"
+            })
+            
             logger.info(f"❌ Consent denied for {key}")
-            return {"status": "denied", "message": f"Consent denied to {request['developer']}"}
+            return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
     
     raise HTTPException(status_code=404, detail="Consent request not found")
+
+
+@app.get("/api/consent/history")
+async def get_consent_history(userId: str, page: int = 1, limit: int = 20):
+    """
+    Get consent audit history for a user.
+    Returns paginated list of consent actions (granted, denied, revoked).
+    """
+    logger.info(f"📜 Fetching consent history for user: {userId}")
+    
+    # Filter audit log for this user
+    user_history = [entry for entry in _consent_audit_log if entry.get("user_id") == userId]
+    
+    # Sort by issued_at descending (newest first)
+    user_history.sort(key=lambda x: x.get("issued_at", 0), reverse=True)
+    
+    # Paginate
+    start = (page - 1) * limit
+    end = start + limit
+    paginated = user_history[start:end]
+    
+    return {
+        "items": paginated,
+        "total": len(user_history),
+        "page": page,
+        "limit": limit
+    }
+
+
+@app.post("/api/consent/cancel")
+async def cancel_consent(request: Request):
+    """
+    Cancel a pending consent request (MCP disconnected or user cancelled in chat).
+    Called by MCP when the chat is interrupted.
+    """
+    body = await request.json()
+    userId = body.get("userId")
+    requestId = body.get("requestId")
+    
+    logger.info(f"🚫 Cancelling consent request {requestId} for user {userId}")
+    
+    for key, pending_request in list(_pending_consents.items()):
+        if pending_request["user_id"] == userId and pending_request["request_id"] == requestId:
+            del _pending_consents[key]
+            
+            _consent_audit_log.append({
+                "id": str(len(_consent_audit_log) + 1),
+                "token_id": "N/A",
+                "user_id": userId,
+                "agent_id": pending_request["developer"],
+                "scope": pending_request["scope"],
+                "action": "CANCELLED",
+                "issued_at": int(time.time() * 1000),
+                "expires_at": None,
+                "token_type": "cancelled"
+            })
+            
+            logger.info(f"🚫 Consent cancelled for {key}")
+            return {"status": "cancelled", "message": "Consent request cancelled"}
+    
+    raise HTTPException(status_code=404, detail="Consent request not found")
+
+
+@app.get("/api/consent/active")
+async def get_active_consents(userId: str):
+    """
+    Get active (non-expired) consent tokens for a user.
+    Used by the Session tab in the dashboard.
+    """
+    logger.info(f"🔑 Fetching active consents for user: {userId}")
+    
+    now_ms = int(time.time() * 1000)
+    active_tokens = []
+    
+    # Get all granted consents for this user that haven't expired
+    for key, token_str in _granted_consents.items():
+        if key.startswith(f"{userId}:"):
+            # Validate the token is still valid
+            valid, reason, token_obj = validate_token(token_str)
+            if valid and token_obj:
+                # Check if we have export data for this token
+                export_data = _consent_exports.get(token_str, {})
+                scope = key.split(":")[1] if ":" in key else "unknown"
+                
+                active_tokens.append({
+                    "id": token_str[:20] + "...",
+                    "scope": scope,
+                    "developer": export_data.get("scope", scope),
+                    "issued_at": token_obj.issued_at if hasattr(token_obj, 'issued_at') else now_ms,
+                    "expires_at": token_obj.expires_at if hasattr(token_obj, 'expires_at') else now_ms + 86400000,
+                    "time_remaining_ms": (token_obj.expires_at - now_ms) if hasattr(token_obj, 'expires_at') else 0
+                })
+    
+    return {"active": active_tokens, "count": len(active_tokens)}
 
 
 @app.get("/api/consent/data")

@@ -59,10 +59,8 @@ export default function ProfessionalProfilePage() {
         return;
       }
 
-      // Fetch all encrypted preferences (API returns all fields)
-      const response = await fetch(
-        `/api/vault/get-preferences?userId=${userId}`
-      );
+      // Fetch encrypted professional data from domain-specific endpoint
+      const response = await fetch(`/api/vault/professional?userId=${userId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -119,9 +117,9 @@ export default function ProfessionalProfilePage() {
       }
 
       setProfile(profileData);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Profile load error:", err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
