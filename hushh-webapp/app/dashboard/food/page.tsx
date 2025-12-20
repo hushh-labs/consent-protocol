@@ -22,25 +22,14 @@ import {
   Leaf,
   ChefHat,
   Wallet,
-  Star,
-  MapPin,
   Shield,
   Edit3,
-  Sparkles,
 } from "lucide-react";
 
 interface UserPreferences {
   dietary: string[];
   cuisines: string[];
   budget: number;
-}
-
-interface Restaurant {
-  name: string;
-  cuisine: string;
-  avg_price: number;
-  match_score: number;
-  price_category: string;
 }
 
 // Map dietary restrictions to icons/colors
@@ -90,7 +79,6 @@ const CUISINE_ICONS: Record<string, string> = {
 export default function FoodDashboardPage() {
   const router = useRouter();
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
-  const [recommendations, setRecommendations] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -111,9 +99,8 @@ export default function FoodDashboardPage() {
         return;
       }
 
-      const response = await fetch(
-        `/api/vault/get-preferences?userId=${userId}`
-      );
+      // Call domain-specific endpoint
+      const response = await fetch(`/api/vault/food?userId=${userId}`);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -146,17 +133,6 @@ export default function FoodDashboardPage() {
       };
 
       setPreferences(prefs);
-
-      // Mock recommendations for now
-      setRecommendations([
-        {
-          name: "Sample Restaurant",
-          cuisine: prefs.cuisines[0] || "italian",
-          avg_price: prefs.budget / 60,
-          match_score: 0.95,
-          price_category: "$$",
-        },
-      ]);
 
       setLoading(false);
     } catch (error: unknown) {
@@ -226,7 +202,7 @@ export default function FoodDashboardPage() {
               showRipple
               className="bg-gradient-to-r from-orange-500 to-red-500"
             >
-              <Sparkles className="h-4 w-4 mr-2" />
+              <Utensils className="h-4 w-4 mr-2" />
               Set Up Food Preferences
             </Button>
           </CardContent>
@@ -373,64 +349,6 @@ export default function FoodDashboardPage() {
       </div>
 
       {/* Recommendations Section */}
-      <Card variant="none" effect="glass">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Star className="h-5 w-5 text-amber-500" />
-              Recommendations
-            </CardTitle>
-            <span className="text-xs text-muted-foreground bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-1 rounded-full">
-              Coming Soon
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {recommendations.map((rec, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-4 rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-400 to-red-400 flex items-center justify-center text-xl">
-                    {CUISINE_ICONS[rec.cuisine.toLowerCase()] || "🍽️"}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{rec.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="capitalize">{rec.cuisine}</span>
-                      <span>·</span>
-                      <span>{rec.price_category}</span>
-                      <span>·</span>
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        Nearby
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold">${rec.avg_price.toFixed(2)}</p>
-                  <p className="text-xs text-emerald-600 font-medium">
-                    {(rec.match_score * 100).toFixed(0)}% match
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200/50 dark:border-amber-800/30">
-            <div className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-amber-500" />
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                AI-powered recommendations based on your preferences are coming
-                soon!
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Security Footer */}
       <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">

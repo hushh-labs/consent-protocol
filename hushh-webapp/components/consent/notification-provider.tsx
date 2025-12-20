@@ -116,17 +116,56 @@ export function ConsentNotificationProvider({
         let scopeData: Record<string, unknown> = {};
 
         if (scopeDataEndpoint) {
+          console.log(`[Consent] Fetching data from: ${scopeDataEndpoint}`);
           const dataResponse = await fetch(
             `${scopeDataEndpoint}?userId=${userId}`
           );
           if (dataResponse.ok) {
             const data = await dataResponse.json();
+            console.log("[Consent] Vault response:", Object.keys(data));
+
             // Decrypt the data with vault key
             const { decryptData } = await import("@/lib/vault/encrypt");
             const decryptedFields: Record<string, unknown> = {};
 
-            const preferences = data.preferences || data.data || [];
-            if (Array.isArray(preferences)) {
+            // Handle object format: { field_name: { ciphertext, iv, tag, algorithm, encoding } }
+            const preferences = data.preferences || data.data || {};
+
+            if (
+              preferences &&
+              typeof preferences === "object" &&
+              !Array.isArray(preferences)
+            ) {
+              // Object format (actual vault data)
+              for (const [fieldName, encryptedField] of Object.entries(
+                preferences
+              )) {
+                try {
+                  const field = encryptedField as {
+                    ciphertext: string;
+                    iv: string;
+                    tag: string;
+                    algorithm?: string;
+                    encoding?: string;
+                  };
+                  const decrypted = await decryptData(
+                    {
+                      ciphertext: field.ciphertext,
+                      iv: field.iv,
+                      tag: field.tag,
+                      encoding: (field.encoding || "base64") as "base64",
+                      algorithm: (field.algorithm ||
+                        "aes-256-gcm") as "aes-256-gcm",
+                    },
+                    vaultKey
+                  );
+                  decryptedFields[fieldName] = JSON.parse(decrypted);
+                } catch (err) {
+                  console.warn(`Failed to decrypt field: ${fieldName}`, err);
+                }
+              }
+            } else if (Array.isArray(preferences)) {
+              // Array format (legacy)
               for (const field of preferences) {
                 try {
                   const decrypted = await decryptData(
@@ -145,7 +184,18 @@ export function ConsentNotificationProvider({
                 }
               }
             }
+
             scopeData = decryptedFields;
+            console.log("[Consent] Decrypted fields:", Object.keys(scopeData));
+          } else {
+            console.error(
+              "[Consent] Failed to fetch scope data:",
+              dataResponse.status
+            );
+            toast.error("Failed to fetch data", {
+              description: "Could not retrieve your vault data.",
+            });
+            return;
           }
         }
 
@@ -158,6 +208,8 @@ export function ConsentNotificationProvider({
           JSON.stringify(scopeData),
           exportKey
         );
+
+        console.log("[Consent] Sending approval to server...");
 
         // Send to server
         const response = await fetch("/api/consent/pending/approve", {
@@ -174,16 +226,23 @@ export function ConsentNotificationProvider({
         });
 
         if (response.ok) {
+          console.log("[Consent] ✅ Consent approved successfully");
           toast.success("Consent approved!", {
             description: "The application can now access your data securely.",
             icon: <Check className="h-4 w-4 text-emerald-500" />,
           });
         } else {
-          toast.error("Failed to approve consent");
+          const errorText = await response.text();
+          console.error("[Consent] Failed to approve:", errorText);
+          toast.error("Failed to approve consent", {
+            description: errorText || "Server error occurred",
+          });
         }
       } catch (err) {
-        console.error("Error approving consent:", err);
-        toast.error("Network error");
+        console.error("[Consent] Error approving consent:", err);
+        toast.error("Network error", {
+          description: err instanceof Error ? err.message : "Unknown error",
+        });
       }
     },
     []
