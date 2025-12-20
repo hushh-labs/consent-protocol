@@ -59,9 +59,19 @@ interface SessionInfo {
   scope: string;
 }
 
+interface ActiveConsent {
+  id: string;
+  scope: string;
+  developer: string;
+  issued_at: number;
+  expires_at: number;
+  time_remaining_ms: number;
+}
+
 export default function ConsentsPage() {
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
+  const [activeConsents, setActiveConsents] = useState<ActiveConsent[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -93,6 +103,18 @@ export default function ConsentsPage() {
     }
   }, []);
 
+  const fetchActiveConsents = useCallback(async (uid: string) => {
+    try {
+      const response = await fetch(`/api/consent/active?userId=${uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setActiveConsents(data.active || []);
+      }
+    } catch (err) {
+      console.error("Error fetching active consents:", err);
+    }
+  }, []);
+
   useEffect(() => {
     // Load session info from sessionStorage
     const token = sessionStorage.getItem("session_token");
@@ -103,16 +125,19 @@ export default function ConsentsPage() {
       setUserId(uid);
 
       // Initial fetch - set loading false after complete
-      Promise.all([fetchPendingConsents(uid), fetchAuditLog(uid)]).finally(
-        () => {
-          setLoading(false);
-        }
-      );
+      Promise.all([
+        fetchPendingConsents(uid),
+        fetchAuditLog(uid),
+        fetchActiveConsents(uid),
+      ]).finally(() => {
+        setLoading(false);
+      });
 
       // Auto-poll every 5 seconds for real-time updates
       const pollInterval = setInterval(() => {
         fetchPendingConsents(uid);
         fetchAuditLog(uid);
+        fetchActiveConsents(uid);
       }, 5000);
 
       // Cleanup interval on unmount
@@ -311,12 +336,45 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
+        toast.info("Access Denied", {
+          description: "The consent request has been rejected.",
+        });
         await fetchPendingConsents(userId);
+        await fetchAuditLog(userId);
       } else {
-        console.error("Failed to deny consent");
+        toast.error("Failed to deny consent");
       }
     } catch (err) {
       console.error("Error denying consent:", err);
+      toast.error("Network error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRevoke = async (scope: string) => {
+    if (!userId) return;
+    setActionLoading(scope);
+
+    try {
+      const response = await fetch("/api/consent/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, scope }),
+      });
+
+      if (response.ok) {
+        toast.success("Access Revoked", {
+          description: "The application can no longer access your data.",
+        });
+        await fetchActiveConsents(userId);
+        await fetchAuditLog(userId);
+      } else {
+        toast.error("Failed to revoke access");
+      }
+    } catch (err) {
+      console.error("Error revoking consent:", err);
+      toast.error("Network error");
     } finally {
       setActionLoading(null);
     }
