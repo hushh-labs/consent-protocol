@@ -674,10 +674,10 @@ export default function ConsentsPage() {
                           <span className="text-2xl">{scopeInfo.emoji}</span>
                           <div>
                             <CardTitle className="text-lg">
-                              {scopeInfo.label}
+                              {consent.developer || "Unknown App"}
                             </CardTitle>
                             <p className="text-sm text-muted-foreground">
-                              {scopeInfo.description}
+                              {scopeInfo.label} • {scopeInfo.description}
                             </p>
                           </div>
                         </div>
@@ -779,32 +779,86 @@ export default function ConsentsPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {auditLog.map((entry) => {
-                const actionInfo = getActionInfo(entry.action);
-                const scopeInfo = formatScope(entry.scope);
+            <div className="space-y-4">
+              {/* Group audit entries by agent_id (app name) */}
+              {Object.entries(
+                auditLog.reduce((groups, entry) => {
+                  const appName = entry.agent_id || "Unknown App";
+                  if (!groups[appName]) {
+                    groups[appName] = [];
+                  }
+                  groups[appName].push(entry);
+                  return groups;
+                }, {} as Record<string, ConsentAuditEntry[]>)
+              ).map(([appName, entries]) => {
+                // Get the most recent scope for this app
+                const latestEntry = entries[0];
+                const scopeInfo = formatScope(latestEntry.scope);
+
                 return (
-                  <Card key={entry.id} className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3">
-                        <span className="text-xl">{scopeInfo.emoji}</span>
+                  <Card key={appName} className="overflow-hidden">
+                    <CardHeader className="pb-3 bg-muted/30">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{scopeInfo.emoji}</span>
                         <div>
-                          <p className="font-medium flex items-center gap-2">
-                            <span>{actionInfo.emoji}</span>
-                            {actionInfo.label}
-                          </p>
+                          <CardTitle className="text-lg">{appName}</CardTitle>
                           <p className="text-sm text-muted-foreground">
-                            {scopeInfo.label}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {formatDate(entry.issued_at)}
+                            {scopeInfo.label} • {entries.length} event
+                            {entries.length > 1 ? "s" : ""}
                           </p>
                         </div>
                       </div>
-                      <Badge className={actionInfo.className}>
-                        {actionInfo.label.split(" ")[1]}
-                      </Badge>
-                    </div>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      {/* Timeline of events */}
+                      <div className="relative pl-6 space-y-4">
+                        {/* Timeline line */}
+                        <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-muted-foreground/20" />
+
+                        {entries.map((entry, index) => {
+                          const actionInfo = getActionInfo(entry.action);
+                          return (
+                            <div
+                              key={entry.id}
+                              className="relative flex items-start gap-3"
+                            >
+                              {/* Timeline dot */}
+                              <div
+                                className={`absolute -left-4 w-3 h-3 rounded-full border-2 bg-background ${
+                                  entry.action === "CONSENT_GRANTED"
+                                    ? "border-green-500"
+                                    : entry.action === "CONSENT_DENIED" ||
+                                      entry.action === "REVOKED"
+                                    ? "border-red-500"
+                                    : entry.action === "REQUESTED"
+                                    ? "border-yellow-500"
+                                    : entry.action === "TIMED_OUT"
+                                    ? "border-orange-500"
+                                    : "border-gray-400"
+                                }`}
+                              />
+
+                              <div className="flex-1 flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-sm flex items-center gap-1.5">
+                                    <span>{actionInfo.emoji}</span>
+                                    {actionInfo.label}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatDate(entry.issued_at)}
+                                  </p>
+                                </div>
+                                <Badge
+                                  className={actionInfo.className + " text-xs"}
+                                >
+                                  {actionInfo.label.split(" ")[1]}
+                                </Badge>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
                   </Card>
                 );
               })}
