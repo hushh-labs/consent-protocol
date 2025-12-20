@@ -638,6 +638,49 @@ async def get_active_consents(userId: str):
     return {"active": active_tokens, "count": len(active_tokens)}
 
 
+@app.post("/api/consent/revoke")
+async def revoke_consent(request: Request):
+    """
+    Revoke an active consent token.
+    User can revoke access from the session tab.
+    """
+    body = await request.json()
+    userId = body.get("userId")
+    scope = body.get("scope")
+    
+    logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
+    
+    # Find and remove the granted consent
+    key = f"{userId}:{scope}"
+    if key in _granted_consents:
+        token = _granted_consents[key]
+        
+        # Remove from granted consents
+        del _granted_consents[key]
+        
+        # Remove associated export data if exists
+        if token in _consent_exports:
+            del _consent_exports[token]
+        
+        # Log to audit trail
+        _consent_audit_log.append({
+            "id": str(len(_consent_audit_log) + 1),
+            "token_id": token[:20] + "...",
+            "user_id": userId,
+            "agent_id": scope,  # Will be developer name in actual implementation
+            "scope": scope,
+            "action": "REVOKED",
+            "issued_at": int(time.time() * 1000),
+            "expires_at": None,
+            "token_type": "revoked"
+        })
+        
+        logger.info(f"🔒 Consent revoked for {key}")
+        return {"status": "revoked", "message": f"Access revoked for {scope}"}
+    
+    raise HTTPException(status_code=404, detail="Active consent not found")
+
+
 @app.get("/api/consent/data")
 async def get_consent_export_data(consent_token: str):
     """
