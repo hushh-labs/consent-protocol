@@ -438,6 +438,18 @@ async def approve_consent(request: Request):
             _granted_consents[key] = token.token
             del _pending_consents[key]
             
+            # Log to audit trail
+            _consent_audit_log.append({
+                "id": str(len(_consent_audit_log) + 1),
+                "token_id": token.token[:20] + "...",
+                "user_id": userId,
+                "agent_id": pending_request["developer"],
+                "scope": pending_request["scope"],
+                "action": "CONSENT_GRANTED",
+                "issued_at": int(time.time() * 1000),
+                "expires_at": token.expires_at,
+            })
+            
             logger.info(f"✅ Consent granted for {key}")
             
             # Return token with export key for MCP decryption
@@ -463,6 +475,19 @@ async def deny_consent(userId: str, requestId: str):
     for key, request in list(_pending_consents.items()):
         if request["user_id"] == userId and request["request_id"] == requestId:
             del _pending_consents[key]
+            
+            # Log to audit trail
+            _consent_audit_log.append({
+                "id": str(len(_consent_audit_log) + 1),
+                "token_id": "N/A",
+                "user_id": userId,
+                "agent_id": request["developer"],
+                "scope": request["scope"],
+                "action": "CONSENT_DENIED",
+                "issued_at": int(time.time() * 1000),
+                "expires_at": None,
+            })
+            
             logger.info(f"❌ Consent denied for {key}")
             return {"status": "denied", "message": f"Consent denied to {request['developer']}"}
     

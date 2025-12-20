@@ -100,8 +100,13 @@ export default function ConsentsPage() {
 
     if (uid) {
       setUserId(uid);
-      fetchPendingConsents(uid);
-      fetchAuditLog(uid);
+
+      // Initial fetch
+      Promise.all([fetchPendingConsents(uid), fetchAuditLog(uid)]).finally(
+        () => {
+          setLoading(false);
+        }
+      );
 
       // Auto-poll every 5 seconds for real-time updates
       const pollInterval = setInterval(() => {
@@ -123,6 +128,7 @@ export default function ConsentsPage() {
       });
     }
 
+    // No user ID, stop loading
     setLoading(false);
   }, [fetchPendingConsents, fetchAuditLog]);
 
@@ -142,7 +148,7 @@ export default function ConsentsPage() {
       const vaultKey = sessionStorage.getItem("vault_key");
       if (!vaultKey) {
         console.error("Vault key not found - user must unlock vault first");
-        return;
+        throw new Error("Vault not unlocked. Please unlock your vault first.");
       }
 
       // Fetch the scope data from vault
