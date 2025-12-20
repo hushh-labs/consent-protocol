@@ -407,6 +407,54 @@ export default function ConsentsPage() {
     return "bg-gray-500/10 text-gray-600 border-gray-500/20";
   };
 
+  // User-friendly action labels with colors
+  const getActionInfo = (
+    action: string
+  ): { label: string; emoji: string; className: string } => {
+    const actionMap: Record<
+      string,
+      { label: string; emoji: string; className: string }
+    > = {
+      REQUESTED: {
+        label: "Access Requested",
+        emoji: "📋",
+        className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+      },
+      CONSENT_GRANTED: {
+        label: "Access Granted",
+        emoji: "✅",
+        className: "bg-green-500/10 text-green-600 border-green-500/20",
+      },
+      CONSENT_DENIED: {
+        label: "Access Denied",
+        emoji: "❌",
+        className: "bg-red-500/10 text-red-600 border-red-500/20",
+      },
+      CANCELLED: {
+        label: "Request Cancelled",
+        emoji: "🚫",
+        className: "bg-gray-500/10 text-gray-600 border-gray-500/20",
+      },
+      TIMED_OUT: {
+        label: "Request Expired",
+        emoji: "⏰",
+        className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+      },
+      REVOKED: {
+        label: "Access Revoked",
+        emoji: "🔒",
+        className: "bg-red-500/10 text-red-600 border-red-500/20",
+      },
+    };
+    return (
+      actionMap[action] || {
+        label: action,
+        emoji: "📝",
+        className: "bg-gray-500/10 text-gray-600",
+      }
+    );
+  };
+
   // Human-readable scope labels with emojis
   const formatScope = (
     scope: string
@@ -609,53 +657,98 @@ export default function ConsentsPage() {
           )}
         </TabsContent>
 
-        {/* Active Session Tab */}
+        {/* Active Sessions Tab - Shows granted consent tokens */}
         <TabsContent value="session" className="space-y-4 mt-4">
-          {session ? (
-            <Card className="border-l-4 border-l-green-500">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      Session Active
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Authenticated via passphrase
-                    </p>
-                  </div>
-                  <Badge className={getScopeColor(session.scope)}>
-                    {session.scope}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="text-xs text-muted-foreground">
-                      Time Remaining
-                    </p>
-                    <p className="text-lg font-semibold flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      {session.expiresAt
-                        ? getTimeRemaining(session.expiresAt)
-                        : "N/A"}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="text-xs text-muted-foreground">Expires At</p>
-                    <p className="text-sm font-medium">
-                      {session.expiresAt
-                        ? new Date(session.expiresAt).toLocaleTimeString()
-                        : "N/A"}
-                    </p>
-                  </div>
-                </div>
+          {activeConsents.length > 0 ? (
+            <div className="space-y-4">
+              {activeConsents.map((consent) => {
+                const scopeInfo = formatScope(consent.scope);
+                return (
+                  <Card
+                    key={consent.id}
+                    className="border-l-4 border-l-green-500"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{scopeInfo.emoji}</span>
+                          <div>
+                            <CardTitle className="text-lg">
+                              {scopeInfo.label}
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              {scopeInfo.description}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                          Active
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">
+                            Time Remaining
+                          </p>
+                          <p className="text-lg font-semibold flex items-center gap-2">
+                            <Clock className="h-4 w-4" />
+                            {getTimeRemaining(consent.expires_at)}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">
+                            Expires At
+                          </p>
+                          <p className="text-sm font-medium">
+                            {new Date(consent.expires_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
 
+                      <div className="p-3 rounded-lg bg-muted/50">
+                        <p className="text-xs text-muted-foreground">
+                          Token ID
+                        </p>
+                        <p className="text-xs font-mono truncate">
+                          {consent.id}
+                        </p>
+                      </div>
+
+                      <Button
+                        onClick={() => handleRevoke(consent.scope)}
+                        variant="none"
+                        className="w-full border border-destructive text-destructive hover:bg-destructive/10"
+                        disabled={actionLoading === consent.scope}
+                      >
+                        {actionLoading === consent.scope ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4 mr-2" />
+                        )}
+                        Revoke Access
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : session ? (
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-blue-500" />
+                  Vault Session Active
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Authenticated via passphrase
+                </p>
+              </CardHeader>
+              <CardContent>
                 <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Session Token</p>
-                  <p className="text-xs font-mono truncate">
-                    {session.token?.slice(0, 40)}...
+                  <p className="text-xs text-muted-foreground">
+                    No app consent tokens issued yet.
                   </p>
                 </div>
               </CardContent>
@@ -664,9 +757,9 @@ export default function ConsentsPage() {
             <Card>
               <CardContent className="py-12 text-center">
                 <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold">No Active Session</h3>
+                <h3 className="text-lg font-semibold">No Active Sessions</h3>
                 <p className="text-muted-foreground mt-2">
-                  Enter your passphrase to start a new session.
+                  Approve a consent request to grant app access.
                 </p>
               </CardContent>
             </Card>
@@ -687,24 +780,34 @@ export default function ConsentsPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {auditLog.map((entry) => (
-                <Card key={entry.id} className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium">{entry.action}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Agent: {entry.agent_id}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(entry.issued_at)}
-                      </p>
+              {auditLog.map((entry) => {
+                const actionInfo = getActionInfo(entry.action);
+                const scopeInfo = formatScope(entry.scope);
+                return (
+                  <Card key={entry.id} className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="text-xl">{scopeInfo.emoji}</span>
+                        <div>
+                          <p className="font-medium flex items-center gap-2">
+                            <span>{actionInfo.emoji}</span>
+                            {actionInfo.label}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {scopeInfo.label}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDate(entry.issued_at)}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge className={actionInfo.className}>
+                        {actionInfo.label.split(" ")[1]}
+                      </Badge>
                     </div>
-                    <Badge className={getScopeColor(entry.scope)}>
-                      {entry.scope}
-                    </Badge>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
