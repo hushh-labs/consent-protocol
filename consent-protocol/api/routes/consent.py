@@ -167,38 +167,58 @@ async def revoke_consent(request: Request):
     
     This removes access for the app that was previously granted consent.
     """
-    body = await request.json()
-    userId = body.get("userId")
-    scope = body.get("scope")
+    try:
+        body = await request.json()
+        userId = body.get("userId")
+        scope = body.get("scope")
+        
+        if not userId or not scope:
+            raise HTTPException(status_code=400, detail="userId and scope are required")
+        
+        logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
+        
+        # Get the active token for this scope
+        active_tokens = await consent_db.get_active_tokens(userId)
+        logger.info(f"📋 Found {len(active_tokens)} active tokens for user")
+        
+        token_to_revoke = None
+        for token in active_tokens:
+            logger.info(f"   Token scope: {token.get('scope')}, looking for: {scope}")
+            if token.get("scope") == scope:
+                token_to_revoke = token
+                break
+        
+        if not token_to_revoke:
+            raise HTTPException(status_code=404, detail=f"No active consent found for scope: {scope}")
+        
+        # Generate a revocation token_id if original is missing
+        import time
+        revoke_token_id = token_to_revoke.get("token_id") or f"revoke_{int(time.time() * 1000)}"
+        agent_id = token_to_revoke.get("agent_id") or token_to_revoke.get("developer") or "Unknown"
+        request_id = token_to_revoke.get("request_id")
+        
+        logger.info(f"🔒 Revoking token_id: {revoke_token_id}, agent: {agent_id}, request_id: {request_id}")
+        
+        # Log REVOKED event to database (link to original request_id for trail)
+        await consent_db.insert_event(
+            user_id=userId,
+            agent_id=agent_id,
+            scope=scope,
+            action="REVOKED",
+            token_id=revoke_token_id,
+            request_id=request_id
+        )
+        logger.info(f"✅ REVOKED event saved to DB for scope: {scope}")
+        
+        return {"status": "revoked", "message": f"Consent for {scope} has been revoked"}
     
-    if not userId or not scope:
-        raise HTTPException(status_code=400, detail="userId and scope are required")
-    
-    logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
-    
-    # Get the active token for this scope
-    active_tokens = await consent_db.get_active_tokens(userId)
-    token_to_revoke = None
-    for token in active_tokens:
-        if token.get("scope") == scope:
-            token_to_revoke = token
-            break
-    
-    if not token_to_revoke:
-        raise HTTPException(status_code=404, detail=f"No active consent found for scope: {scope}")
-    
-    # Log REVOKED event to database (link to original request_id for trail)
-    await consent_db.insert_event(
-        user_id=userId,
-        agent_id=token_to_revoke.get("agent_id", token_to_revoke.get("developer", "Unknown")),
-        scope=scope,
-        action="REVOKED",
-        token_id=token_to_revoke.get("token_id"),
-        request_id=token_to_revoke.get("request_id")  # Link to original request
-    )
-    logger.info(f"🔒 REVOKED event saved to DB for scope: {scope}, request_id: {token_to_revoke.get('request_id')}")
-    
-    return {"status": "revoked", "message": f"Consent for {scope} has been revoked"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Revoke error: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
 @router.get("/data")

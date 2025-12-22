@@ -10,7 +10,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast, Toaster } from "sonner";
 import { useRouter } from "next/navigation";
-import { Check, X, Shield, AlertCircle } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useVault } from "@/lib/vault/vault-context";
 
 interface PendingConsent {
@@ -256,24 +256,26 @@ export function ConsentNotificationProvider({
       const { label, emoji } = formatScope(consent.scope);
 
       toast(
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
+          {/* Simple header with scope */}
           <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-500" />
-            <span className="font-semibold">Consent Request</span>
+            <span className="text-lg">{emoji}</span>
+            <div>
+              <p className="font-semibold text-sm">{consent.developer}</p>
+              <p className="text-xs text-muted-foreground">
+                Wants access to your {label}
+              </p>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            <strong>{consent.developer}</strong> wants to access your{" "}
-            <span className="font-medium">
-              {emoji} {label}
-            </span>
-          </p>
-          <div className="flex gap-2 mt-2">
+
+          {/* Action buttons - centered */}
+          <div className="flex gap-2 justify-center">
             <button
               onClick={() => {
                 handleApproveWithExport(consent);
                 toast.dismiss(consent.id);
               }}
-              className="flex-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-md flex items-center justify-center gap-1"
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors"
             >
               <Check className="h-4 w-4" /> Approve
             </button>
@@ -282,7 +284,7 @@ export function ConsentNotificationProvider({
                 handleDeny(consent.id);
                 toast.dismiss(consent.id);
               }}
-              className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-md flex items-center justify-center gap-1"
+              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
             >
               <X className="h-4 w-4" /> Deny
             </button>
@@ -292,15 +294,10 @@ export function ConsentNotificationProvider({
           id: consent.id,
           duration: Infinity,
           position: "top-center",
-          icon: <AlertCircle className="h-5 w-5 text-amber-500" />,
-          action: {
-            label: "View All",
-            onClick: () => router.push("/dashboard/consents"),
-          },
         }
       );
     },
-    [handleApproveWithExport, handleDeny, router]
+    [handleApproveWithExport, handleDeny]
   );
 
   // Poll for pending consents
