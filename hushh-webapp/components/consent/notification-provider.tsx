@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { toast, Toaster } from "sonner";
 import { useRouter } from "next/navigation";
 import { Check, X, Shield, AlertCircle } from "lucide-react";
+import { useVault } from "@/lib/vault/vault-context";
 
 interface PendingConsent {
   id: string;
@@ -37,6 +38,7 @@ export function ConsentNotificationProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const { vaultKey, isVaultUnlocked } = useVault();
   const [pendingCount, setPendingCount] = useState(0);
   const seenRequestIds = useRef<Set<string>>(new Set());
 
@@ -102,7 +104,8 @@ export function ConsentNotificationProvider({
   const handleApproveWithExport = useCallback(
     async (consent: PendingConsent) => {
       const userId = sessionStorage.getItem("user_id");
-      const vaultKey = sessionStorage.getItem("vault_key");
+
+      // Use vault key from React context (memory-only, XSS-safe)
       if (!userId || !vaultKey) {
         toast.error("Vault not unlocked", {
           description: "Please unlock your vault to approve this request.",
@@ -245,7 +248,7 @@ export function ConsentNotificationProvider({
         });
       }
     },
-    []
+    [vaultKey] // Add vaultKey dependency
   );
 
   const showConsentToast = useCallback(
