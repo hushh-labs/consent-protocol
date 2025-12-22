@@ -17,7 +17,7 @@ import {
   LogOut,
   Code,
 } from "lucide-react";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 
 interface NavItem {
@@ -81,22 +81,18 @@ export const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Check if user is logged in
-  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+  // Check if user is Firebase authenticated (persists across tabs)
+  const [firebaseUser, setFirebaseUser] = React.useState<User | null>(null);
+  const [authLoading, setAuthLoading] = React.useState(true);
 
   React.useEffect(() => {
-    const checkAuth = () => {
-      const userId = sessionStorage.getItem("user_id");
-      setIsLoggedIn(!!userId);
-    };
+    // Use Firebase onAuthStateChanged which persists across tabs via IndexedDB
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      setAuthLoading(false);
+    });
 
-    // Check on mount
-    checkAuth();
-
-    // Check periodically (in case sessionStorage changes)
-    const interval = setInterval(checkAuth, 1000);
-
-    return () => clearInterval(interval);
+    return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
@@ -115,16 +111,23 @@ export const Navbar = () => {
       }
     }
 
+    // Clear session cookie via API
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+    } catch (e) {
+      console.warn("⚠️ Failed to clear session cookie:", e);
+    }
+
     // Clear local storage and sign out
     sessionStorage.clear();
     await signOut(auth);
-    setIsLoggedIn(false);
     router.push("/login");
   };
 
-  // Filter navigation items based on auth status
+  // Filter navigation items based on auth status (Firebase auth, not vault)
+  const isAuthenticated = !!firebaseUser;
   const filteredItems = navigationItems.filter(
-    (item) => !item.requiresAuth || isLoggedIn
+    (item) => !item.requiresAuth || isAuthenticated
   );
 
   return (
@@ -148,15 +151,15 @@ export const Navbar = () => {
           <div className="h-10 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
 
           {/* Auth Button */}
-          {isLoggedIn ? (
+          {isAuthenticated ? (
             <NavButton
-              item={{ label: "Logout", href: "/logout", icon: LogOut }}
+              item={{ label: "Sign Out", href: "/logout", icon: LogOut }}
               isActive={false}
               onClick={handleLogout}
             />
           ) : (
             <NavButton
-              item={{ label: "Login", href: "/login", icon: LogIn }}
+              item={{ label: "Sign In", href: "/login", icon: LogIn }}
               isActive={pathname === "/login"}
             />
           )}

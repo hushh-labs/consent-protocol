@@ -9,6 +9,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { decryptData } from "@/lib/vault/encrypt";
+import { useVault } from "@/lib/vault/vault-context";
 import {
   Button,
   Card,
@@ -78,21 +79,25 @@ const CUISINE_ICONS: Record<string, string> = {
 
 export default function FoodDashboardPage() {
   const router = useRouter();
+  const { getVaultKey, isVaultUnlocked } = useVault();
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Redirect if vault not unlocked
+    if (!isVaultUnlocked) {
+      router.push("/login?redirect=/dashboard/food");
+      return;
+    }
     loadDashboard();
-  }, []);
+  }, [isVaultUnlocked]);
 
   async function loadDashboard() {
     try {
       const userId =
         localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
-      const vaultKey =
-        localStorage.getItem("vault_key") ||
-        sessionStorage.getItem("vault_key");
+      const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
 
       if (!userId || !vaultKey) {
         router.push("/login");

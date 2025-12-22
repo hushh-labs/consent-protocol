@@ -30,6 +30,7 @@ import {
   unlockVaultWithPassphrase,
   unlockVaultWithRecoveryKey,
 } from "@/lib/vault/passphrase-key";
+import { useVault } from "@/lib/vault/vault-context";
 import {
   Button,
   Card,
@@ -81,6 +82,7 @@ type LoginStep =
 
 export default function LoginPage() {
   const router = useRouter();
+  const { isVaultUnlocked, unlockVault } = useVault();
 
   // State
   const [step, setStep] = useState<LoginStep>("checking");
@@ -112,9 +114,8 @@ export default function LoginPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // Check if vault key already in session
-        const existingKey = sessionStorage.getItem("vault_key");
-        if (existingKey) {
+        // Check if vault is already unlocked (in memory)
+        if (isVaultUnlocked) {
           router.push("/dashboard");
           return;
         }
@@ -237,8 +238,8 @@ export default function LoginPage() {
 
       const result = await createVaultWithPassphrase(passphrase);
 
-      // Store vault key in session
-      sessionStorage.setItem("vault_key", result.vaultKeyHex);
+      // Store vault key in memory only (not sessionStorage - XSS protection)
+      unlockVault(result.vaultKeyHex);
 
       // Save to server (passphrase + recovery encrypted copies)
       await fetch("/api/vault/setup", {
@@ -290,7 +291,8 @@ export default function LoginPage() {
         vaultData.iv
       );
 
-      sessionStorage.setItem("vault_key", vaultKeyHex);
+      // Store vault key in memory only (not sessionStorage - XSS protection)
+      unlockVault(vaultKeyHex);
       sessionStorage.setItem("user_id", userId); // Store for consents page
 
       // Issue session token via consent protocol
@@ -303,6 +305,7 @@ export default function LoginPage() {
         if (!idToken) {
           console.warn("⚠️ No Firebase ID token available");
         } else {
+          // Create consent session token
           const tokenResponse = await fetch("/api/consent/session-token", {
             method: "POST",
             headers: {
@@ -327,6 +330,20 @@ export default function LoginPage() {
             console.warn(
               "⚠️ Session token issuance failed, continuing without token"
             );
+          }
+
+          // Create httpOnly session cookie via Firebase Admin
+          console.log("🍪 Creating secure session cookie...");
+          const sessionResponse = await fetch("/api/auth/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken }),
+          });
+
+          if (sessionResponse.ok) {
+            console.log("✅ Secure session cookie created");
+          } else {
+            console.warn("⚠️ Session cookie creation failed");
           }
         }
       } catch (tokenErr) {
@@ -365,7 +382,20 @@ export default function LoginPage() {
         vaultData.recoveryIv
       );
 
-      sessionStorage.setItem("vault_key", vaultKeyHex);
+      // Store vault key in memory only (not sessionStorage - XSS protection)
+      unlockVault(vaultKeyHex);
+
+      // Create httpOnly session cookie via Firebase Admin
+      const user = auth.currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+      if (idToken) {
+        console.log("🍪 Creating secure session cookie...");
+        await fetch("/api/auth/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken }),
+        });
+      }
 
       setStep("success");
       router.push("/dashboard");
@@ -381,7 +411,19 @@ export default function LoginPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleRecoveryKeyContinue() {
+  async function handleRecoveryKeyContinue() {
+    // Create httpOnly session cookie via Firebase Admin
+    const user = auth.currentUser;
+    const idToken = user ? await user.getIdToken() : null;
+    if (idToken) {
+      console.log("🍪 Creating secure session cookie...");
+      await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+    }
+
     setStep("success");
     router.push("/dashboard");
   }
