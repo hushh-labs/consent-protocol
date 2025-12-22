@@ -183,8 +183,9 @@ User Passphrase
       ▼
 AES-256 Vault Key
       │
-      ├── Stored in sessionStorage (browser only)
-      └── NEVER sent to server
+      ├── Stored in React Context (memory only, XSS protection)
+      ├── Session cookie (httpOnly, Firebase Admin SDK)
+      └── NEVER stored in sessionStorage or sent to server
 ```
 
 ### Recovery Key Flow

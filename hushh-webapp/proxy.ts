@@ -32,14 +32,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // For protected routes, check for session cookie/token
-  // Note: We can't access localStorage in middleware, so we use a cookie approach
-  // The actual vault_key check happens client-side
-  const hasSession = request.cookies.get("user_session");
+  // For protected routes, check for session cookie
+  const hasSession = request.cookies.get("hushh_session");
 
   // If no session and trying to access protected route, redirect to login
-  // However, since we use client-side auth, we let the page handle redirect
-  // This middleware primarily prevents direct URL access timing
+  if (!hasSession) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
   return NextResponse.next();
 }
