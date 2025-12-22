@@ -165,7 +165,7 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
     offset = (page - 1) * limit
     
     query = """
-        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at, request_id
+        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at, request_id, poll_timeout_at
         FROM consent_audit
         WHERE user_id = $1
         ORDER BY issued_at DESC
@@ -173,6 +173,8 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
     """
     
     count_query = "SELECT COUNT(*) FROM consent_audit WHERE user_id = $1"
+    
+    now_ms = int(datetime.now().timestamp() * 1000)
     
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, user_id, limit, offset)
@@ -189,6 +191,8 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
                     "issued_at": row['issued_at'],
                     "expires_at": row['expires_at'],
                     "request_id": row['request_id'],
+                    # Detect timed out: REQUESTED with poll_timeout_at in the past
+                    "is_timed_out": row['action'] == 'REQUESTED' and row['poll_timeout_at'] and row['poll_timeout_at'] < now_ms,
                 }
                 for row in rows
             ],
