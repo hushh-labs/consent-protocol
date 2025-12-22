@@ -109,6 +109,11 @@ sessionStorage.setItem("session_token", tokenData.sessionToken);
 sessionStorage.setItem("session_token_expires", String(tokenData.expiresAt));
 ```
 
+> **⚠️ Important Security Distinction:**
+>
+> - **Vault Key** → Memory only (React Context) - XSS protected, lost on refresh
+> - **Session Token** → sessionStorage - Used for API auth, cannot decrypt data
+
 ### 6. Logout
 
 On logout, tokens are destroyed:

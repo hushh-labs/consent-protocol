@@ -14,14 +14,14 @@ A `HushhConsentToken` is a **signed, stateless contract** that proves:
 
 It includes:
 
-| Field         | Description |
-|---------------|-------------|
-| `user_id`     | The user who granted consent |
-| `agent_id`    | The agent being authorized |
-| `scope`       | What the agent is allowed to do |
-| `issued_at`   | Epoch timestamp in ms |
-| `expires_at`  | When this token becomes invalid |
-| `signature`   | HMAC-SHA256 hash (signed using server secret) |
+| Field        | Description                                   |
+| ------------ | --------------------------------------------- |
+| `user_id`    | The user who granted consent                  |
+| `agent_id`   | The agent being authorized                    |
+| `scope`      | What the agent is allowed to do               |
+| `issued_at`  | Epoch timestamp in ms                         |
+| `expires_at` | When this token becomes invalid               |
+| `signature`  | HMAC-SHA256 hash (signed using server secret) |
 
 ---
 
@@ -37,7 +37,7 @@ token_obj = issue_token(
     agent_id="agent_shopper",
     scope="vault.read.email"
 )
-````
+```
 
 > The returned `token_obj.token` is a string like:
 > `HCT:base64(payload).signature`
@@ -59,9 +59,9 @@ is_valid, reason, parsed_token = validate_token(
 
 You should check:
 
-* ✅ `is_valid == True`
-* ✅ `parsed_token.user_id == incoming_user_id`
-* ✅ `parsed_token.scope` matches your required action
+- ✅ `is_valid == True`
+- ✅ `parsed_token.user_id == incoming_user_id`
+- ✅ `parsed_token.scope` matches your required action
 
 ---
 
@@ -98,8 +98,25 @@ issue_token(..., expires_in_ms=3600000)  # 1 hour
 Defined in `hushh_mcp/constants.py`:
 
 ```python
+# Vault READ scopes
 ConsentScope.VAULT_READ_EMAIL
+ConsentScope.VAULT_READ_PHONE
+ConsentScope.VAULT_READ_FOOD
+ConsentScope.VAULT_READ_PROFESSIONAL
+ConsentScope.VAULT_READ_FINANCE
+ConsentScope.VAULT_READ_ALL  # Session scope
+
+# Vault WRITE scopes
+ConsentScope.VAULT_WRITE_FOOD
+ConsentScope.VAULT_WRITE_FINANCE
+ConsentScope.VAULT_WRITE_PROFESSIONAL
+
+# Agent permissioning
 ConsentScope.AGENT_IDENTITY_VERIFY
+ConsentScope.AGENT_SHOPPING_PURCHASE
+ConsentScope.AGENT_FOOD_COLLECT
+
+# Custom scopes
 ConsentScope.CUSTOM_TEMPORARY
 ```
 
@@ -115,10 +132,10 @@ scope = ConsentScope("custom.my_scope_name")
 
 In `tests/test_token.py`, we’ve included test cases for:
 
-* Valid issuance and use
-* Expired tokens
-* Signature tampering
-* Revoked token rejection
+- Valid issuance and use
+- Expired tokens
+- Signature tampering
+- Revoked token rejection
 
 Run tests with:
 
@@ -132,7 +149,7 @@ pytest tests/test_token.py
 
 | Use Case                                     | Use This                             |
 | -------------------------------------------- | ------------------------------------ |
-| A user gives permission directly to an agent | ✅ `HushhConsentToken`                |
+| A user gives permission directly to an agent | ✅ `HushhConsentToken`               |
 | One agent acts on behalf of another agent    | 🔁 `TrustLink` (see `docs/trust.md`) |
 
 ---
@@ -144,13 +161,11 @@ Hardcoding trust = disqualification.
 
 All tokens must be:
 
-* Explicitly issued
-* Cryptographically signed
-* Validated at runtime
+- Explicitly issued
+- Cryptographically signed
+- Validated at runtime
 
 Build real agents. Validate real trust.
 
 —
 Team Hushh
-
-
