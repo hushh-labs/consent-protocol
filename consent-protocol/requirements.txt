@@ -1,5 +1,6 @@
 # 🔐 Crypto + Signing
-cryptography==42.0.5
+# SECURITY: Updated from 42.0.5 to fix CVE-2024-26130 (vulnerable OpenSSL in wheels)
+cryptography>=44.0.0
 pyjwt[crypto]==2.8.0
 
 # 🧪 Validation (use v2 binary wheel)
@@ -22,7 +23,8 @@ argparse==1.4.0
 pytest==8.2.2
 
 # 📦 Optional OAuth / Apple ID agents
-requests==2.32.3
+# SECURITY: Updated from 2.32.3 to fix CVE-2024-35195 (.netrc credentials leak)
+requests>=2.32.4
 
 # 🔌 MCP Server SDK (Model Context Protocol)
 mcp>=0.9.0

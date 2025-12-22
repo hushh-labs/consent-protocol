@@ -286,14 +286,18 @@ export function FoodAgentChat({
                   ) : line.startsWith("---") ? (
                     <hr className="my-2 border-gray-200 dark:border-gray-700" />
                   ) : line.includes("**") ? (
-                    <span
-                      dangerouslySetInnerHTML={{
-                        __html: line.replace(
-                          /\*\*(.*?)\*\*/g,
-                          "<strong>$1</strong>"
-                        ),
-                      }}
-                    />
+                    // SECURITY: Render markdown bold safely without dangerouslySetInnerHTML (XSS fix)
+                    <span>
+                      {line
+                        .split(/\*\*(.*?)\*\*/g)
+                        .map((part, partIdx) =>
+                          partIdx % 2 === 1 ? (
+                            <strong key={partIdx}>{part}</strong>
+                          ) : (
+                            part
+                          )
+                        )}
+                    </span>
                   ) : (
                     line
                   )}
