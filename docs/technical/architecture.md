@@ -276,24 +276,49 @@ def verify_trust_link(link) -> bool:
 
 ```
 consent-protocol/
-├── server.py              # FastAPI server
-└── hushh_mcp/
+├── server.py              # FastAPI entry point (80 lines)
+├── mcp_server.py          # MCP Server entry point (170 lines)
+├── consent_db.py          # DB compatibility shim
+│
+├── api/                   # FastAPI Route Modules
+│   ├── models/
+│   │   └── schemas.py     # All Pydantic models
+│   └── routes/
+│       ├── health.py      # Health check endpoints
+│       ├── agents.py      # Agent chat endpoints
+│       ├── consent.py     # Consent management
+│       ├── developer.py   # Developer API v1
+│       └── session.py     # Session token management
+│
+├── mcp_modules/           # MCP Server Modules
+│   ├── config.py          # MCP configuration
+│   ├── resources.py       # MCP resources
+│   └── tools/
+│       ├── definitions.py # Tool JSON schemas
+│       ├── consent_tools.py
+│       ├── data_tools.py
+│       └── utility_tools.py
+│
+├── db/                    # Database Modules
+│   ├── connection.py      # Pool management
+│   ├── consent.py         # Consent event insertion
+│   ├── queries.py         # Pending/active/audit queries
+│   └── migrate.py         # Modular migration script
+│
+├── shared/                # Shared Utilities
+│   └── mock_data.py       # Development mock data
+│
+└── hushh_mcp/             # Core Protocol (UNTOUCHED)
     ├── agents/
     │   ├── orchestrator/  # Intent routing
-    │   ├── food_dining/   # 786 lines
-    │   │   ├── agent.py   # HushhFoodDiningAgent
-    │   │   └── manifest.py
-    │   └── professional_profile/  # 624 lines
-    │       ├── agent.py   # ProfessionalProfileAgent
-    │       └── manifest.py
+    │   ├── food_dining/   # HushhFoodDiningAgent
+    │   └── professional_profile/
     ├── consent/
     │   └── token.py       # issue, validate, revoke
     ├── trust/
     │   └── link.py        # TrustLinks for A2A
     ├── vault/
     │   └── encrypt.py     # Encryption primitives
-    ├── operons/
-    │   └── food/          # Reusable food logic
     ├── constants.py       # ConsentScope, AGENT_PORTS
     ├── config.py          # Environment loading
     └── types.py           # HushhConsentToken, etc.
@@ -321,4 +346,17 @@ GET  /api/v1/list-scopes       # List available scopes
 
 ---
 
-_Version: 2.1 | Updated: December 2025_
+## 🛠️ Database Migration
+
+```bash
+# Modular per-table migrations
+python db/migrate.py --table consent_audit     # Single table
+python db/migrate.py --consent                 # All consent tables
+python db/migrate.py --clear consent_audit     # Clear table
+python db/migrate.py --full                    # Full reset (DESTRUCTIVE!)
+python db/migrate.py --status                  # Show summary
+```
+
+---
+
+_Version: 3.0 | Updated: December 2025 | Modular Architecture Release_
