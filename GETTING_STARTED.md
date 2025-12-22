@@ -44,6 +44,10 @@ NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
 
+# Firebase Admin SDK (for secure session cookies)
+# Download service account JSON from Firebase Console > Project Settings > Service Accounts
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"your-project",...}
+
 # Backend URL
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 
@@ -122,8 +126,9 @@ Invoke-WebRequest -Uri "https://storage.googleapis.com/cloud-sql-connectors/clou
 ### 2. Start the Proxy
 
 ```bash
-# Terminal 3 - Cloud SQL Proxy
-cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db
+# Terminal 3 - Cloud SQL Proxy (run from repo root)
+cd hushh-research
+./cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db --port 5432
 # → Listening on 127.0.0.1:5432
 ```
 
@@ -159,10 +164,10 @@ hushh-research/
 │   └── hushh_mcp/          # Agents, consent, vault
 │
 ├── docs/                   # Documentation
-│   ├── technical/          # Architecture, schemas, API
+│   ├── technical/          # Architecture, auth, schemas, API
 │   ├── business/           # Non-technical overview
-│   └── ai-context/         # LLM context docs
 │
+├── cloud-sql-proxy.exe     # Cloud SQL proxy (Windows, gitignored)
 └── docker-compose.yml      # Local dev containers
 ```
 
