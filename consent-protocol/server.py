@@ -845,6 +845,7 @@ async def get_consent_history(userId: str, page: int = 1, limit: int = 50):
             "grouped": grouped
         }
     except Exception as e:
+        # SECURITY: Log error details server-side, return generic message (CodeQL fix)
         logger.error(f"❌ Failed to fetch consent history: {e}")
         return {
             "userId": userId,
@@ -853,7 +854,7 @@ async def get_consent_history(userId: str, page: int = 1, limit: int = 50):
             "total": 0,
             "items": [],
             "grouped": {},
-            "error": str(e)
+            "error": "Failed to fetch consent history"
         }
 
 
@@ -889,8 +890,9 @@ async def get_active_consents(userId: str):
         
         return {"grouped": grouped, "active": active_tokens}
     except Exception as e:
+        # SECURITY: Log error details server-side, return generic message (CodeQL fix)
         logger.error(f"❌ Failed to fetch active consents: {e}")
-        return {"grouped": {}, "active": [], "error": str(e)}
+        return {"grouped": {}, "active": [], "error": "Failed to fetch active consents"}
 
 # ============================================================================
 # USER LOOKUP (Email to UID)
