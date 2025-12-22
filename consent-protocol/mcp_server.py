@@ -80,7 +80,8 @@ MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desk
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 # How often to poll for consent approval (in seconds)
-CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "3"))
+# Default: 5 seconds - balances responsiveness with server load at scale
+CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "5"))
 
 
 
@@ -617,37 +618,38 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         await asyncio.sleep(CONSENT_POLL_INTERVAL_SECONDS)
                     
         except httpx.ConnectError as e:
-            logger.warning(f"⚠️ FastAPI not reachable at {FASTAPI_URL}: {e}")
-            logger.warning("   Falling back to DEMO MODE (auto-issue)")
+            logger.error(f"❌ FastAPI not reachable at {FASTAPI_URL}: {e}")
+            # SECURITY: NEVER auto-issue tokens - fail safely
+            return [TextContent(type="text", text=json.dumps({
+                "status": "error",
+                "error": "Consent backend unavailable",
+                "message": f"Cannot reach consent server at {FASTAPI_URL}. Please ensure the backend is running.",
+                "hint": "The FastAPI backend must be running for consent requests.",
+                "security_note": "Consent cannot be auto-granted. User must explicitly approve."
+            }))]
         except Exception as e:
             logger.error(f"❌ Error in production consent flow: {e}")
-            logger.warning("   Falling back to DEMO MODE (auto-issue)")
+            # SECURITY: NEVER auto-issue tokens - fail safely
+            return [TextContent(type="text", text=json.dumps({
+                "status": "error",
+                "error": str(e),
+                "message": "Consent request failed due to an internal error.",
+                "security_note": "Consent cannot be auto-granted. User must explicitly approve."
+            }))]
     
     # ═══════════════════════════════════════════════════════════════════════
-    # DEMO MODE: Auto-issue token (fallback when FastAPI not available)
+    # DEMO MODE DISABLED IN PRODUCTION
+    # SECURITY: Never auto-issue tokens - always require user approval
     # ═══════════════════════════════════════════════════════════════════════
     
-    logger.info(f"🔐 DEMO MODE: Auto-issuing consent token (FastAPI not available)")
-    
-    token = issue_token(
-        user_id=UserID(user_id),
-        agent_id=AgentID("mcp_host"),
-        scope=scope_enum,
-        expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
-    )
-    
-    logger.info(f"✅ Consent GRANTED (demo mode): user={user_id}, scope={scope_str}")
+    logger.error("❌ DEMO MODE DISABLED: Cannot auto-issue tokens in production")
     
     return [TextContent(type="text", text=json.dumps({
-        "status": "granted",
-        "mode": "demo",
-        "consent_token": token.token,
-        "user_id": user_id,
-        "scope": scope_str,
-        "issued_at": token.issued_at,
-        "expires_at": token.expires_at,
-        "message": f"✅ Consent granted for {scope_str}. Use this token to access data.",
-        "note": "⚠️ DEMO MODE: Token auto-issued because FastAPI backend not available. In production, user must approve via dashboard."
+        "status": "error",
+        "error": "Production mode requires explicit user consent",
+        "message": "Auto-granting tokens is disabled. User must approve via dashboard.",
+        "dashboard_url": f"{FRONTEND_URL}/dashboard/consents",
+        "security_note": "HushhMCP: Consent First - NO data access without explicit user approval"
     }))]
 
 

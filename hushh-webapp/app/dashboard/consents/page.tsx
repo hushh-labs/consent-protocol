@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Button,
   Card,
@@ -27,9 +28,11 @@ import {
   CheckCircle2,
   History,
   Key,
+  Ban,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 interface PendingConsent {
   id: string;
@@ -49,6 +52,7 @@ interface ConsentAuditEntry {
   issued_at: number;
   expires_at: number | null;
   token_type: string;
+  request_id: string | null;
 }
 
 interface SessionInfo {
@@ -58,13 +62,32 @@ interface SessionInfo {
   scope: string;
 }
 
+interface ActiveConsent {
+  id: string;
+  scope: string;
+  developer: string;
+  issued_at: number;
+  expires_at: number;
+  time_remaining_ms: number;
+}
+
 export default function ConsentsPage() {
+  const searchParams = useSearchParams();
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [activeConsents, setActiveConsents] = useState<ActiveConsent[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Tab from URL param (e.g., ?tab=session)
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(
+    tabFromUrl && ["pending", "session", "history"].includes(tabFromUrl)
+      ? tabFromUrl
+      : "pending"
+  );
 
   const fetchPendingConsents = useCallback(async (uid: string) => {
     try {
@@ -92,6 +115,18 @@ export default function ConsentsPage() {
     }
   }, []);
 
+  const fetchActiveConsents = useCallback(async (uid: string) => {
+    try {
+      const response = await fetch(`/api/consent/active?userId=${uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setActiveConsents(data.active || []);
+      }
+    } catch (err) {
+      console.error("Error fetching active consents:", err);
+    }
+  }, []);
+
   useEffect(() => {
     // Load session info from sessionStorage
     const token = sessionStorage.getItem("session_token");
@@ -102,16 +137,19 @@ export default function ConsentsPage() {
       setUserId(uid);
 
       // Initial fetch
-      Promise.all([fetchPendingConsents(uid), fetchAuditLog(uid)]).finally(
-        () => {
-          setLoading(false);
-        }
-      );
+      Promise.all([
+        fetchPendingConsents(uid),
+        fetchAuditLog(uid),
+        fetchActiveConsents(uid),
+      ]).finally(() => {
+        setLoading(false);
+      });
 
       // Auto-poll every 5 seconds for real-time updates
       const pollInterval = setInterval(() => {
         fetchPendingConsents(uid);
         fetchAuditLog(uid);
+        fetchActiveConsents(uid);
       }, 5000);
 
       // Cleanup interval on unmount
@@ -130,7 +168,7 @@ export default function ConsentsPage() {
 
     // No user ID, stop loading
     setLoading(false);
-  }, [fetchPendingConsents, fetchAuditLog]);
+  }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents]);
 
   const handleApprove = async (requestId: string) => {
     if (!userId) return;
@@ -215,12 +253,16 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
+        toast.success("✅ Consent approved successfully");
         await fetchPendingConsents(userId);
         await fetchAuditLog(userId);
+        await fetchActiveConsents(userId);
       } else {
+        toast.error("Failed to approve consent");
         console.error("Failed to approve consent");
       }
     } catch (err) {
+      toast.error("Error approving consent");
       console.error("Error approving consent:", err);
     } finally {
       setActionLoading(null);
@@ -249,12 +291,43 @@ export default function ConsentsPage() {
       });
 
       if (response.ok) {
+        toast.success("❌ Consent denied successfully");
         await fetchPendingConsents(userId);
+        await fetchAuditLog(userId);
       } else {
+        toast.error("Failed to deny consent");
         console.error("Failed to deny consent");
       }
     } catch (err) {
+      toast.error("Error denying consent");
       console.error("Error denying consent:", err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRevoke = async (scope: string) => {
+    if (!userId) return;
+    setActionLoading(`revoke-${scope}`);
+
+    try {
+      const response = await fetch("/api/consent/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, scope }),
+      });
+
+      if (response.ok) {
+        toast.success("🔒 Consent revoked successfully");
+        await fetchActiveConsents(userId);
+        await fetchAuditLog(userId);
+      } else {
+        toast.error("Failed to revoke consent");
+        console.error("Failed to revoke consent");
+      }
+    } catch (err) {
+      toast.error("Error revoking consent");
+      console.error("Error revoking consent:", err);
     } finally {
       setActionLoading(null);
     }
@@ -423,7 +496,7 @@ export default function ConsentsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="pending" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pending" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
@@ -523,7 +596,89 @@ export default function ConsentsPage() {
 
         {/* Active Session Tab */}
         <TabsContent value="session" className="space-y-4 mt-4">
-          {session ? (
+          {activeConsents.length > 0 ? (
+            <div className="space-y-4">
+              {activeConsents.map((consent, index) => {
+                const scopeInfo = formatScope(consent.scope);
+                const timeRemaining = consent.expires_at
+                  ? getTimeRemaining(consent.expires_at)
+                  : "N/A";
+
+                return (
+                  <Card
+                    key={`${consent.scope}-${index}`}
+                    className="border-l-4 border-l-green-500"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            Active Consent
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            {consent.developer || "External Developer"}
+                          </p>
+                        </div>
+                        <Badge className={getScopeColor(consent.scope)}>
+                          {scopeInfo.emoji} {scopeInfo.label}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="p-3 rounded-lg bg-muted/50">
+                        <p className="text-sm text-muted-foreground">
+                          {scopeInfo.description}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">
+                            Time Remaining
+                          </p>
+                          <p className="text-lg font-semibold flex items-center gap-2">
+                            <Clock className="h-4 w-4" />
+                            {timeRemaining}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">
+                            Expires At
+                          </p>
+                          <p className="text-sm font-medium">
+                            {consent.expires_at
+                              ? new Date(consent.expires_at).toLocaleString()
+                              : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/50">
+                        <p className="text-xs text-muted-foreground">
+                          Granted At
+                        </p>
+                        <p className="text-sm font-medium">
+                          {consent.issued_at
+                            ? new Date(consent.issued_at).toLocaleString()
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <Button
+                        variant="none"
+                        onClick={() => handleRevoke(consent.scope)}
+                        disabled={actionLoading === `revoke-${consent.scope}`}
+                        className="w-full border border-destructive text-destructive hover:bg-destructive/10"
+                      >
+                        <Ban className="h-4 w-4 mr-2" />
+                        {actionLoading === `revoke-${consent.scope}`
+                          ? "Revoking..."
+                          : "Revoke Access"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : session ? (
             <Card className="border-l-4 border-l-green-500">
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
@@ -563,22 +718,15 @@ export default function ConsentsPage() {
                     </p>
                   </div>
                 </div>
-
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Session Token</p>
-                  <p className="text-xs font-mono truncate">
-                    {session.token?.slice(0, 40)}...
-                  </p>
-                </div>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardContent className="py-12 text-center">
                 <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold">No Active Session</h3>
+                <h3 className="text-lg font-semibold">No Active Consents</h3>
                 <p className="text-muted-foreground mt-2">
-                  Enter your passphrase to start a new session.
+                  Active consent tokens will appear here when granted.
                 </p>
               </CardContent>
             </Card>
@@ -598,89 +746,144 @@ export default function ConsentsPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
-              {/* Group audit entries by agent_id (app name) */}
+            <div className="space-y-6">
+              {/* Level 1: Group by app (agent_id) */}
               {Object.entries(
-                auditLog.reduce((groups, entry) => {
+                auditLog.reduce((apps, entry) => {
                   const appName = entry.agent_id || "Unknown App";
-                  if (!groups[appName]) {
-                    groups[appName] = [];
+                  if (!apps[appName]) {
+                    apps[appName] = [];
                   }
-                  groups[appName].push(entry);
-                  return groups;
+                  apps[appName].push(entry);
+                  return apps;
                 }, {} as Record<string, ConsentAuditEntry[]>)
-              ).map(([appName, entries]) => {
-                // Get the most recent scope for this app
-                const latestEntry = entries[0];
-                const scopeInfo = formatScope(latestEntry.scope);
+              )
+                .sort(([, a], [, b]) => {
+                  const latestA = Math.max(...a.map((e) => e.issued_at));
+                  const latestB = Math.max(...b.map((e) => e.issued_at));
+                  return latestB - latestA;
+                })
+                .map(([appName, appEntries]) => {
+                  // Level 2: Group entries within app by request_id (trails)
+                  const trails = Object.entries(
+                    appEntries.reduce((trails, entry) => {
+                      const trailKey = entry.request_id || `single-${entry.id}`;
+                      if (!trails[trailKey]) {
+                        trails[trailKey] = [];
+                      }
+                      trails[trailKey].push(entry);
+                      return trails;
+                    }, {} as Record<string, ConsentAuditEntry[]>)
+                  )
+                    .map(([trailId, events]) => ({
+                      trailId,
+                      events: [...events].sort(
+                        (a, b) => a.issued_at - b.issued_at
+                      ),
+                    }))
+                    .sort((a, b) => {
+                      const latestA = a.events[a.events.length - 1].issued_at;
+                      const latestB = b.events[b.events.length - 1].issued_at;
+                      return latestB - latestA;
+                    });
 
-                return (
-                  <Card key={appName} className="overflow-hidden">
-                    <CardHeader className="pb-3 bg-muted/30">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{scopeInfo.emoji}</span>
-                        <div>
-                          <CardTitle className="text-lg">{appName}</CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            {scopeInfo.label} • {entries.length} event
-                            {entries.length > 1 ? "s" : ""}
-                          </p>
+                  const totalEvents = appEntries.length;
+
+                  return (
+                    <Card key={appName} className="overflow-hidden">
+                      {/* App Header */}
+                      <CardHeader className="pb-3 bg-muted/30">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-gradient-to-r from-purple-500/20 to-blue-500/20">
+                            <Shield className="h-5 w-5 text-purple-600" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg">{appName}</CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              {trails.length} request
+                              {trails.length > 1 ? "s" : ""} • {totalEvents}{" "}
+                              event{totalEvents > 1 ? "s" : ""}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                      {/* Timeline of events */}
-                      <div className="relative pl-6 space-y-4">
-                        {/* Timeline line */}
-                        <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-muted-foreground/20" />
+                      </CardHeader>
 
-                        {entries.map((entry) => {
-                          const actionInfo = getActionInfo(entry.action);
+                      <CardContent className="pt-4 space-y-4">
+                        {/* Level 2: Request Trails */}
+                        {trails.map(({ trailId, events }) => {
+                          const firstEvent = events[0];
+                          const lastEvent = events[events.length - 1];
+                          const scopeInfo = formatScope(firstEvent.scope);
+
+                          // Determine trail status color
+                          const statusColor =
+                            lastEvent.action === "CONSENT_GRANTED"
+                              ? "border-l-green-500"
+                              : lastEvent.action === "REVOKED" ||
+                                lastEvent.action === "CONSENT_DENIED"
+                              ? "border-l-red-500"
+                              : lastEvent.action === "REQUESTED"
+                              ? "border-l-yellow-500"
+                              : "border-l-gray-400";
+
                           return (
                             <div
-                              key={entry.id}
-                              className="relative flex items-start gap-3"
+                              key={trailId}
+                              className={`border-l-4 ${statusColor} pl-4 py-2 rounded-r-lg bg-muted/20`}
                             >
-                              {/* Timeline dot */}
-                              <div
-                                className={`absolute -left-4 w-3 h-3 rounded-full border-2 bg-background ${
-                                  entry.action === "CONSENT_GRANTED"
-                                    ? "border-green-500"
-                                    : entry.action === "CONSENT_DENIED" ||
-                                      entry.action === "REVOKED"
-                                    ? "border-red-500"
-                                    : entry.action === "REQUESTED"
-                                    ? "border-yellow-500"
-                                    : entry.action === "TIMED_OUT"
-                                    ? "border-orange-500"
-                                    : "border-gray-400"
-                                }`}
-                              />
-
-                              <div className="flex-1 flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium text-sm flex items-center gap-1.5">
-                                    <span>{actionInfo.emoji}</span>
-                                    {actionInfo.label}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatDate(entry.issued_at)}
-                                  </p>
-                                </div>
+                              {/* Trail Header with Scope Badge */}
+                              <div className="flex items-center justify-between mb-2">
                                 <Badge
-                                  className={actionInfo.className + " text-xs"}
+                                  className={getScopeColor(firstEvent.scope)}
                                 >
-                                  {actionInfo.label.split(" ")[1]}
+                                  {scopeInfo.emoji} {scopeInfo.label}
                                 </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {events.length} event
+                                  {events.length > 1 ? "s" : ""}
+                                </span>
+                              </div>
+
+                              {/* Level 3: Events in Trail */}
+                              <div className="space-y-1">
+                                {events.map((entry) => {
+                                  const actionInfo = getActionInfo(
+                                    entry.action
+                                  );
+                                  return (
+                                    <div
+                                      key={entry.id}
+                                      className="flex items-center justify-between text-sm"
+                                    >
+                                      <span className="flex items-center gap-1.5">
+                                        <span>{actionInfo.emoji}</span>
+                                        <span className="font-medium">
+                                          {actionInfo.label}
+                                        </span>
+                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          className={
+                                            actionInfo.className + " text-xs"
+                                          }
+                                        >
+                                          {actionInfo.label.split(" ")[1]}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground">
+                                          {formatDate(entry.issued_at)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
                         })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           )}
         </TabsContent>

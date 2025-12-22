@@ -17,6 +17,9 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import database module for consent audit
+import consent_db
+
 # Import agents
 from hushh_mcp.agents.food_dining.agent import food_dining_agent
 from hushh_mcp.agents.professional_profile.agent import professional_agent, ProfessionalProfileAgent
@@ -276,9 +279,7 @@ MOCK_USER_DATA = {
     }
 }
 
-# Pending consent requests (in production, stored in database)
-_pending_consents: Dict[str, Dict] = {}
-_granted_consents: Dict[str, str] = {}  # user_id:scope -> consent_token
+# Export data storage (still in-memory - small amount of temporary encrypted data)
 _consent_exports: Dict[str, Dict] = {}  # consent_token -> encrypted export data
 
 
@@ -307,17 +308,18 @@ async def request_consent(request: ConsentRequest):
     if "*" not in dev_info["approved_scopes"] and request.scope not in dev_info["approved_scopes"]:
         raise HTTPException(status_code=403, detail=f"Scope '{request.scope}' not approved for this developer")
     
-    # Check if consent already granted
-    consent_key = f"{request.user_id}:{request.scope}"
-    if consent_key in _granted_consents:
+    # Check if consent already granted (query database)
+    is_active = await consent_db.is_token_active(request.user_id, request.scope)
+    if is_active:
         return ConsentResponse(
             status="already_granted",
-            message="User has already granted consent for this scope.",
-            consent_token=_granted_consents[consent_key]
+            message="User has already granted consent for this scope."
         )
     
-    # Check if request already pending
-    if consent_key in _pending_consents:
+    # Check if request already pending (query database)
+    pending = await consent_db.get_pending_requests(request.user_id)
+    pending_for_scope = [p for p in pending if p.get("scope") == request.scope]
+    if pending_for_scope:
         return ConsentResponse(
             status="pending",
             message="Consent request already pending. Waiting for user approval."
@@ -325,21 +327,25 @@ async def request_consent(request: ConsentRequest):
     
     # Generate a request ID
     import uuid
+    import time
     request_id = str(uuid.uuid4())[:8]
     
-    # Store pending consent (user must approve in dashboard)
-    _pending_consents[consent_key] = {
-        "request_id": request_id,
-        "developer": dev_info["name"],
-        "developer_token": request.developer_token,
-        "scope": request.scope,
-        "scope_description": get_scope_description(request.scope),
-        "expiry_hours": request.expiry_hours,
-        "requested_at": int(__import__("time").time() * 1000),
-        "user_id": request.user_id
-    }
+    # Calculate MCP poll timeout (120 seconds from now)
+    now_ms = int(time.time() * 1000)
+    poll_timeout_at = now_ms + (120 * 1000)  # 120 seconds MCP timeout
     
-    logger.info(f"📋 Consent request stored as pending: {consent_key} (request_id={request_id})")
+    # Store in database (mandatory)
+    await consent_db.insert_event(
+        user_id=request.user_id,
+        agent_id=dev_info["name"],
+        scope=request.scope,
+        action="REQUESTED",
+        request_id=request_id,
+        scope_description=get_scope_description(request.scope),
+        poll_timeout_at=poll_timeout_at,
+        metadata={"developer_token": request.developer_token, "expiry_hours": request.expiry_hours}
+    )
+    logger.info(f"📋 Consent request saved to DB: {request.user_id}:{request.scope} (request_id={request_id})")
     
     return ConsentResponse(
         status="pending",
@@ -364,21 +370,11 @@ def get_scope_description(scope: str) -> str:
 async def get_pending_consents(userId: str):
     """
     Get all pending consent requests for a user.
-    Called by the dashboard to show pending requests.
+    Uses database via consent_db module for persistence.
     """
-    pending_for_user = []
-    for key, request in _pending_consents.items():
-        if request["user_id"] == userId:
-            pending_for_user.append({
-                "id": request["request_id"],
-                "developer": request["developer"],
-                "scope": request["scope"],
-                "scopeDescription": request["scope_description"],
-                "requestedAt": request["requested_at"],
-                "expiryHours": request["expiry_hours"],
-            })
-    
-    return {"pending": pending_for_user}
+    pending_from_db = await consent_db.get_pending_requests(userId)
+    logger.info(f"📋 Found {len(pending_from_db)} pending requests in DB for {userId}")
+    return {"pending": pending_from_db}
 
 @app.post("/api/consent/pending/approve")
 async def approve_consent(request: Request):
@@ -399,69 +395,71 @@ async def approve_consent(request: Request):
     logger.info(f"✅ User {userId} approving consent request {requestId}")
     logger.info(f"   Export data present: {bool(encryptedData)}")
     
-    # Find the pending request
-    for key, pending_request in list(_pending_consents.items()):
-        if pending_request["user_id"] == userId and pending_request["request_id"] == requestId:
-            # Issue consent token
-            scope_map = {
-                "vault_read_food": ConsentScope.VAULT_READ_FOOD,
-                "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-                "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
-                "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
-            }
-            
-            consent_scope = scope_map.get(pending_request["scope"])
-            if not consent_scope:
-                raise HTTPException(status_code=400, detail=f"Unknown scope: {pending_request['scope']}")
-            
-            # Issue token with export key embedded
-            token = issue_token(
-                user_id=userId,
-                agent_id=f"developer:{pending_request['developer_token']}",
-                scope=consent_scope,
-                expires_in_ms=pending_request["expiry_hours"] * 60 * 60 * 1000
-            )
-            
-            # Store encrypted export linked to token
-            if encryptedData and exportKey:
-                _consent_exports[token.token] = {
-                    "encrypted_data": encryptedData,
-                    "iv": encryptedIv,
-                    "tag": encryptedTag,
-                    "export_key": exportKey,  # Will be in token for MCP decryption
-                    "scope": pending_request["scope"],
-                    "created_at": int(time.time() * 1000),
-                }
-                logger.info(f"   Stored encrypted export for token")
-            
-            # Move to granted
-            _granted_consents[key] = token.token
-            del _pending_consents[key]
-            
-            # Log to audit trail
-            _consent_audit_log.append({
-                "id": str(len(_consent_audit_log) + 1),
-                "token_id": token.token[:20] + "...",
-                "user_id": userId,
-                "agent_id": pending_request["developer"],
-                "scope": pending_request["scope"],
-                "action": "CONSENT_GRANTED",
-                "issued_at": int(time.time() * 1000),
-                "expires_at": token.expires_at,
-            })
-            
-            logger.info(f"✅ Consent granted for {key}")
-            
-            # Return token with export key for MCP decryption
-            return {
-                "status": "approved",
-                "message": f"Consent granted to {pending_request['developer']}",
-                "consent_token": token.token,
-                "export_key": exportKey,  # MCP uses this to decrypt
-                "expires_at": token.expires_at
-            }
+    import time  # For timestamp
     
-    raise HTTPException(status_code=404, detail="Consent request not found")
+    # Get pending request from database
+    pending_request = await consent_db.get_pending_by_request_id(userId, requestId)
+    
+    if not pending_request:
+        raise HTTPException(status_code=404, detail="Consent request not found")
+    
+    # Issue consent token
+    scope_map = {
+        "vault_read_food": ConsentScope.VAULT_READ_FOOD,
+        "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
+        "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
+        "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
+    }
+    
+    consent_scope = scope_map.get(pending_request["scope"])
+    if not consent_scope:
+        raise HTTPException(status_code=400, detail=f"Unknown scope: {pending_request['scope']}")
+    
+    # Get developer token from metadata or use developer name
+    metadata = pending_request.get("metadata", {})
+    developer_token = metadata.get("developer_token", pending_request["developer"])
+    expiry_hours = metadata.get("expiry_hours", 24)
+    
+    # Issue token with export key embedded
+    token = issue_token(
+        user_id=userId,
+        agent_id=f"developer:{developer_token}",
+        scope=consent_scope,
+        expires_in_ms=expiry_hours * 60 * 60 * 1000
+    )
+    
+    # Store encrypted export linked to token (still in-memory for export data)
+    if encryptedData and exportKey:
+        _consent_exports[token.token] = {
+            "encrypted_data": encryptedData,
+            "iv": encryptedIv,
+            "tag": encryptedTag,
+            "export_key": exportKey,  # Will be in token for MCP decryption
+            "scope": pending_request["scope"],
+            "created_at": int(time.time() * 1000),
+        }
+        logger.info(f"   Stored encrypted export for token")
+    
+    # Log CONSENT_GRANTED to database
+    await consent_db.insert_event(
+        user_id=userId,
+        agent_id=pending_request["developer"],
+        scope=pending_request["scope"],
+        action="CONSENT_GRANTED",
+        token_id=token.token,
+        request_id=requestId,
+        expires_at=token.expires_at
+    )
+    logger.info(f"✅ CONSENT_GRANTED event saved to DB")
+    
+    # Return token with export key for MCP decryption
+    return {
+        "status": "approved",
+        "message": f"Consent granted to {pending_request['developer']}",
+        "consent_token": token.token,
+        "export_key": exportKey,  # MCP uses this to decrypt
+        "expires_at": token.expires_at
+    }
 
 
 @app.post("/api/consent/pending/deny")
@@ -471,28 +469,64 @@ async def deny_consent(userId: str, requestId: str):
     """
     logger.info(f"❌ User {userId} denying consent request {requestId}")
     
-    # Find and remove the pending request
-    for key, request in list(_pending_consents.items()):
-        if request["user_id"] == userId and request["request_id"] == requestId:
-            del _pending_consents[key]
-            
-            # Log to audit trail
-            _consent_audit_log.append({
-                "id": str(len(_consent_audit_log) + 1),
-                "token_id": "N/A",
-                "user_id": userId,
-                "agent_id": request["developer"],
-                "scope": request["scope"],
-                "action": "CONSENT_DENIED",
-                "issued_at": int(time.time() * 1000),
-                "expires_at": None,
-            })
-            
-            logger.info(f"❌ Consent denied for {key}")
-            return {"status": "denied", "message": f"Consent denied to {request['developer']}"}
+    # Get pending request from database
+    pending_request = await consent_db.get_pending_by_request_id(userId, requestId)
     
-    raise HTTPException(status_code=404, detail="Consent request not found")
+    if not pending_request:
+        raise HTTPException(status_code=404, detail="Consent request not found")
+    
+    # Log CONSENT_DENIED to database
+    await consent_db.insert_event(
+        user_id=userId,
+        agent_id=pending_request["developer"],
+        scope=pending_request["scope"],
+        action="CONSENT_DENIED",
+        request_id=requestId
+    )
+    logger.info(f"❌ CONSENT_DENIED event saved to DB")
+    
+    return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
 
+
+@app.post("/api/consent/revoke")
+async def revoke_consent(request: Request):
+    """
+    User revokes an active consent token.
+    
+    This removes access for the app that was previously granted consent.
+    """
+    body = await request.json()
+    userId = body.get("userId")
+    scope = body.get("scope")
+    
+    if not userId or not scope:
+        raise HTTPException(status_code=400, detail="userId and scope are required")
+    
+    logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
+    
+    # Get the active token for this scope
+    active_tokens = await consent_db.get_active_tokens(userId)
+    token_to_revoke = None
+    for token in active_tokens:
+        if token.get("scope") == scope:
+            token_to_revoke = token
+            break
+    
+    if not token_to_revoke:
+        raise HTTPException(status_code=404, detail=f"No active consent found for scope: {scope}")
+    
+    # Log REVOKED event to database (link to original request_id for trail)
+    await consent_db.insert_event(
+        user_id=userId,
+        agent_id=token_to_revoke.get("agent_id", token_to_revoke.get("developer", "Unknown")),
+        scope=scope,
+        action="REVOKED",
+        token_id=token_to_revoke.get("token_id"),
+        request_id=token_to_revoke.get("request_id")  # Link to original request
+    )
+    logger.info(f"🔒 REVOKED event saved to DB for scope: {scope}, request_id: {token_to_revoke.get('request_id')}")
+    
+    return {"status": "revoked", "message": f"Consent for {scope} has been revoked"}
 
 @app.get("/api/consent/data")
 async def get_consent_export_data(consent_token: str):
@@ -775,25 +809,81 @@ async def logout_session(request: LogoutRequest):
     }
 
 @app.get("/api/consent/history")
-async def get_consent_history(userId: str, page: int = 1, limit: int = 20):
+async def get_consent_history(userId: str, page: int = 1, limit: int = 50):
     """
     Get paginated consent audit history for a user.
     
-    Returns all consent actions (grants, revokes, delegations) for the user.
-    Used for the Archived/Logs tab in the dashboard.
+    Returns all consent actions grouped by app for the Audit Log tab.
+    Uses database via consent_db module for persistence.
     """
     logger.info(f"📜 Fetching consent history for user: {userId}, page: {page}")
     
-    # In production, this would query the consent_audit table
-    # For now, return a placeholder structure
-    return {
-        "userId": userId,
-        "page": page,
-        "limit": limit,
-        "total": 0,
-        "items": [],
-        "message": "Audit history will be populated after database connection"
-    }
+    try:
+        result = await consent_db.get_audit_log(userId, page, limit)
+        
+        # Group by agent_id for frontend display
+        grouped = {}
+        for item in result.get("items", []):
+            agent = item.get("agent_id", "Unknown")
+            if agent not in grouped:
+                grouped[agent] = []
+            grouped[agent].append(item)
+        
+        return {
+            "userId": userId,
+            "page": result.get("page", page),
+            "limit": result.get("limit", limit),
+            "total": result.get("total", 0),
+            "items": result.get("items", []),
+            "grouped": grouped
+        }
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch consent history: {e}")
+        return {
+            "userId": userId,
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "items": [],
+            "grouped": {},
+            "error": str(e)
+        }
+
+
+@app.get("/api/consent/active")
+async def get_active_consents(userId: str):
+    """
+    Get active (non-expired) consent tokens for a user.
+    
+    Returns consents grouped by app for the Session tab.
+    Uses database via consent_db module for persistence.
+    """
+    logger.info(f"🔓 Fetching active consents for user: {userId}")
+    
+    try:
+        active_tokens = await consent_db.get_active_tokens(userId)
+        
+        # Group by developer/app
+        grouped = {}
+        for token in active_tokens:
+            app = token.get("developer", "Unknown App")
+            if app not in grouped:
+                grouped[app] = {
+                    "appName": app.replace("developer:", ""),
+                    "scopes": []
+                }
+            grouped[app]["scopes"].append({
+                "scope": token.get("scope"),
+                "tokenPreview": token.get("id"),
+                "issuedAt": token.get("issued_at"),
+                "expiresAt": token.get("expires_at"),
+                "timeRemainingMs": token.get("time_remaining_ms", 0)
+            })
+        
+        return {"grouped": grouped, "active": active_tokens}
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch active consents: {e}")
+        return {"grouped": {}, "active": [], "error": str(e)}
 
 # ============================================================================
 # USER LOOKUP (Email to UID)

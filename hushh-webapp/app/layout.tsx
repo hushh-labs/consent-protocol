@@ -3,6 +3,7 @@ import { Inter, Quicksand, Exo_2 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
+import { VaultProvider } from "@/lib/vault/vault-context";
 import { Navbar } from "@/components/navbar";
 
 const inter = Inter({
@@ -65,13 +66,15 @@ export default function RootLayout({
           enableSystem={false}
         >
           <AuthProvider>
-            <Navbar />
-            <div
-              className="pb-24 flex-1 flex flex-col"
-              style={{ background: "var(--color-background)" }}
-            >
-              {children}
-            </div>
+            <VaultProvider>
+              <Navbar />
+              <div
+                className="pb-24 flex-1 flex flex-col"
+                style={{ background: "var(--color-background)" }}
+              >
+                {children}
+              </div>
+            </VaultProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

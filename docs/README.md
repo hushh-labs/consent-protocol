@@ -161,7 +161,8 @@ class HushhAgent:
 │  │                                                          │    │
 │  │  Passphrase → PBKDF2 (100,000 iterations) → AES-256 Key  │    │
 │  │                          ↓                               │    │
-│  │              Vault Key (sessionStorage only)             │    │
+│  │              Vault Key (React Context, memory only)      │    │
+│  │              Session Cookie (httpOnly, Firebase Admin)   │    │
 │  │                                                          │    │
 │  │  ⚠️ Server NEVER sees passphrase or vault key           │    │
 │  └─────────────────────────────────────────────────────────┘    │

@@ -35,6 +35,14 @@ export default function LogoutPage() {
         localStorage.removeItem("user_providerData");
         localStorage.removeItem("passkey_credential_id");
 
+        // Clear session cookie via API (httpOnly cookie)
+        try {
+          await fetch("/api/auth/session", { method: "DELETE" });
+          console.log("🍪 Session cookie cleared");
+        } catch (e) {
+          console.warn("⚠️ Failed to clear session cookie:", e);
+        }
+
         // Clear session storage
         sessionStorage.clear();
 

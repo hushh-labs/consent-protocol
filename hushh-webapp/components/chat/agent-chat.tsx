@@ -11,21 +11,21 @@ import { formatMessage } from "@/lib/format-message";
 import { CollectedDataCard } from "./collected-data-card";
 import { CheckboxSelector } from "./checkbox-selector";
 import { encryptData } from "@/lib/vault/encrypt";
+import { useVault } from "@/lib/vault/vault-context";
 
 /**
  * Save collected data to encrypted vault
  * CONSENT PROTOCOL: Requires valid consent token from agent
+ * SECURITY: vaultKey must be passed from component (memory-only)
  */
 async function saveToVault(
   collectedData: Record<string, unknown>,
-  consentToken: string
+  consentToken: string,
+  vaultKey: string | null // Now passed as parameter from vault context
 ): Promise<boolean> {
   try {
-    // Try localStorage first (persists across tabs), fallback to sessionStorage
     const userId =
       localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
-    const vaultKey =
-      localStorage.getItem("vault_key") || sessionStorage.getItem("vault_key");
 
     if (!userId || !vaultKey) {
       console.error("Session expired. Missing user_id or vault_key");
@@ -159,6 +159,7 @@ export function AgentChat({
   initialUI,
   hideHeader = false,
 }: AgentChatProps) {
+  const { getVaultKey } = useVault();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -291,7 +292,8 @@ export function AgentChat({
           );
           const saved = await saveToVault(
             data.sessionState.collected,
-            data.consent_token
+            data.consent_token,
+            getVaultKey()
           );
           if (saved) {
             setMessages((prev) => [
@@ -432,7 +434,8 @@ export function AgentChat({
           );
           const saved = await saveToVault(
             data.sessionState.collected,
-            data.consent_token
+            data.consent_token,
+            getVaultKey()
           );
           if (saved) {
             setMessages((prev) => [

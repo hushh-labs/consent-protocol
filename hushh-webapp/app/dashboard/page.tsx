@@ -9,7 +9,8 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { AgentChat, PendingUI } from "@/components/chat/agent-chat";
 import { CollectedDataCard } from "@/components/chat/collected-data-card";
 import { ConsentStatusBar } from "@/components/consent/status-bar";
@@ -19,13 +20,37 @@ import {
   CardTitle,
   CardContent,
 } from "@/lib/morphy-ux/morphy";
-import { Shield, Sparkles } from "lucide-react";
+import { Shield, Sparkles, Loader2 } from "lucide-react";
+import { useVault } from "@/lib/vault/vault-context";
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { isVaultUnlocked } = useVault();
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>(
     {}
   );
 
+  // Check vault on mount - redirect to login if not unlocked
+  useEffect(() => {
+    if (!isVaultUnlocked) {
+      // Vault not unlocked, redirect to login
+      router.push("/login?redirect=/dashboard");
+    }
+  }, [isVaultUnlocked, router]);
+
+  // Show loading while checking vault
+  if (!isVaultUnlocked) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Checking vault status...
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Consent Status Bar */}

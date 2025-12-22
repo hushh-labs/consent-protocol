@@ -43,13 +43,17 @@ User enters passphrase to unlock vault. This is **zero-knowledge** - passphrase 
 
 ```typescript
 // app/login/page.tsx - handleUnlockPassphrase()
+import { useVault } from "@/lib/vault/vault-context";
+
+const { unlockVault } = useVault();
 const vaultKeyHex = await unlockVaultWithPassphrase(
   passphrase,
   vaultData.encryptedVaultKey,
   vaultData.salt,
   vaultData.iv
 );
-sessionStorage.setItem("vault_key", vaultKeyHex);
+// Store in memory only (not sessionStorage) - XSS protection
+unlockVault(vaultKeyHex);
 ```
 
 ### 3. Session Token Issuance (Backend)
@@ -99,6 +103,8 @@ token_obj = issue_token(
 Frontend stores session token for dashboard use:
 
 ```typescript
+// Vault key stored in memory via VaultContext (not sessionStorage)
+// Session token stored in sessionStorage for dashboard use
 sessionStorage.setItem("session_token", tokenData.sessionToken);
 sessionStorage.setItem("session_token_expires", String(tokenData.expiresAt));
 ```

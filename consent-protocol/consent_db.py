@@ -126,17 +126,25 @@ async def get_pending_requests(user_id: str) -> List[Dict]:
     
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, user_id, now_ms)
-        return [
-            {
+        results = []
+        for row in rows:
+            # Extract expiryHours from metadata JSON
+            metadata = row['metadata'] or {}
+            if isinstance(metadata, str):
+                import json
+                metadata = json.loads(metadata) if metadata else {}
+            expiry_hours = metadata.get('expiry_hours', 24)  # Default 24 hours
+            
+            results.append({
                 "id": row['request_id'],
                 "developer": row['agent_id'],
                 "scope": row['scope'],
                 "scopeDescription": row['scope_description'],
                 "requestedAt": row['issued_at'],
                 "pollTimeoutAt": row['poll_timeout_at'],
-            }
-            for row in rows
-        ]
+                "expiryHours": expiry_hours,
+            })
+        return results
 
 
 async def get_pending_by_request_id(user_id: str, request_id: str) -> Optional[Dict]:
@@ -181,7 +189,7 @@ async def get_active_tokens(user_id: str) -> List[Dict]:
         WITH latest_per_scope AS (
             SELECT DISTINCT ON (scope)
                 id, user_id, agent_id, scope, action, token_id,
-                expires_at, issued_at
+                expires_at, issued_at, request_id
             FROM consent_audit
             WHERE user_id = $1 AND action IN ('CONSENT_GRANTED', 'REVOKED')
             ORDER BY scope, issued_at DESC
@@ -197,9 +205,12 @@ async def get_active_tokens(user_id: str) -> List[Dict]:
                 "id": row['token_id'][:20] + "..." if row['token_id'] else str(row['id']),
                 "scope": row['scope'],
                 "developer": row['agent_id'],
+                "agent_id": row['agent_id'],
                 "issued_at": row['issued_at'],
                 "expires_at": row['expires_at'],
                 "time_remaining_ms": (row['expires_at'] - now_ms) if row['expires_at'] else 0,
+                "request_id": row['request_id'],
+                "token_id": row['token_id'],
             }
             for row in rows
         ]
@@ -236,7 +247,7 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
     offset = (page - 1) * limit
     
     query = """
-        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at
+        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at, request_id
         FROM consent_audit
         WHERE user_id = $1
         ORDER BY issued_at DESC
@@ -259,6 +270,7 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
                     "action": row['action'],
                     "issued_at": row['issued_at'],
                     "expires_at": row['expires_at'],
+                    "request_id": row['request_id'],
                 }
                 for row in rows
             ],
