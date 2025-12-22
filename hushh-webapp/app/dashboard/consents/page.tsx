@@ -54,6 +54,7 @@ interface ConsentAuditEntry {
   expires_at: number | null;
   token_type: string;
   request_id: string | null;
+  is_timed_out?: boolean; // Backend detects if REQUESTED + poll_timeout_at passed
 }
 
 interface SessionInfo {
@@ -820,13 +821,16 @@ export default function ConsentsPage() {
                           const lastEvent = events[events.length - 1];
                           const scopeInfo = formatScope(firstEvent.scope);
 
-                          // Determine trail status color
+                          // Determine trail status color (check is_timed_out for last event)
+                          const isLastEventTimedOut = lastEvent.is_timed_out;
                           const statusColor =
                             lastEvent.action === "CONSENT_GRANTED"
                               ? "border-l-green-500"
                               : lastEvent.action === "REVOKED" ||
                                 lastEvent.action === "CONSENT_DENIED"
                               ? "border-l-red-500"
+                              : isLastEventTimedOut
+                              ? "border-l-orange-500"
                               : lastEvent.action === "REQUESTED"
                               ? "border-l-yellow-500"
                               : "border-l-gray-400";
@@ -852,9 +856,12 @@ export default function ConsentsPage() {
                               {/* Level 3: Events in Trail */}
                               <div className="space-y-1">
                                 {events.map((entry) => {
-                                  const actionInfo = getActionInfo(
-                                    entry.action
-                                  );
+                                  // Show as TIMED_OUT if backend flagged it
+                                  const effectiveAction = entry.is_timed_out
+                                    ? "TIMED_OUT"
+                                    : entry.action;
+                                  const actionInfo =
+                                    getActionInfo(effectiveAction);
                                   return (
                                     <div
                                       key={entry.id}
@@ -866,18 +873,9 @@ export default function ConsentsPage() {
                                           {actionInfo.label}
                                         </span>
                                       </span>
-                                      <div className="flex items-center gap-2">
-                                        <Badge
-                                          className={
-                                            actionInfo.className + " text-xs"
-                                          }
-                                        >
-                                          {actionInfo.label.split(" ")[1]}
-                                        </Badge>
-                                        <span className="text-xs text-muted-foreground">
-                                          {formatDate(entry.issued_at)}
-                                        </span>
-                                      </div>
+                                      <span className="text-xs text-muted-foreground">
+                                        {formatDate(entry.issued_at)}
+                                      </span>
                                     </div>
                                   );
                                 })}
