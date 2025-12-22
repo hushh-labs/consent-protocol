@@ -243,20 +243,38 @@ hushh-research/
 │   ├── components/
 │   │   ├── chat/                    # AgentChat components
 │   │   └── consent/                 # ConsentDialog
-│   └── lib/vault/                   # Client-side encryption
+│   └── lib/
+│       ├── vault/                   # Client-side encryption
+│       └── db.ts                    # Vault data operations
 │
-├── 🐍 consent-protocol/             # Python Backend
-│   ├── server.py                    # FastAPI server
-│   └── hushh_mcp/
+├── 🐍 consent-protocol/             # Python Backend (Modular)
+│   ├── server.py                    # FastAPI entry (80 lines)
+│   ├── mcp_server.py                # MCP Server entry (170 lines)
+│   │
+│   ├── api/                         # FastAPI Route Modules
+│   │   ├── models/schemas.py        # All Pydantic models
+│   │   └── routes/                  # Modular route handlers
+│   │       ├── agents.py            # Agent chat endpoints
+│   │       ├── consent.py           # Consent management
+│   │       └── developer.py         # Developer API v1
+│   │
+│   ├── mcp_modules/                 # MCP Server Modules
+│   │   ├── config.py                # MCP configuration
+│   │   └── tools/                   # Tool handlers
+│   │
+│   ├── db/                          # Database Modules
+│   │   ├── connection.py            # Pool management
+│   │   ├── queries.py               # DB queries
+│   │   └── migrate.py               # Modular migration script
+│   │
+│   └── hushh_mcp/                   # Core Protocol (UNTOUCHED)
 │       ├── agents/                  # AI Agents
 │       │   ├── orchestrator/        # Intent routing
 │       │   ├── food_dining/         # 🍽️ Food preferences
 │       │   └── professional_profile/# 💼 Career data
-│       ├── consent/                 # Token issuance
-│       │   └── token.py             # issue_token, validate_token
-│       ├── trust/                   # TrustLinks (A2A)
-│       ├── vault/                   # Encryption helpers
-│       └── operons/                 # Reusable logic units
+│       ├── consent/token.py         # issue_token, validate_token
+│       ├── trust/link.py            # TrustLinks (A2A)
+│       └── vault/                   # Encryption helpers
 │
 ├── 📚 docs/                         # Documentation
 │   ├── technical/                   # Architecture, DB Schema
