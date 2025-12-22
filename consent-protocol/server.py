@@ -105,18 +105,25 @@ async def validate_token_endpoint(request: ValidateTokenRequest):
     """
     from hushh_mcp.consent.token import validate_token
     
-    # Validate signature and expiration
-    valid, reason, token_obj = validate_token(request.token)
-    
-    if not valid:
-        return {"valid": False, "reason": reason}
+    try:
+        # Validate signature and expiration
+        valid, reason, token_obj = validate_token(request.token)
         
-    return {
-        "valid": True, 
-        "user_id": token_obj.user_id,
-        "agent_id": token_obj.agent_id,
-        "scope": token_obj.scope
-    }
+        if not valid:
+            # SECURITY: Return generic message, log detailed reason server-side
+            logger.warning(f"Token validation failed: {reason}")
+            return {"valid": False, "reason": "Token validation failed"}
+            
+        return {
+            "valid": True, 
+            "user_id": token_obj.user_id,
+            "agent_id": token_obj.agent_id,
+            "scope": token_obj.scope
+        }
+    except Exception as e:
+        # SECURITY: Never expose exception details to client (CodeQL fix)
+        logger.error(f"Token validation error: {e}")
+        return {"valid": False, "reason": "Token validation failed"}
 
 # ============================================================================
 # FOOD & DINING AGENT

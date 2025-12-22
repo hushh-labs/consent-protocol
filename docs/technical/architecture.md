@@ -321,4 +321,4 @@ GET  /api/v1/list-scopes       # List available scopes
 
 ---
 
-_Version: 2.0 | Updated: 2024-12-14_
+_Version: 2.1 | Updated: December 2025_

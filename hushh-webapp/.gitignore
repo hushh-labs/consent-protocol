@@ -47,7 +47,3 @@ service-principal-credentials.json
 
 testcode.html
 
-# Cloud SQL
-cloud-sql-proxy.exe
-cloud-sql-proxy
-CLOUDSQL_CONFIG.md
