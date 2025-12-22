@@ -9,6 +9,7 @@ import {
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
+import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
 
 export default function DashboardLayout({
   children,
@@ -16,26 +17,28 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ConsentNotificationProvider>
-      <SidebarProvider>
-        {/* Sidebar - already fixed via sidebar.tsx */}
-        <AppSidebar />
+    <VaultLockGuard>
+      <ConsentNotificationProvider>
+        <SidebarProvider>
+          {/* Sidebar - already fixed via sidebar.tsx */}
+          <AppSidebar />
 
-        {/* Main content area */}
-        <SidebarInset className="flex flex-col h-screen overflow-hidden">
-          {/* Fixed header with breadcrumb - always visible */}
-          <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <DashboardBreadcrumb />
-          </header>
+          {/* Main content area */}
+          <SidebarInset className="flex flex-col h-screen overflow-hidden">
+            {/* Fixed header with breadcrumb - always visible */}
+            <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <DashboardBreadcrumb />
+            </header>
 
-          {/* Scrollable content area */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col gap-4 p-4">{children}</div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </ConsentNotificationProvider>
+            {/* Scrollable content area */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="flex flex-col gap-4 p-4">{children}</div>
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </ConsentNotificationProvider>
+    </VaultLockGuard>
   );
 }
