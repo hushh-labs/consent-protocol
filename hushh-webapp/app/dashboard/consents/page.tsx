@@ -33,6 +33,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useVault } from "@/lib/vault/vault-context";
 
 interface PendingConsent {
   id: string;
@@ -73,6 +74,7 @@ interface ActiveConsent {
 
 export default function ConsentsPage() {
   const searchParams = useSearchParams();
+  const { vaultKey, isVaultUnlocked } = useVault();
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -182,10 +184,13 @@ export default function ConsentsPage() {
         return;
       }
 
-      // Get vault key from session storage
-      const vaultKey = sessionStorage.getItem("vault_key");
+      // Use vault key from React context (memory-only, XSS-safe)
       if (!vaultKey) {
         console.error("Vault key not found - user must unlock vault first");
+        toast.error("Vault not unlocked", {
+          description:
+            "Please unlock your vault first to approve this request.",
+        });
         throw new Error("Vault not unlocked. Please unlock your vault first.");
       }
 
