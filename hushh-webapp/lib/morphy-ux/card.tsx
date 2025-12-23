@@ -125,13 +125,13 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           <div className="relative">
             <div
               className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-400 border",
+                "w-10 h-10 rounded-lg flex items-center justify-center transition-colors duration-200 border",
                 getIconBoxStyle(gradient)
               )}
             >
               <IconComponent
                 className={cn(
-                  "h-5 w-5 transition-all duration-400",
+                  "h-5 w-5 transition-colors duration-200",
                   getIconColor(gradient)
                 )}
                 weight="regular"
@@ -155,7 +155,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <Comp
         ref={ref}
         className={cn(
-          "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-all duration-300",
+          "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-[border-color,box-shadow,background-color] duration-200",
           // Theme-aware background for non-glass effects
           effect === "glass" ? "" : "bg-white/80 dark:bg-gray-900/40",
           // Conditional backdrop blur based on effect

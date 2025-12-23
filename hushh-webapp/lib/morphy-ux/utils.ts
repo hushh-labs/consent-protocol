@@ -1,40 +1,36 @@
 import { type ColorVariant, type ComponentEffect } from "./types";
 
 // ============================================================================
-// UNIVERSITY-FOCUSED GRADIENT PRESETS
+// HUSHH GRADIENT PRESETS - CSS Variable Based
+// All gradients use CSS variables from globals.css for consistent theming
 // ============================================================================
 
 export const gradientPresets = {
-  // Primary university gradient - blue to blue (professional)
-  primary: "from-[#13405d] via-[#06a0c8] to-[#0d7590]",
+  // Primary brand gradient - Blue→Purple (auto-switches in dark mode via CSS vars)
+  primary: "from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]",
 
-  // Secondary university gradient - yellow to yellow (accent)
-  secondary: "from-[#fbbf24] to-[#f59e0b]",
+  // Secondary gradient - Silver for subtle backgrounds
+  secondary:
+    "from-[var(--morphy-secondary-start)] to-[var(--morphy-secondary-end)]",
 
-  // Success - blue family (trustworthy)
-  success: "from-[#13405d] via-[#06a0c8] to-[#0d7590]",
+  // Accent gradient - Gold/Yellow (explicit, for special emphasis)
+  accent: "from-[#fbbf24] to-[#f59e0b]",
 
-  // Warning - yellow family (attention)
+  // Success - Emerald family
+  success: "from-[#10b981] to-[#059669]",
+
+  // Warning - Gold family
   warning: "from-[#fbbf24] to-[#f59e0b]",
 
-  // Multi - blue to blue (light mode) / yellow to yellow (dark mode) - like active navbar
-  multi:
-    "from-[#13405d] via-[#06a0c8] to-[#0d7590] dark:from-[#fbbf24] dark:to-[#f59e0b]",
+  // Multi - Adapts to light/dark mode automatically via CSS vars
+  multi: "from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]",
 
-  // Base colors - simplified university palette
-  blue: "from-[#13405d] via-[#06a0c8] to-[#0d7590]",
-  yellow: "from-[#fbbf24] via-[#f8c13a] to-[#f59e0b]",
+  // Metallic - Silver in both modes
+  metallic: "from-gray-100 via-gray-200 to-gray-300",
 
-  // Gradient variants - university focused
-  "blue-gradient": "from-[#13405d] via-[#06a0c8] to-[#0d7590]",
-  "yellow-gradient": "from-[#fbbf24] via-[#f8c13a] to-[#f59e0b]",
-
-  // Metallic variant - silver in both light and dark modes
-  metallic: "from-gray-50 via-gray-100 to-gray-200",
-  // Adaptive metallic gradient (intentional spelling per request)
-  // Cool silver (light) and smooth metallic transition (dark) around #afafaf to #c6c6c6
+  // Metallic gradient with smooth transitions
   "mettalic-gradient":
-    "from-[#f7f9fb] via-[#e5ebf2] to-[#cfd8e3] dark:from-[#8a8a8a] dark:via-[#afafaf] dark:to-[#c6c6c6]",
+    "from-[#f7f9fb] via-[#e5ebf2] to-[#cfd8e3] dark:from-[#404040] dark:via-[#525252] dark:to-[#737373]",
 } as const;
 
 // ============================================================================
@@ -50,9 +46,11 @@ export const getVariantStyles = (
       if (effect === "fill") {
         return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-[var(--morphy-primary-start)]/90 hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#fbbf24]/10 dark:to-[#f59e0b]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 text-[var(--morphy-primary-start)] dark:text-[#fbbf24] transition-colors duration-200";
+        // Silver accent border in dark mode for hushh brand
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        // Silver accent border in dark mode for hushh brand
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "blue":
@@ -66,62 +64,62 @@ export const getVariantStyles = (
 
     case "blue-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets["blue-gradient"]} hover:from-university-blue-400/90 hover:to-university-blue-600/90 text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-university-blue-500/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "yellow":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.yellow} hover:from-university-yellow-300/90 hover:to-university-yellow-500/90 text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-university-yellow-500/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#fbbf24]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "yellow-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets["yellow-gradient"]} hover:from-university-yellow-300/90 hover:to-university-yellow-500/90 text-black shadow-lg transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-lg transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[3px_3px_15px_var(--activeShadowColor)] border border-university-yellow-500/20 hover:shadow-[3px_3px_20px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[3px_3px_15px_var(--activeShadowColor)] border border-[#fbbf24]/20 hover:shadow-[3px_3px_20px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "purple":
     case "purple-gradient":
-      // Fallback to blue for university consistency
+      // Use primary gradient (purple is part of hushh brand)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.blue} hover:from-university-blue-400/90 hover:to-university-blue-600/90 text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#7c3aed]/10 to-[#8b5cf6]/10 border border-[#7c3aed]/20 text-[#7c3aed] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-university-blue-500/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "green":
     case "green-gradient":
-      // Fallback to blue for university consistency
+      // Use success gradient (emerald)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.blue} hover:from-university-blue-400/90 hover:to-university-blue-600/90 text-white shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.success} text-white shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#10b981]/10 to-[#059669]/10 border border-[#10b981]/20 text-[#10b981] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-university-blue-500/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#10b981]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "orange":
     case "orange-gradient":
-      // Fallback to yellow for university consistency
+      // Use accent/warning gradient (gold/orange)
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.yellow} hover:from-university-yellow-300/90 hover:to-university-yellow-500/90 text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.warning} text-black shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#f59e0b]/10 to-[#d97706]/10 border border-[#f59e0b]/20 text-[#f59e0b] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-university-yellow-500/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#f59e0b]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "metallic":
@@ -171,18 +169,20 @@ export const getVariantStyles = (
 
     case "multi":
       if (effect === "fill") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#fbbf24] dark:to-[#f59e0b] text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200";
+        // Multi: silver gradient in dark mode for hushh brand
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#c0c0c0] dark:to-[#a0a0a0] text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200";
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#fbbf24]/10 dark:to-[#f59e0b]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 text-[var(--morphy-primary-start)] dark:text-[#fbbf24] transition-colors duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
       }
 
     case "black":
       return "text-black hover:text-black/80 transition-colors duration-200 bg-transparent border-none shadow-none";
 
     case "link":
-      return "text-[#374151] dark:text-[#e5e7eb] hover:text-[var(--morphy-primary-start)] dark:hover:text-[#fbbf24] underline-offset-4 hover:underline transition-colors duration-200 bg-transparent border-none shadow-none";
+      // Silver hover in dark mode for hushh brand
+      return "text-[#374151] dark:text-[#e5e7eb] hover:text-[var(--morphy-primary-start)] dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200 bg-transparent border-none shadow-none";
 
     case "none":
     default:
@@ -205,11 +205,12 @@ export const getVariantStylesNoHover = (
   switch (variant) {
     case "gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#fbbf24] dark:to-[#f59e0b] text-white dark:text-black shadow-md transition-all duration-200`;
+        // Silver gradient in dark mode for hushh brand
+        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#c0c0c0] dark:to-[#a0a0a0] text-white dark:text-black shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#fbbf24]/10 dark:to-[#f59e0b]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 text-[var(--morphy-primary-start)] dark:text-[#fbbf24] transition-all duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-all duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 backdrop-blur-[6px] transition-all duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 backdrop-blur-[6px] transition-all duration-200";
       }
 
     case "blue":
@@ -223,7 +224,7 @@ export const getVariantStylesNoHover = (
 
     case "blue-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets["blue-gradient"]} text-white shadow-md transition-all duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-all duration-200";
       } else {
@@ -232,7 +233,7 @@ export const getVariantStylesNoHover = (
 
     case "yellow":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.yellow} text-black shadow-md transition-all duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-all duration-200";
       } else {
@@ -241,7 +242,7 @@ export const getVariantStylesNoHover = (
 
     case "yellow-gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets["yellow-gradient"]} text-black shadow-md transition-all duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.accent} text-black shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-all duration-200";
       } else {
@@ -252,9 +253,9 @@ export const getVariantStylesNoHover = (
     case "purple-gradient":
     case "green":
     case "green-gradient":
-      // Fallback to blue for university consistency
+      // Use primary gradient
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.blue} text-white shadow-md transition-all duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.primary} text-white shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#7c3aed]/10 to-[#8b5cf6]/10 border border-[#7c3aed]/20 text-[#7c3aed] transition-all duration-200";
       } else {
@@ -263,9 +264,9 @@ export const getVariantStylesNoHover = (
 
     case "orange":
     case "orange-gradient":
-      // Fallback to yellow for university consistency
+      // Use accent/warning gradient
       if (effect === "fill") {
-        return `bg-gradient-to-r ${gradientPresets.yellow} text-black shadow-md transition-all duration-200`;
+        return `bg-gradient-to-r ${gradientPresets.warning} text-black shadow-md transition-all duration-200`;
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#f59e0b]/10 to-[#d97706]/10 border border-[#f59e0b]/20 text-[#f59e0b] transition-all duration-200";
       } else {
@@ -293,11 +294,12 @@ export const getVariantStylesNoHover = (
 
     case "multi":
       if (effect === "fill") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#fbbf24] dark:to-[#f59e0b] text-white dark:text-black shadow-md transition-all duration-200";
+        // Silver gradient in dark mode for hushh brand
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] dark:from-[#c0c0c0] dark:to-[#a0a0a0] text-white dark:text-black shadow-md transition-all duration-200";
       } else if (effect === "fade") {
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#fbbf24]/10 dark:to-[#f59e0b]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#fbbf24]/20 text-[var(--morphy-primary-start)] dark:text-[#fbbf24] transition-all duration-200";
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-all duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_6px_16px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 backdrop-blur-[6px] transition-all duration-200";
+        return "bg-[var(--activeGlassColor)] shadow-[0px_6px_16px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 backdrop-blur-[6px] transition-all duration-200";
       }
 
     case "link":
@@ -374,38 +376,41 @@ export const getRippleColor = (
   variant: ColorVariant,
   effect: ComponentEffect = "fill"
 ): string => {
-  // For glass/fade, use visible color-matched ripple
+  // For glass/fade effects - iOS glassmorphism + Material Expressive 3
+  // Ripple color matches variant shade (silver in dark mode for hushh brand)
   if (effect === "glass" || effect === "fade") {
     switch (variant) {
       case "gradient":
       case "multi":
       case "blue":
       case "blue-gradient":
-        return "bg-[var(--morphy-primary-start)]/30 dark:bg-[#fbbf24]/30";
+        // Silver ripple in dark mode to match variant shades
+        return "bg-[var(--morphy-primary-start)]/30 dark:bg-[#c0c0c0]/30";
       case "yellow":
       case "yellow-gradient":
         return "bg-[#fbbf24]/30";
       case "purple":
       case "purple-gradient":
-        return "bg-[#7c3aed]/30";
+        return "bg-[#7c3aed]/30 dark:bg-[#c0c0c0]/30";
       case "green":
       case "green-gradient":
-        return "bg-[#10b981]/30";
+        return "bg-[#10b981]/30 dark:bg-[#c0c0c0]/30";
       case "orange":
       case "orange-gradient":
-        return "bg-[#f59e0b]/30";
+        return "bg-[#f59e0b]/30 dark:bg-[#c0c0c0]/30";
       case "metallic":
-        return "bg-gray-400/30";
+        return "bg-gray-400/30 dark:bg-[#c0c0c0]/30";
       case "link":
-        return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#fbbf24]/20";
+        return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#c0c0c0]/20";
       case "black":
-        return "bg-black/20";
+        return "bg-black/20 dark:bg-[#c0c0c0]/20";
       case "none":
       default:
-        return "bg-foreground/10";
+        return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
     }
   }
-  // Default: fill (legacy logic)
+  // Default: fill effect - white/black ripple contrasts with solid bg
+  // In dark mode, solid bg changes to silver gradient, so white ripple still works
   switch (variant) {
     case "gradient":
     case "blue":
@@ -415,6 +420,7 @@ export const getRippleColor = (
     case "green":
     case "green-gradient":
     case "multi":
+      // White ripple on solid gradient bg (works in both modes)
       return "bg-white/20";
     case "yellow":
     case "yellow-gradient":
@@ -424,10 +430,108 @@ export const getRippleColor = (
     case "metallic":
       return "bg-gray-400/20";
     case "link":
-      return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#fbbf24]/20";
+      // Silver ripple in dark mode for link variant
+      return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#c0c0c0]/20";
     case "none":
     default:
-      return "bg-foreground/10";
+      return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
+  }
+};
+
+// ============================================================================
+// RIPPLE RADIAL GRADIENT - Center to Edge Fade
+// Returns CSS radial gradient for spotlight ripple effect
+// ============================================================================
+
+export const getRippleGradientStyle = (
+  variant: ColorVariant,
+  effect: ComponentEffect = "fill",
+  isDarkMode: boolean = false
+): string => {
+  // Get base color for gradient
+  let color: string;
+
+  if (effect === "glass" || effect === "fade") {
+    switch (variant) {
+      case "gradient":
+      case "multi":
+      case "blue":
+      case "blue-gradient":
+        color = isDarkMode ? "#c0c0c0" : "var(--morphy-primary-start)";
+        break;
+      case "yellow":
+      case "yellow-gradient":
+        color = "#fbbf24";
+        break;
+      case "purple":
+      case "purple-gradient":
+        color = isDarkMode ? "#c0c0c0" : "#7c3aed";
+        break;
+      case "green":
+      case "green-gradient":
+        color = isDarkMode ? "#c0c0c0" : "#10b981";
+        break;
+      case "orange":
+      case "orange-gradient":
+        color = isDarkMode ? "#c0c0c0" : "#f59e0b";
+        break;
+      case "metallic":
+        color = isDarkMode ? "#c0c0c0" : "#9ca3af";
+        break;
+      default:
+        color = isDarkMode ? "#c0c0c0" : "currentColor";
+    }
+  } else {
+    // Fill effect - white/black contrast
+    switch (variant) {
+      case "yellow":
+      case "yellow-gradient":
+      case "orange":
+      case "orange-gradient":
+        color = "rgba(0, 0, 0, 0.15)";
+        break;
+      default:
+        color = "rgba(255, 255, 255, 0.3)";
+    }
+  }
+
+  // Radial gradient: full opacity at center, fades to transparent at 40%
+  return `radial-gradient(circle, ${color} 0%, ${color}80 20%, transparent 40%)`;
+};
+
+// ============================================================================
+// HOVER BORDER COLORS - Variant Specific
+// Light mode: uses variant color, Dark mode: uses silver (#c0c0c0)
+// ============================================================================
+
+export const getHoverBorderColor = (variant: ColorVariant): string => {
+  switch (variant) {
+    case "gradient":
+    case "blue":
+    case "blue-gradient":
+    case "multi":
+      return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
+    case "purple":
+    case "purple-gradient":
+      return "hover:border-[#7c3aed] dark:hover:border-[#c0c0c0]";
+    case "yellow":
+    case "yellow-gradient":
+      return "hover:border-[#fbbf24] dark:hover:border-[#c0c0c0]";
+    case "orange":
+    case "orange-gradient":
+      return "hover:border-[#f59e0b] dark:hover:border-[#c0c0c0]";
+    case "green":
+    case "green-gradient":
+      return "hover:border-[#10b981] dark:hover:border-[#c0c0c0]";
+    case "metallic":
+      return "hover:border-gray-400 dark:hover:border-[#c0c0c0]";
+    case "black":
+      return "hover:border-gray-800 dark:hover:border-[#c0c0c0]";
+    case "link":
+      return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
+    case "none":
+    default:
+      return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
   }
 };
 
@@ -455,21 +559,20 @@ export const getVariantGradient = (variant: ColorVariant): string => {
     case "gradient":
       return gradientPresets.primary;
     case "blue":
-      return gradientPresets.blue;
     case "blue-gradient":
-      return gradientPresets["blue-gradient"];
+      return gradientPresets.primary;
     case "purple":
-      return gradientPresets.blue; // Fallback to blue for university consistency
     case "purple-gradient":
-      return gradientPresets.blue; // Fallback to blue for university consistency
+      return gradientPresets.primary;
     case "green":
-      return gradientPresets.blue; // Fallback to blue for university consistency
     case "green-gradient":
-      return gradientPresets.blue; // Fallback to blue for university consistency
+      return gradientPresets.success;
     case "orange":
-      return gradientPresets.yellow; // Fallback to yellow for university consistency
     case "orange-gradient":
-      return gradientPresets["yellow-gradient"]; // Fallback to yellow for university consistency
+      return gradientPresets.warning;
+    case "yellow":
+    case "yellow-gradient":
+      return gradientPresets.accent;
     case "metallic":
       return gradientPresets.metallic;
     case "multi":

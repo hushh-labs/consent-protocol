@@ -191,13 +191,14 @@ async def revoke_consent(request: Request):
         if not token_to_revoke:
             raise HTTPException(status_code=404, detail=f"No active consent found for scope: {scope}")
         
-        # Generate a revocation token_id if original is missing
+        # Generate a NEW unique token_id for the REVOKED event
+        # (Cannot reuse original token_id due to UNIQUE constraint on consent_audit table)
         import time
-        revoke_token_id = token_to_revoke.get("token_id") or f"revoke_{int(time.time() * 1000)}"
+        revoke_token_id = f"REVOKED_{int(time.time() * 1000)}_{scope}"
         agent_id = token_to_revoke.get("agent_id") or token_to_revoke.get("developer") or "Unknown"
         request_id = token_to_revoke.get("request_id")
         
-        logger.info(f"🔒 Revoking token_id: {revoke_token_id}, agent: {agent_id}, request_id: {request_id}")
+        logger.info(f"🔒 Revoking - new token_id: {revoke_token_id}, agent: {agent_id}, request_id: {request_id}")
         
         # Log REVOKED event to database (link to original request_id for trail)
         await consent_db.insert_event(

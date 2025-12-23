@@ -56,16 +56,15 @@ export {
 export { Button, buttonVariants } from "./button";
 export type { ButtonProps } from "./button";
 
-export { 
-  Card, 
-  CardHeader, 
-  CardFooter, 
-  CardTitle, 
-  CardDescription, 
-  CardContent 
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+  CardContent,
 } from "./card";
 export type { CardProps } from "./card";
-
 
 // ============================================================================
 // UNIVERSITY TYPOGRAPHY SYSTEM (CENTRALIZED)
@@ -117,13 +116,19 @@ export const typography = {
 // ============================================================================
 
 export const colorTokens = {
-  // Primary brand colors - CHANGE THESE TO UPDATE ALL COLORS GLOBALLY
+  // Primary brand colors - Hushh Blue→Purple gradient (light mode)
+  // In dark mode, CSS variables switch to yellow→orange automatically
   primary: {
-    start: "#13405d",
-    end: "#0d7590",
+    start: "#0071e3", // Hushh Blue
+    end: "#bb62fc", // Hushh Purple
   },
-  // Secondary accent colors
+  // Secondary colors - Silver for subtle backgrounds (FAQ style)
   secondary: {
+    start: "#c0c0c0",
+    end: "#e8e8e8",
+  },
+  // Accent colors - Gold/Yellow (used in dark mode as primary)
+  accent: {
     start: "#fbbf24",
     end: "#f59e0b",
   },
@@ -195,7 +200,15 @@ export const getBadgeClasses = (
   const sizeClasses =
     size === "sm" ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-0.5";
 
-  return `${sizeClasses} rounded-full bg-gradient-to-r from-[var(--morphy-${variant}-start)]/20 to-[var(--morphy-${variant}-end)]/20 dark:from-[var(--morphy-${variant === "primary" ? "secondary" : "primary"}-start)]/20 dark:to-[var(--morphy-${variant === "primary" ? "secondary" : "primary"}-end)]/20 border border-[var(--morphy-${variant}-start)]/30 dark:border-[var(--morphy-${variant === "primary" ? "secondary" : "primary"}-start)]/30 text-[var(--morphy-${variant}-start)] dark:text-[var(--morphy-${variant === "primary" ? "secondary" : "primary"}-start)] w-fit`;
+  return `${sizeClasses} rounded-full bg-gradient-to-r from-[var(--morphy-${variant}-start)]/20 to-[var(--morphy-${variant}-end)]/20 dark:from-[var(--morphy-${
+    variant === "primary" ? "secondary" : "primary"
+  }-start)]/20 dark:to-[var(--morphy-${
+    variant === "primary" ? "secondary" : "primary"
+  }-end)]/20 border border-[var(--morphy-${variant}-start)]/30 dark:border-[var(--morphy-${
+    variant === "primary" ? "secondary" : "primary"
+  }-start)]/30 text-[var(--morphy-${variant}-start)] dark:text-[var(--morphy-${
+    variant === "primary" ? "secondary" : "primary"
+  }-start)] w-fit`;
 };
 
 // ============================================================================

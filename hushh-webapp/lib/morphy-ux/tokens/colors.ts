@@ -1,52 +1,69 @@
 /**
  * Hushh Brand Color Tokens
- * 
+ *
  * Single source of truth for all morphy-ux colors.
  * Based on hushh.ai official branding.
+ *
+ * NOTE: These tokens should match the CSS variables in globals.css
+ * The CSS variables are the runtime source of truth.
  */
 
 // =============================================================================
-// PRIMARY BRAND COLORS
+// PRIMARY BRAND COLORS - HUSHH
 // =============================================================================
 
 export const hushhColors = {
-  // Primary - Apple Blue family
+  // Primary - Hushh Blue family
   blue: {
-    50: "#eff6ff",
-    100: "#dbeafe",
-    200: "#bfdbfe",
-    300: "#93c5fd",
-    400: "#60a5fa",
-    500: "#0071e3", // Primary - Apple Blue
-    600: "#0051a8",
-    700: "#003d7a",
-    800: "#002952",
-    900: "#001429",
+    50: "#e6f3ff",
+    100: "#cce7ff",
+    200: "#99cfff",
+    300: "#66b7ff",
+    400: "#339fff",
+    500: "#0071e3", // Primary - Hushh Blue
+    600: "#005bb5",
+    700: "#004587",
+    800: "#002f5a",
+    900: "#00192d",
   },
-  // Secondary - Emerald family
-  emerald: {
-    50: "#ecfdf5",
-    100: "#d1fae5",
-    200: "#a7f3d0",
-    300: "#6ee7b7",
-    400: "#34d399",
-    500: "#10b981", // Primary - Emerald
-    600: "#059669",
-    700: "#047857",
-    800: "#065f46",
-    900: "#064e3b",
+  // Secondary - Purple family (data sovereignty)
+  purple: {
+    50: "#f5e6ff",
+    100: "#ebccff",
+    200: "#d699ff",
+    300: "#c266ff",
+    400: "#ad33ff",
+    500: "#bb62fc", // Primary - Hushh Purple
+    600: "#954fca",
+    700: "#703c97",
+    800: "#4a2865",
+    900: "#251432",
   },
-  // Tertiary - Teal
-  teal: {
-    400: "#0d9488",
-    500: "#0d7590",
-    600: "#0a5a70",
+  // Accent - Gold/Yellow (dark mode primary)
+  gold: {
+    50: "#fffbeb",
+    100: "#fef3c7",
+    200: "#fde68a",
+    300: "#fcd34d",
+    400: "#fbbf24", // Accent Gold
+    500: "#f59e0b", // Accent Orange
+    600: "#d97706",
+    700: "#b45309",
+    800: "#92400e",
+    900: "#78350f",
   },
-  // Dark accent - Navy
-  navy: {
-    400: "#1a5276",
-    500: "#13405d",
-    600: "#0d2e42",
+  // Neutral - Silver for subtle backgrounds
+  silver: {
+    50: "#fafafa",
+    100: "#f5f5f5",
+    200: "#e8e8e8",
+    300: "#d4d4d4",
+    400: "#c0c0c0", // Silver Start
+    500: "#a3a3a3",
+    600: "#737373",
+    700: "#525252",
+    800: "#404040",
+    900: "#262626",
   },
 } as const;
 
@@ -55,32 +72,33 @@ export const hushhColors = {
 // =============================================================================
 
 export const morphyGradients = {
-  // Primary gradient (buttons, CTAs)
+  // Primary gradient (light mode) - Blue → Purple
   primary: {
     start: hushhColors.blue[500],
-    end: hushhColors.blue[600],
-    css: `linear-gradient(135deg, ${hushhColors.blue[500]} 0%, ${hushhColors.blue[600]} 100%)`,
-    tailwind: "from-[#0071e3] to-[#0051a8]",
+    end: hushhColors.purple[500],
+    css: `linear-gradient(to right, ${hushhColors.blue[500]}, ${hushhColors.purple[500]})`,
+    tailwind: "from-[#0071e3] to-[#bb62fc]",
   },
-  // Secondary gradient (accents)
+  // Secondary gradient - Silver (subtle backgrounds)
   secondary: {
-    start: hushhColors.emerald[500],
-    end: hushhColors.emerald[600],
-    css: `linear-gradient(135deg, ${hushhColors.emerald[500]} 0%, ${hushhColors.emerald[600]} 100%)`,
-    tailwind: "from-[#10b981] to-[#059669]",
+    start: hushhColors.silver[400],
+    end: hushhColors.silver[200],
+    css: `linear-gradient(to right, ${hushhColors.silver[400]}, ${hushhColors.silver[200]})`,
+    tailwind: "from-[#c0c0c0] to-[#e8e8e8]",
   },
-  // Teal gradient
-  teal: {
-    start: hushhColors.teal[500],
-    end: hushhColors.navy[500],
-    css: `linear-gradient(135deg, ${hushhColors.teal[500]} 0%, ${hushhColors.navy[500]} 100%)`,
-    tailwind: "from-[#0d7590] to-[#13405d]",
+  // Accent gradient (dark mode primary) - Gold → Orange
+  accent: {
+    start: hushhColors.gold[400],
+    end: hushhColors.gold[500],
+    css: `linear-gradient(to right, ${hushhColors.gold[400]}, ${hushhColors.gold[500]})`,
+    tailwind: "from-[#fbbf24] to-[#f59e0b]",
   },
   // Multi (adapts to dark mode)
   multi: {
-    light: "from-[#0071e3] to-[#0051a8]",
-    dark: "from-[#10b981] to-[#059669]",
-    tailwind: "from-[#0071e3] to-[#0051a8] dark:from-[#10b981] dark:to-[#059669]",
+    light: "from-[#0071e3] to-[#bb62fc]",
+    dark: "from-[#fbbf24] to-[#f59e0b]",
+    tailwind:
+      "from-[#0071e3] to-[#bb62fc] dark:from-[#fbbf24] dark:to-[#f59e0b]",
   },
 } as const;
 
@@ -89,36 +107,30 @@ export const morphyGradients = {
 // =============================================================================
 
 export const semanticColors = {
-  success: hushhColors.emerald[500],
-  warning: "#FFD60A",
-  error: "#FF453A",
+  success: "#10b981", // Emerald
+  warning: "#fbbf24", // Gold
+  error: "#ef4444", // Red
   info: hushhColors.blue[500],
 } as const;
 
 // =============================================================================
 // CSS VARIABLE MAPPING
-// For use with globals.css
+// These should match globals.css :root and .dark definitions
 // =============================================================================
 
 export const cssVariables = {
-  "--morphy-primary-start": hushhColors.blue[500],
-  "--morphy-primary-end": hushhColors.blue[600],
-  "--morphy-secondary-start": hushhColors.emerald[500],
-  "--morphy-secondary-end": hushhColors.emerald[600],
-  "--color-hushh-blue": hushhColors.blue[500],
-  "--color-hushh-emerald": hushhColors.emerald[500],
-  "--color-hushh-teal": hushhColors.teal[500],
-  "--color-hushh-navy": hushhColors.navy[500],
-} as const;
-
-// =============================================================================
-// TAILWIND CLASS PRESETS
-// For use in Tailwind config extend
-// =============================================================================
-
-export const tailwindPreset = {
-  colors: {
-    hushh: hushhColors,
+  // Light mode (default)
+  light: {
+    "--morphy-primary-start": hushhColors.blue[500],
+    "--morphy-primary-end": hushhColors.purple[500],
+    "--morphy-secondary-start": hushhColors.silver[400],
+    "--morphy-secondary-end": hushhColors.silver[200],
   },
-  gradients: morphyGradients,
-};
+  // Dark mode
+  dark: {
+    "--morphy-primary-start": hushhColors.gold[400],
+    "--morphy-primary-end": hushhColors.gold[500],
+    "--morphy-secondary-start": "#13405d",
+    "--morphy-secondary-end": "#0d7590",
+  },
+} as const;
