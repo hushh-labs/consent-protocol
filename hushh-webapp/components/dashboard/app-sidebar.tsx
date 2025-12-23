@@ -22,11 +22,11 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuBadge,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { SidebarMenuButton } from "@/lib/morphy-ux/ui";
 import { usePendingConsentCount } from "@/components/consent/notification-provider";
 
 const domains = [
@@ -100,17 +100,15 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  asChild
+                  href="/dashboard"
                   isActive={pathname === "/dashboard"}
                   size="lg"
                   className="md:h-12 md:text-base font-semibold"
                 >
-                  <Link href="/dashboard">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <span className="ml-2">Orchestrator Chat</span>
-                  </Link>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                  <span className="ml-2">Orchestrator Chat</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -130,11 +128,9 @@ export function AppSidebar() {
 
                 return (
                   <SidebarMenuItem key={domain.href}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={domain.href}>
-                        <Icon className="h-4 w-4" />
-                        <span>{domain.name}</span>
-                      </Link>
+                    <SidebarMenuButton href={domain.href} isActive={isActive}>
+                      <Icon className="h-4 w-4" />
+                      <span>{domain.name}</span>
                     </SidebarMenuButton>
                     {domain.status === "soon" && (
                       <SidebarMenuBadge>Soon</SidebarMenuBadge>
@@ -153,13 +149,11 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  asChild
+                  href="/dashboard/consents"
                   isActive={pathname === "/dashboard/consents"}
                 >
-                  <Link href="/dashboard/consents">
-                    <Shield className="h-4 w-4" />
-                    <span>Consents</span>
-                  </Link>
+                  <Shield className="h-4 w-4" />
+                  <span>Consents</span>
                 </SidebarMenuButton>
                 {pendingCount > 0 && (
                   <SidebarMenuBadge className="bg-red-500 text-white">

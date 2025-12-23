@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { getRippleColor } from "./utils";
 
 // ============================================================================
-// RIPPLE PHYSICS ENGINE
+// RIPPLE PHYSICS ENGINE - Material 3 Expressive
 // ============================================================================
 
 export const rippleKeyframes = `

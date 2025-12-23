@@ -20,7 +20,7 @@ import {
 
 export default function DocsPage() {
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen">
       {/* Hero Section */}
       <section className="relative px-4 py-16 md:py-24 max-w-5xl mx-auto text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-sm font-medium mb-6">

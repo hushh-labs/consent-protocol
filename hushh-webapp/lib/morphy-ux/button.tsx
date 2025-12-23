@@ -97,17 +97,20 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (showRipple) {
+        addRipple(e);
+      }
       props.onMouseEnter?.(e);
     };
 
     const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (showRipple) {
+        resetRipple();
+      }
       props.onMouseLeave?.(e);
     };
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (showRipple) {
-        addRipple(e);
-      }
       props.onClick?.(e);
     };
 
@@ -152,7 +155,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         <div className="relative flex items-center justify-center mr-2.5">
           <div
             className={cn(
-              "rounded-lg flex items-center justify-center transition-all duration-400 border",
+              "rounded-lg flex items-center justify-center transition-colors duration-200 border",
               getIconBoxSize(),
               getIconBoxStyle(gradient)
             )}
@@ -176,12 +179,13 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           buttonVariants({ size }),
           variantStyles,
           showRipple ? "relative overflow-hidden" : "",
-          showRipple
-            ? "!border-transparent hover:!border-[var(--morphy-primary-start)]"
-            : "!border-transparent",
+          // Add border with transition for smooth hover effect
+          "border border-transparent transition-[border-color,box-shadow,background-color] duration-200",
+          // Hover border effect for all buttons - silver accent in dark mode for hushh brand
+          "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]",
           className
         )}
-        style={{ outline: "none !important" }}
+        style={{ outline: "none" }}
         ref={ref}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -192,11 +196,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {IconComponent && renderIconBlock()}
         {children}
-        {/* Ripple element */}
+        {/* Ripple element - Material 3 expanding ripple */}
         {showRipple && ripple && (
           <span
+            key={ripple.id}
             className={cn(
-              "absolute rounded-full animate-ripple pointer-events-none",
+              "absolute rounded-full pointer-events-none animate-ripple",
               getRippleColor(variant, effect)
             )}
             style={{

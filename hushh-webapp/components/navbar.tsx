@@ -6,7 +6,7 @@
 import React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card } from "@/lib/morphy-ux/morphy";
+import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -50,15 +50,16 @@ const NavButton = ({
 }) => {
   const Icon = item.icon;
 
-  const content = (
-    <div
-      className={cn(
-        "flex flex-col items-center justify-center px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl transition-all cursor-pointer",
-        isActive
-          ? "bg-linear-to-br from-blue-500 to-purple-600 dark:from-gray-300 dark:to-gray-500 text-white dark:text-black shadow-lg"
-          : "text-muted-foreground hover:text-foreground hover:bg-accent"
-      )}
+  const buttonContent = (
+    <Button
+      variant="gradient"
+      effect={isActive ? "fill" : "fade"}
+      showRipple
       onClick={onClick}
+      className={cn(
+        "flex flex-col items-center justify-center h-auto px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl",
+        isActive && "shadow-lg"
+      )}
     >
       <Icon
         className={cn(
@@ -67,14 +68,14 @@ const NavButton = ({
         )}
       />
       <span className="text-[10px] sm:text-xs font-medium">{item.label}</span>
-    </div>
+    </Button>
   );
 
   if (onClick) {
-    return <div>{content}</div>;
+    return buttonContent;
   }
 
-  return <Link href={item.href}>{content}</Link>;
+  return <Link href={item.href}>{buttonContent}</Link>;
 };
 
 export const Navbar = () => {
@@ -164,8 +165,8 @@ export const Navbar = () => {
             />
           )}
 
-          {/* Theme Toggle */}
-          <div className="flex flex-col items-center justify-center px-4 py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer transition-all">
+          {/* Theme Toggle - no wrapper hover, Button has its own effects */}
+          <div className="flex flex-col items-center justify-center px-2 py-2">
             <ThemeToggle />
           </div>
         </div>
