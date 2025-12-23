@@ -84,7 +84,7 @@ export const useRipple = () => {
       clearTimerRef.current = window.setTimeout(() => {
         setRipple(null);
         clearTimerRef.current = null;
-      }, 600);
+      }, 650); // 50ms buffer after 600ms animation
     };
 
     // If a ripple is already active, clear it first, then start a new one next frame

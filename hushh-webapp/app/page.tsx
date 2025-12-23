@@ -38,13 +38,13 @@ export default function HomePage() {
         {/* CTA Buttons */}
         <div className="flex justify-center gap-4">
           <Link href="/login">
-            <Button variant="gradient" effect="fade" size="lg" showRipple>
+            <Button variant="gradient" effect="glass" size="lg" showRipple>
               Get Started
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </Link>
           <Link href="/docs">
-            <Button variant="gradient" effect="fade" size="lg" showRipple>
+            <Button variant="gradient" effect="glass" size="lg" showRipple>
               Learn More
             </Button>
           </Link>
