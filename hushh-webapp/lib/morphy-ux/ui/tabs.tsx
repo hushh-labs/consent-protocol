@@ -3,7 +3,7 @@
 /**
  * Morphy-UX Tabs
  *
- * Material 3 inspired ripple effect with state layer mechanics:
+ * Material 3 Expressive ripple effect with state layer mechanics:
  * - Hover: 8% opacity state layer
  * - Press: 10% opacity + radial ripple animation
  * - Active: highlighted with background
@@ -12,7 +12,7 @@
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { cn } from "@/lib/utils";
-import { useRipple } from "@/lib/morphy-ux/ripple";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 
 // ============================================================================
 // TABS ROOT
@@ -52,7 +52,7 @@ function TabsList({
 }
 
 // ============================================================================
-// TABS TRIGGER - WITH RIPPLE
+// TABS TRIGGER - WITH MATERIAL 3 RIPPLE
 // ============================================================================
 
 function TabsTrigger({
@@ -60,8 +60,6 @@ function TabsTrigger({
   children,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
-  const { addRipple, resetRipple, ripple } = useRipple();
-
   return (
     <TabsPrimitive.Trigger
       data-slot="morphy-tabs-trigger"
@@ -82,31 +80,11 @@ function TabsTrigger({
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
-      onMouseEnter={(e) => {
-        addRipple(e);
-        props.onMouseEnter?.(e);
-      }}
-      onMouseLeave={(e) => {
-        resetRipple();
-        props.onMouseLeave?.(e);
-      }}
       {...props}
     >
       {children}
-      {/* Ripple element - Material 3 style */}
-      {ripple && (
-        <span
-          key={ripple.id}
-          className="absolute rounded-full animate-ripple pointer-events-none bg-[var(--morphy-primary-start)]/20 dark:bg-[var(--morphy-primary-end)]/20"
-          style={{
-            left: ripple.x,
-            top: ripple.y,
-            width: ripple.size,
-            height: ripple.size,
-            transform: "translate(-50%, -50%)",
-          }}
-        />
-      )}
+      {/* Material 3 Expressive Ripple */}
+      <MaterialRipple variant="link" effect="glass" />
     </TabsPrimitive.Trigger>
   );
 }

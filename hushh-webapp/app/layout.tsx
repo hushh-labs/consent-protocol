@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
 import { VaultProvider } from "@/lib/vault/vault-context";
 import { Navbar } from "@/components/navbar";
+import { Toaster } from "sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -73,6 +74,14 @@ export default function RootLayout({
               <div className="pb-24 flex-1 flex flex-col relative z-10">
                 {children}
               </div>
+              {/* Sonner Toast Notifications - high z-index to appear above everything */}
+              <Toaster
+                richColors
+                position="top-center"
+                toastOptions={{
+                  style: { zIndex: 9999 },
+                }}
+              />
             </VaultProvider>
           </AuthProvider>
         </ThemeProvider>

@@ -79,26 +79,41 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 
 ---
 
-## 2. Ripple Rules - CRITICAL
+## 2. Material 3 Expressive + Morphy-UX
 
-**ALWAYS:**
+> Hushh uses Material 3 Expressive physics with iOS glassmorphism visuals
 
-- Ripple triggers on **click/pointerDown only** — NOT on hover
-- Ripple stays **within component bounds** via `overflow: hidden`
-- Use `showRipple={true}` only for **actionable elements**
+### Ripple Mechanics (Material 3)
 
-**NEVER:**
+- Ripple is handled by `@material/web` `<md-ripple>` component
+- **Automatic interaction detection** — hover, press, focus all handled internally
+- Uses `showRipple` prop on Button/Card (same API as before)
 
-- ❌ Do NOT wrap elements with `<Ripple>` component
-- ❌ Do NOT use `RippleButton` (deleted - use `Button showRipple`)
+### Animation Physics
+
+| Property        | Value                              |
+| --------------- | ---------------------------------- |
+| Hover Opacity   | 0.08                               |
+| Pressed Opacity | 0.12                               |
+| Timing          | Spring-physics (Material 3 native) |
+
+### Color Mapping
+
+| Mode  | Ripple Color                    |
+| ----- | ------------------------------- |
+| Light | `--morphy-primary-start` (Blue) |
+| Dark  | `#c0c0c0` (Silver)              |
 
 ```tsx
-// ✅ CORRECT - Click ripple via showRipple prop
-<Card showRipple onClick={handleClick}>...</Card>
-<Button showRipple>Click</Button>
+// ✅ Material 3 ripple is automatic
+<Button variant="gradient" showRipple>
+  Click
+</Button>
 
-// ❌ WRONG - Ripple wrapper (triggers on hover)
-<Ripple><Card>...</Card></Ripple>
+// The MaterialRipple component maps:
+// - variant prop → ripple color
+// - effect prop → opacity levels
+// - dark mode → silver accents
 ```
 
 ---
@@ -291,14 +306,16 @@ This keeps shadcn/ui updatable via `npx shadcn@latest add` commands.
 
 ## 12. File References
 
-- `hushh-webapp/app/globals.css` — Glass classes, colors, typography, ripple animation
-- `hushh-webapp/lib/morphy-ux/button.tsx` — Button with showRipple
+- `hushh-webapp/app/globals.css` — Glass classes, colors, typography, Material 3 tokens
+- `hushh-webapp/lib/morphy-ux/button.tsx` — Button with MaterialRipple
 - `hushh-webapp/lib/morphy-ux/card.tsx` — Card with showRipple
-- `hushh-webapp/lib/morphy-ux/ripple.tsx` — useRipple hook, CSS injection
-- `hushh-webapp/lib/morphy-ux/utils.ts` — getVariantStyles, getRippleColor, getHoverBorderColor
+- `hushh-webapp/lib/morphy-ux/material-ripple.tsx` — Material 3 `<md-ripple>` wrapper
+- `hushh-webapp/lib/morphy-ux/ripple.tsx` — Legacy ripple (deprecated)
+- `hushh-webapp/lib/morphy-ux/utils.ts` — getVariantStyles, getRippleColor
 - `hushh-webapp/lib/morphy-ux/ui/` — Morphy-enhanced UI components (custom)
 - `hushh-webapp/components/ui/` — Stock Shadcn/UI (do not customize)
+- `@material/web` — Material 3 web components package
 
 ---
 
-_Version: 4.1 | Updated 2024-12-22 | Component architecture documented_
+_Version: 5.0 | Updated 2024-12-23 | Material 3 Expressive integration_

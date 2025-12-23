@@ -80,7 +80,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="h-16 flex items-center border-b px-4">
+      <SidebarHeader className="h-16 flex items-center justify-start border-b px-4">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🤫</span>
           <div>
@@ -94,7 +94,7 @@ export function AppSidebar() {
         {/* Orchestrator Group */}
         <SidebarGroup>
           <SidebarGroupLabel className="uppercase text-xs font-bold tracking-wider text-muted-foreground/50">
-            Hushh Orchestrator
+            Agent Nav
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
