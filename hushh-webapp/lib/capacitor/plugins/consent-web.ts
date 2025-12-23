@@ -7,7 +7,7 @@
  * NOTE: In native iOS mode, the Swift plugin implementation is used instead.
  */
 
-import type { WebPlugin } from "@capacitor/core";
+import { WebPlugin } from "@capacitor/core";
 import type {
   IssueTokenOptions,
   IssueTokenResult,
@@ -23,7 +23,7 @@ import type {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-export class HushhConsentWeb implements WebPlugin {
+export class HushhConsentWeb extends WebPlugin {
   async issueToken(options: IssueTokenOptions): Promise<IssueTokenResult> {
     const response = await fetch(`${BACKEND_URL}/api/consent/issue-token`, {
       method: "POST",

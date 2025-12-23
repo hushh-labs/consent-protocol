@@ -25,11 +25,8 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
-import {
-  createVaultWithPassphrase,
-  unlockVaultWithPassphrase,
-  unlockVaultWithRecoveryKey,
-} from "@/lib/vault/passphrase-key";
+import { VaultService } from "@/lib/services/vault-service";
+// Removed direct vault imports - handled by VaultService
 import { useVault } from "@/lib/vault/vault-context";
 import {
   Button,
@@ -146,14 +143,12 @@ export default function LoginPage() {
 
   async function checkVaultAndProceed(uid: string) {
     try {
-      const response = await fetch(`/api/vault/check?userId=${uid}`);
-      const { hasVault } = await response.json();
+      const hasVault = await VaultService.checkVault(uid);
 
       if (hasVault) {
         // Existing user - fetch vault data and unlock
-        const vaultResponse = await fetch(`/api/vault/get?userId=${uid}`);
-        if (vaultResponse.ok) {
-          const data = await vaultResponse.json();
+        try {
+          const data = await VaultService.getVault(uid);
           setVaultData({
             encryptedVaultKey: data.encryptedVaultKey,
             salt: data.salt,
@@ -163,7 +158,7 @@ export default function LoginPage() {
             recoveryIv: data.recoveryIv,
           });
           setStep("passphrase_unlock");
-        } else {
+        } catch (err) {
           setError("Failed to load vault data");
           setStep("ready");
         }
@@ -256,27 +251,20 @@ export default function LoginPage() {
     try {
       console.log("🔐 Creating vault with passphrase...");
 
-      const result = await createVaultWithPassphrase(passphrase);
+      const result = await VaultService.createVault(passphrase);
 
       // Store vault key in memory only (not sessionStorage - XSS protection)
       unlockVault(result.vaultKeyHex);
 
-      // Save to server (passphrase + recovery encrypted copies)
-      await fetch("/api/vault/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          authMethod: "passphrase",
-          // Passphrase encrypted
-          encryptedVaultKey: result.encryptedVaultKey,
-          salt: result.salt,
-          iv: result.iv,
-          // Recovery encrypted (separate copy)
-          recoveryEncryptedVaultKey: result.recoveryEncryptedVaultKey,
-          recoverySalt: result.recoverySalt,
-          recoveryIv: result.recoveryIv,
-        }),
+      // Save to server via Service
+      await VaultService.setupVault(userId, {
+        authMethod: "passphrase",
+        encryptedVaultKey: result.encryptedVaultKey,
+        salt: result.salt,
+        iv: result.iv,
+        recoveryEncryptedVaultKey: result.recoveryEncryptedVaultKey,
+        recoverySalt: result.recoverySalt,
+        recoveryIv: result.recoveryIv,
       });
 
       // Show recovery key
@@ -304,7 +292,7 @@ export default function LoginPage() {
     try {
       console.log("🔓 Unlocking vault with passphrase...");
 
-      const vaultKeyHex = await unlockVaultWithPassphrase(
+      const vaultKeyHex = await VaultService.unlockVault(
         passphrase,
         vaultData.encryptedVaultKey,
         vaultData.salt,
@@ -395,7 +383,7 @@ export default function LoginPage() {
     try {
       console.log("🔑 Unlocking with recovery key...");
 
-      const vaultKeyHex = await unlockVaultWithRecoveryKey(
+      const vaultKeyHex = await VaultService.unlockVaultWithRecoveryKey(
         recoveryKeyInput.trim(),
         vaultData.recoveryEncryptedVaultKey,
         vaultData.recoverySalt,

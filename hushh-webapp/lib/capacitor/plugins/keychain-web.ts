@@ -10,7 +10,7 @@
  * NOTE: In native iOS mode, the Swift plugin with real Keychain is used.
  */
 
-import type { WebPlugin } from "@capacitor/core";
+import { WebPlugin } from "@capacitor/core";
 import type {
   KeychainSetOptions,
   KeychainGetOptions,
@@ -20,7 +20,7 @@ import type {
 
 const KEYCHAIN_PREFIX = "hushh_keychain_";
 
-export class HushhKeychainWeb implements WebPlugin {
+export class HushhKeychainWeb extends WebPlugin {
   /**
    * Store a value - uses sessionStorage in web mode
    * (sessionStorage is more secure than localStorage as it clears on tab close)

@@ -7,7 +7,7 @@
  * NOTE: In native iOS mode, the Swift plugin with SQLCipher is used instead.
  */
 
-import type { WebPlugin } from "@capacitor/core";
+import { WebPlugin } from "@capacitor/core";
 import type {
   EncryptDataOptions,
   EncryptedPayload,
@@ -20,7 +20,7 @@ import type {
   DeriveKeyResult,
 } from "../types";
 
-export class HushhVaultWeb implements WebPlugin {
+export class HushhVaultWeb extends WebPlugin {
   /**
    * Derive key using PBKDF2 - matches consent-protocol key derivation
    *
@@ -56,7 +56,7 @@ export class HushhVaultWeb implements WebPlugin {
     const derivedBits = await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
-        salt: saltBytes,
+        salt: saltBytes.buffer as ArrayBuffer,
         iterations: iterations,
         hash: "SHA-256",
       },
