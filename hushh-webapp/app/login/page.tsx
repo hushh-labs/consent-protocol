@@ -455,7 +455,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold">Welcome to Hushh</h1>
           <p className="text-muted-foreground">
-            Your personal data vault with banking-level security
+            Consent protocol enforced. No loose ends. Hushh'ed.
           </p>
         </div>
 

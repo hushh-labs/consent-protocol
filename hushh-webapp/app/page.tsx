@@ -18,7 +18,7 @@ import { Shield, Lock, Key, Sparkles, ArrowRight } from "lucide-react";
 
 export default function HomePage() {
   return (
-    <main className="flex-1 min-h-full flex items-center justify-center p-4 bg-background">
+    <main className="flex-1 min-h-full flex items-center justify-center p-4">
       <div className="w-full max-w-2xl space-y-6">
         {/* Hero Section */}
         <div className="text-center space-y-4">
@@ -38,19 +38,13 @@ export default function HomePage() {
         {/* CTA Buttons */}
         <div className="flex justify-center gap-4">
           <Link href="/login">
-            <Button variant="gradient" effect="glass" size="lg" showRipple>
+            <Button variant="gradient" effect="fade" size="lg" showRipple>
               Get Started
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </Link>
           <Link href="/docs">
-            <Button
-              variant="none"
-              effect="glass"
-              size="lg"
-              showRipple={false}
-              className="border"
-            >
+            <Button variant="gradient" effect="fade" size="lg" showRipple>
               Learn More
             </Button>
           </Link>

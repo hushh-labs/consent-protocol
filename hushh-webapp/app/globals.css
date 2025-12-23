@@ -224,10 +224,118 @@
     @apply bg-background text-foreground;
     scrollbar-gutter: stable;
     overflow-x: hidden;
+    /* Smooth theme transitions - 200ms for snappy but visible effect */
+    transition: background-color 200ms ease-in-out, 
+                color 200ms ease-in-out,
+                border-color 200ms ease-in-out;
   }
   html {
     scrollbar-gutter: stable;
   }
+}
+
+/* 
+ * MORPHY TRANSITION SYSTEM
+ * Standardized 200ms duration for all interactive transitions
+ * Theme transitions handled separately to avoid jitter
+ */
+
+/* Theme transition class - apply to containers for smooth theme switching */
+.theme-transition {
+  transition: background-color 200ms ease-in-out, 
+              border-color 200ms ease-in-out, 
+              color 200ms ease-in-out;
+}
+
+/* Standard interaction transitions for buttons, cards, links */
+@layer utilities {
+  .morphy-transition {
+    transition: all 200ms ease-in-out;
+  }
+  .morphy-transition-colors {
+    transition: background-color 200ms ease-in-out, 
+                border-color 200ms ease-in-out, 
+                color 200ms ease-in-out,
+                fill 200ms ease-in-out,
+                stroke 200ms ease-in-out;
+  }
+  .morphy-transition-shadow {
+    transition: box-shadow 200ms ease-in-out;
+  }
+  .morphy-transition-transform {
+    transition: transform 200ms ease-in-out;
+  }
+}
+
+/* Ripple Animation - For Morphy-UX click effects */
+/* Material Expressive 3 physics animations */
+@keyframes ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.8;
+  }
+  40% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-ripple {
+  animation: ripple 600ms cubic-bezier(0.2, 0, 0.1, 1) forwards;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* Subtle App Background Gradients - Smoother with more color stops */
+.morphy-app-bg {
+  background: linear-gradient(
+    145deg,
+    #fafafa 0%,
+    #f5f8ff 15%,
+    #f0f4ff 30%,
+    #f3f0ff 50%,
+    #f5f0ff 65%,
+    #f8f5ff 80%,
+    #fafafa 100%
+  );
+  min-height: 100vh;
+}
+
+.dark .morphy-app-bg {
+  background: linear-gradient(
+    145deg,
+    #09090c 0%,
+    #0c0c14 15%,
+    #0f0f1a 30%,
+    #121218 50%,
+    #0f101a 65%,
+    #0c0c14 80%,
+    #09090c 100%
+  );
+}
+
+/* Radial glow overlay - subtle brand color accent from top */
+.morphy-app-bg-radial {
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(0, 113, 227, 0.06) 0%,
+    rgba(187, 98, 252, 0.04) 25%,
+    rgba(187, 98, 252, 0.02) 45%,
+    transparent 70%
+  );
+}
+
+.dark .morphy-app-bg-radial {
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(251, 191, 36, 0.06) 0%,
+    rgba(245, 158, 11, 0.04) 25%,
+    rgba(245, 158, 11, 0.02) 45%,
+    transparent 70%
+  );
 }
 
 /* Custom Scrollbar Styles */

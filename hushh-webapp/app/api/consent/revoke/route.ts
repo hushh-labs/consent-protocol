@@ -23,29 +23,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[API] Revoking consent for scope: ${scope}`);
+    console.log(`[API] Revoking consent for user: ${userId}, scope: ${scope}`);
 
-    const response = await fetch(`${BACKEND_URL}/api/consent/revoke`, {
+    const backendUrl = `${BACKEND_URL}/api/consent/revoke`;
+    console.log(`[API] Calling backend: ${backendUrl}`);
+
+    const response = await fetch(backendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, scope }),
     });
 
+    const responseText = await response.text();
+    console.log(`[API] Backend response status: ${response.status}`);
+    console.log(`[API] Backend response body: ${responseText}`);
+
     if (!response.ok) {
-      const error = await response.text();
-      console.error("[API] Backend error:", error);
+      console.error("[API] Backend error:", responseText);
       return NextResponse.json(
-        { error: "Failed to revoke consent" },
+        { error: responseText || "Failed to revoke consent" },
         { status: response.status }
       );
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    // Parse JSON response
+    try {
+      const data = JSON.parse(responseText);
+      return NextResponse.json(data);
+    } catch {
+      return NextResponse.json({ status: "revoked", raw: responseText });
+    }
   } catch (error) {
     console.error("[API] Revoke consent error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: `Internal server error: ${error}` },
       { status: 500 }
     );
   }

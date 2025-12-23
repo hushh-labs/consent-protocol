@@ -350,6 +350,7 @@ export function ConsentNotificationProvider({
         position="top-center"
         richColors
         closeButton
+        theme="system"
         toastOptions={{
           style: {
             padding: "16px",

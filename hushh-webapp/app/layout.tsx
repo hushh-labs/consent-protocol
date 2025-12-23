@@ -54,12 +54,14 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className={`${inter.variable} ${quicksand.variable} ${exo2.variable} font-sans antialiased h-full flex flex-col`}
+        className={`${inter.variable} ${quicksand.variable} ${exo2.variable} font-sans antialiased h-full flex flex-col morphy-app-bg`}
         style={{
-          background: "var(--color-background)",
           fontFamily: "var(--font-quicksand), sans-serif",
         }}
       >
+        {/* Subtle radial glow overlay */}
+        <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-0" />
+
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -68,10 +70,7 @@ export default function RootLayout({
           <AuthProvider>
             <VaultProvider>
               <Navbar />
-              <div
-                className="pb-24 flex-1 flex flex-col"
-                style={{ background: "var(--color-background)" }}
-              >
+              <div className="pb-24 flex-1 flex flex-col relative z-10">
                 {children}
               </div>
             </VaultProvider>

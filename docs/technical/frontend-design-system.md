@@ -1,4 +1,4 @@
-# HushhRules Design System (v3.0)
+# Hushh Frontend Design System (v4.0)
 
 > Comprehensive design rules for the Hushh Agent Platform
 > Based on hushh.ai official branding + Morphy-UX physics
@@ -145,14 +145,21 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | `--color-success`       | `#10b981` | Success states |
 | `--color-info`          | `#0071e3` | Info states    |
 
-### Morphy-UX Gradients
+### Morphy-UX Gradients (CSS Variables)
 
-| Token                      | Value     |
-| -------------------------- | --------- |
-| `--morphy-primary-start`   | `#0071e3` |
-| `--morphy-primary-end`     | `#0051a8` |
-| `--morphy-secondary-start` | `#10b981` |
-| `--morphy-secondary-end`   | `#059669` |
+| Token                      | Light Mode         | Dark Mode          |
+| -------------------------- | ------------------ | ------------------ |
+| `--morphy-primary-start`   | `#0071e3` (Blue)   | `#fbbf24` (Gold)   |
+| `--morphy-primary-end`     | `#bb62fc` (Purple) | `#f59e0b` (Orange) |
+| `--morphy-secondary-start` | `#c0c0c0` (Silver) | `#13405d` (Navy)   |
+| `--morphy-secondary-end`   | `#e8e8e8` (Silver) | `#0d7590` (Teal)   |
+
+### Background Gradient Classes
+
+| Class                   | Usage                          |
+| ----------------------- | ------------------------------ |
+| `.morphy-app-bg`        | Subtle app background gradient |
+| `.morphy-app-bg-radial` | Centered glow effect           |
 
 ---
 
@@ -166,7 +173,12 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | `.text-caption`  | 0.8125rem - Secondary |
 | `.text-small`    | 0.75rem - Tertiary    |
 
-**Fonts:** Quicksand (body), Economica (headings)
+**Fonts:** Quicksand (body), Exo 2 (headings)
+
+| Class                  | Font      | Weight |
+| ---------------------- | --------- | ------ |
+| `.font-heading-exo2`   | Exo 2     | 650    |
+| `.font-body-quicksand` | Quicksand | 500    |
 
 ---
 
@@ -237,14 +249,56 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 
 ---
 
-## 11. File References
+## 11. Component Architecture - IMPORTANT
 
-- `hushh-webapp/app/globals.css` — Glass classes, colors, typography
-- `hushh-webapp/components/ui/button.tsx` — Button with showRipple
-- `hushh-webapp/components/ui/card.tsx` — Card with showRipple
-- `hushh-webapp/lib/morphy-ux/` — Ripple effects, GSAP animations
-- `hushh-webapp/tailwind.config.ts` — Hushh color palette
+> **RULE**: Keep shadcn/ui components stock. Morphy-UX enhancements go in `lib/morphy-ux/ui`.
+
+### Directory Structure
+
+| Path                | Purpose                       | Updateable       |
+| ------------------- | ----------------------------- | ---------------- |
+| `components/ui/`    | Stock Shadcn/UI components    | ✅ Yes (via CLI) |
+| `lib/morphy-ux/`    | Core Morphy-UX utilities      | 🛠 Custom         |
+| `lib/morphy-ux/ui/` | Morphy-enhanced UI components | 🛠 Custom         |
+
+### When to Use Each
+
+```tsx
+// Stock shadcn component (no physics needed)
+import { Sidebar } from "@/components/ui/sidebar";
+
+// Morphy-UX enhanced component (has ripple, hover effects)
+import { Button } from "@/lib/morphy-ux/morphy";
+import { Card } from "@/lib/morphy-ux/morphy";
+
+// Future: Morphy-UX enhanced UI components
+import { SidebarMenuButton } from "@/lib/morphy-ux/ui/sidebar-menu-button";
+```
+
+### Creating Morphy-UX Versions
+
+When a shadcn component needs physics (ripple, hover borders, etc.):
+
+1. **DO NOT** modify `components/ui/` directly
+2. Create a new file in `lib/morphy-ux/ui/`
+3. Import the base shadcn component or build fresh
+4. Add morphy physics (useRipple, getHoverBorderColor, etc.)
+5. Export from `lib/morphy-ux/ui/index.ts`
+
+This keeps shadcn/ui updatable via `npx shadcn@latest add` commands.
 
 ---
 
-_Version: 3.0 | Updated 2024-12-13 | Centralized in consent-protocol/docs_
+## 12. File References
+
+- `hushh-webapp/app/globals.css` — Glass classes, colors, typography, ripple animation
+- `hushh-webapp/lib/morphy-ux/button.tsx` — Button with showRipple
+- `hushh-webapp/lib/morphy-ux/card.tsx` — Card with showRipple
+- `hushh-webapp/lib/morphy-ux/ripple.tsx` — useRipple hook, CSS injection
+- `hushh-webapp/lib/morphy-ux/utils.ts` — getVariantStyles, getRippleColor, getHoverBorderColor
+- `hushh-webapp/lib/morphy-ux/ui/` — Morphy-enhanced UI components (custom)
+- `hushh-webapp/components/ui/` — Stock Shadcn/UI (do not customize)
+
+---
+
+_Version: 4.1 | Updated 2024-12-22 | Component architecture documented_

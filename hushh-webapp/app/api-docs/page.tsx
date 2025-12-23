@@ -101,7 +101,7 @@ function CodeBlock({
 
 export default function ApiDocsPage() {
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="min-h-screen pb-24">
       {/* Header */}
       <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
         <div className="container mx-auto max-w-4xl px-4 py-4 flex items-center gap-4">

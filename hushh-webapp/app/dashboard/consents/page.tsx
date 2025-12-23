@@ -34,6 +34,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
+import { DataTable } from "@/components/ui/data-table";
+import {
+  appColumns,
+  AppSummary,
+  AuditLogEntry,
+  formatScope,
+  getActionInfo,
+} from "./columns";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 
 interface PendingConsent {
   id: string;
@@ -72,6 +89,198 @@ interface ActiveConsent {
   expires_at: number;
   time_remaining_ms: number;
 }
+
+// AppAuditLog component - groups by app and shows Drawer for event details
+function AppAuditLog({
+  auditLog,
+  activeConsents,
+}: {
+  auditLog: AuditLogEntry[];
+  activeConsents: ActiveConsent[];
+}) {
+  const [selectedApp, setSelectedApp] = React.useState<AppSummary | null>(null);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+  // Group audit log by app and compute summary
+  const appSummaries: AppSummary[] = React.useMemo(() => {
+    const grouped = auditLog.reduce((acc, entry) => {
+      const appName = entry.agent_id || "Unknown App";
+      if (!acc[appName]) {
+        acc[appName] = [];
+      }
+      acc[appName].push(entry);
+      return acc;
+    }, {} as Record<string, AuditLogEntry[]>);
+
+    return Object.entries(grouped)
+      .map(([agent_id, events]) => {
+        const sortedEvents = [...events].sort(
+          (a, b) => b.issued_at - a.issued_at
+        );
+        const hasActiveToken = activeConsents.some(
+          (c) => c.developer === agent_id
+        );
+
+        return {
+          agent_id,
+          lastActivity: sortedEvents[0]?.issued_at ?? 0,
+          totalEvents: events.length,
+          hasActiveToken,
+          events: sortedEvents,
+        };
+      })
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+  }, [auditLog, activeConsents]);
+
+  // Handle row click to open drawer
+  const handleRowClick = (app: AppSummary) => {
+    setSelectedApp(app);
+    setDrawerOpen(true);
+  };
+
+  // Format date for drawer
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Connected Apps
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={appColumns}
+            data={appSummaries}
+            searchPlaceholder="Search by app name..."
+            onRowClick={handleRowClick}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Event Trail Drawer */}
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              {selectedApp?.agent_id}
+              {selectedApp?.hasActiveToken && (
+                <Badge className="bg-green-500/10 text-green-600 border-green-500/20 ml-2">
+                  Active
+                </Badge>
+              )}
+            </DrawerTitle>
+            <DrawerDescription>
+              {selectedApp?.totalEvents} events • Last activity{" "}
+              {selectedApp?.lastActivity
+                ? formatDate(selectedApp.lastActivity)
+                : "N/A"}
+            </DrawerDescription>
+          </DrawerHeader>
+
+          <div className="px-4 py-2 max-h-[50vh] overflow-y-auto">
+            {/* Group by request trail */}
+            {selectedApp?.events &&
+              (() => {
+                const trails = Object.entries(
+                  selectedApp.events.reduce((acc, entry) => {
+                    const trailKey = entry.request_id || `single-${entry.id}`;
+                    if (!acc[trailKey]) acc[trailKey] = [];
+                    acc[trailKey].push(entry);
+                    return acc;
+                  }, {} as Record<string, AuditLogEntry[]>)
+                )
+                  .map(([trailId, events]) => ({
+                    trailId,
+                    events: [...events].sort(
+                      (a, b) => a.issued_at - b.issued_at
+                    ),
+                  }))
+                  .sort(
+                    (a, b) => b.events[0].issued_at - a.events[0].issued_at
+                  );
+
+                return trails.map(({ trailId, events }) => {
+                  const firstEvent = events[0];
+                  const lastEvent = events[events.length - 1];
+                  const scopeInfo = formatScope(firstEvent.scope);
+
+                  // Status color
+                  const statusColor =
+                    lastEvent.action === "CONSENT_GRANTED"
+                      ? "border-l-green-500"
+                      : lastEvent.action === "REVOKED" ||
+                        lastEvent.action === "CONSENT_DENIED"
+                      ? "border-l-red-500"
+                      : lastEvent.is_timed_out
+                      ? "border-l-orange-500"
+                      : "border-l-yellow-500";
+
+                  return (
+                    <div
+                      key={trailId}
+                      className={`border-l-4 ${statusColor} pl-4 py-3 mb-3 rounded-r-lg bg-muted/20`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline">
+                          {scopeInfo.emoji} {scopeInfo.label}
+                        </Badge>
+                      </div>
+                      <div className="space-y-2">
+                        {events.map((entry) => {
+                          const actionInfo = getActionInfo(
+                            entry.is_timed_out ? "TIMED_OUT" : entry.action
+                          );
+                          return (
+                            <div
+                              key={entry.id}
+                              className="flex items-center justify-between text-sm"
+                            >
+                              <span className="flex items-center gap-2">
+                                <span>{actionInfo.emoji}</span>
+                                <span className="font-medium">
+                                  {actionInfo.label}
+                                </span>
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(entry.issued_at)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+          </div>
+
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <Button variant="none" className="cursor-pointer border">
+                Close
+              </Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+    </>
+  );
+}
+
+// Need React for useMemo and useState in AppAuditLog
+import * as React from "react";
 
 export default function ConsentsPage() {
   const searchParams = useSearchParams();
@@ -504,20 +713,32 @@ export default function ConsentsPage() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="pending" className="flex items-center gap-2">
+          <TabsTrigger
+            value="pending"
+            className="flex items-center gap-2 cursor-pointer"
+          >
             <Bell className="h-4 w-4" />
             Pending
             {pending.length > 0 && (
-              <Badge variant="destructive" className="ml-1">
+              <Badge
+                variant="destructive"
+                className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
+              >
                 {pending.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="session" className="flex items-center gap-2">
+          <TabsTrigger
+            value="session"
+            className="flex items-center gap-2 cursor-pointer"
+          >
             <Key className="h-4 w-4" />
             Session
           </TabsTrigger>
-          <TabsTrigger value="history" className="flex items-center gap-2">
+          <TabsTrigger
+            value="history"
+            className="flex items-center gap-2 cursor-pointer"
+          >
             <History className="h-4 w-4" />
             Audit Log
           </TabsTrigger>
@@ -574,7 +795,7 @@ export default function ConsentsPage() {
                     <Button
                       onClick={() => handleApprove(request.id)}
                       variant="gradient"
-                      className="flex-1"
+                      className="flex-1 cursor-pointer"
                       disabled={actionLoading === request.id}
                     >
                       {actionLoading === request.id ? (
@@ -672,7 +893,7 @@ export default function ConsentsPage() {
                         variant="none"
                         onClick={() => handleRevoke(consent.scope)}
                         disabled={actionLoading === `revoke-${consent.scope}`}
-                        className="w-full border border-destructive text-destructive hover:bg-destructive/10"
+                        className="w-full border border-destructive text-destructive hover:bg-destructive/10 cursor-pointer"
                       >
                         <Ban className="h-4 w-4 mr-2" />
                         {actionLoading === `revoke-${consent.scope}`
@@ -752,142 +973,10 @@ export default function ConsentsPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
-              {/* Level 1: Group by app (agent_id) */}
-              {Object.entries(
-                auditLog.reduce((apps, entry) => {
-                  const appName = entry.agent_id || "Unknown App";
-                  if (!apps[appName]) {
-                    apps[appName] = [];
-                  }
-                  apps[appName].push(entry);
-                  return apps;
-                }, {} as Record<string, ConsentAuditEntry[]>)
-              )
-                .sort(([, a], [, b]) => {
-                  const latestA = Math.max(...a.map((e) => e.issued_at));
-                  const latestB = Math.max(...b.map((e) => e.issued_at));
-                  return latestB - latestA;
-                })
-                .map(([appName, appEntries]) => {
-                  // Level 2: Group entries within app by request_id (trails)
-                  const trails = Object.entries(
-                    appEntries.reduce((trails, entry) => {
-                      const trailKey = entry.request_id || `single-${entry.id}`;
-                      if (!trails[trailKey]) {
-                        trails[trailKey] = [];
-                      }
-                      trails[trailKey].push(entry);
-                      return trails;
-                    }, {} as Record<string, ConsentAuditEntry[]>)
-                  )
-                    .map(([trailId, events]) => ({
-                      trailId,
-                      events: [...events].sort(
-                        (a, b) => a.issued_at - b.issued_at
-                      ),
-                    }))
-                    .sort((a, b) => {
-                      const latestA = a.events[a.events.length - 1].issued_at;
-                      const latestB = b.events[b.events.length - 1].issued_at;
-                      return latestB - latestA;
-                    });
-
-                  const totalEvents = appEntries.length;
-
-                  return (
-                    <Card key={appName} className="overflow-hidden">
-                      {/* App Header */}
-                      <CardHeader className="pb-3 bg-muted/30">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-gradient-to-r from-purple-500/20 to-blue-500/20">
-                            <Shield className="h-5 w-5 text-purple-600" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg">{appName}</CardTitle>
-                            <p className="text-sm text-muted-foreground">
-                              {trails.length} request
-                              {trails.length > 1 ? "s" : ""} • {totalEvents}{" "}
-                              event{totalEvents > 1 ? "s" : ""}
-                            </p>
-                          </div>
-                        </div>
-                      </CardHeader>
-
-                      <CardContent className="pt-4 space-y-4">
-                        {/* Level 2: Request Trails */}
-                        {trails.map(({ trailId, events }) => {
-                          const firstEvent = events[0];
-                          const lastEvent = events[events.length - 1];
-                          const scopeInfo = formatScope(firstEvent.scope);
-
-                          // Determine trail status color (check is_timed_out for last event)
-                          const isLastEventTimedOut = lastEvent.is_timed_out;
-                          const statusColor =
-                            lastEvent.action === "CONSENT_GRANTED"
-                              ? "border-l-green-500"
-                              : lastEvent.action === "REVOKED" ||
-                                lastEvent.action === "CONSENT_DENIED"
-                              ? "border-l-red-500"
-                              : isLastEventTimedOut
-                              ? "border-l-orange-500"
-                              : lastEvent.action === "REQUESTED"
-                              ? "border-l-yellow-500"
-                              : "border-l-gray-400";
-
-                          return (
-                            <div
-                              key={trailId}
-                              className={`border-l-4 ${statusColor} pl-4 py-2 rounded-r-lg bg-muted/20`}
-                            >
-                              {/* Trail Header with Scope Badge */}
-                              <div className="flex items-center justify-between mb-2">
-                                <Badge
-                                  className={getScopeColor(firstEvent.scope)}
-                                >
-                                  {scopeInfo.emoji} {scopeInfo.label}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">
-                                  {events.length} event
-                                  {events.length > 1 ? "s" : ""}
-                                </span>
-                              </div>
-
-                              {/* Level 3: Events in Trail */}
-                              <div className="space-y-1">
-                                {events.map((entry) => {
-                                  // Show as TIMED_OUT if backend flagged it
-                                  const effectiveAction = entry.is_timed_out
-                                    ? "TIMED_OUT"
-                                    : entry.action;
-                                  const actionInfo =
-                                    getActionInfo(effectiveAction);
-                                  return (
-                                    <div
-                                      key={entry.id}
-                                      className="flex items-center justify-between text-sm"
-                                    >
-                                      <span className="flex items-center gap-1.5">
-                                        <span>{actionInfo.emoji}</span>
-                                        <span className="font-medium">
-                                          {actionInfo.label}
-                                        </span>
-                                      </span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {formatDate(entry.issued_at)}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-            </div>
+            <AppAuditLog
+              auditLog={auditLog as unknown as AuditLogEntry[]}
+              activeConsents={activeConsents}
+            />
           )}
         </TabsContent>
       </Tabs>
