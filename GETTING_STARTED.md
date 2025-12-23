@@ -1,223 +1,84 @@
-# Getting Started
+# Getting Started with Hushh PDA (iOS Hybrid)
 
-> Quick guide to get Hushh Research running locally.
-
----
+This guide covers how to set up the development environment, including the Next.js backend, Cloud SQL Proxy, and the iOS Simulator with Native Plugins.
 
 ## Prerequisites
 
-| Tool       | Version  | Check               |
-| ---------- | -------- | ------------------- |
-| Node.js    | ≥20.x    | `node --version`    |
-| Python     | ≥3.11    | `python --version`  |
-| PostgreSQL | Optional | For persistent data |
+- **Node.js**: v18+
+- **Xcode**: 15+ (Mac only)
+- **CocoaPods**: `sudo gem install cocoapods`
+- **Cloud SQL Proxy**: Required for backend DB connection (if using Cloud SQL)
 
----
+## 1. Environment Configuration
 
-## 1. Clone and Install
+Ensure `.env.local` in `hushh-webapp/` is configured correctly:
 
 ```bash
-# Clone the repository
-git clone https://github.com/hushh-labs/hushh-research.git
-cd hushh-research
+# hushh-webapp/.env.local
 
-# Install frontend dependencies
-cd hushh-webapp
-npm install
+# API Config (Simulator -> Mac Host)
+NEXT_PUBLIC_API_URL=http://localhost:3000
 
-# Install backend dependencies
-cd ../consent-protocol
-pip install -r requirements.txt
+# Backend Config (WebApp -> Python Agent)
+NEXT_PUBLIC_BACKEND_URL=https://consent-protocol-1006304528804.us-central1.run.app
+
+# Firebase & Database Config...
 ```
 
----
+## 2. Start Backend & Database
 
-## 2. Environment Setup
+The iOS app uses a **Hybrid** model where it relays data requests to the Next.js backend (`localhost:3000`), which in turn connects to Cloud SQL.
 
-### Frontend (.env.local)
+### Step A: Start Cloud SQL Proxy (if needed)
 
-Create `hushh-webapp/.env.local`:
+If utilizing the Cloud SQL database, start the proxy from the project root:
 
-```env
-# Firebase (get from Firebase Console)
-NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+```bash
+# Download proxy if not present (Done in setup)
+# curl -o cloud_sql_proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.darwin.arm64
+# chmod +x cloud_sql_proxy
 
-# Firebase Admin SDK (for secure session cookies)
-# Download service account JSON from Firebase Console > Project Settings > Service Accounts
-FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"your-project",...}
-
-# Backend URL
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-
-# Database (optional - uses in-memory if not set)
-# DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
+# Start Proxy (requires service-account.json in root)
+cd .. # Go to hushh-research root
+./cloud_sql_proxy hushh-pda:us-central1:hushh-vault-db --credentials-file=service-account.json
 ```
 
-### Backend (optional .env)
-
-Create `consent-protocol/.env` (optional):
-
-```env
-SECRET_KEY=your-secret-key-for-tokens
-```
-
----
-
-## 3. Start Development Servers
-
-**Terminal 1 - Frontend (Next.js):**
+### Step B: Start Next.js Server
 
 ```bash
 cd hushh-webapp
 npm run dev
-# → http://localhost:3000
+# Server running at http://localhost:3000
 ```
 
-**Terminal 2 - Backend (FastAPI):**
+## 3. Build & Launch iOS App
 
-```bash
-cd consent-protocol
-uvicorn server:app --reload --port 8000
-# → http://localhost:8000
-# → http://localhost:8000/docs (Swagger UI)
-```
+The iOS app contains **Native Swift Plugins** logic. You must rebuild if you change any native code or `VaultService` logic.
 
----
-
-## 4. Quick Verification
-
-1. Open http://localhost:3000
-2. Click "Continue with Google"
-3. Create a passphrase (new user) or enter existing
-4. Navigate to Dashboard → Food → "Set up food preferences"
-5. Complete the chat flow
-6. Confirm save when prompted
-
----
-
-## Optional: Docker Compose
-
-For containerized development:
-
-```bash
-docker-compose up --build
-# Frontend: http://localhost:3000
-# Backend:  http://localhost:8000
-```
-
----
-
-## Optional: Cloud SQL (PostgreSQL)
-
-For persistent data storage using Google Cloud SQL.
-
-### 1. Install Cloud SQL Proxy
-
-Download from: https://cloud.google.com/sql/docs/postgres/sql-proxy
-
-Or via PowerShell:
-
-```powershell
-Invoke-WebRequest -Uri "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.1/cloud-sql-proxy.x64.exe" -OutFile "cloud-sql-proxy.exe"
-```
-
-### 2. Start the Proxy
-
-```bash
-# Terminal 3 - Cloud SQL Proxy (run from repo root)
-cd hushh-research
-./cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db --port 5432
-# → Listening on 127.0.0.1:5432
-```
-
-### 3. Set DATABASE_URL
-
-Add to `hushh-webapp/.env.local`:
-
-```env
-DATABASE_URL=postgresql://hushh_app:hushh_secure_2024!@localhost:5432/hushh_vault
-```
-
-### 4. Run Database Migration
+### Option A: CLI Launch (Fastest)
 
 ```bash
 cd hushh-webapp
-node scripts/run-migration.mjs
-# → Creates: vault_keys, vault_food, vault_professional, consent_audit
+# Builds the frontend, syncs to iOS, installs on Simulator, launches app
+npm run cap:ios:run
 ```
 
----
+### Option B: Xcode Manual (Debugging)
 
-## Project Structure
-
-```
-hushh-research/
-├── hushh-webapp/           # Next.js 16 frontend
-│   ├── app/                # App Router pages
-│   ├── components/         # React components
-│   └── lib/                # Utilities (vault, db)
-│
-├── consent-protocol/       # Python FastAPI backend
-│   ├── server.py           # API endpoints
-│   └── hushh_mcp/          # Agents, consent, vault
-│
-├── docs/                   # Documentation
-│   ├── technical/          # Architecture, auth, schemas, API
-│   ├── business/           # Non-technical overview
-│
-├── cloud-sql-proxy.exe     # Cloud SQL proxy (Windows, gitignored)
-└── docker-compose.yml      # Local dev containers
-```
-
-## Deployment to Cloud Run
-
-### Build and Deploy
-
-```powershell
-# 1. Build Docker image with Firebase env vars
+```bash
 cd hushh-webapp
-docker build `
-  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="your-api-key" `
-  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your-project.firebaseapp.com" `
-  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-project-id" `
-  --build-arg NEXT_PUBLIC_BACKEND_URL="https://your-service.run.app" `
-  -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest .
-
-# 2. Push to Artifact Registry
-docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
-
-# 3. Deploy to Cloud Run
-gcloud run deploy hushh-webapp `
-  --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest `
-  --region us-central1 `
-  --allow-unauthenticated `
-  --set-secrets DATABASE_URL=DATABASE_URL:latest `
-  --port 8080 `
-  --add-cloudsql-instances hushh-pda:us-central1:hushh-vault-db
+npx cap open ios
+# Press Cmd+R in Xcode to build and run
 ```
 
-### Prerequisites for Deployment
+## 4. Verification
 
-1. **Secret Manager**: Create DATABASE_URL secret
+1.  **Launch App**: Ensure Simulator is running the app.
+2.  **Login**: Use the login flow.
+    - **Data**: The app will talk to `localhost:3000/api/vault/...`.
+    - **Crypto**: Watch the Xcode Console logs. You should see `[HushhVaultPlugin] ...` logs indicating native encryption/decryption is occurring.
+3.  **Hybrid Check**: The app should behave like the online webapp but utilize the device's Keychain and crypto accelerators.
 
-   ```bash
-   gcloud secrets create DATABASE_URL --data-file=-
-   # Paste: postgresql://hushh_app:password@/hushh_vault?host=/cloudsql/hushh-pda:us-central1:hushh-vault-db
-   ```
+## Architecture Documentation
 
-2. **Grant access**:
-   ```bash
-   gcloud secrets add-iam-policy-binding DATABASE_URL \
-     --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-     --role="roles/secretmanager.secretAccessor"
-   ```
-
----
-
-## Next Steps
-
-- [Architecture](docs/technical/architecture.md) - System design
-- [Consent Protocol](consent-protocol/docs/manifesto.md) - Core principles
-- [Developer API](docs/technical/developer-api.md) - External integration
+See [docs/technical/ios-architecture.md](docs/technical/ios-architecture.md) for detailed design.
