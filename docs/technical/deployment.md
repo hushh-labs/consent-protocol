@@ -26,10 +26,10 @@
 
 ## Service URLs
 
-| Service  | URL                                                          |
-| -------- | ------------------------------------------------------------ |
-| Frontend | `https://hushh-webapp-1006304528804.us-central1.run.app`     |
-| Backend  | `https://consent-protocol-1006304528804.us-central1.run.app` |
+| Service  | URL                                                |
+| -------- | -------------------------------------------------- |
+| Frontend | `https://hushh-webapp-rpphvsc3tq-uc.a.run.app`     |
+| Backend  | `https://consent-protocol-rpphvsc3tq-uc.a.run.app` |
 
 ---
 
@@ -59,49 +59,62 @@
 
 ### 1. Deploy Backend (consent-protocol)
 
+**Option A: Using Cloud Build (Recommended - no local Docker needed)**
+
 ```powershell
 cd consent-protocol
 
-# Build Docker image
-docker build -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
-
-# Push to Artifact Registry
-docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest
+# Build and push via Cloud Build
+gcloud builds submit --tag us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
 
 # Deploy to Cloud Run
 gcloud run deploy consent-protocol `
   --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest `
-  --region us-central1 `
-  --allow-unauthenticated `
-  --set-env-vars "FRONTEND_URL=https://hushh-webapp-1006304528804.us-central1.run.app" `
+  --region us-central1 --allow-unauthenticated `
+  --set-env-vars "FRONTEND_URL=https://hushh-webapp-rpphvsc3tq-uc.a.run.app" `
   --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" `
   --port 8000
 ```
 
+**Option B: Using Local Docker**
+
+```powershell
+cd consent-protocol
+docker build -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
+docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest
+# Then run the gcloud run deploy command from Option A
+```
+
 ### 2. Deploy Frontend (hushh-webapp)
+
+**Option A: Using Cloud Build (Recommended)**
 
 ```powershell
 cd hushh-webapp
 
-# Build Docker image with NEXT_PUBLIC vars
-docker build `
-  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="GCP_API_KEY_PLACEHOLDER_PRIMARY" `
-  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="hushh-pda.firebaseapp.com" `
-  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="hushh-pda" `
-  --build-arg NEXT_PUBLIC_BACKEND_URL="https://consent-protocol-1006304528804.us-central1.run.app" `
-  -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest .
-
-# Push to Artifact Registry
-docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
+# Build via Cloud Build config (includes NEXT_PUBLIC build args)
+gcloud builds submit --config cloudbuild-webapp.yaml .
 
 # Deploy to Cloud Run
 gcloud run deploy hushh-webapp `
   --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest `
-  --region us-central1 `
-  --allow-unauthenticated `
+  --region us-central1 --allow-unauthenticated `
   --set-secrets DATABASE_URL=DATABASE_URL:latest `
-  --port 8080 `
-  --add-cloudsql-instances hushh-pda:us-central1:hushh-vault-db
+  --port 8080 --add-cloudsql-instances hushh-pda:us-central1:hushh-vault-db
+```
+
+**Option B: Using Local Docker**
+
+```powershell
+cd hushh-webapp
+docker build `
+  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="GCP_API_KEY_PLACEHOLDER_PRIMARY" `
+  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="hushh-pda.firebaseapp.com" `
+  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="hushh-pda" `
+  --build-arg NEXT_PUBLIC_BACKEND_URL="https://consent-protocol-rpphvsc3tq-uc.a.run.app" `
+  -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest .
+docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
+# Then run the gcloud run deploy command from Option A
 ```
 
 ---
@@ -172,6 +185,7 @@ gcloud run services logs read SERVICE_NAME --region us-central1 --limit 30
 | Error                            | Cause                                         | Fix                            |
 | -------------------------------- | --------------------------------------------- | ------------------------------ |
 | `MODULE_NOT_FOUND` for `@next/*` | `outputFileTracingExcludes` in next.config.ts | Remove the `@next` exclusion   |
+| `No module named 'asyncpg'`      | Missing dependency in requirements.txt        | Add `asyncpg>=0.29.0`          |
 | `SECRET_KEY must be 32+ chars`   | Missing secret                                | Add via Secret Manager         |
 | `SSL connection` errors          | SSL enabled for Unix socket                   | Set `ssl: false` for Cloud SQL |
 | Empty JSON response              | Unhandled error in API route                  | Add try/catch error handling   |

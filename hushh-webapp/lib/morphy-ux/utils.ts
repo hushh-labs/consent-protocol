@@ -46,8 +46,8 @@ export const getVariantStyles = (
       if (effect === "fill") {
         return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-[var(--morphy-primary-start)]/90 hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
-        // Silver accent border in dark mode for hushh brand
-        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-colors duration-200";
+        // Dark mode: black text for visibility on gold/yellow gradient
+        return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] dark:text-black transition-colors duration-200";
       } else {
         // Silver accent border in dark mode for hushh brand
         return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";

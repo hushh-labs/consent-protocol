@@ -22,6 +22,22 @@ const nextConfig: NextConfig = {
   // Performance optimizations
   compress: true,
   poweredByHeader: false,
+  // Headers configuration for Firebase Auth popup
+  async headers() {
+    return [
+      {
+        // Apply to all routes
+        source: "/:path*",
+        headers: [
+          {
+            // Allow Firebase popup to communicate with opener
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin-allow-popups",
+          },
+        ],
+      },
+    ];
+  },
   // Additional security for production builds
   ...(process.env.NODE_ENV === "production" && {
     // Enable React strict mode in production for better security
@@ -29,7 +45,6 @@ const nextConfig: NextConfig = {
     // Disable source maps in production for security
     productionBrowserSourceMaps: false,
   }),
-  // Headers are now handled in middleware.ts to avoid conflicts
 };
 
 export default nextConfig;

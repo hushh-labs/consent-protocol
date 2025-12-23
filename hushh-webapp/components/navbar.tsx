@@ -52,22 +52,32 @@ const NavButton = ({
 
   const buttonContent = (
     <Button
-      variant="gradient"
-      effect={isActive ? "fill" : "fade"}
+      variant="link"
+      effect="glass"
       showRipple
       onClick={onClick}
       className={cn(
         "flex flex-col items-center justify-center h-auto px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl",
-        isActive && "shadow-lg"
+        // Inactive: muted text with hover
+        !isActive && "text-muted-foreground hover:text-foreground"
       )}
     >
       <Icon
         className={cn(
           "h-4 w-4 sm:h-5 sm:w-5 mb-0.5",
-          isActive && "dark:text-black"
+          // Active icon: gradient start color (blue light, gold dark)
+          isActive && "text-[var(--morphy-primary-start)]"
         )}
       />
-      <span className="text-[10px] sm:text-xs font-medium">{item.label}</span>
+      <span
+        className={cn(
+          "text-[10px] sm:text-xs font-medium",
+          // Active text: gradient effect
+          isActive && "hushh-gradient-text"
+        )}
+      >
+        {item.label}
+      </span>
     </Button>
   );
 
