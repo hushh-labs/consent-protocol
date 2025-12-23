@@ -3,8 +3,8 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { type ColorVariant, type ComponentEffect } from "@/lib/morphy-ux/types";
-import { getVariantStyles, getRippleColor } from "@/lib/morphy-ux/utils";
-import { useRipple } from "@/lib/morphy-ux/ripple";
+import { getVariantStyles } from "@/lib/morphy-ux/utils";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { type IconWeight } from "@phosphor-icons/react";
 import { useIconWeight } from "@/lib/morphy-ux/icon-theme-context";
 
@@ -32,7 +32,7 @@ const buttonVariants = cva(
 );
 
 //  ============================================================================
-// BUTTON COMPONENT
+// BUTTON COMPONENT - Material 3 Expressive + Morphy-UX
 // ============================================================================
 
 export interface ButtonProps
@@ -65,7 +65,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const { addRipple, resetRipple, ripple } = useRipple();
     const iconWeight = useIconWeight();
     const Comp = asChild ? Slot : "button";
 
@@ -94,28 +93,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         return "text-white dark:text-black";
       }
       return accentColor;
-    };
-
-    const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (showRipple) {
-        addRipple(e);
-      }
-      props.onMouseEnter?.(e);
-    };
-
-    const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (showRipple) {
-        resetRipple();
-      }
-      props.onMouseLeave?.(e);
-    };
-
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      props.onClick?.(e);
-    };
-
-    const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-      props.onPointerDown?.(e);
     };
 
     // Helper to render the icon block (like Card)
@@ -187,30 +164,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         style={{ outline: "none" }}
         ref={ref}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onClick={handleClick}
-        onPointerDown={handlePointerDown}
         type={props.type || "button"}
         {...props}
       >
         {IconComponent && renderIconBlock()}
         {children}
-        {/* Ripple element - Material 3 expanding ripple */}
-        {showRipple && ripple && (
-          <span
-            key={ripple.id}
-            className={cn(
-              "absolute rounded-full pointer-events-none animate-ripple",
-              getRippleColor(variant, effect)
-            )}
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-              width: ripple.size,
-              height: ripple.size,
-              transform: "translate(-50%, -50%)",
-            }}
+        {/* Material 3 Expressive Ripple */}
+        {showRipple && (
+          <MaterialRipple
+            variant={variant}
+            effect={effect}
+            disabled={props.disabled}
           />
         )}
       </Comp>

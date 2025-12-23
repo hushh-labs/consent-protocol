@@ -8,9 +8,8 @@ import { type IconWeight } from "@phosphor-icons/react";
 import {
   getVariantStyles,
   getVariantStylesNoHover,
-  getRippleColor,
 } from "@/lib/morphy-ux/utils";
-import { useRipple } from "@/lib/morphy-ux/ripple";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 
 // ============================================================================
 // CARD COMPONENT
@@ -43,7 +42,6 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     },
     ref
   ) => {
-    const { addRipple, resetRipple, ripple } = useRipple();
     const Comp = asChild ? Slot : "div";
 
     // Get centralized styles - use no-hover version when ripple is disabled
@@ -82,29 +80,6 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
         return "text-white dark:text-black";
       }
       return accentColor;
-    };
-
-    const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (showRipple) {
-        addRipple(e);
-      }
-      // Call the original onMouseEnter if it exists
-      props.onMouseEnter?.(e);
-    };
-
-    const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (showRipple) {
-        resetRipple();
-      }
-      // Call the original onMouseLeave if it exists
-      props.onMouseLeave?.(e);
-    };
-
-    const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-      if (showRipple) {
-        addRipple(e);
-      }
-      props.onPointerDown?.(e);
     };
 
     // Helper to render the icon block
@@ -167,9 +142,6 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
             : "!border-transparent",
           className
         )}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onPointerDown={handlePointerDown}
         {...props}
       >
         {/* Render icon block at top or bottom, in flow, never absolute */}
@@ -180,22 +152,8 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
         {IconComponent &&
           (iconPosition === "bottom-left" || iconPosition === "bottom-right") &&
           renderIconBlock()}
-        {/* Ripple element */}
-        {showRipple && ripple && (
-          <span
-            className={cn(
-              "absolute rounded-full animate-ripple pointer-events-none",
-              getRippleColor(variant, effect)
-            )}
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-              width: ripple.size,
-              height: ripple.size,
-              transform: "translate(-50%, -50%)",
-            }}
-          />
-        )}
+        {/* Material 3 Expressive Ripple */}
+        {showRipple && <MaterialRipple variant={variant} effect={effect} />}
       </Comp>
     );
   }

@@ -17,7 +17,10 @@ export type {
   RippleHookReturn,
 } from "./types";
 
-// Ripple effects
+// Material 3 Expressive Ripple (primary)
+export { MaterialRipple, getMaterialRippleColors } from "./material-ripple";
+
+// Legacy ripple (deprecated - use MaterialRipple instead)
 export { useRipple, Ripple, rippleKeyframes } from "./ripple";
 
 // Icon system

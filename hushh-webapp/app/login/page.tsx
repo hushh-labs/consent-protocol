@@ -50,6 +50,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import {
   Shield,
   Key,
@@ -215,7 +216,26 @@ export default function LoginPage() {
       await checkVaultAndProceed(user.uid);
     } catch (err: any) {
       console.error("OAuth error:", err);
-      setError(err.message || "Authentication failed");
+      console.error("Error code:", err?.code);
+      console.error("Error message:", err?.message);
+
+      // Check if user closed the popup - reset silently
+      if (
+        err.code === "auth/popup-closed-by-user" ||
+        err.code === "auth/cancelled-popup-request" ||
+        err.message?.includes("popup") ||
+        err.message?.includes("closed")
+      ) {
+        // User intentionally closed popup - just reset state
+        console.log("User closed popup, resetting to ready state");
+        setStep("ready");
+        return;
+      }
+
+      // Show error via sonner toast
+      toast.error("Authentication failed", {
+        description: err.message || "Please try again",
+      });
       setStep("ready");
     }
   }
@@ -588,18 +608,19 @@ export default function LoginPage() {
                     autoFocus
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     variant="none"
-                    className="flex-1"
+                    effect="glass"
+                    className="flex-1 order-2 sm:order-1"
                     onClick={() => setStep("recovery_key_input")}
                   >
                     Use Recovery Key
                   </Button>
                   <Button
                     variant="gradient"
-                    effect="glass"
-                    className="flex-1"
+                    effect="fill"
+                    className="flex-1 text-white order-1 sm:order-2"
                     onClick={handleUnlockPassphrase}
                   >
                     Unlock
@@ -630,18 +651,19 @@ export default function LoginPage() {
                     className="font-mono"
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     variant="none"
-                    className="flex-1"
+                    effect="glass"
+                    className="flex-1 order-2 sm:order-1"
                     onClick={() => setStep("passphrase_unlock")}
                   >
                     Use Passphrase
                   </Button>
                   <Button
                     variant="gradient"
-                    effect="glass"
-                    className="flex-1"
+                    effect="fill"
+                    className="flex-1 text-white order-1 sm:order-2"
                     onClick={handleRecoveryKeySubmit}
                   >
                     Unlock

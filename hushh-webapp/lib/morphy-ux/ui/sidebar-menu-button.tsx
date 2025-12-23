@@ -3,8 +3,8 @@
 /**
  * Morphy-UX Sidebar Menu Button
  *
- * Material 3 inspired ripple effect with state layer mechanics.
- * This is a wrapper component that adds ripple to sidebar menu items.
+ * Material 3 Expressive ripple effect with state layer mechanics.
+ * Uses @material/web <md-ripple> for authentic physics.
  *
  * Usage:
  * <SidebarMenuButton href="/path" isActive={isActive}>
@@ -17,7 +17,7 @@ import * as React from "react";
 import Link from "next/link";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import { useRipple } from "@/lib/morphy-ux/ripple";
+import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { useSidebar } from "@/components/ui/sidebar";
 
 // ============================================================================
@@ -61,7 +61,6 @@ const SidebarMenuButton = React.forwardRef<
     { className, size = "default", isActive = false, href, children, onClick },
     ref
   ) => {
-    const { addRipple, resetRipple, ripple } = useRipple();
     const { isMobile, setOpenMobile } = useSidebar();
 
     const handleClick = () => {
@@ -80,25 +79,11 @@ const SidebarMenuButton = React.forwardRef<
         data-size={size}
         data-active={isActive}
         className={cn(sidebarMenuButtonVariants({ size }), className)}
-        onMouseEnter={(e) => addRipple(e)}
-        onMouseLeave={() => resetRipple()}
         onClick={handleClick}
       >
         {children}
-        {/* Ripple element - Material 3 style with 20% opacity */}
-        {ripple && (
-          <span
-            key={ripple.id}
-            className="absolute rounded-full animate-ripple pointer-events-none bg-[var(--morphy-primary-start)]/20 dark:bg-[var(--morphy-primary-end)]/20"
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-              width: ripple.size,
-              height: ripple.size,
-              transform: "translate(-50%, -50%)",
-            }}
-          />
-        )}
+        {/* Material 3 Expressive Ripple */}
+        <MaterialRipple variant="link" effect="glass" />
       </Link>
     );
   }

@@ -165,10 +165,10 @@ export default function ProfessionalProfilePage() {
             <Button
               onClick={() => router.push("/dashboard")}
               variant="gradient"
-              effect="glass"
+              effect="fill"
               size="lg"
               showRipple
-              className="bg-gradient-to-r from-blue-500 to-purple-500"
+              className="text-white"
             >
               <User className="h-4 w-4 mr-2" />
               Set Up Profile
