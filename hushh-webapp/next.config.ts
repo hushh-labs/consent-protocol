@@ -1,50 +1,47 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  // Enable standalone output for Docker deployment
-  output: "standalone",
+/**
+ * Next.js Configuration for Capacitor iOS/Android Static Export
+ *
+ * IMPORTANT: This config is used for building the mobile app.
+ * For cloud deployment, use the standard next.config.ts
+ *
+ * Usage: CAPACITOR_BUILD=true npm run build
+ */
+const capacitorConfig: NextConfig = {
+  // Static export for Capacitor WebView
+  output: "export",
+
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
-  // SEO and URL consistency
-  trailingSlash: false,
+
+  // Trailing slash is important for static export routing
+  trailingSlash: true,
+
   images: {
-    // Optimize images for better performance
+    // Must be unoptimized for static export
+    unoptimized: true,
     formats: ["image/webp", "image/avif"],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 60,
-    // Allow SVG but only from trusted sources
     dangerouslyAllowSVG: true,
     contentDispositionType: "inline",
-    unoptimized: true, // Keep this to ensure SVGs load correctly
   },
+
   // Performance optimizations
   compress: true,
   poweredByHeader: false,
-  // Headers configuration for Firebase Auth popup
-  async headers() {
-    return [
-      {
-        // Apply to all routes
-        source: "/:path*",
-        headers: [
-          {
-            // Allow Firebase popup to communicate with opener
-            key: "Cross-Origin-Opener-Policy",
-            value: "same-origin-allow-popups",
-          },
-        ],
-      },
-    ];
-  },
-  // Additional security for production builds
-  ...(process.env.NODE_ENV === "production" && {
-    // Enable React strict mode in production for better security
-    reactStrictMode: false, // Disabled to prevent hydration issues
-    // Disable source maps in production for security
-    productionBrowserSourceMaps: false,
-  }),
+
+  // Disable features not supported in static export
+  // Note: async headers() not supported in static export
+
+  // React strict mode
+  reactStrictMode: false,
+
+  // Disable source maps for smaller bundle
+  productionBrowserSourceMaps: false,
 };
 
-export default nextConfig;
+export default capacitorConfig;
