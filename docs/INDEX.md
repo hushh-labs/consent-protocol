@@ -20,6 +20,7 @@
 | Document                                                         | Description                            |
 | ---------------------------------------------------------------- | -------------------------------------- |
 | [architecture.md](technical/architecture.md)                     | System design, flow diagrams           |
+| [mobile-architecture.md](technical/mobile-architecture.md)       | iOS/Android Capacitor, MLX roadmap     |
 | [authentication.md](technical/authentication.md)                 | Firebase Admin SDK, session cookies    |
 | [consent-implementation.md](technical/consent-implementation.md) | Session token flow, 4-layer security   |
 | [mcp-integration.md](technical/mcp-integration.md)               | MCP zero-knowledge vault access        |
