@@ -6,9 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cap:build": "cp next.config.capacitor.ts next.config.ts.bak && cp next.config.capacitor.ts next.config.ts && next build && mv next.config.ts.bak next.config.ts",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npm run cap:build && npm run cap:sync && npx cap open ios",
+    "cap:ios:run": "npm run cap:build && npm run cap:sync && npx cap run ios"
   },
   "dependencies": {
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
     "@material/web": "^2.4.1",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-avatar": "^1.1.11",
