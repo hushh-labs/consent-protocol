@@ -5,10 +5,9 @@ import {
   unlockVaultWithPassphrase as webUnlockVault,
   unlockVaultWithRecoveryKey as webUnlockRecall,
 } from "@/lib/vault/passphrase-key";
+import { auth } from "@/lib/firebase/config";
 
-// API URL for Native App to talk to Next.js Backend
-// In a real app, this would be your production URL.
-// For Simulator testing, use http://localhost:3000
+// API URL for Web to talk to Next.js Backend
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 export interface VaultData {
@@ -23,8 +22,23 @@ export interface VaultData {
 export class VaultService {
   /**
    * Check if a vault exists for the given user
+   * iOS: Calls HushhVault native plugin → Cloud Run
+   * Web: Calls /api/vault/check
    */
   static async checkVault(userId: string): Promise<boolean> {
+    if (Capacitor.isNativePlatform()) {
+      console.log("🔐 [VaultService] Checking vault via native plugin");
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.hasVault({ userId, authToken });
+        return result.exists;
+      } catch (error) {
+        console.error("[VaultService] Native hasVault failed:", error);
+        throw error;
+      }
+    }
+    
+    // Web: use API route
     try {
       const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
       const response = await fetch(url);
@@ -39,8 +53,30 @@ export class VaultService {
 
   /**
    * Get encrypted vault data
+   * iOS: Calls HushhVault native plugin → Cloud Run
+   * Web: Calls /api/vault/get
    */
   static async getVault(userId: string): Promise<VaultData> {
+    if (Capacitor.isNativePlatform()) {
+      console.log("🔐 [VaultService] Getting vault via native plugin");
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.getVault({ userId, authToken });
+        return {
+          encryptedVaultKey: result.encryptedVaultKey,
+          salt: result.salt,
+          iv: result.iv,
+          recoveryEncryptedVaultKey: result.recoveryEncryptedVaultKey,
+          recoverySalt: result.recoverySalt,
+          recoveryIv: result.recoveryIv,
+        };
+      } catch (error) {
+        console.error("[VaultService] Native getVault failed:", error);
+        throw error;
+      }
+    }
+    
+    // Web: use API route
     const url = this.getApiUrl(`/api/vault/get?userId=${userId}`);
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to get vault");
@@ -49,11 +85,36 @@ export class VaultService {
 
   /**
    * Save vault data to backend
+   * iOS: Calls HushhVault native plugin → Cloud Run
+   * Web: Calls /api/vault/setup
    */
   static async setupVault(
     userId: string, 
     vaultData: VaultData & { authMethod: string }
   ): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      console.log("🔐 [VaultService] Setting up vault via native plugin");
+      try {
+        const authToken = await this.getFirebaseToken();
+        await HushhVault.setupVault({
+          userId,
+          authMethod: vaultData.authMethod,
+          encryptedVaultKey: vaultData.encryptedVaultKey,
+          salt: vaultData.salt,
+          iv: vaultData.iv,
+          recoveryEncryptedVaultKey: vaultData.recoveryEncryptedVaultKey,
+          recoverySalt: vaultData.recoverySalt,
+          recoveryIv: vaultData.recoveryIv,
+          authToken,
+        });
+        return;
+      } catch (error) {
+        console.error("[VaultService] Native setupVault failed:", error);
+        throw error;
+      }
+    }
+    
+    // Web: use API route
     const url = this.getApiUrl("/api/vault/setup");
     const response = await fetch(url, {
       method: "POST",
@@ -86,7 +147,7 @@ export class VaultService {
     iv: string
   ): Promise<string> {
     if (Capacitor.isNativePlatform()) {
-      console.log("🔐 unlocking via Native HushhVaultPlugin");
+      console.log("🔐 Unlocking via Native HushhVaultPlugin");
       try {
         const derived = await HushhVault.deriveKey({
           passphrase: passphrase,
@@ -94,20 +155,11 @@ export class VaultService {
           iterations: 100000
         });
 
-        // HushhVault expects DecryptDataOptions { payload: EncryptedPayload, keyHex: string }
         const decrypted = await HushhVault.decryptData({
           payload: {
             ciphertext: encryptedKey,
             iv: iv,
-            tag: "", // Tag is implicit in ciphertext usually for this plugin, or we need to separate.
-                     // The Python Parity implementation generates separate Tag.
-                     // However, the `token.py` / `encrypt.ts` usually does base64(iv+ciphertext+tag).
-                     // But EncryptedPayload has explicit `tag`.
-                     // If `encryptedKey` is the full blob, and we don't have separate tag, 
-                     // we might need to rely on the Plugin to handle empty tag if it parses the blob.
-                     // IMPORTANT: `VaultData` in `vault-service.ts` has `encryptedVaultKey` but no `tag`.
-                     // `lib/vault/passphrase-key.ts` returns `encryptedVaultKey` which is combined.
-                     // So we probably need to parse it if we are passing to a plugin that expects separate fields.
+            tag: "",
             encoding: 'base64',
             algorithm: 'aes-256-gcm'
           },
@@ -136,6 +188,21 @@ export class VaultService {
   // ============================================================================
   // HELPERS
   // ============================================================================
+
+  /**
+   * Get Firebase ID token for authentication
+   */
+  private static async getFirebaseToken(): Promise<string | undefined> {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        return await user.getIdToken();
+      }
+    } catch (e) {
+      console.warn("[VaultService] Failed to get Firebase token:", e);
+    }
+    return undefined;
+  }
 
   private static getApiUrl(path: string): string {
     if (Capacitor.isNativePlatform()) {
