@@ -9,3 +9,8 @@ cloud-sql-proxy.exe
 cloud-sql-proxy
 CLOUDSQL_CONFIG.md
 cloud-sql-proxy.exe
+
+# Credentials
+service-account.json
+firebase-service-account.json
+**/firebase-service-account.json

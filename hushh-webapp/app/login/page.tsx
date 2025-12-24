@@ -20,11 +20,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  signInWithPopup,
-  GoogleAuthProvider,
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { AuthService } from "@/lib/services/auth-service";
 import { VaultService } from "@/lib/services/vault-service";
 // Removed direct vault imports - handled by VaultService
 import { useVault } from "@/lib/vault/vault-context";
@@ -110,7 +109,17 @@ export default function LoginPage() {
   // ============================================================================
 
   useEffect(() => {
+    // Safety timeout: If auth state doesn't respond in 3 seconds, show login
+    const timeout = setTimeout(() => {
+      if (step === "checking") {
+        console.log("⚠️ Auth state timeout - showing login");
+        setStep("ready");
+      }
+    }, 3000);
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      clearTimeout(timeout);
+      
       if (user) {
         // Check if vault is already unlocked (in memory)
         if (isVaultUnlocked) {
@@ -134,7 +143,10 @@ export default function LoginPage() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
   }, [router]);
 
   // ============================================================================
@@ -143,12 +155,16 @@ export default function LoginPage() {
 
   async function checkVaultAndProceed(uid: string) {
     try {
+      console.log("🔐 [LoginPage] Checking vault for:", uid);
       const hasVault = await VaultService.checkVault(uid);
+      console.log("🔐 [LoginPage] hasVault result:", hasVault);
 
       if (hasVault) {
         // Existing user - fetch vault data and unlock
         try {
+          console.log("🔐 [LoginPage] Fetching vault data...");
           const data = await VaultService.getVault(uid);
+          console.log("🔐 [LoginPage] Vault data received");
           setVaultData({
             encryptedVaultKey: data.encryptedVaultKey,
             salt: data.salt,
@@ -159,16 +175,22 @@ export default function LoginPage() {
           });
           setStep("passphrase_unlock");
         } catch (err) {
-          setError("Failed to load vault data");
+          console.error("❌ [LoginPage] Failed to load vault data:", err);
+          toast.error("Failed to load vault data", {
+            description: err instanceof Error ? err.message : "Please try again",
+          });
           setStep("ready");
         }
       } else {
         // New user - create passphrase
+        console.log("🔐 [LoginPage] New user - showing passphrase creation");
         setStep("passphrase_create");
       }
     } catch (err) {
-      console.error("Vault check error:", err);
-      setError("Failed to check vault status");
+      console.error("❌ [LoginPage] Vault check error:", err);
+      toast.error("Failed to check vault status", {
+        description: err instanceof Error ? err.message : "Please try again",
+      });
       setStep("ready");
     }
   }
@@ -182,9 +204,10 @@ export default function LoginPage() {
     setStep("oauth_loading");
 
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
+      // Use AuthService for platform-aware sign-in
+      // iOS: Native Google Sign-In → Firebase credential sync
+      // Web: Firebase signInWithPopup (unchanged)
+      const result = await AuthService.signInWithGoogle();
       const user = result.user;
 
       setUserId(user.uid);
@@ -209,27 +232,30 @@ export default function LoginPage() {
       console.log("✅ Firebase profile saved:", user.displayName, user.email);
 
       await checkVaultAndProceed(user.uid);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
       console.error("OAuth error:", err);
-      console.error("Error code:", err?.code);
-      console.error("Error message:", err?.message);
+      console.error("Error code:", error?.code);
+      console.error("Error message:", error?.message);
 
-      // Check if user closed the popup - reset silently
+      // Check if user closed the popup/cancelled - reset silently
       if (
-        err.code === "auth/popup-closed-by-user" ||
-        err.code === "auth/cancelled-popup-request" ||
-        err.message?.includes("popup") ||
-        err.message?.includes("closed")
+        error.code === "auth/popup-closed-by-user" ||
+        error.code === "auth/cancelled-popup-request" ||
+        error.code === "USER_CANCELLED" ||
+        error.message?.includes("popup") ||
+        error.message?.includes("closed") ||
+        error.message?.includes("cancelled")
       ) {
-        // User intentionally closed popup - just reset state
-        console.log("User closed popup, resetting to ready state");
+        // User intentionally cancelled - just reset state
+        console.log("User cancelled sign-in, resetting to ready state");
         setStep("ready");
         return;
       }
 
       // Show error via sonner toast
       toast.error("Authentication failed", {
-        description: err.message || "Please try again",
+        description: error.message || "Please try again",
       });
       setStep("ready");
     }
