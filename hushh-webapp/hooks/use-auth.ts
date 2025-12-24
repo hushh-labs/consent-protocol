@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { getSessionItem } from "@/lib/utils/session-storage";
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = ["/", "/login", "/docs", "/logout", "/privacy"];
@@ -38,11 +39,12 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // Use platform-aware storage (localStorage on iOS, sessionStorage on web)
       const vaultKey =
         localStorage.getItem("vault_key") ||
-        sessionStorage.getItem("vault_key");
+        getSessionItem("vault_key");
       const userId =
-        localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+        localStorage.getItem("user_id") || getSessionItem("user_id");
 
       const isAuthenticated = !!user && !!vaultKey;
 
