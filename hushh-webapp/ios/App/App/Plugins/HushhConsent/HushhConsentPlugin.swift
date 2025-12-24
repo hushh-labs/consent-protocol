@@ -40,7 +40,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     // Secret key for HMAC signing - should be set via Keychain at runtime
     private var secretKey: String {
         // Try to get from Keychain, fallback to bundle for development
-        if let key = KeychainHelper.get(key: "hushh_secret_key") {
+        if let key = ConsentKeychainHelper.get(key: "hushh_secret_key") {
             return key
         }
         // Fallback for development - in production this should NEVER be used
@@ -346,9 +346,9 @@ private struct TokenError: Error {
     let message: String
 }
 
-// MARK: - KeychainHelper (minimal for secret key access)
+// MARK: - ConsentKeychainHelper (minimal for secret key access - renamed to avoid conflict)
 
-private enum KeychainHelper {
+private enum ConsentKeychainHelper {
     static func get(key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

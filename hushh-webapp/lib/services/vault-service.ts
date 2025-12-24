@@ -22,46 +22,49 @@ export interface VaultData {
 export class VaultService {
   /**
    * Check if a vault exists for the given user
-   * iOS: Calls HushhVault native plugin → Cloud Run
+   * iOS: Uses HushhVault native plugin
    * Web: Calls /api/vault/check
    */
   static async checkVault(userId: string): Promise<boolean> {
+    console.log("🔐 [VaultService] checkVault called for:", userId);
+    
     if (Capacitor.isNativePlatform()) {
-      console.log("🔐 [VaultService] Checking vault via native plugin");
+      console.log("🔐 [VaultService] Using native plugin for checkVault");
       try {
         const authToken = await this.getFirebaseToken();
+        console.log("🔐 [VaultService] Got auth token:", authToken ? "yes" : "no");
         const result = await HushhVault.hasVault({ userId, authToken });
+        console.log("🔐 [VaultService] hasVault result:", result);
         return result.exists;
       } catch (error) {
-        console.error("[VaultService] Native hasVault failed:", error);
+        console.error("❌ [VaultService] Native hasVault error:", error);
         throw error;
       }
     }
     
     // Web: use API route
-    try {
-      const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Vault check failed");
-      const data = await response.json();
-      return data.hasVault;
-    } catch (error) {
-      console.error("VaultService.checkVault error:", error);
-      throw error;
-    }
+    console.log("🌐 [VaultService] Using API for checkVault");
+    const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Vault check failed");
+    const data = await response.json();
+    return data.hasVault;
   }
 
   /**
    * Get encrypted vault data
-   * iOS: Calls HushhVault native plugin → Cloud Run
+   * iOS: Uses HushhVault native plugin
    * Web: Calls /api/vault/get
    */
   static async getVault(userId: string): Promise<VaultData> {
+    console.log("🔐 [VaultService] getVault called for:", userId);
+    
     if (Capacitor.isNativePlatform()) {
-      console.log("🔐 [VaultService] Getting vault via native plugin");
+      console.log("🔐 [VaultService] Using native plugin for getVault");
       try {
         const authToken = await this.getFirebaseToken();
         const result = await HushhVault.getVault({ userId, authToken });
+        console.log("🔐 [VaultService] getVault result received");
         return {
           encryptedVaultKey: result.encryptedVaultKey,
           salt: result.salt,
@@ -71,12 +74,13 @@ export class VaultService {
           recoveryIv: result.recoveryIv,
         };
       } catch (error) {
-        console.error("[VaultService] Native getVault failed:", error);
+        console.error("❌ [VaultService] Native getVault error:", error);
         throw error;
       }
     }
     
     // Web: use API route
+    console.log("🌐 [VaultService] Using API for getVault");
     const url = this.getApiUrl(`/api/vault/get?userId=${userId}`);
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to get vault");
@@ -85,15 +89,17 @@ export class VaultService {
 
   /**
    * Save vault data to backend
-   * iOS: Calls HushhVault native plugin → Cloud Run
+   * iOS: Uses HushhVault native plugin
    * Web: Calls /api/vault/setup
    */
   static async setupVault(
     userId: string, 
     vaultData: VaultData & { authMethod: string }
   ): Promise<void> {
+    console.log("🔐 [VaultService] setupVault called for:", userId);
+    
     if (Capacitor.isNativePlatform()) {
-      console.log("🔐 [VaultService] Setting up vault via native plugin");
+      console.log("🔐 [VaultService] Using native plugin for setupVault");
       try {
         const authToken = await this.getFirebaseToken();
         await HushhVault.setupVault({
@@ -107,14 +113,16 @@ export class VaultService {
           recoveryIv: vaultData.recoveryIv,
           authToken,
         });
+        console.log("🔐 [VaultService] setupVault completed");
         return;
       } catch (error) {
-        console.error("[VaultService] Native setupVault failed:", error);
+        console.error("❌ [VaultService] Native setupVault error:", error);
         throw error;
       }
     }
     
     // Web: use API route
+    console.log("🌐 [VaultService] Using API for setupVault");
     const url = this.getApiUrl("/api/vault/setup");
     const response = await fetch(url, {
       method: "POST",
@@ -133,7 +141,6 @@ export class VaultService {
    */
   static async createVault(passphrase: string) {
     // Currently using Web Logic for creation as it works efficiently in WebView
-    // Future: Port full creation orchestration to Native Plugin if needed
     return webCreateVault(passphrase);
   }
 
