@@ -1,27 +1,20 @@
 import type { NextConfig } from "next";
 
 /**
- * Next.js Configuration for Capacitor iOS/Android Static Export
- *
- * IMPORTANT: This config is used for building the mobile app.
- * For cloud deployment, use the standard next.config.ts
- *
- * Usage: CAPACITOR_BUILD=true npm run build
+ * Next.js Configuration for Web (Standalone Server Mode)
+ * 
+ * This config is for running the web app with API routes.
+ * For iOS/Android mobile builds, use next.config.capacitor.ts
  */
-const capacitorConfig: NextConfig = {
-  // Static export for Capacitor WebView
-  output: "export",
+const webConfig: NextConfig = {
+  // Standalone output for Node.js server deployment
+  output: "standalone",
 
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
 
-  // Trailing slash is important for static export routing
-  trailingSlash: true,
-
   images: {
-    // Must be unoptimized for static export
-    unoptimized: true,
     formats: ["image/webp", "image/avif"],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
@@ -34,14 +27,14 @@ const capacitorConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
 
-  // Disable features not supported in static export
-  // Note: async headers() not supported in static export
-
   // React strict mode
   reactStrictMode: false,
 
-  // Disable source maps for smaller bundle
+  // Enable source maps for debugging in production
   productionBrowserSourceMaps: false,
+
+  // API timeout settings
+  serverExternalPackages: [],
 };
 
-export default capacitorConfig;
+export default webConfig;

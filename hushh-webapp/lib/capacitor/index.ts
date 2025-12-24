@@ -42,6 +42,53 @@ import type {
   KeychainDeleteOptions,
 } from "./types";
 
+// ==================== HushhAuthPlugin ====================
+// Native iOS Google Sign-In using ASWebAuthenticationSession
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  photoUrl: string;
+  emailVerified?: boolean;
+}
+
+export interface HushhAuthPlugin {
+  /**
+   * Sign in with Google using native iOS UI
+   * Returns ID token + access token for Firebase credential exchange
+   */
+  signIn(): Promise<{
+    idToken: string;
+    accessToken: string;
+    user: AuthUser;
+  }>;
+
+  /**
+   * Sign out from Google (clears tokens from Keychain)
+   */
+  signOut(): Promise<void>;
+
+  /**
+   * Get cached ID token (from memory or Keychain)
+   */
+  getIdToken(): Promise<{ idToken: string | null }>;
+
+  /**
+   * Get currently signed-in user
+   */
+  getCurrentUser(): Promise<{ user: AuthUser | null }>;
+
+  /**
+   * Check if user is signed in
+   */
+  isSignedIn(): Promise<{ signedIn: boolean }>;
+}
+
+export const HushhAuth = registerPlugin<HushhAuthPlugin>("HushhAuth", {
+  web: () => import("./plugins/auth-web").then((m) => new m.HushhAuthWeb()),
+});
+
 // ==================== HushhConsentPlugin ====================
 // Mirrors: consent-protocol/hushh_mcp/consent/token.py
 //          consent-protocol/hushh_mcp/trust/link.py
