@@ -22,22 +22,22 @@ private let CLOUD_DB_URL = "https://consent-protocol-1006304528804.us-central1.r
 
 // MARK: - Response Models
 
-struct VaultCheckResponse: Codable {
-    let hasVault: Bool
+public struct VaultCheckResponse: Codable {
+    public let hasVault: Bool
 }
 
-struct VaultKeyData: Codable {
-    let authMethod: String
-    let encryptedVaultKey: String
-    let salt: String
-    let iv: String
-    let recoveryEncryptedVaultKey: String
-    let recoverySalt: String
-    let recoveryIv: String
+public struct VaultKeyData: Codable {
+    public let authMethod: String
+    public let encryptedVaultKey: String
+    public let salt: String
+    public let iv: String
+    public let recoveryEncryptedVaultKey: String
+    public let recoverySalt: String
+    public let recoveryIv: String
 }
 
-struct SuccessResponse: Codable {
-    let success: Bool
+public struct SuccessResponse: Codable {
+    public let success: Bool
 }
 
 // MARK: - CloudDBProxy

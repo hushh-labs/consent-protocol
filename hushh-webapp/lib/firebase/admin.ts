@@ -18,18 +18,41 @@ function initializeFirebaseAdmin() {
     return admin.apps[0]!;
   }
 
-  // Check for service account JSON in environment
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  // Try to read from file first (more reliable than env variable for complex JSON)
+  const fs = require("fs");
+  const path = require("path");
+  
+  const serviceAccountPath = path.join(process.cwd(), "firebase-service-account.json");
+  
+  if (fs.existsSync(serviceAccountPath)) {
+    try {
+      const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+      console.log("✅ Firebase Admin initialized from service account file");
+      return admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+    } catch (e) {
+      console.warn("Failed to read service account file:", e);
+    }
+  }
 
-  if (serviceAccount) {
-    // Parse the JSON string from environment variable
-    const parsedServiceAccount = JSON.parse(serviceAccount);
-    return admin.initializeApp({
-      credential: admin.credential.cert(parsedServiceAccount),
-    });
+  // Fallback: Check for service account JSON in environment
+  const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+  if (serviceAccountEnv) {
+    try {
+      const parsedServiceAccount = JSON.parse(serviceAccountEnv);
+      console.log("✅ Firebase Admin initialized from env variable");
+      return admin.initializeApp({
+        credential: admin.credential.cert(parsedServiceAccount),
+      });
+    } catch (e) {
+      console.warn("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", e);
+    }
   }
 
   // Fallback: Use application default credentials (for Cloud Run, etc.)
+  console.log("ℹ️ Firebase Admin using application default credentials");
   return admin.initializeApp({
     credential: admin.credential.applicationDefault(),
   });
