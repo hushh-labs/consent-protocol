@@ -1,5 +1,9 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+// For development: set to true to use localhost:3000 hot reload
+// For production: set to false to use static build in /out
+const DEV_MODE = false;
+
 const config: CapacitorConfig = {
   appId: "com.hushh.pda",
   appName: "Hushh PDA",
@@ -7,31 +11,25 @@ const config: CapacitorConfig = {
 
   // iOS-specific configuration
   ios: {
-    // Use WKWebView content mode for better performance
     contentInset: "automatic",
-    // Allow inline media playback
     allowsLinkPreview: true,
-    // Enable scrolling
     scrollEnabled: true,
-    // Background color matches app theme
     backgroundColor: "#0a0a0a",
-    // Scheme for local file serving
     scheme: "hushh",
   },
 
-  // Server configuration for development
+  // Server configuration
   server: {
-    // In production, this will be the static export
-    // For dev, we can use livereload if needed
+    // DEV: Use live server for hot reload
+    // PROD: Uses static export from webDir
+    url: DEV_MODE ? "http://localhost:3000" : undefined,
+    cleartext: true, // Allow HTTP for localhost
     androidScheme: "https",
     iosScheme: "hushh",
   },
 
-  // Plugin configurations (stubs for our custom plugins)
-  plugins: {
-    // Native plugins will be registered here
-    // HushhVault and HushhConsent plugins will be added
-  },
+  plugins: {},
 };
 
 export default config;
+

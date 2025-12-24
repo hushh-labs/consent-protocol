@@ -138,6 +138,45 @@ export interface HushhVaultPlugin {
    * Delete preferences for a domain
    */
   deletePreferences(options: { userId: string; domain: string }): Promise<void>;
+
+  // ==================== Cloud DB Methods ====================
+  // These call the Cloud Run backend directly from iOS
+
+  /**
+   * Check if user has a vault on Cloud DB
+   * Replaces: /api/vault/check endpoint on iOS
+   */
+  hasVault(options: { userId: string; authToken?: string }): Promise<{ exists: boolean }>;
+
+  /**
+   * Get encrypted vault key from Cloud DB
+   * Replaces: /api/vault/get endpoint on iOS
+   */
+  getVault(options: { userId: string; authToken?: string }): Promise<{
+    authMethod: string;
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+  }>;
+
+  /**
+   * Store encrypted vault key to Cloud DB
+   * Replaces: /api/vault/setup endpoint on iOS
+   */
+  setupVault(options: {
+    userId: string;
+    authMethod?: string;
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
 }
 
 export const HushhVault = registerPlugin<HushhVaultPlugin>("HushhVault", {
@@ -193,6 +232,180 @@ export const HushhKeychain = registerPlugin<HushhKeychainPlugin>(
       import("./plugins/keychain-web").then((m) => new m.HushhKeychainWeb()),
   }
 );
+
+// ==================== HushhSettingsPlugin ====================
+// Settings management - DEV defaults to remote
+
+export interface HushhSettingsData {
+  useRemoteSync: boolean;
+  syncOnWifiOnly: boolean;
+  useRemoteLLM: boolean;
+  preferredLLMProvider: "local" | "mlx" | "openai" | "anthropic" | "google";
+  requireBiometricUnlock: boolean;
+  autoLockTimeout: number;
+  theme: "system" | "light" | "dark";
+  hapticFeedback: boolean;
+  showDebugInfo: boolean;
+  verboseLogging: boolean;
+}
+
+export interface HushhSettingsPlugin {
+  getSettings(): Promise<HushhSettingsData>;
+  updateSettings(options: Partial<HushhSettingsData>): Promise<{ success: boolean }>;
+  resetSettings(): Promise<{ success: boolean }>;
+  shouldUseLocalAgents(): Promise<{ value: boolean }>;
+  shouldSyncToCloud(): Promise<{ value: boolean }>;
+}
+
+export const HushhSettingsNative = registerPlugin<HushhSettingsPlugin>(
+  "HushhSettings",
+  {
+    web: () =>
+      import("./plugins/settings-web").then((m) => new m.HushhSettingsWeb()),
+  }
+);
+
+// ==================== HushhDatabasePlugin ====================
+// Local SQLite/IndexedDB storage
+
+export interface HushhDatabasePlugin {
+  initialize(): Promise<{ success: boolean }>;
+  hasVault(options: { userId: string }): Promise<{ exists: boolean }>;
+  storeVaultKey(options: {
+    userId: string;
+    authMethod: string;
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+  }): Promise<{ success: boolean }>;
+  getVaultKey(options: { userId: string }): Promise<{
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+  }>;
+  storeFoodPreferences(options: {
+    userId: string;
+    dietaryRestrictions?: EncryptedPayload;
+    cuisinePreferences?: EncryptedPayload;
+    monthlyBudget?: EncryptedPayload;
+  }): Promise<{ success: boolean }>;
+  getFoodPreferences(options: { userId: string }): Promise<{
+    data: Record<string, EncryptedPayload> | null;
+  }>;
+  close(): Promise<{ success: boolean }>;
+}
+
+export const HushhDatabase = registerPlugin<HushhDatabasePlugin>(
+  "HushhDatabase",
+  {
+    web: () =>
+      import("./plugins/database-web").then((m) => new m.HushhDatabaseWeb()),
+  }
+);
+
+// ==================== HushhAgentPlugin ====================
+// Local agent runtime
+
+export interface AgentResponse {
+  response: string;
+  sessionState?: Record<string, unknown>;
+  collectedData?: Record<string, unknown>;
+  isComplete: boolean;
+  needsConsent: boolean;
+  consentScope?: string;
+  uiType?: "buttons" | "checkbox" | "text";
+  options?: string[];
+  allowCustom?: boolean;
+  allowNone?: boolean;
+  consentToken?: string;
+  consentIssuedAt?: number;
+  consentExpiresAt?: number;
+}
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  port: number;
+  available: boolean;
+}
+
+export interface HushhAgentPlugin {
+  handleMessage(options: {
+    message: string;
+    userId: string;
+    agentId?: string;
+    sessionState?: Record<string, unknown>;
+  }): Promise<AgentResponse>;
+  classifyIntent(options: { message: string }): Promise<{
+    hasDelegate: boolean;
+    targetAgent: string;
+    targetPort?: number;
+    domain: string;
+  }>;
+  getAgentInfo(): Promise<{
+    agents: AgentInfo[];
+    version: string;
+    protocolVersion: string;
+  }>;
+}
+
+export const HushhAgent = registerPlugin<HushhAgentPlugin>("HushhAgent", {
+  web: () => import("./plugins/agent-web").then((m) => new m.HushhAgentWeb()),
+});
+
+// ==================== HushhSyncPlugin ====================
+// Handles local-cloud data synchronization
+
+export interface SyncResult {
+  success: boolean;
+  pushedRecords: number;
+  pulledRecords: number;
+  conflicts: number;
+  timestamp: number;
+}
+
+export interface SyncStatus {
+  pendingCount: number;
+  lastSyncTimestamp: number;
+  hasPendingChanges: boolean;
+}
+
+export interface HushhSyncPlugin {
+  /**
+   * Full sync: push local changes then pull remote changes
+   */
+  sync(options?: { authToken?: string }): Promise<SyncResult>;
+
+  /**
+   * Push local changes to cloud
+   */
+  push(options?: { authToken?: string }): Promise<{ success: boolean; pushedRecords: number }>;
+
+  /**
+   * Pull remote changes to local
+   */
+  pull(options?: { authToken?: string }): Promise<{ success: boolean; pulledRecords: number }>;
+
+  /**
+   * Sync a specific user's vault
+   */
+  syncVault(options: { userId: string; authToken?: string }): Promise<{ success: boolean }>;
+
+  /**
+   * Get current sync status
+   */
+  getSyncStatus(): Promise<SyncStatus>;
+}
+
+export const HushhSync = registerPlugin<HushhSyncPlugin>("HushhSync", {
+  web: () => import("./plugins/sync-web").then((m) => new m.HushhSyncWeb()),
+});
 
 // ==================== Export all ====================
 

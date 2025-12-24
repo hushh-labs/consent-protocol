@@ -253,4 +253,61 @@ export class HushhVaultWeb extends WebPlugin {
   }): Promise<void> {
     console.warn("deletePreferences not implemented in web mode");
   }
+
+  // ==================== Cloud DB Methods (Web Fallback) ====================
+  // These call the API routes on web
+
+  /**
+   * Check if user has a vault - web fallback calls API route
+   */
+  async hasVault(options: { userId: string; authToken?: string }): Promise<{ exists: boolean }> {
+    try {
+      const response = await fetch(`/api/vault/check?userId=${options.userId}`);
+      if (!response.ok) return { exists: false };
+      const data = await response.json();
+      return { exists: data.hasVault || false };
+    } catch {
+      return { exists: false };
+    }
+  }
+
+  /**
+   * Get encrypted vault key - web fallback calls API route
+   */
+  async getVault(options: { userId: string; authToken?: string }): Promise<{
+    authMethod: string;
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+  }> {
+    const response = await fetch(`/api/vault/get?userId=${options.userId}`);
+    if (!response.ok) throw new Error("Vault not found");
+    return await response.json();
+  }
+
+  /**
+   * Store encrypted vault key - web fallback calls API route
+   */
+  async setupVault(options: {
+    userId: string;
+    authMethod?: string;
+    encryptedVaultKey: string;
+    salt: string;
+    iv: string;
+    recoveryEncryptedVaultKey: string;
+    recoverySalt: string;
+    recoveryIv: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }> {
+    const response = await fetch("/api/vault/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    });
+    if (!response.ok) throw new Error("Failed to setup vault");
+    return { success: true };
+  }
 }

@@ -9,6 +9,9 @@
 //  - PBKDF2 key derivation (100,000 iterations, SHA-256)
 //  - AES-256-GCM encryption (12-byte nonce, 128-bit tag)
 //
+//  Cloud DB Access:
+//  - Calls consent-protocol Cloud Run backend for vault operations
+//
 
 import Foundation
 import Capacitor
@@ -21,6 +24,9 @@ private let KEY_SIZE_BYTES = 32      // 256 bits
 private let SALT_SIZE_BYTES = 16     // 128 bits
 private let NONCE_SIZE_BYTES = 12    // 96 bits (as per NIST recommendation)
 
+// Cloud Run Backend URL for vault operations
+private let CLOUD_BACKEND_URL = "https://consent-protocol-1006304528804.us-central1.run.app"
+
 // MARK: - Plugin
 
 @objc(HushhVaultPlugin)
@@ -28,13 +34,118 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "HushhVaultPlugin"
     public let jsName = "HushhVault"
     public let pluginMethods: [CAPPluginMethod] = [
+        // Crypto methods
         CAPPluginMethod(name: "deriveKey", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "encryptData", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "decryptData", returnType: CAPPluginReturnPromise),
+        // Cloud DB methods (uses VaultStorageManager for cloud/local abstraction)
+        CAPPluginMethod(name: "hasVault", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getVault", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setupVault", returnType: CAPPluginReturnPromise),
+        // Local storage stubs
         CAPPluginMethod(name: "storePreference", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreferences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "deletePreferences", returnType: CAPPluginReturnPromise),
     ]
+    
+    // MARK: - Cloud DB: Has Vault Check
+    
+    /// Check if user has a vault
+    /// Uses VaultStorageManager which routes to cloud or local storage
+    @objc func hasVault(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        
+        // Update auth token if provided
+        if let authToken = call.getString("authToken") {
+            VaultStorageManager.shared.setAuthToken(authToken)
+        }
+        
+        Task {
+            do {
+                let exists = try await VaultStorageManager.shared.getStorage().hasVault(userId: userId)
+                call.resolve(["exists": exists])
+            } catch {
+                call.reject("Failed to check vault: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    // MARK: - Cloud DB: Get Vault Data
+    
+    /// Get encrypted vault key
+    /// Uses VaultStorageManager for cloud/local abstraction
+    @objc func getVault(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        
+        if let authToken = call.getString("authToken") {
+            VaultStorageManager.shared.setAuthToken(authToken)
+        }
+        
+        Task {
+            do {
+                let data = try await VaultStorageManager.shared.getStorage().getVault(userId: userId)
+                call.resolve([
+                    "authMethod": data.authMethod,
+                    "encryptedVaultKey": data.encryptedVaultKey,
+                    "salt": data.salt,
+                    "iv": data.iv,
+                    "recoveryEncryptedVaultKey": data.recoveryEncryptedVaultKey,
+                    "recoverySalt": data.recoverySalt,
+                    "recoveryIv": data.recoveryIv
+                ])
+            } catch CloudDBError.notFound {
+                call.reject("Vault not found", "NOT_FOUND")
+            } catch {
+                call.reject("Failed to get vault: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    // MARK: - Cloud DB: Setup Vault
+    
+    /// Store encrypted vault key
+    /// Uses VaultStorageManager for cloud/local abstraction
+    @objc func setupVault(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId"),
+              let encryptedVaultKey = call.getString("encryptedVaultKey"),
+              let salt = call.getString("salt"),
+              let iv = call.getString("iv"),
+              let recoveryEncryptedVaultKey = call.getString("recoveryEncryptedVaultKey"),
+              let recoverySalt = call.getString("recoverySalt"),
+              let recoveryIv = call.getString("recoveryIv") else {
+            call.reject("Missing required parameters")
+            return
+        }
+        
+        if let authToken = call.getString("authToken") {
+            VaultStorageManager.shared.setAuthToken(authToken)
+        }
+        
+        let data = VaultKeyInfo(
+            authMethod: call.getString("authMethod") ?? "passphrase",
+            encryptedVaultKey: encryptedVaultKey,
+            salt: salt,
+            iv: iv,
+            recoveryEncryptedVaultKey: recoveryEncryptedVaultKey,
+            recoverySalt: recoverySalt,
+            recoveryIv: recoveryIv
+        )
+        
+        Task {
+            do {
+                try await VaultStorageManager.shared.getStorage().setupVault(userId: userId, data: data)
+                call.resolve(["success": true])
+            } catch {
+                call.reject("Failed to setup vault: \(error.localizedDescription)")
+            }
+        }
+    }
     
     // MARK: - Derive Key
     

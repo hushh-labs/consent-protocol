@@ -21,6 +21,7 @@ import React, {
   useCallback,
   ReactNode,
 } from "react";
+import { setSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
 
 // ============================================================================
 // Types
@@ -66,15 +67,16 @@ export function VaultProvider({ children }: VaultProviderProps) {
     console.log("🔓 Vault unlocked (key stored in memory only)");
     setVaultKey(key);
 
-    // Store a flag in sessionStorage to indicate vault is unlocked
+    // Store a flag to indicate vault is unlocked
     // (But NOT the actual key - just the state)
-    sessionStorage.setItem("vault_unlocked", "true");
+    // Uses localStorage on iOS, sessionStorage on web
+    setSessionItem("vault_unlocked", "true");
   }, []);
 
   const lockVault = useCallback(() => {
     console.log("🔒 Vault locked (key cleared from memory)");
     setVaultKey(null);
-    sessionStorage.removeItem("vault_unlocked");
+    removeSessionItem("vault_unlocked");
   }, []);
 
   const getVaultKey = useCallback(() => {
