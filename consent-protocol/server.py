@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session
+from api.routes import health, agents, consent, developer, session, db_proxy
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -69,6 +69,9 @@ app.include_router(developer.router)
 
 # Session token routes (/api/consent/issue-token, /api/user/lookup, etc.)
 app.include_router(session.router)
+
+# Database proxy routes (/db/vault/...) - for iOS native app
+app.include_router(db_proxy.router)
 
 logger.info("🚀 Hushh Consent Protocol server initialized with modular routes")
 
