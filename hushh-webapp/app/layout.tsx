@@ -5,7 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
 import { VaultProvider } from "@/lib/vault/vault-context";
 import { Navbar } from "@/components/navbar";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -78,6 +78,8 @@ export default function RootLayout({
               <Toaster
                 richColors
                 position="top-center"
+                closeButton
+                duration={3000}
                 toastOptions={{
                   style: { zIndex: 9999 },
                 }}
