@@ -190,23 +190,69 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
             "error": "Token user_id mismatch"
         }))]
     
-    # Return professional data
-    professional_data = {
-        "title": "Senior Software Engineer",
-        "company": "Tech Startup Inc.",
-        "years_experience": 7,
-        "skills": ["Python", "React", "AWS", "Machine Learning", "TypeScript", "FastAPI"],
-        "experience_level": "Senior (5-8 years)",
-        "education": "M.S. Computer Science",
-        "job_preferences": {
-            "type": ["Full-time", "Contract"],
-            "location": ["Remote", "Hybrid"],
-            "company_size": ["Startup", "Mid-size"],
-            "industries": ["AI/ML", "FinTech", "HealthTech"]
-        },
-        "certifications": ["AWS Solutions Architect", "Google Cloud Professional"],
-        "open_to_opportunities": True
-    }
+    # Fetch real data from encrypted export (zero-knowledge)
+    professional_data = None
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            export_response = await client.get(
+                f"{FASTAPI_URL}/api/consent/data",
+                params={"consent_token": consent_token},
+                timeout=10.0
+            )
+            
+            if export_response.status_code == 200:
+                export_data = export_response.json()
+                
+                # Decrypt the export data
+                export_key_hex = export_data.get("export_key")
+                encrypted_data = export_data.get("encrypted_data")
+                iv = export_data.get("iv")
+                tag = export_data.get("tag")
+                
+                if all([export_key_hex, encrypted_data, iv, tag]):
+                    try:
+                        key_bytes = bytes.fromhex(export_key_hex)
+                        iv_bytes = base64.b64decode(iv)
+                        ciphertext_bytes = base64.b64decode(encrypted_data)
+                        tag_bytes = base64.b64decode(tag)
+                        
+                        combined = ciphertext_bytes + tag_bytes
+                        
+                        aesgcm = AESGCM(key_bytes)
+                        plaintext = aesgcm.decrypt(iv_bytes, combined, None)
+                        
+                        professional_data = json.loads(plaintext.decode('utf-8'))
+                        logger.info(f"✅ Successfully decrypted professional vault export!")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Professional decryption failed: {e}")
+                        
+            elif export_response.status_code == 404:
+                logger.warning("⚠️ No export data found for this professional token")
+                
+    except Exception as e:
+        logger.warning(f"⚠️ Professional export fetch failed: {e}")
+    
+    # Fallback/Demo data if real data retrieval failed
+    if professional_data is None:
+        logger.info("📋 No professional export data, using demo data")
+        professional_data = {
+            "title": "Senior Software Engineer",
+            "company": "Tech Startup Inc.",
+            "years_experience": 7,
+            "skills": ["Python", "React", "AWS", "Machine Learning", "TypeScript", "FastAPI"],
+            "experience_level": "Senior (5-8 years)",
+            "education": "M.S. Computer Science",
+            "job_preferences": {
+                "type": ["Full-time", "Contract"],
+                "location": ["Remote", "Hybrid"],
+                "company_size": ["Startup", "Mid-size"],
+                "industries": ["AI/ML", "FinTech", "HealthTech"]
+            },
+            "certifications": ["AWS Solutions Architect", "Google Cloud Professional"],
+            "open_to_opportunities": True
+        }
     
     logger.info(f"✅ Professional data ACCESSED for user={user_id} (consent verified)")
     

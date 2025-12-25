@@ -75,10 +75,25 @@ async def request_consent(request: ConsentRequest):
     # Check if consent already granted (query database)
     is_active = await consent_db.is_token_active(request.user_id, request.scope)
     if is_active:
-        return ConsentResponse(
-            status="already_granted",
-            message="User has already granted consent for this scope."
-        )
+        # Fetch the active token to return it
+        active_tokens = await consent_db.get_active_tokens(request.user_id)
+        existing_token = None
+        expires_at = None
+        
+        for t in active_tokens:
+            if t.get("scope") == request.scope:
+                existing_token = t.get("token_id")
+                expires_at = t.get("expires_at")
+                break
+        
+        if existing_token:
+            return ConsentResponse(
+                status="already_granted",
+                message="User has already granted consent for this scope.",
+                consent_token=existing_token,
+                expires_at=expires_at
+            )
+    
     
     # Check if request already pending (query database)
     pending = await consent_db.get_pending_requests(request.user_id)
