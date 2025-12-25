@@ -28,7 +28,7 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier (e.g., Firebase UID)"
+                        "description": "The user's unique identifier or Email Address (e.g., user@example.com)"
                     },
                     "scope": {
                         "type": "string",
@@ -87,7 +87,7 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier"
+                        "description": "The user's unique identifier or Email Address"
                     },
                     "consent_token": {
                         "type": "string",
@@ -112,7 +112,7 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier"
+                        "description": "The user's unique identifier or Email Address"
                     },
                     "consent_token": {
                         "type": "string",
@@ -149,7 +149,7 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "user_id": {
                         "type": "string",
-                        "description": "User authorizing the delegation"
+                        "description": "User authorizing the delegation (or Email Address)"
                     }
                 },
                 "required": ["from_agent", "to_agent", "scope", "user_id"]
@@ -184,7 +184,7 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier"
+                        "description": "The user's unique identifier or Email Address"
                     },
                     "scope": {
                         "type": "string",
