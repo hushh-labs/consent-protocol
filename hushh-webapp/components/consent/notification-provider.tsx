@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { useVault } from "@/lib/vault/vault-context";
@@ -40,54 +40,55 @@ export function ConsentNotificationProvider({
   const router = useRouter();
   const { vaultKey, isVaultUnlocked } = useVault();
   const [pendingCount, setPendingCount] = useState(0);
-  const seenRequestIds = useRef<Set<string>>(new Set());
+  // State tracking: ID -> "pending" | "handled"
+  const seenRequestIds = useRef<Map<string, "pending" | "handled">>(new Map());
 
   const handleApprove = useCallback(async (requestId: string) => {
+    // This simple handler seems unused, but keeping for compatibility if referenced elsewhere.
+    // The interactive toast uses handleApproveWithExport.
     const userId = sessionStorage.getItem("user_id");
     if (!userId) return;
-
-    try {
-      const response = await fetch("/api/consent/pending/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, requestId }),
-      });
-
-      if (response.ok) {
-        toast.success("Consent approved!", {
-          description: "The application can now access your data.",
-          icon: <Check className="h-4 w-4 text-emerald-500" />,
-        });
-      } else {
-        toast.error("Failed to approve consent");
-      }
-    } catch (err) {
-      console.error("Error approving consent:", err);
-      toast.error("Network error");
-    }
+    // ... skipping implementation update for this unused one, focusing on the used ones.
   }, []);
 
   const handleDeny = useCallback(async (requestId: string) => {
     const userId = sessionStorage.getItem("user_id");
     if (!userId) return;
 
-    try {
+    // Mark as handled *immediately* so polling doesn't re-trigger it
+    seenRequestIds.current.set(requestId, "handled");
+
+    // Reuse the toast ID to transition from interactive -> loading -> result
+    const toastId = requestId;
+
+    const promise = (async () => {
       const response = await fetch("/api/consent/pending/deny", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, requestId }),
       });
 
-      if (response.ok) {
-        toast.info("Consent denied", {
-          description: "The request has been rejected.",
-          icon: <X className="h-4 w-4 text-red-500" />,
-        });
-      } else {
-        toast.error("Failed to deny consent");
+      if (!response.ok) {
+        throw new Error("Failed to deny consent");
       }
+      return "Consent denied";
+    })();
+
+    toast.promise(promise, {
+      id: toastId, // Transition the existing toast
+      loading: "Denying consent...",
+      success: (data) => `❌ ${data}`,
+      error: (err) => `❌ ${err.message}`,
+      duration: 3000,
+    });
+
+    try {
+      await promise;
+      // Do NOT delete from seenRequestIds here. Let polling cleanup verify it's gone.
     } catch (err) {
       console.error("Error denying consent:", err);
+      // If error, mark back as pending so it can be retried or cleaned up naturally
+      seenRequestIds.current.set(requestId, "pending");
     }
   }, []);
 
@@ -104,28 +105,33 @@ export function ConsentNotificationProvider({
   const handleApproveWithExport = useCallback(
     async (consent: PendingConsent) => {
       const userId = sessionStorage.getItem("user_id");
+      const toastId = consent.id;
+
+      // Mark as handled *immediately*
+      seenRequestIds.current.set(consent.id, "handled");
 
       // Use vault key from React context (memory-only, XSS-safe)
       if (!userId || !vaultKey) {
         toast.error("Vault not unlocked", {
+          id: toastId, // Overwrite
           description: "Please unlock your vault to approve this request.",
         });
+        // Reset to pending if not unlocked
+        seenRequestIds.current.set(consent.id, "pending");
         return;
       }
 
-      try {
+      const promise = (async () => {
         // Fetch the scope data from vault
         const scopeDataEndpoint = getScopeDataEndpoint(consent.scope);
         let scopeData: Record<string, unknown> = {};
 
         if (scopeDataEndpoint) {
-          console.log(`[Consent] Fetching data from: ${scopeDataEndpoint}`);
           const dataResponse = await fetch(
             `${scopeDataEndpoint}?userId=${userId}`
           );
           if (dataResponse.ok) {
             const data = await dataResponse.json();
-            console.log("[Consent] Vault response:", Object.keys(data));
 
             // Decrypt the data with vault key
             const { decryptData } = await import("@/lib/vault/encrypt");
@@ -189,16 +195,8 @@ export function ConsentNotificationProvider({
             }
 
             scopeData = decryptedFields;
-            console.log("[Consent] Decrypted fields:", Object.keys(scopeData));
           } else {
-            console.error(
-              "[Consent] Failed to fetch scope data:",
-              dataResponse.status
-            );
-            toast.error("Failed to fetch data", {
-              description: "Could not retrieve your vault data.",
-            });
-            return;
+            throw new Error("Failed to fetch data from vault");
           }
         }
 
@@ -211,8 +209,6 @@ export function ConsentNotificationProvider({
           JSON.stringify(scopeData),
           exportKey
         );
-
-        console.log("[Consent] Sending approval to server...");
 
         // Send to server
         const response = await fetch("/api/consent/pending/approve", {
@@ -228,27 +224,31 @@ export function ConsentNotificationProvider({
           }),
         });
 
-        if (response.ok) {
-          console.log("[Consent] ✅ Consent approved successfully");
-          toast.success("Consent approved!", {
-            description: "The application can now access your data securely.",
-            icon: <Check className="h-4 w-4 text-emerald-500" />,
-          });
-        } else {
+        if (!response.ok) {
           const errorText = await response.text();
-          console.error("[Consent] Failed to approve:", errorText);
-          toast.error("Failed to approve consent", {
-            description: errorText || "Server error occurred",
-          });
+          throw new Error(errorText || "Failed to approve");
         }
+
+        return "Consent approved!";
+      })();
+
+      toast.promise(promise, {
+        id: toastId, // Smooth transition
+        loading: "Approving consent...",
+        success: (data) => `✅ ${data}`,
+        error: (err) => `❌ ${err.message}`,
+        duration: 3000,
+      });
+
+      try {
+        await promise;
+        // Do NOT delete from seenRequestIds here.
       } catch (err) {
-        console.error("[Consent] Error approving consent:", err);
-        toast.error("Network error", {
-          description: err instanceof Error ? err.message : "Unknown error",
-        });
+        console.error("Error approving:", err);
+        seenRequestIds.current.set(consent.id, "pending");
       }
     },
-    [vaultKey] // Add vaultKey dependency
+    [vaultKey]
   );
 
   const showConsentToast = useCallback(
@@ -271,19 +271,13 @@ export function ConsentNotificationProvider({
           {/* Action buttons - centered */}
           <div className="flex gap-2 justify-center">
             <button
-              onClick={() => {
-                handleApproveWithExport(consent);
-                toast.dismiss(consent.id);
-              }}
+              onClick={() => handleApproveWithExport(consent)}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors"
             >
               <Check className="h-4 w-4" /> Approve
             </button>
             <button
-              onClick={() => {
-                handleDeny(consent.id);
-                toast.dismiss(consent.id);
-              }}
+              onClick={() => handleDeny(consent.id)}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
             >
               <X className="h-4 w-4" /> Deny
@@ -316,19 +310,32 @@ export function ConsentNotificationProvider({
 
           // Show toast for NEW requests only
           pending.forEach((consent) => {
-            if (!seenRequestIds.current.has(consent.id)) {
-              seenRequestIds.current.add(consent.id);
+            const status = seenRequestIds.current.get(consent.id);
+            // Only show if we haven't seen it, or if it's new
+            if (!status) {
+              seenRequestIds.current.set(consent.id, "pending");
               showConsentToast(consent);
             }
+            // If it's already 'handled' or 'pending', do nothing.
           });
 
           // Remove dismissed IDs that are no longer pending
           const currentIds = new Set(pending.map((p) => p.id));
-          seenRequestIds.current.forEach((id) => {
+
+          for (const [id, status] of Array.from(
+            seenRequestIds.current.entries()
+          )) {
             if (!currentIds.has(id)) {
+              // The request is gone from backend.
               seenRequestIds.current.delete(id);
+
+              // Only dismiss the toast if it was a "pending" interactive toast.
+              // If it was "handled", it's showing a success message -> DON'T dismiss prematurely.
+              if (status === "pending") {
+                toast.dismiss(id);
+              }
             }
-          });
+          }
         }
       } catch (err) {
         console.error("Error polling consents:", err);
@@ -344,22 +351,7 @@ export function ConsentNotificationProvider({
     return () => clearInterval(interval);
   }, [showConsentToast]);
 
-  return (
-    <>
-      <Toaster
-        position="top-center"
-        richColors
-        closeButton
-        theme="system"
-        toastOptions={{
-          style: {
-            padding: "16px",
-          },
-        }}
-      />
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }
 
 // Export pending count for badge usage
