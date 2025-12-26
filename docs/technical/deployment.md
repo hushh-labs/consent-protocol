@@ -194,10 +194,21 @@ gcloud run services logs read SERVICE_NAME --region us-central1 --limit 30
 
 ### Common Errors
 
-| Error                            | Cause                                         | Fix                            |
-| -------------------------------- | --------------------------------------------- | ------------------------------ |
-| `MODULE_NOT_FOUND` for `@next/*` | `outputFileTracingExcludes` in next.config.ts | Remove the `@next` exclusion   |
-| `No module named 'asyncpg'`      | Missing dependency in requirements.txt        | Add `asyncpg>=0.29.0`          |
-| `SECRET_KEY must be 32+ chars`   | Missing secret                                | Add via Secret Manager         |
-| `SSL connection` errors          | SSL enabled for Unix socket                   | Set `ssl: false` for Cloud SQL |
-| Empty JSON response              | Unhandled error in API route                  | Add try/catch error handling   |
+| Error                              | Cause                                         | Fix                            |
+| ---------------------------------- | --------------------------------------------- | ------------------------------ |
+| `MODULE_NOT_FOUND` for `@next/*`   | `outputFileTracingExcludes` in next.config.ts | Remove the `@next` exclusion   |
+| `No module named 'asyncpg'`        | Missing dependency in requirements.txt        | Add `asyncpg>=0.29.0`          |
+| `No module named 'firebase_admin'` | Missing dependency in requirements.txt        | Add `firebase-admin>=6.2.0`    |
+| `SECRET_KEY must be 32+ chars`     | Missing secret                                | Add via Secret Manager         |
+| `SSL connection` errors            | SSL enabled for Unix socket                   | Set `ssl: false` for Cloud SQL |
+| Empty JSON response                | Unhandled error in API route                  | Add try/catch error handling   |
+| `VAULT_READ_REJECTED` (401)        | Missing session token in production           | Ensure X-Session-Token header  |
+
+### Session Token Auth
+
+In production (`isDevelopment() === false`), the vault API routes (`/api/vault/*`) require a session token.
+This token is issued by the backend after login and must be:
+
+1. Stored in `sessionStorage` (key: `session_token`)
+2. Sent in `X-Session-Token` header OR `sessionToken` query param
+3. Validated by the backend proxy
