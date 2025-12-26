@@ -102,6 +102,45 @@ When an MCP agent requests user data, the following flow occurs:
 
 ---
 
+## 🔄 MCP Polling Behavior
+
+When `request_consent` returns `pending`, the MCP server blocks and polls for user action:
+
+```
+MCP calls request_consent → Returns "pending"
+     ↓
+Polls /api/consent/pending every 3s
+     ↓
+Request no longer pending? → Check /api/consent/active
+     ↓
+Token found? → APPROVED (return token)
+No token?   → DENIED (return denial message)
+     ↓
+Timeout after 300s? → Return timeout status
+```
+
+### Key Implementation Details
+
+| Scenario     | MCP Response                              | Retry Allowed?                       |
+| ------------ | ----------------------------------------- | ------------------------------------ |
+| **Approved** | `status: "granted"` + token               | N/A - success                        |
+| **Denied**   | `status: "denied"` + `DO_NOT_RETRY: true` | No (explicit refusal)                |
+| **Timeout**  | `status: "timeout"`                       | Yes (user may not have seen request) |
+
+### Denial Response
+
+```json
+{
+  "status": "denied",
+  "message": "❌ User denied the consent request.",
+  "privacy_note": "User has the right to refuse data access.",
+  "DO_NOT_RETRY": true,
+  "instruction": "STOP - Do NOT call request_consent again for this scope."
+}
+```
+
+> **Important Fix (Dec 2024):** The MCP now checks `/api/consent/active` to determine approval vs denial, rather than re-calling `/api/v1/request-consent`. This prevents duplicate pending requests when user denies.
+
 ## 🧪 Testing the Flow
 
 1. **Start servers**
