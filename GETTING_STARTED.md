@@ -34,14 +34,19 @@ The iOS app uses a **Hybrid** model where it relays data requests to the Next.js
 If utilizing the Cloud SQL database, start the proxy from the project root:
 
 ```bash
-# Download proxy if not present (Done in setup)
-# curl -o cloud_sql_proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.darwin.arm64
-# chmod +x cloud_sql_proxy
+# Ensure you're authenticated with GCP (one-time setup)
+gcloud auth application-default login
 
-# Start Proxy (requires service-account.json in root)
-cd .. # Go to hushh-research root
-./cloud_sql_proxy hushh-pda:us-central1:hushh-vault-db --credentials-file=service-account.json
+# Start Cloud SQL Proxy (uses your GCP user credentials)
+# Windows:
+./cloud-sql-proxy.exe hushh-pda:us-central1:hushh-vault-db --port 5432
+
+# macOS/Linux:
+./cloud_sql_proxy hushh-pda:us-central1:hushh-vault-db --port 5432
 ```
+
+> **Note:** The `service-account.json` in the repo is for Firebase Admin SDK, not Cloud SQL.
+> For CI/CD, create a separate service account with Cloud SQL Client role.
 
 ### Step B: Start Next.js Server
 
