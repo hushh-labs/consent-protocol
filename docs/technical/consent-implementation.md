@@ -318,3 +318,92 @@ food_data = json.loads(plaintext.decode('utf-8'))
 5. **Logout destroys tokens** - No lingering access
 6. **Audit trail** - All actions logged to consent_audit table
 7. **Export zero-knowledge** - MCP access never exposes plaintext to server
+
+---
+
+## 📡 Real-Time Consent Events (SSE)
+
+### Architecture
+
+The system uses **Server-Sent Events (SSE)** for real-time consent notifications. A unified SSE connection serves all dashboard components.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     SSE Architecture                             │
+├─────────────────────────────────────────────────────────────────┤
+│ Backend: /api/consent/events/{user_id}                          │
+│   - Polls consent_audit every 500ms                             │
+│   - Sends events when issued_at > connection_start_ms           │
+│   - 30s heartbeat to keep connection alive                      │
+├─────────────────────────────────────────────────────────────────┤
+│ Frontend: Single EventSource (ConsentSSEProvider)               │
+│   - One connection per user session                             │
+│   - Auto-reconnect with exponential backoff (2s → 30s max)      │
+│   - Components subscribe via useConsentSSE() hook               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Event Types (ConsentAction)
+
+| Action            | Description                  | Triggers Refresh Of    |
+| ----------------- | ---------------------------- | ---------------------- |
+| `REQUESTED`       | New consent request from MCP | Pending, Audit Log     |
+| `CONSENT_GRANTED` | User approved the request    | Pending, Active, Audit |
+| `CONSENT_DENIED`  | User denied the request      | Pending, Audit Log     |
+| `TIMEOUT`         | MCP polling timed out        | Pending, Audit Log     |
+| `REVOKED`         | User revoked active consent  | Active, Audit Log      |
+
+### Frontend Components
+
+**`lib/consent/sse-context.tsx`** - Unified SSE provider:
+
+```typescript
+export function ConsentSSEProvider({ children }) {
+  // Single EventSource connection with auto-reconnect
+  // Provides: lastEvent, connectionState, isConnected, eventCount
+}
+
+export function useConsentSSE(): ConsentSSEContextType;
+```
+
+**`lib/consent/use-consent-actions.ts`** - Centralized action handlers:
+
+```typescript
+export function useConsentActions(options) {
+  return {
+    handleApprove, // Zero-knowledge export + approve
+    handleDeny, // Deny request
+    handleRevoke, // Revoke active consent
+    shouldShowToast, // Deduplication logic
+    // ... status management
+  };
+}
+```
+
+**`components/consent/notification-provider.tsx`** - Toast notifications:
+
+- Shows interactive toasts for pending requests
+- Uses `useConsentSSE()` for events
+- Uses `useConsentActions()` for approve/deny buttons
+
+### Event Flow
+
+```
+MCP Request → Backend inserts REQUESTED → SSE sends event
+          ↓
+Frontend receives → Shows toast + refreshes pending table
+          ↓
+User clicks Approve/Deny → API call → Backend inserts GRANTED/DENIED
+          ↓
+Custom event dispatched → All tables refresh automatically
+```
+
+### Key Files
+
+| File                                                        | Purpose                          |
+| ----------------------------------------------------------- | -------------------------------- |
+| `consent-protocol/api/routes/sse.py`                        | SSE endpoint with heartbeat      |
+| `hushh-webapp/lib/consent/sse-context.tsx`                  | Unified SSE provider             |
+| `hushh-webapp/lib/consent/use-consent-actions.ts`           | Action handlers                  |
+| `hushh-webapp/components/consent/notification-provider.tsx` | Toast UI                         |
+| `hushh-webapp/app/dashboard/consents/page.tsx`              | Consents table with SSE listener |
