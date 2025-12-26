@@ -16,7 +16,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session, db_proxy
+from api.routes import health, agents, consent, developer, session, db_proxy, sse
+
+# Import rate limiting
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.middlewares.rate_limit import limiter
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -28,6 +33,10 @@ app = FastAPI(
     version="1.0.0",
     root_path=root_path,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS - Dynamic origins based on environment
 # Add FRONTEND_URL env var for production deployments
@@ -72,6 +81,9 @@ app.include_router(session.router)
 
 # Database proxy routes (/db/vault/...) - for iOS native app
 app.include_router(db_proxy.router)
+
+# SSE routes for real-time consent notifications (/api/consent/events/...)
+app.include_router(sse.router)
 
 logger.info("🚀 Hushh Consent Protocol server initialized with modular routes")
 

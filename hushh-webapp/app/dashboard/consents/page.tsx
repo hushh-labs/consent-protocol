@@ -208,12 +208,18 @@ function AppAuditLog({
                     ),
                   }))
                   .sort(
-                    (a, b) => b.events[0].issued_at - a.events[0].issued_at
+                    (a, b) =>
+                      (b.events[0]?.issued_at ?? 0) -
+                      (a.events[0]?.issued_at ?? 0)
                   );
 
                 return trails.map(({ trailId, events }) => {
                   const firstEvent = events[0];
                   const lastEvent = events[events.length - 1];
+
+                  // Skip if no events (shouldn't happen but satisfies TypeScript)
+                  if (!firstEvent || !lastEvent) return null;
+
                   const scopeInfo = formatScope(firstEvent.scope);
 
                   // Status color
@@ -380,6 +386,7 @@ export default function ConsentsPage() {
 
     // No user ID, stop loading
     setLoading(false);
+    return undefined;
   }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents]);
 
   const handleApprove = async (requestId: string) => {

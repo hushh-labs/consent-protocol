@@ -25,6 +25,15 @@ argparse==1.4.0
 # 🧪 Testing
 pytest==8.2.2
 
+# 🔍 Code Quality & Linting
+ruff>=0.8.0              # Fast Python linter (replaces flake8, isort)
+mypy>=1.8.0              # Type checking
+bandit>=1.7.6            # Security linting
+
+# 🚦 Rate Limiting & Real-time
+slowapi>=0.1.9           # FastAPI rate limiting
+sse-starlette>=2.1.0     # Server-Sent Events for consent notifications
+
 # 📦 Optional OAuth / Apple ID agents
 # SECURITY: Updated from 2.32.3 to fix CVE-2024-35195 (.netrc credentials leak)
 requests>=2.32.4
