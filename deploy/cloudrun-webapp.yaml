@@ -18,15 +18,16 @@ spec:
         run.googleapis.com/cpu-throttling: "false"
         # Startup/liveness probes
         run.googleapis.com/startup-cpu-boost: "true"
+        # Cloud SQL connection
+        run.googleapis.com/cloudsql-instances: hushh-pda:us-central1:hushh-vault-db
     spec:
       containerConcurrency: 80
       timeoutSeconds: 300
-      serviceAccountName: hushh-webapp-sa@PROJECT_ID.iam.gserviceaccount.com
       containers:
-        - image: gcr.io/PROJECT_ID/hushh-webapp:latest
+        - image: us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
           ports:
             - name: http1
-              containerPort: 3000
+              containerPort: 8080
           resources:
             limits:
               memory: "1Gi"
@@ -35,30 +36,25 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: PORT
-              value: "3000"
+              value: "8080"
             # Secrets from Secret Manager
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   key: latest
                   name: DATABASE_URL
-            - name: NEXT_PUBLIC_BACKEND_URL
-              valueFrom:
-                secretKeyRef:
-                  key: latest
-                  name: BACKEND_URL
           # Health check
           livenessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           startupProbe:
             httpGet:
               path: /
-              port: 3000
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 12
