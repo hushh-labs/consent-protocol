@@ -8,9 +8,9 @@ All request and response schemas are centralized here for:
 - Easy documentation generation
 """
 
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel
 
 # ============================================================================
 # AGENT CHAT MODELS

@@ -7,21 +7,18 @@ from .schemas import (
     # Agent chat
     ChatRequest,
     ChatResponse,
-    
-    # Token validation
-    ValidateTokenRequest,
-    
     # Developer API
     ConsentRequest,
     ConsentResponse,
     DataAccessRequest,
     DataAccessResponse,
-    
+    HistoryRequest,
+    LogoutRequest,
     # Session tokens
     SessionTokenRequest,
     SessionTokenResponse,
-    LogoutRequest,
-    HistoryRequest,
+    # Token validation
+    ValidateTokenRequest,
 )
 
 __all__ = [

@@ -6,10 +6,10 @@ Session token and user management endpoints.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Header, HTTPException
 
-from api.models import SessionTokenRequest, SessionTokenResponse, LogoutRequest
 import consent_db
+from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,11 @@ async def issue_session_token(
     
     Called after successful passphrase unlock on the frontend.
     """
-    from hushh_mcp.consent.token import issue_token
-    from hushh_mcp.constants import ConsentScope
     import firebase_admin
     from firebase_admin import auth, credentials
+
+    from hushh_mcp.consent.token import issue_token
+    from hushh_mcp.constants import ConsentScope
     
     # Initialize Firebase Admin if not already done
     try:
@@ -100,7 +101,6 @@ async def logout_session(request: LogoutRequest):
     Called when user logs out. Invalidates all active session tokens.
     External API tokens are NOT affected.
     """
-    from hushh_mcp.consent.token import revoke_token
     
     logger.info(f"🚪 Logging out user: {request.userId}")
     
