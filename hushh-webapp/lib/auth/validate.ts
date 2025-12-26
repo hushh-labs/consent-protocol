@@ -132,7 +132,7 @@ export async function validateSessionToken(
 // ============================================================================
 
 /**
- * Validate Firebase ID token with the Python backend.
+ * Validate Firebase ID token using Firebase Admin SDK.
  *
  * This is the identity layer - proves WHO the user is.
  * Does NOT grant data access (that requires consent tokens).
@@ -152,26 +152,26 @@ export async function validateFirebaseToken(
 
   const idToken = authHeader.split("Bearer ")[1];
 
-  try {
-    // Validate with backend (which uses Firebase Admin SDK)
-    const response = await fetch(`${BACKEND_URL}/api/consent/issue-token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-      },
-      body: JSON.stringify({ userId: "validation_check", scope: "session" }),
-    });
+  if (!idToken) {
+    return { valid: false, error: "Missing token in Authorization header" };
+  }
 
-    if (response.status === 401 || response.status === 403) {
-      logSecurityEvent("FIREBASE_TOKEN_INVALID", { status: response.status });
+  try {
+    // Use Firebase Admin SDK to verify the token directly
+    const { verifyIdToken } = await import("@/lib/firebase/admin");
+    const result = await verifyIdToken(idToken);
+
+    if (result.valid && result.uid) {
+      logSecurityEvent("FIREBASE_TOKEN_VALID", { userId: result.uid });
+      return {
+        valid: true,
+        userId: result.uid,
+        email: result.decodedToken?.email,
+      };
+    } else {
+      logSecurityEvent("FIREBASE_TOKEN_INVALID", {});
       return { valid: false, error: "Invalid Firebase ID token" };
     }
-
-    // Token is valid if we don't get 401/403
-    // Note: This is a side-effect free validation approach
-    logSecurityEvent("FIREBASE_TOKEN_VALID", {});
-    return { valid: true };
   } catch (error) {
     logSecurityEvent("FIREBASE_VALIDATION_ERROR", { error: String(error) });
     return { valid: false, error: "Firebase validation failed" };
