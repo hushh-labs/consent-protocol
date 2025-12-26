@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
+import { useConsentSSE } from "@/lib/consent";
 import { DataTable } from "@/components/ui/data-table";
 import {
   appColumns,
@@ -362,16 +363,6 @@ export default function ConsentsPage() {
       ]).finally(() => {
         setLoading(false);
       });
-
-      // Auto-poll every 5 seconds for real-time updates
-      const pollInterval = setInterval(() => {
-        fetchPendingConsents(uid);
-        fetchAuditLog(uid);
-        fetchActiveConsents(uid);
-      }, 5000);
-
-      // Cleanup interval on unmount
-      return () => clearInterval(pollInterval);
     }
 
     if (token && expiresAt) {
@@ -385,9 +376,95 @@ export default function ConsentsPage() {
     }
 
     // No user ID, stop loading
-    setLoading(false);
-    return undefined;
+    if (!uid) {
+      setLoading(false);
+    }
   }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents]);
+
+  // =========================================================================
+  // SSE: React to consent events via unified context (no duplicate connection)
+  // =========================================================================
+  const { lastEvent, eventCount } = useConsentSSE();
+
+  useEffect(() => {
+    if (!lastEvent || !userId) return;
+
+    const { action, request_id, scope } = lastEvent;
+    console.log(
+      `📡 [ConsentsPage] SSE event: ${action} for ${request_id} (${scope})`
+    );
+
+    // Debounce 300ms to let DB commit before refreshing
+    const timer = setTimeout(() => {
+      switch (action) {
+        case "REQUESTED":
+          // New request - only need to refresh pending
+          fetchPendingConsents(userId);
+          fetchAuditLog(userId);
+          break;
+        case "CONSENT_GRANTED":
+          // Approval - pending → active, update all
+          fetchPendingConsents(userId);
+          fetchActiveConsents(userId);
+          fetchAuditLog(userId);
+          break;
+        case "CONSENT_DENIED":
+        case "TIMEOUT":
+          // Denied/timeout - remove from pending, update audit
+          fetchPendingConsents(userId);
+          fetchAuditLog(userId);
+          break;
+        case "REVOKED":
+          // Revoke - remove from active, update audit
+          fetchActiveConsents(userId);
+          fetchAuditLog(userId);
+          break;
+        default:
+          // Any other event - refresh all to be safe
+          fetchPendingConsents(userId);
+          fetchActiveConsents(userId);
+          fetchAuditLog(userId);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [
+    lastEvent,
+    eventCount,
+    userId,
+    fetchPendingConsents,
+    fetchAuditLog,
+    fetchActiveConsents,
+  ]);
+
+  // =========================================================================
+  // Listen for consent action events from notification toast actions
+  // =========================================================================
+  useEffect(() => {
+    const handleConsentAction = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        action: string;
+        requestId: string;
+      }>;
+      console.log(
+        `📡 [ConsentsPage] Action event: ${customEvent.detail.action}`
+      );
+
+      if (!userId) return;
+
+      // Refresh all tables after action
+      fetchPendingConsents(userId);
+      fetchActiveConsents(userId);
+      fetchAuditLog(userId);
+    };
+
+    window.addEventListener("consent-action-complete", handleConsentAction);
+    return () =>
+      window.removeEventListener(
+        "consent-action-complete",
+        handleConsentAction
+      );
+  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog]);
 
   const handleApprove = async (requestId: string) => {
     if (!userId) return;
@@ -754,16 +831,34 @@ export default function ConsentsPage() {
   return (
     <div className="container mx-auto max-w-4xl py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
-          <Shield className="h-6 w-6 text-white" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
+            <Shield className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Consent Management</h1>
+            <p className="text-muted-foreground">
+              Control who can access your data
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">Consent Management</h1>
-          <p className="text-muted-foreground">
-            Control who can access your data
-          </p>
-        </div>
+        <Button
+          variant="none"
+          size="sm"
+          onClick={() => {
+            if (userId) {
+              fetchPendingConsents(userId);
+              fetchAuditLog(userId);
+              fetchActiveConsents(userId);
+              toast.success("Refreshed", { duration: 1500 });
+            }
+          }}
+          className="flex items-center gap-2 border"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       {/* Tabs */}
