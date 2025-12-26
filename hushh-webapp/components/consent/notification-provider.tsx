@@ -2,262 +2,86 @@
 
 /**
  * Consent Notification Provider
+ * =============================
  *
- * Polls for pending consent requests and shows toast notifications
- * with approve/reject actions. Positioned at center-top.
+ * Shows toast notifications for pending consent requests.
+ * Uses unified SSE context (no more duplicate connections).
+ *
+ * Responsibilities:
+ * - Poll for initial pending consents on mount
+ * - Subscribe to SSE events for new requests
+ * - Show interactive toast with Approve/Deny buttons
+ * - Coordinate toast lifecycle with action state
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { useVault } from "@/lib/vault/vault-context";
+import {
+  useConsentSSE,
+  useConsentActions,
+  type PendingConsent,
+} from "@/lib/consent";
 
-interface PendingConsent {
-  id: string;
-  developer: string;
-  scope: string;
-  scopeDescription?: string;
-  requestedAt: number;
-}
+// ============================================================================
+// Helpers
+// ============================================================================
 
-// Format scope to human readable
 const formatScope = (scope: string): { label: string; emoji: string } => {
   const scopeMap: Record<string, { label: string; emoji: string }> = {
     vault_read_food: { label: "Food Preferences", emoji: "🍽️" },
     vault_read_professional: { label: "Professional Profile", emoji: "💼" },
     vault_read_finance: { label: "Financial Data", emoji: "💰" },
     vault_read_all: { label: "All Data", emoji: "🔓" },
+    "vault.read.food": { label: "Food Preferences", emoji: "🍽️" },
+    "vault.read.professional": { label: "Professional Profile", emoji: "💼" },
   };
   return scopeMap[scope] || { label: scope.replace(/_/g, " "), emoji: "📋" };
 };
+
+// ============================================================================
+// Main Provider
+// ============================================================================
 
 export function ConsentNotificationProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const { vaultKey, isVaultUnlocked } = useVault();
+  const { isVaultUnlocked } = useVault();
+  const { lastEvent, eventCount, isConnected } = useConsentSSE();
   const [pendingCount, setPendingCount] = useState(0);
-  // State tracking: ID -> "pending" | "handled"
-  const seenRequestIds = useRef<Map<string, "pending" | "handled">>(new Map());
 
-  const handleApprove = useCallback(async (requestId: string) => {
-    // This simple handler seems unused, but keeping for compatibility if referenced elsewhere.
-    // The interactive toast uses handleApproveWithExport.
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) return;
-    // ... skipping implementation update for this unused one, focusing on the used ones.
-  }, []);
-
-  const handleDeny = useCallback(async (requestId: string) => {
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) return;
-
-    // Mark as handled *immediately* so polling doesn't re-trigger it
-    seenRequestIds.current.set(requestId, "handled");
-
-    // Reuse the toast ID to transition from interactive -> loading -> result
-    const toastId = requestId;
-
-    const promise = (async () => {
-      const response = await fetch("/api/consent/pending/deny", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, requestId }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to deny consent");
-      }
-      return "Consent denied";
-    })();
-
-    toast.promise(promise, {
-      id: toastId, // Transition the existing toast
-      loading: "Denying consent...",
-      success: (data) => `❌ ${data}`,
-      error: (err) => `❌ ${err.message}`,
-      duration: 3000,
-    });
-
-    try {
-      await promise;
-      // Do NOT delete from seenRequestIds here. Let polling cleanup verify it's gone.
-    } catch (err) {
-      console.error("Error denying consent:", err);
-      // If error, mark back as pending so it can be retried or cleaned up naturally
-      seenRequestIds.current.set(requestId, "pending");
-    }
-  }, []);
-
-  // Map scope to data endpoint
-  const getScopeDataEndpoint = (scope: string): string | null => {
-    const scopeMap: Record<string, string> = {
-      vault_read_food: "/api/vault/food",
-      vault_read_professional: "/api/vault/professional",
-      vault_read_finance: "/api/vault/finance",
-    };
-    return scopeMap[scope] || null;
-  };
-
-  const handleApproveWithExport = useCallback(
-    async (consent: PendingConsent) => {
+  // Use the centralized consent actions hook
+  const {
+    handleApprove,
+    handleDeny,
+    shouldShowToast,
+    shouldDismissToast,
+    markAsPending,
+    clearRequest,
+  } = useConsentActions({
+    onActionComplete: () => {
+      // Refresh pending count after action
       const userId = sessionStorage.getItem("user_id");
-      const toastId = consent.id;
-
-      // Mark as handled *immediately*
-      seenRequestIds.current.set(consent.id, "handled");
-
-      // Use vault key from React context (memory-only, XSS-safe)
-      if (!userId || !vaultKey) {
-        toast.error("Vault not unlocked", {
-          id: toastId, // Overwrite
-          description: "Please unlock your vault to approve this request.",
-        });
-        // Reset to pending if not unlocked
-        seenRequestIds.current.set(consent.id, "pending");
-        return;
-      }
-
-      const promise = (async () => {
-        // Fetch the scope data from vault
-        const scopeDataEndpoint = getScopeDataEndpoint(consent.scope);
-        let scopeData: Record<string, unknown> = {};
-
-        if (scopeDataEndpoint) {
-          const dataResponse = await fetch(
-            `${scopeDataEndpoint}?userId=${userId}`
-          );
-          if (dataResponse.ok) {
-            const data = await dataResponse.json();
-
-            // Decrypt the data with vault key
-            const { decryptData } = await import("@/lib/vault/encrypt");
-            const decryptedFields: Record<string, unknown> = {};
-
-            // Handle object format: { field_name: { ciphertext, iv, tag, algorithm, encoding } }
-            const preferences = data.preferences || data.data || {};
-
-            if (
-              preferences &&
-              typeof preferences === "object" &&
-              !Array.isArray(preferences)
-            ) {
-              // Object format (actual vault data)
-              for (const [fieldName, encryptedField] of Object.entries(
-                preferences
-              )) {
-                try {
-                  const field = encryptedField as {
-                    ciphertext: string;
-                    iv: string;
-                    tag: string;
-                    algorithm?: string;
-                    encoding?: string;
-                  };
-                  const decrypted = await decryptData(
-                    {
-                      ciphertext: field.ciphertext,
-                      iv: field.iv,
-                      tag: field.tag,
-                      encoding: (field.encoding || "base64") as "base64",
-                      algorithm: (field.algorithm ||
-                        "aes-256-gcm") as "aes-256-gcm",
-                    },
-                    vaultKey
-                  );
-                  decryptedFields[fieldName] = JSON.parse(decrypted);
-                } catch (err) {
-                  console.warn(`Failed to decrypt field: ${fieldName}`, err);
-                }
-              }
-            } else if (Array.isArray(preferences)) {
-              // Array format (legacy)
-              for (const field of preferences) {
-                try {
-                  const decrypted = await decryptData(
-                    {
-                      ciphertext: field.ciphertext,
-                      iv: field.iv,
-                      tag: field.tag,
-                      encoding: "base64",
-                      algorithm: "aes-256-gcm",
-                    },
-                    vaultKey
-                  );
-                  decryptedFields[field.field_name] = JSON.parse(decrypted);
-                } catch {
-                  console.warn(`Failed to decrypt field: ${field.field_name}`);
-                }
-              }
-            }
-
-            scopeData = decryptedFields;
-          } else {
-            throw new Error("Failed to fetch data from vault");
-          }
-        }
-
-        // Generate export key and encrypt
-        const { generateExportKey, encryptForExport } = await import(
-          "@/lib/vault/export-encrypt"
-        );
-        const exportKey = await generateExportKey();
-        const encrypted = await encryptForExport(
-          JSON.stringify(scopeData),
-          exportKey
-        );
-
-        // Send to server
-        const response = await fetch("/api/consent/pending/approve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            requestId: consent.id,
-            exportKey,
-            encryptedData: encrypted.ciphertext,
-            encryptedIv: encrypted.iv,
-            encryptedTag: encrypted.tag,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || "Failed to approve");
-        }
-
-        return "Consent approved!";
-      })();
-
-      toast.promise(promise, {
-        id: toastId, // Smooth transition
-        loading: "Approving consent...",
-        success: (data) => `✅ ${data}`,
-        error: (err) => `❌ ${err.message}`,
-        duration: 3000,
-      });
-
-      try {
-        await promise;
-        // Do NOT delete from seenRequestIds here.
-      } catch (err) {
-        console.error("Error approving:", err);
-        seenRequestIds.current.set(consent.id, "pending");
-      }
+      if (userId) fetchPendingAndShowToasts(userId);
     },
-    [vaultKey]
-  );
+  });
 
+  // Show interactive toast for a consent request
+  // MUST be defined before fetchPendingAndShowToasts
   const showConsentToast = useCallback(
     (consent: PendingConsent) => {
       const { label, emoji } = formatScope(consent.scope);
 
+      console.log(
+        `🔔 [NotificationProvider] Showing toast for consent ${consent.id}`
+      );
+
       toast(
         <div className="flex flex-col gap-3">
-          {/* Simple header with scope */}
+          {/* Header with scope */}
           <div className="flex items-center gap-2">
             <span className="text-lg">{emoji}</span>
             <div>
@@ -268,10 +92,10 @@ export function ConsentNotificationProvider({
             </div>
           </div>
 
-          {/* Action buttons - centered */}
+          {/* Action buttons */}
           <div className="flex gap-2 justify-center">
             <button
-              onClick={() => handleApproveWithExport(consent)}
+              onClick={() => handleApprove(consent)}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors"
             >
               <Check className="h-4 w-4" /> Approve
@@ -291,93 +115,143 @@ export function ConsentNotificationProvider({
         }
       );
     },
-    [handleApproveWithExport, handleDeny]
+    [handleApprove, handleDeny]
   );
 
-  // Poll for pending consents
-  useEffect(() => {
-    const checkPendingConsents = async () => {
-      const userId = sessionStorage.getItem("user_id");
-      if (!userId) return;
+  // Fetch pending consents and show toasts for new ones
+  const fetchPendingAndShowToasts = useCallback(
+    async (userId: string) => {
+      console.log(
+        `🔔 [NotificationProvider] Fetching pending consents for ${userId}`
+      );
 
       try {
         const response = await fetch(`/api/consent/pending?userId=${userId}`);
         if (response.ok) {
           const data = await response.json();
           const pending: PendingConsent[] = data.pending || [];
-
+          console.log(
+            `🔔 [NotificationProvider] Found ${pending.length} pending consents`
+          );
           setPendingCount(pending.length);
 
           // Show toast for NEW requests only
           pending.forEach((consent) => {
-            const status = seenRequestIds.current.get(consent.id);
-            // Only show if we haven't seen it, or if it's new
-            if (!status) {
-              seenRequestIds.current.set(consent.id, "pending");
+            const show = shouldShowToast(consent.id);
+            console.log(
+              `🔔 [NotificationProvider] Consent ${consent.id}: shouldShow=${show}`
+            );
+            if (show) {
+              markAsPending(consent.id);
               showConsentToast(consent);
             }
-            // If it's already 'handled' or 'pending', do nothing.
           });
-
-          // Remove dismissed IDs that are no longer pending
-          const currentIds = new Set(pending.map((p) => p.id));
-
-          for (const [id, status] of Array.from(
-            seenRequestIds.current.entries()
-          )) {
-            if (!currentIds.has(id)) {
-              // The request is gone from backend.
-              seenRequestIds.current.delete(id);
-
-              // Only dismiss the toast if it was a "pending" interactive toast.
-              // If it was "handled", it's showing a success message -> DON'T dismiss prematurely.
-              if (status === "pending") {
-                toast.dismiss(id);
-              }
-            }
-          }
+        } else {
+          console.error(
+            "🔔 [NotificationProvider] Failed to fetch pending:",
+            response.status
+          );
         }
       } catch (err) {
-        console.error("Error polling consents:", err);
+        console.error("Error fetching pending consents:", err);
       }
-    };
+    },
+    [shouldShowToast, markAsPending, showConsentToast]
+  );
 
-    // Initial check
-    checkPendingConsents();
+  // Initial fetch on mount
+  useEffect(() => {
+    const userId = sessionStorage.getItem("user_id");
+    if (!userId) {
+      console.log(
+        "🔔 [NotificationProvider] No user_id on mount, skipping fetch"
+      );
+      return;
+    }
+    console.log("🔔 [NotificationProvider] Initial fetch on mount");
+    fetchPendingAndShowToasts(userId);
+  }, [fetchPendingAndShowToasts]);
 
-    // Poll every 5 seconds
-    const interval = setInterval(checkPendingConsents, 5000);
+  // React to SSE events
+  useEffect(() => {
+    if (!lastEvent) return;
 
-    return () => clearInterval(interval);
-  }, [showConsentToast]);
+    const userId = sessionStorage.getItem("user_id");
+    if (!userId) return;
+
+    const { request_id, action } = lastEvent;
+
+    console.log(
+      `📡 [NotificationProvider] SSE event: ${action} for ${request_id}`
+    );
+
+    if (action === "REQUESTED") {
+      // New request - refresh to show toast
+      fetchPendingAndShowToasts(userId);
+    } else if (action === "CONSENT_GRANTED" || action === "CONSENT_DENIED") {
+      // Request resolved - dismiss toast only if still pending (not being processed)
+      if (shouldDismissToast(request_id)) {
+        toast.dismiss(request_id);
+      }
+      clearRequest(request_id);
+
+      // Refresh pending count
+      fetchPendingAndShowToasts(userId);
+    } else if (action === "REVOKED") {
+      // Refresh counts
+      fetchPendingAndShowToasts(userId);
+    }
+  }, [
+    lastEvent,
+    eventCount,
+    shouldDismissToast,
+    clearRequest,
+    fetchPendingAndShowToasts,
+  ]);
+
+  // Log SSE connection status
+  useEffect(() => {
+    console.log(`🔔 [NotificationProvider] SSE connected: ${isConnected}`);
+  }, [isConnected]);
 
   return <>{children}</>;
 }
 
-// Export pending count for badge usage
+// ============================================================================
+// Pending Count Hook (uses unified SSE)
+// ============================================================================
+
 export function usePendingConsentCount() {
   const [count, setCount] = useState(0);
+  const { lastEvent, eventCount } = useConsentSSE();
 
-  useEffect(() => {
-    const checkCount = async () => {
-      const userId = sessionStorage.getItem("user_id");
-      if (!userId) return;
+  // Fetch count from API
+  const fetchCount = useCallback(async () => {
+    const userId = sessionStorage.getItem("user_id");
+    if (!userId) return;
 
-      try {
-        const response = await fetch(`/api/consent/pending?userId=${userId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setCount(data.pending?.length || 0);
-        }
-      } catch (err) {
-        console.error("Error fetching pending count:", err);
+    try {
+      const response = await fetch(`/api/consent/pending?userId=${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCount(data.pending?.length || 0);
       }
-    };
-
-    checkCount();
-    const interval = setInterval(checkCount, 5000);
-    return () => clearInterval(interval);
+    } catch (err) {
+      console.error("Error fetching pending count:", err);
+    }
   }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchCount();
+  }, [fetchCount]);
+
+  // Refresh on SSE events
+  useEffect(() => {
+    if (lastEvent) {
+      fetchCount();
+    }
+  }, [lastEvent, eventCount, fetchCount]);
 
   return count;
 }
