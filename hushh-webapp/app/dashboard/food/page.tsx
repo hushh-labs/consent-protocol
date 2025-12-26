@@ -104,8 +104,28 @@ export default function FoodDashboardPage() {
         return;
       }
 
-      // Call domain-specific endpoint
-      const response = await fetch(`/api/vault/food?userId=${userId}`);
+      // Call domain-specific endpoint with session token (Header + Query Param fallback)
+      const sessionToken = sessionStorage.getItem("session_token");
+      console.log(
+        `🔍 [FoodDashboard] Loading preferences. UserId: ${userId}, SessionToken: ${
+          sessionToken ? "Present" : "Missing"
+        }`
+      );
+
+      const headers: HeadersInit = {};
+      let url = `/api/vault/food?userId=${userId}`;
+
+      if (sessionToken) {
+        headers["X-Session-Token"] = sessionToken;
+        // Add as query param too as backup
+        url += `&sessionToken=${encodeURIComponent(sessionToken)}`;
+      } else {
+        console.warn(
+          "⚠️ [FoodDashboard] No session token found in sessionStorage!"
+        );
+      }
+
+      const response = await fetch(url, { headers });
 
       if (!response.ok) {
         if (response.status === 404) {
