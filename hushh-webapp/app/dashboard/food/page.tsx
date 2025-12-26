@@ -267,8 +267,12 @@ export default function FoodDashboardPage() {
             <div className="flex flex-wrap gap-2">
               {preferences.dietary.length > 0 ? (
                 preferences.dietary.map((diet) => {
-                  const style =
-                    DIETARY_STYLES[diet.toLowerCase()] || DIETARY_STYLES.none;
+                  const dietKey = diet.toLowerCase();
+                  const defaultStyle = {
+                    icon: "✅",
+                    color: "bg-gray-500/10 text-gray-600 border-gray-200",
+                  };
+                  const style = DIETARY_STYLES[dietKey] ?? defaultStyle;
                   return (
                     <span
                       key={diet}
