@@ -64,8 +64,27 @@ export default function ProfessionalProfilePage() {
       }
 
       // Fetch encrypted professional data from domain-specific endpoint
-      const response = await fetch(`/api/vault/professional?userId=${userId}`);
+      const sessionToken = sessionStorage.getItem("session_token");
+      console.log(
+        `🔍 [ProfDashboard] Loading profile. UserId: ${userId}, SessionToken: ${
+          sessionToken ? "Present" : "Missing"
+        }`
+      );
 
+      const headers: HeadersInit = {};
+      let url = `/api/vault/professional?userId=${userId}`;
+
+      if (sessionToken) {
+        headers["X-Session-Token"] = sessionToken;
+        // Add as query param too as backup
+        url += `&sessionToken=${encodeURIComponent(sessionToken)}`;
+      } else {
+        console.warn(
+          "⚠️ [ProfDashboard] No session token found in sessionStorage!"
+        );
+      }
+
+      const response = await fetch(url, { headers });
       if (!response.ok) {
         if (response.status === 404) {
           // No profile yet, show empty state
