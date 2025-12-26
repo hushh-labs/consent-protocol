@@ -9,12 +9,16 @@ Single persistent connection per user for consent updates.
 import asyncio
 import json
 import logging
+import os
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 logger = logging.getLogger(__name__)
+
+# Consent timeout from env var (synced with frontend via CONSENT_TIMEOUT_SECONDS)
+CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 router = APIRouter(prefix="/api/consent", tags=["SSE"])
 
@@ -28,11 +32,22 @@ async def consent_event_generator(
     
     Checks for consent updates every 500ms and yields events
     when a pending request is approved/denied.
+    Sends heartbeat every 30s to keep connection alive.
     """
     logger.info(f"SSE connection opened for user: {user_id}")
     
-    # Track which requests we've already notified about
-    notified_request_ids = set()
+    # Track connection start time - only send events AFTER this
+    # This prevents re-sending old events on reconnect
+    from datetime import datetime
+    connection_start_ms = int(datetime.now().timestamp() * 1000)
+    
+    # Track which events we've already notified about this session
+    # Use request_id as primary key since token_id can be auto-generated
+    notified_event_ids = set()
+    
+    # Heartbeat tracking
+    last_heartbeat = 0
+    HEARTBEAT_INTERVAL = 30  # seconds
     
     try:
         while True:
@@ -41,29 +56,32 @@ async def consent_event_generator(
                 logger.info(f"SSE client disconnected: {user_id}")
                 break
             
-            # Get pending/recently actioned consent requests
             from db.connection import get_pool
             pool = await get_pool()
             
-            # Query for any consent events with recent action
+            # Query for events that happened AFTER this connection started
             recent_events = await pool.fetch("""
                 SELECT token_id, request_id, action, scope, agent_id, issued_at
                 FROM consent_audit
                 WHERE user_id = $1 
-                AND action IN ('APPROVED', 'DENIED')
-                AND issued_at > (EXTRACT(EPOCH FROM NOW()) * 1000 - 300000)
+                AND action IN ('REQUESTED', 'CONSENT_GRANTED', 'CONSENT_DENIED', 'REVOKED')
+                AND issued_at > $2
                 ORDER BY issued_at DESC
                 LIMIT 10
-            """, user_id)
+            """, user_id, connection_start_ms)
             
             for event in recent_events:
+                # Use request_id as primary event key (more stable than auto-generated token_id)
+                # Fall back to token_id if request_id is not available
+                event_id = event.get("request_id") or event.get("token_id")
                 request_id = event.get("request_id")
-                if request_id and request_id not in notified_request_ids:
-                    notified_request_ids.add(request_id)
+                
+                if event_id and event_id not in notified_event_ids:
+                    notified_event_ids.add(event_id)
                     
                     yield {
                         "event": "consent_update",
-                        "id": request_id,
+                        "id": event_id,
                         "data": json.dumps({
                             "request_id": request_id,
                             "action": event["action"],
@@ -73,6 +91,17 @@ async def consent_event_generator(
                         })
                     }
                     logger.info(f"SSE event sent: {event['action']} for {request_id}")
+            
+            # Send heartbeat every 30 seconds to keep connection alive
+            import time
+            current_time = time.time()
+            if current_time - last_heartbeat >= HEARTBEAT_INTERVAL:
+                yield {
+                    "event": "heartbeat",
+                    "data": json.dumps({"timestamp": int(current_time * 1000)})
+                }
+                last_heartbeat = current_time
+                logger.debug(f"SSE heartbeat sent for user: {user_id}")
             
             # Check every 500ms
             await asyncio.sleep(0.5)
@@ -110,6 +139,8 @@ async def consent_events(user_id: str, request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Access-Control-Allow-Origin": "*",  # CORS for SSE
+            "Access-Control-Allow-Credentials": "true",
         }
     )
 
@@ -123,10 +154,9 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
     Closes automatically when the request is resolved.
     """
     async def specific_event_generator():
-        max_wait = 60  # 60 seconds max wait
         elapsed = 0
         
-        while elapsed < max_wait:
+        while elapsed < CONSENT_TIMEOUT_SECONDS:
             if await request.is_disconnected():
                 break
             
@@ -137,7 +167,7 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
                 SELECT action, scope, agent_id, issued_at
                 FROM consent_audit
                 WHERE user_id = $1 AND request_id = $2
-                AND action IN ('APPROVED', 'DENIED')
+                AND action IN ('CONSENT_GRANTED', 'CONSENT_DENIED')
                 ORDER BY issued_at DESC
                 LIMIT 1
             """, user_id, request_id)
@@ -159,7 +189,7 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
             elapsed += 0.5
         
         # Timeout event
-        if elapsed >= max_wait:
+        if elapsed >= CONSENT_TIMEOUT_SECONDS:
             yield {
                 "event": "consent_timeout",
                 "id": request_id,
