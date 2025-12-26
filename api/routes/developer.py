@@ -4,6 +4,7 @@ Developer API v1 endpoints for external access with consent.
 """
 
 import logging
+import os
 import time
 import uuid
 
@@ -16,6 +17,9 @@ from hushh_mcp.constants import ConsentScope
 from shared import MOCK_USER_DATA, REGISTERED_DEVELOPERS
 
 logger = logging.getLogger(__name__)
+
+# Consent timeout from env var (synced with frontend and SSE)
+CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 router = APIRouter(prefix="/api/v1", tags=["Developer API"])
 
@@ -107,9 +111,9 @@ async def request_consent(request: ConsentRequest):
     # Generate a request ID
     request_id = str(uuid.uuid4())[:8]
     
-    # Calculate MCP poll timeout (120 seconds from now)
+    # Calculate MCP poll timeout from env var
     now_ms = int(time.time() * 1000)
-    poll_timeout_at = now_ms + (120 * 1000)  # 120 seconds MCP timeout
+    poll_timeout_at = now_ms + (CONSENT_TIMEOUT_SECONDS * 1000)
     
     # Store in database (mandatory)
     await consent_db.insert_event(
