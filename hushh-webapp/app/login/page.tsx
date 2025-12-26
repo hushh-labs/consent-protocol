@@ -370,9 +370,9 @@ export default function LoginPage() {
               new Date(tokenData.expiresAt).toISOString()
             );
           } else {
-            console.warn(
-              "⚠️ Session token issuance failed, continuing without token"
-            );
+            const errorText = await tokenResponse.text();
+            console.error("❌ Session token issuance failed:", errorText);
+            // Don't throw - allow login to proceed, but features relying on session token will fail
           }
 
           // Create httpOnly session cookie via Firebase Admin
