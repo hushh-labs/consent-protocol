@@ -19,9 +19,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  onAuthStateChanged,
-} from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { AuthService } from "@/lib/services/auth-service";
 import { VaultService } from "@/lib/services/vault-service";
@@ -108,6 +106,7 @@ export default function LoginPage() {
   // EFFECTS
   // ============================================================================
 
+  // Effect 1: Handle auth state changes
   useEffect(() => {
     // Safety timeout: If auth state doesn't respond in 3 seconds, show login
     const timeout = setTimeout(() => {
@@ -119,11 +118,10 @@ export default function LoginPage() {
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       clearTimeout(timeout);
-      
+
       if (user) {
-        // Check if vault is already unlocked (in memory)
+        // If vault is already unlocked, don't re-check (handled by separate effect)
         if (isVaultUnlocked) {
-          router.push("/dashboard");
           return;
         }
 
@@ -148,6 +146,16 @@ export default function LoginPage() {
       unsubscribe();
     };
   }, [router]);
+
+  // Effect 2: Redirect when vault is unlocked
+  useEffect(() => {
+    if (isVaultUnlocked && step === "success") {
+      console.log(
+        "🔓 [LoginPage] Vault unlocked + success step, redirecting to dashboard"
+      );
+      router.push("/dashboard");
+    }
+  }, [isVaultUnlocked, step, router]);
 
   // ============================================================================
   // VAULT CHECK
@@ -177,7 +185,8 @@ export default function LoginPage() {
         } catch (err) {
           console.error("❌ [LoginPage] Failed to load vault data:", err);
           toast.error("Failed to load vault data", {
-            description: err instanceof Error ? err.message : "Please try again",
+            description:
+              err instanceof Error ? err.message : "Please try again",
           });
           setStep("ready");
         }
@@ -386,7 +395,13 @@ export default function LoginPage() {
       }
 
       setStep("success");
-      router.push("/dashboard");
+
+      // Direct redirect with small delay to ensure state propagation
+      console.log("🚀 [LoginPage] Initiating redirect to dashboard...");
+      setTimeout(() => {
+        console.log("🚀 [LoginPage] Executing router.push to /dashboard");
+        router.push("/dashboard");
+      }, 50);
     } catch (err: any) {
       console.error("Unlock error:", err);
       setError("Invalid passphrase. Try again or use recovery key.");
