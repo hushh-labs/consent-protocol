@@ -154,6 +154,32 @@ async def is_token_active(user_id: str, scope: str) -> bool:
         return False
 
 
+async def was_recently_denied(user_id: str, scope: str, cooldown_seconds: int = 60) -> bool:
+    """
+    Check if consent was recently denied for user+scope.
+    
+    This prevents MCP from immediately re-requesting after a denial,
+    which would cause duplicate toast notifications.
+    """
+    pool = await get_pool()
+    
+    now_ms = int(datetime.now().timestamp() * 1000)
+    cooldown_ms = cooldown_seconds * 1000
+    cutoff_ms = now_ms - cooldown_ms
+    
+    query = """
+        SELECT action, issued_at FROM consent_audit
+        WHERE user_id = $1 AND scope = $2 AND action = 'CONSENT_DENIED'
+        AND issued_at > $3
+        ORDER BY issued_at DESC
+        LIMIT 1
+    """
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, user_id, scope, cutoff_ms)
+        return row is not None
+
+
 # ============================================================================
 # Audit Log
 # ============================================================================

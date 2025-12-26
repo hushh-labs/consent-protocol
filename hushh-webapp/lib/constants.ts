@@ -32,11 +32,21 @@ export const CONSENT_SCOPES = {
 export type ConsentScope = (typeof CONSENT_SCOPES)[keyof typeof CONSENT_SCOPES];
 
 /**
+ * Consent timeout configuration (synced with backend via env var)
+ * Set NEXT_PUBLIC_CONSENT_TIMEOUT_SECONDS in your .env to sync with backend
+ */
+export const CONSENT_TIMEOUT_SECONDS = parseInt(
+  process.env.NEXT_PUBLIC_CONSENT_TIMEOUT_SECONDS || "120",
+  10
+);
+export const CONSENT_TIMEOUT_MS = CONSENT_TIMEOUT_SECONDS * 1000;
+
+/**
  * API timeouts (milliseconds)
  */
 export const API_TIMEOUTS = {
-  /** Consent polling/SSE timeout */
-  CONSENT_POLL: 30000,
+  /** Consent wait timeout - synced with backend */
+  CONSENT_WAIT: CONSENT_TIMEOUT_MS,
   /** Agent chat request timeout */
   AGENT_CHAT: 60000,
   /** Default API request timeout */

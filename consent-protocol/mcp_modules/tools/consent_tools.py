@@ -169,87 +169,117 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         "message": "✅ Consent already granted. Use this token to access data."
                     }))]
                 
-                # Pending - wait for approval
+                # Pending - wait for approval via SSE (efficient server-push)
                 if status == "pending":
-                    logger.info(f"📋 Consent request created - WAITING for user approval...")
+                    # Extract request_id from response message if available
+                    message = data.get("message", "")
+                    request_id = None
+                    if "Request ID:" in message:
+                        request_id = message.split("Request ID:")[-1].strip()
                     
-                    start_time = time.time()
-                    poll_count = 0
-                    
-                    while True:
-                        elapsed = time.time() - start_time
-                        remaining = CONSENT_TIMEOUT_SECONDS - elapsed
-                        
-                        # Timeout
-                        if elapsed >= CONSENT_TIMEOUT_SECONDS:
-                            logger.warning(f"⏰ TIMEOUT: User did not approve within {CONSENT_TIMEOUT_SECONDS}s")
-                            return [TextContent(type="text", text=json.dumps({
-                                "status": "timeout",
-                                "user_id": user_id,
-                                "scope": scope_str,
-                                "waited_seconds": int(elapsed),
-                                "message": f"⏰ User did not approve consent within {CONSENT_TIMEOUT_SECONDS} seconds.",
-                                "user_action": "User must approve the request in their Hushh dashboard",
-                                "dashboard_url": f"{FRONTEND_URL}/dashboard/consents",
-                                "next_step": "Try again after user has approved the request"
-                            }))]
-                        
-                        poll_count += 1
-                        logger.info(f"   🔄 Polling #{poll_count} - {int(remaining)}s remaining...")
-                        
-                        # Check if still pending
+                    if not request_id:
+                        # Fetch pending to get request_id
                         pending_response = await client.get(
                             f"{FASTAPI_URL}/api/consent/pending",
                             params={"userId": user_id},
                             timeout=10.0
                         )
-                        
                         if pending_response.status_code == 200:
-                            pending_data = pending_response.json()
-                            pending_list = pending_data.get("pending", [])
+                            pending_list = pending_response.json().get("pending", [])
+                            for req in pending_list:
+                                if req.get("scope") == scope_api:
+                                    request_id = req.get("id")
+                                    break
+                    
+                    if not request_id:
+                        logger.error("❌ Could not find request_id for pending consent")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "error",
+                            "error": "Could not track consent request",
+                            "message": "Failed to find request ID for the pending consent"
+                        }))]
+                    
+                    logger.info(f"📋 Consent request created (ID: {request_id})")
+                    logger.info(f"🔌 Using SSE to wait for user approval...")
+                    
+                    # Use SSE client for efficient server-push notifications
+                    from mcp_modules.sse_client import wait_for_consent_via_sse
+                    
+                    resolution = await wait_for_consent_via_sse(
+                        user_id=user_id,
+                        request_id=request_id,
+                        scope=scope_str,
+                        fastapi_url=FASTAPI_URL,
+                        timeout_seconds=CONSENT_TIMEOUT_SECONDS
+                    )
+                    
+                    # Handle resolution
+                    if resolution.status == "granted":
+                        # Fetch the token from active consents
+                        active_response = await client.get(
+                            f"{FASTAPI_URL}/api/consent/active",
+                            params={"userId": user_id},
+                            timeout=10.0
+                        )
+                        
+                        if active_response.status_code == 200:
+                            active_list = active_response.json().get("active", [])
+                            active_token = next(
+                                (t for t in active_list if t.get("scope") == scope_api),
+                                None
+                            )
                             
-                            still_pending = any(req.get("scope") == scope_api for req in pending_list)
-                            
-                            if not still_pending:
-                                logger.info(f"   ✅ Request no longer pending - checking for token...")
-                                
-                                retry_response = await client.post(
-                                    f"{FASTAPI_URL}/api/v1/request-consent",
-                                    json={
-                                        "developer_token": MCP_DEVELOPER_TOKEN,
-                                        "user_id": user_id,
-                                        "scope": scope_api,
-                                        "expiry_hours": 24
-                                    },
-                                    timeout=10.0
-                                )
-                                
-                                if retry_response.status_code == 200:
-                                    retry_data = retry_response.json()
-                                    if retry_data.get("status") == "already_granted":
-                                        token = retry_data.get("consent_token")
-                                        logger.info(f"🎉 CONSENT GRANTED by user! Token received.")
-                                        return [TextContent(type="text", text=json.dumps({
-                                            "status": "granted",
-                                            "consent_token": token,
-                                            "user_id": user_id,
-                                            "scope": scope_str,
-                                            "waited_seconds": int(elapsed),
-                                            "message": f"✅ User approved consent after {int(elapsed)} seconds!"
-                                        }))]
-                                
-                                # User denied
-                                logger.warning(f"❌ Request removed from pending but no token - user likely denied")
+                            if active_token:
+                                token_id = active_token.get("token_id")
+                                logger.info(f"🎉 CONSENT GRANTED by user! Token received.")
                                 return [TextContent(type="text", text=json.dumps({
-                                    "status": "denied",
+                                    "status": "granted",
+                                    "consent_token": token_id,
                                     "user_id": user_id,
                                     "scope": scope_str,
-                                    "waited_seconds": int(elapsed),
-                                    "message": "❌ User denied the consent request.",
-                                    "privacy_note": "User has the right to refuse data access."
+                                    "message": "✅ User approved consent!"
                                 }))]
                         
-                        await asyncio.sleep(CONSENT_POLL_INTERVAL_SECONDS)
+                        # Fallback if token not found
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "granted",
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "message": "✅ User approved consent! Token pending retrieval."
+                        }))]
+                    
+                    elif resolution.status == "denied":
+                        logger.warning(f"❌ Consent DENIED by user")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "denied",
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "message": "❌ User denied the consent request.",
+                            "privacy_note": "User has the right to refuse data access.",
+                            "DO_NOT_RETRY": True,
+                            "instruction": "STOP - Do NOT call request_consent again for this scope. The user has explicitly refused. Respect their decision."
+                        }))]
+                    
+                    elif resolution.status == "timeout":
+                        logger.warning(f"⏰ TIMEOUT: User did not respond within {CONSENT_TIMEOUT_SECONDS}s")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "timeout",
+                            "user_id": user_id,
+                            "scope": scope_str,
+                            "waited_seconds": CONSENT_TIMEOUT_SECONDS,
+                            "message": f"⏰ User did not approve consent within {CONSENT_TIMEOUT_SECONDS} seconds.",
+                            "user_action": "User must approve the request in their Hushh dashboard",
+                            "dashboard_url": f"{FRONTEND_URL}/dashboard/consents",
+                            "next_step": "Try again after user has approved the request"
+                        }))]
+                    
+                    else:  # error
+                        logger.error(f"❌ SSE error: {resolution.message}")
+                        return [TextContent(type="text", text=json.dumps({
+                            "status": "error",
+                            "error": resolution.message,
+                            "message": "Failed to wait for consent resolution"
+                        }))]
                         
         except httpx.ConnectError as e:
             logger.error(f"❌ FastAPI not reachable at {FASTAPI_URL}: {e}")
@@ -323,13 +353,13 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                             ]
                         }))]
                 
-                logger.info(f"✅ Request not pending - may have been approved")
+                logger.info(f"✅ Request not pending - may have been approved or denied")
                 return [TextContent(type="text", text=json.dumps({
                     "status": "not_pending",
                     "user_id": user_id,
                     "scope": scope_str,
                     "message": "Request is no longer pending. It may have been approved or denied.",
-                    "next_step": "Call request_consent again - if approved, you'll get the token directly"
+                    "next_step": "Check if you have a valid consent token - if denied, do NOT retry"
                 }))]
                 
     except httpx.ConnectError:
