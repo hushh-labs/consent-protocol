@@ -31,15 +31,38 @@ export default function DashboardPage() {
   );
 
   // Check vault on mount - redirect to login if not unlocked
+  // Use a small delay to allow context state to propagate after navigation
   useEffect(() => {
-    if (!isVaultUnlocked) {
-      // Vault not unlocked, redirect to login
-      router.push("/login?redirect=/dashboard");
+    // First check the sessionStorage flag (set by vault-context on unlock)
+    const vaultUnlockedFlag =
+      sessionStorage.getItem("vault_unlocked") === "true";
+
+    if (!isVaultUnlocked && !vaultUnlockedFlag) {
+      // Neither context nor sessionStorage indicates vault is unlocked
+      // Wait a moment in case context is still propagating
+      const timeoutId = setTimeout(() => {
+        if (!isVaultUnlocked) {
+          console.log(
+            "🔒 [Dashboard] Vault not unlocked, redirecting to login"
+          );
+          router.push("/login?redirect=/dashboard");
+        }
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
     }
+    // Vault is unlocked, no cleanup needed
+    return undefined;
   }, [isVaultUnlocked, router]);
 
   // Show loading while checking vault
-  if (!isVaultUnlocked) {
+  // Also check sessionStorage for faster initial render
+  const vaultUnlockedFlag =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("vault_unlocked") === "true"
+      : false;
+
+  if (!isVaultUnlocked && !vaultUnlockedFlag) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">

@@ -26,10 +26,22 @@
 
 ## Service URLs
 
-| Service  | URL                                                |
-| -------- | -------------------------------------------------- |
-| Frontend | `https://hushh-webapp-rpphvsc3tq-uc.a.run.app`     |
-| Backend  | `https://consent-protocol-rpphvsc3tq-uc.a.run.app` |
+| Service  | URL                                                          |
+| -------- | ------------------------------------------------------------ |
+| Frontend | `https://hushh-webapp-1006304528804.us-central1.run.app`     |
+| Backend  | `https://consent-protocol-1006304528804.us-central1.run.app` |
+
+---
+
+## Deployment Files
+
+All deployment configuration files are in the `/deploy` directory:
+
+| File                     | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `cloudbuild-webapp.yaml` | Cloud Build config for frontend (Next.js)     |
+| `cloudbuild-ci.yaml`     | CI/CD pipeline for automated deployments      |
+| `cloudrun-webapp.yaml`   | Cloud Run service definition (Knative format) |
 
 ---
 

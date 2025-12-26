@@ -27,12 +27,15 @@ export class VaultService {
    */
   static async checkVault(userId: string): Promise<boolean> {
     console.log("🔐 [VaultService] checkVault called for:", userId);
-    
+
     if (Capacitor.isNativePlatform()) {
       console.log("🔐 [VaultService] Using native plugin for checkVault");
       try {
         const authToken = await this.getFirebaseToken();
-        console.log("🔐 [VaultService] Got auth token:", authToken ? "yes" : "no");
+        console.log(
+          "🔐 [VaultService] Got auth token:",
+          authToken ? "yes" : "no"
+        );
         const result = await HushhVault.hasVault({ userId, authToken });
         console.log("🔐 [VaultService] hasVault result:", result);
         return result.exists;
@@ -41,12 +44,23 @@ export class VaultService {
         throw error;
       }
     }
-    
-    // Web: use API route
+
+    // Web: use API route with Firebase auth
     console.log("🌐 [VaultService] Using API for checkVault");
     const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Vault check failed");
+
+    // Get Firebase token for authentication (required in production)
+    const authToken = await this.getFirebaseToken();
+    const headers: HeadersInit = {};
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      console.error("❌ [VaultService] checkVault failed:", response.status);
+      throw new Error("Vault check failed");
+    }
     const data = await response.json();
     return data.hasVault;
   }
@@ -58,7 +72,7 @@ export class VaultService {
    */
   static async getVault(userId: string): Promise<VaultData> {
     console.log("🔐 [VaultService] getVault called for:", userId);
-    
+
     if (Capacitor.isNativePlatform()) {
       console.log("🔐 [VaultService] Using native plugin for getVault");
       try {
@@ -78,12 +92,23 @@ export class VaultService {
         throw error;
       }
     }
-    
-    // Web: use API route
+
+    // Web: use API route with Firebase auth
     console.log("🌐 [VaultService] Using API for getVault");
     const url = this.getApiUrl(`/api/vault/get?userId=${userId}`);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Failed to get vault");
+
+    // Get Firebase token for authentication (required in production)
+    const authToken = await this.getFirebaseToken();
+    const headers: HeadersInit = {};
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      console.error("❌ [VaultService] getVault failed:", response.status);
+      throw new Error("Failed to get vault");
+    }
     return await response.json();
   }
 
@@ -93,11 +118,11 @@ export class VaultService {
    * Web: Calls /api/vault/setup
    */
   static async setupVault(
-    userId: string, 
+    userId: string,
     vaultData: VaultData & { authMethod: string }
   ): Promise<void> {
     console.log("🔐 [VaultService] setupVault called for:", userId);
-    
+
     if (Capacitor.isNativePlatform()) {
       console.log("🔐 [VaultService] Using native plugin for setupVault");
       try {
@@ -120,7 +145,7 @@ export class VaultService {
         throw error;
       }
     }
-    
+
     // Web: use API route
     console.log("🌐 [VaultService] Using API for setupVault");
     const url = this.getApiUrl("/api/vault/setup");
@@ -148,9 +173,9 @@ export class VaultService {
    * Unlock Vault (Decrypt Key)
    */
   static async unlockVault(
-    passphrase: string, 
-    encryptedKey: string, 
-    salt: string, 
+    passphrase: string,
+    encryptedKey: string,
+    salt: string,
     iv: string
   ): Promise<string> {
     if (Capacitor.isNativePlatform()) {
@@ -158,8 +183,8 @@ export class VaultService {
       try {
         const derived = await HushhVault.deriveKey({
           passphrase: passphrase,
-          salt: salt, 
-          iterations: 100000
+          salt: salt,
+          iterations: 100000,
         });
 
         const decrypted = await HushhVault.decryptData({
@@ -167,12 +192,12 @@ export class VaultService {
             ciphertext: encryptedKey,
             iv: iv,
             tag: "",
-            encoding: 'base64',
-            algorithm: 'aes-256-gcm'
+            encoding: "base64",
+            algorithm: "aes-256-gcm",
           },
-          keyHex: derived.keyHex
+          keyHex: derived.keyHex,
         });
-        
+
         return decrypted.plaintext;
       } catch (e) {
         console.error("Native unlock failed, trying web fallback", e);
@@ -189,7 +214,7 @@ export class VaultService {
     salt: string,
     iv: string
   ): Promise<string> {
-      return webUnlockRecall(key, encryptedKey, salt, iv);
+    return webUnlockRecall(key, encryptedKey, salt, iv);
   }
 
   // ============================================================================
@@ -217,6 +242,6 @@ export class VaultService {
       const endpoint = path.replace(/^\//, "");
       return `${base}/${endpoint}`;
     }
-    return path; 
+    return path;
   }
 }
