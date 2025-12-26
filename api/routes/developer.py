@@ -9,11 +9,11 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
-from shared import REGISTERED_DEVELOPERS, MOCK_USER_DATA
-from hushh_mcp.consent.token import validate_token, issue_token
-from hushh_mcp.constants import ConsentScope
 import consent_db
+from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
+from hushh_mcp.consent.token import validate_token
+from hushh_mcp.constants import ConsentScope
+from shared import MOCK_USER_DATA, REGISTERED_DEVELOPERS
 
 logger = logging.getLogger(__name__)
 
