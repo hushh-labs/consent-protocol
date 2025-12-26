@@ -4,6 +4,7 @@ Agent chat endpoints for Food & Dining and Professional Profile agents.
 """
 
 import logging
+
 from fastapi import APIRouter, HTTPException
 
 from api.models import ChatRequest, ChatResponse, ValidateTokenRequest

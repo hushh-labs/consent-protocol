@@ -5,16 +5,13 @@ Consent management endpoints (pending, approve, deny, revoke, history, active).
 
 import logging
 import time
-import uuid
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
-from api.models import ConsentRequest, ConsentResponse
-from shared import REGISTERED_DEVELOPERS
-from hushh_mcp.consent.token import validate_token, issue_token
-from hushh_mcp.constants import ConsentScope
 import consent_db
+from hushh_mcp.consent.token import issue_token, validate_token
+from hushh_mcp.constants import ConsentScope
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +107,7 @@ async def approve_consent(request: Request):
             "scope": pending_request["scope"],
             "created_at": int(time.time() * 1000),
         }
-        logger.info(f"   Stored encrypted export for token")
+        logger.info("   Stored encrypted export for token")
     
     # Log CONSENT_GRANTED to database
     await consent_db.insert_event(
@@ -122,7 +119,7 @@ async def approve_consent(request: Request):
         request_id=requestId,
         expires_at=token.expires_at
     )
-    logger.info(f"✅ CONSENT_GRANTED event saved to DB")
+    logger.info("✅ CONSENT_GRANTED event saved to DB")
     
     # Return token with export key for MCP decryption
     return {
@@ -155,7 +152,7 @@ async def deny_consent(userId: str, requestId: str):
         action="CONSENT_DENIED",
         request_id=requestId
     )
-    logger.info(f"❌ CONSENT_DENIED event saved to DB")
+    logger.info("❌ CONSENT_DENIED event saved to DB")
     
     return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
 
@@ -241,7 +238,7 @@ async def get_consent_export_data(consent_token: str):
     
     # Look up the encrypted export
     if consent_token not in _consent_exports:
-        logger.warning(f"⚠️ No export data found for token")
+        logger.warning("⚠️ No export data found for token")
         raise HTTPException(status_code=404, detail="No export data for this token")
     
     export_data = _consent_exports[consent_token]

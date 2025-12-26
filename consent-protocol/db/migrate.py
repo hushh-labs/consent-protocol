@@ -153,6 +153,10 @@ async def create_session_tokens(pool: asyncpg.Pool):
     print("✅ session_tokens ready!")
 
 
+# Note: Revocation is tracked in consent_audit table with action='REVOKED'
+# No separate revoked_tokens table needed.
+
+
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
