@@ -13,7 +13,8 @@ Security:
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from db.connection import get_pool

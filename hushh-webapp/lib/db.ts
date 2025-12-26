@@ -227,7 +227,10 @@ export async function getAllFoodData(userId: string) {
     const data: Record<string, any> = {};
     for (const [key, value] of memoryVaultFood.entries()) {
       if (key.startsWith(`${userId}:`)) {
-        data[key.split(":")[1]] = value;
+        const fieldName = key.split(":")[1];
+        if (fieldName) {
+          data[fieldName] = value;
+        }
       }
     }
     return Object.keys(data).length > 0 ? data : null;
@@ -314,7 +317,10 @@ export async function getAllProfessionalData(userId: string) {
     const data: Record<string, any> = {};
     for (const [key, value] of memoryVaultProfessional.entries()) {
       if (key.startsWith(`${userId}:`)) {
-        data[key.split(":")[1]] = value;
+        const fieldName = key.split(":")[1];
+        if (fieldName) {
+          data[fieldName] = value;
+        }
       }
     }
     return Object.keys(data).length > 0 ? data : null;
