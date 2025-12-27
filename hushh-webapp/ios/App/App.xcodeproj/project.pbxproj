@@ -15,24 +15,25 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		A3D541C4BEA5347EB4397294 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 45DFF976542D888BD73A1B07 /* GoogleService-Info.plist */; };
 		HUSHHAUTH001 /* HushhAuthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHAUTH002 /* HushhAuthPlugin.swift */; };
-		HUSHHAUTH003 /* HushhAuthPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHAUTH004 /* HushhAuthPlugin.m */; };
-		MYVIEWCTRL001 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = MYVIEWCTRL002 /* MyViewController.swift */; };
-		HUSHHVAULT001 /* HushhVaultPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHVAULT002 /* HushhVaultPlugin.swift */; };
 		HUSHHCONST001 /* HushhConsentPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHCONST002 /* HushhConsentPlugin.swift */; };
 		HUSHHKEYCH001 /* HushhKeychainPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHKEYCH002 /* HushhKeychainPlugin.swift */; };
 		HUSHHSETT001 /* HushhSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHSETT002 /* HushhSettingsPlugin.swift */; };
 		HUSHHSYNC001 /* HushhSyncPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHSYNC002 /* HushhSyncPlugin.swift */; };
-		MCPSET001 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSET002 /* Settings.swift */; };
-		MCPVSP001 /* VaultStorageProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPVSP002 /* VaultStorageProtocol.swift */; };
-		MCPLVS001 /* LocalVaultStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPLVS002 /* LocalVaultStorage.swift */; };
+		HUSHHVAULT001 /* HushhVaultPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = HUSHHVAULT002 /* HushhVaultPlugin.swift */; };
 		MCPCDB001 /* CloudDBProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPCDB002 /* CloudDBProxy.swift */; };
+		MCPLVS001 /* LocalVaultStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPLVS002 /* LocalVaultStorage.swift */; };
+		MCPSET001 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSET002 /* Settings.swift */; };
 		MCPSQL001 /* SQLCipherDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSQL002 /* SQLCipherDatabase.swift */; };
 		MCPSYN001 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPSYN002 /* SyncService.swift */; };
+		MCPVSP001 /* VaultStorageProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = MCPVSP002 /* VaultStorageProtocol.swift */; };
+		MYVIEWCTRL001 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = MYVIEWCTRL002 /* MyViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		45DFF976542D888BD73A1B07 /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -43,19 +44,18 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		HUSHHAUTH002 /* HushhAuthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhAuthPlugin.swift; sourceTree = "<group>"; };
-		HUSHHAUTH004 /* HushhAuthPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HushhAuthPlugin.m; sourceTree = "<group>"; };
-		MYVIEWCTRL002 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
-		HUSHHVAULT002 /* HushhVaultPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhVaultPlugin.swift; sourceTree = "<group>"; };
 		HUSHHCONST002 /* HushhConsentPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhConsentPlugin.swift; sourceTree = "<group>"; };
 		HUSHHKEYCH002 /* HushhKeychainPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhKeychainPlugin.swift; sourceTree = "<group>"; };
 		HUSHHSETT002 /* HushhSettingsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhSettingsPlugin.swift; sourceTree = "<group>"; };
 		HUSHHSYNC002 /* HushhSyncPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhSyncPlugin.swift; sourceTree = "<group>"; };
-		MCPSET002 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
-		MCPVSP002 /* VaultStorageProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultStorageProtocol.swift; sourceTree = "<group>"; };
-		MCPLVS002 /* LocalVaultStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVaultStorage.swift; sourceTree = "<group>"; };
+		HUSHHVAULT002 /* HushhVaultPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HushhVaultPlugin.swift; sourceTree = "<group>"; };
 		MCPCDB002 /* CloudDBProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDBProxy.swift; sourceTree = "<group>"; };
+		MCPLVS002 /* LocalVaultStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVaultStorage.swift; sourceTree = "<group>"; };
+		MCPSET002 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		MCPSQL002 /* SQLCipherDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SQLCipherDatabase.swift; sourceTree = "<group>"; };
 		MCPSYN002 /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
+		MCPVSP002 /* VaultStorageProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultStorageProtocol.swift; sourceTree = "<group>"; };
+		MYVIEWCTRL002 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +101,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				45DFF976542D888BD73A1B07 /* GoogleService-Info.plist */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -122,17 +123,8 @@
 			isa = PBXGroup;
 			children = (
 				HUSHHAUTH002 /* HushhAuthPlugin.swift */,
-				HUSHHAUTH004 /* HushhAuthPlugin.m */,
 			);
 			path = HushhAuth;
-			sourceTree = "<group>";
-		};
-		HUSHHVAULT006 /* HushhVault */ = {
-			isa = PBXGroup;
-			children = (
-				HUSHHVAULT002 /* HushhVaultPlugin.swift */,
-			);
-			path = HushhVault;
 			sourceTree = "<group>";
 		};
 		HUSHHCONST006 /* HushhConsent */ = {
@@ -167,15 +159,12 @@
 			path = HushhSync;
 			sourceTree = "<group>";
 		};
-		MCPGROUP001 /* HushhMCP */ = {
+		HUSHHVAULT006 /* HushhVault */ = {
 			isa = PBXGroup;
 			children = (
-				MCPCLOUD001 /* Cloud */,
-				MCPDB001 /* Database */,
-				MCPSYNCGRP01 /* Sync */,
-				MCPSET002 /* Settings.swift */,
+				HUSHHVAULT002 /* HushhVaultPlugin.swift */,
 			);
-			path = HushhMCP;
+			path = HushhVault;
 			sourceTree = "<group>";
 		};
 		MCPCLOUD001 /* Cloud */ = {
@@ -194,6 +183,17 @@
 				MCPSQL002 /* SQLCipherDatabase.swift */,
 			);
 			path = Database;
+			sourceTree = "<group>";
+		};
+		MCPGROUP001 /* HushhMCP */ = {
+			isa = PBXGroup;
+			children = (
+				MCPCLOUD001 /* Cloud */,
+				MCPDB001 /* Database */,
+				MCPSYNCGRP01 /* Sync */,
+				MCPSET002 /* Settings.swift */,
+			);
+			path = HushhMCP;
 			sourceTree = "<group>";
 		};
 		MCPSYNCGRP01 /* Sync */ = {
@@ -275,6 +275,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				A3D541C4BEA5347EB4397294 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,7 +289,6 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				MYVIEWCTRL001 /* MyViewController.swift in Sources */,
 				HUSHHAUTH001 /* HushhAuthPlugin.swift in Sources */,
-				HUSHHAUTH003 /* HushhAuthPlugin.m in Sources */,
 				HUSHHVAULT001 /* HushhVaultPlugin.swift in Sources */,
 				HUSHHCONST001 /* HushhConsentPlugin.swift in Sources */,
 				HUSHHKEYCH001 /* HushhKeychainPlugin.swift in Sources */,
