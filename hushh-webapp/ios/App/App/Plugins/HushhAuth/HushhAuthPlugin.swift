@@ -5,14 +5,14 @@
  * Returns credentials compatible with Firebase signInWithCredential().
  * 
  * Flow:
- *   1. Native Google Sign-In UI
+ *   1. Native Google Sign-In UI (bottom sheet)
  *   2. Returns idToken + accessToken
  *   3. Frontend syncs with Firebase using GoogleAuthProvider.credential()
  */
 
 import Foundation
 import Capacitor
-import AuthenticationServices
+import GoogleSignIn
 
 // MARK: - Plugin Registration
 
@@ -51,57 +51,49 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         return nil
     }
-    
-    // MARK: - Sign In
+
+    // MARK: - Sign In (Native Google Sign-In SDK)
     
     @objc func signIn(_ call: CAPPluginCall) {
+        NSLog("🍎 [HushhAuth] signIn() CALLED - Native plugin invoked!")
+        
         guard let clientID = self.clientID else {
+            NSLog("❌ [HushhAuth] Missing client ID!")
             call.reject("Missing Google Client ID. Add GIDClientID to Info.plist or GoogleService-Info.plist")
             return
         }
         
-        DispatchQueue.main.async {
-            self.performSignIn(clientID: clientID, call: call)
+        NSLog("🍎 [HushhAuth] Got clientID, dispatching to main queue...")
+        DispatchQueue.main.async { [weak self] in
+            self?.performNativeSignIn(clientID: clientID, call: call)
         }
     }
     
-    private func performSignIn(clientID: String, call: CAPPluginCall) {
-        // Use ASWebAuthenticationSession for OAuth flow
-        // This is the recommended approach for iOS 13+ and works in Capacitor apps
+    private func performNativeSignIn(clientID: String, call: CAPPluginCall) {
+        print("🍎 [HushhAuth] performNativeSignIn called with clientID: \(clientID.prefix(20))...")
         
-        let nonce = generateNonce()
-        let state = generateNonce()
-        
-        // Build Google OAuth URL
-        var components = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "redirect_uri", value: "com.hushh.pda:/oauth2callback"),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: "openid email profile"),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "nonce", value: nonce),
-            URLQueryItem(name: "prompt", value: "select_account"),
-        ]
-        
-        guard let authURL = components.url else {
-            call.reject("Failed to build auth URL")
-            return
-        }
+        // Configure Google Sign-In with client ID
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+        print("🍎 [HushhAuth] GIDSignIn configured")
         
         // Get the presenting view controller
         guard let viewController = self.bridge?.viewController else {
+            print("❌ [HushhAuth] No view controller available!")
             call.reject("No view controller available")
             return
         }
+        print("🍎 [HushhAuth] Got view controller, starting signIn...")
         
-        // Use ASWebAuthenticationSession
-        let session = ASWebAuthenticationSession(
-            url: authURL,
-            callbackURLScheme: "com.hushh.pda"
-        ) { [weak self] callbackURL, error in
+        // Perform native Google Sign-In
+        GIDSignIn.sharedInstance.signIn(withPresenting: viewController) { [weak self] result, error in
+            print("🍎 [HushhAuth] signIn callback received")
+            
             if let error = error {
-                if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                print("❌ [HushhAuth] Sign-in error: \(error.localizedDescription)")
+                let nsError = error as NSError
+                print("❌ [HushhAuth] Error code: \(nsError.code), domain: \(nsError.domain)")
+                if nsError.code == GIDSignInError.canceled.rawValue {
                     call.reject("User cancelled sign-in", "USER_CANCELLED")
                 } else {
                     call.reject("Sign-in failed: \(error.localizedDescription)")
@@ -109,132 +101,83 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             
-            guard let callbackURL = callbackURL,
-                  let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "code" })?.value else {
-                call.reject("No authorization code received")
+            guard let result = result else {
+                print("❌ [HushhAuth] No sign-in result!")
+                call.reject("No sign-in result")
                 return
             }
+            print("✅ [HushhAuth] Got sign-in result")
             
-            // Exchange code for tokens
-            self?.exchangeCodeForTokens(code: code, clientID: clientID, call: call)
-        }
-        
-        session.presentationContextProvider = viewController as? ASWebAuthenticationPresentationContextProviding
-        session.prefersEphemeralWebBrowserSession = false
-        
-        if !session.start() {
-            call.reject("Failed to start authentication session")
-        }
-    }
-    
-    private func exchangeCodeForTokens(code: String, clientID: String, call: CAPPluginCall) {
-        // Exchange authorization code for tokens
-        let tokenURL = URL(string: "https://oauth2.googleapis.com/token")!
-        
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
-        let body = [
-            "code": code,
-            "client_id": clientID,
-            "redirect_uri": "com.hushh.pda:/oauth2callback",
-            "grant_type": "authorization_code",
-        ]
-        
-        request.httpBody = body.map { "\($0.key)=\($0.value)" }.joined(separator: "&").data(using: .utf8)
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            if let error = error {
-                call.reject("Token exchange failed: \(error.localizedDescription)")
+            let user = result.user
+            print("🍎 [HushhAuth] User: \(user.profile?.email ?? "no email")")
+            
+            // Get ID token
+            guard let idToken = user.idToken?.tokenString else {
+                print("❌ [HushhAuth] No ID token!")
+                call.reject("No ID token received from Google")
                 return
             }
+            print("✅ [HushhAuth] Got ID token: \(idToken.prefix(50))...")
             
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                call.reject("Failed to parse token response")
-                return
-            }
+            let accessToken = user.accessToken.tokenString
+            print("✅ [HushhAuth] Got access token: \(accessToken.prefix(20))...")
             
-            if let errorMsg = json["error"] as? String {
-                call.reject("Token error: \(errorMsg)")
-                return
-            }
+            // Build user info
+            let authUser = AuthUser(
+                id: user.userID ?? "",
+                email: user.profile?.email ?? "",
+                displayName: user.profile?.name ?? "",
+                photoUrl: user.profile?.imageURL(withDimension: 200)?.absoluteString ?? "",
+                emailVerified: true
+            )
+            print("✅ [HushhAuth] Built authUser: \(authUser.email)")
             
-            guard let idToken = json["id_token"] as? String,
-                  let accessToken = json["access_token"] as? String else {
-                call.reject("Missing tokens in response")
-                return
-            }
+            // Store locally
+            self?.currentUser = authUser
+            self?.currentIdToken = idToken
+            self?.currentAccessToken = accessToken
+            print("🍎 [HushhAuth] Stored credentials locally")
             
-            // Decode ID token to get user info
-            self?.decodeIdTokenAndComplete(idToken: idToken, accessToken: accessToken, call: call)
-        }.resume()
-    }
-    
-    private func decodeIdTokenAndComplete(idToken: String, accessToken: String, call: CAPPluginCall) {
-        // Decode JWT to get user info (ID token is a JWT)
-        let parts = idToken.split(separator: ".")
-        guard parts.count >= 2 else {
-            call.reject("Invalid ID token format")
-            return
-        }
-        
-        var payload = String(parts[1])
-        // Pad base64 if needed
-        while payload.count % 4 != 0 {
-            payload += "="
-        }
-        
-        guard let payloadData = Data(base64Encoded: payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")),
-              let claims = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
-            call.reject("Failed to decode ID token")
-            return
-        }
-        
-        let user = AuthUser(
-            id: claims["sub"] as? String ?? "",
-            email: claims["email"] as? String ?? "",
-            displayName: claims["name"] as? String ?? "",
-            photoUrl: claims["picture"] as? String ?? "",
-            emailVerified: claims["email_verified"] as? Bool ?? false
-        )
-        
-        // Store for later use
-        self.currentUser = user
-        self.currentIdToken = idToken
-        self.currentAccessToken = accessToken
-        
-        // Save to Keychain for persistence
-        saveToKeychain(idToken: idToken, accessToken: accessToken, user: user)
-        
-        print("✅ [HushhAuth] Sign-in successful for: \(user.email)")
-        
-        call.resolve([
-            "idToken": idToken,
-            "accessToken": accessToken,
-            "user": [
-                "id": user.id,
-                "email": user.email,
-                "displayName": user.displayName,
-                "photoUrl": user.photoUrl,
-                "emailVerified": user.emailVerified
+            // Save to Keychain for session persistence
+            self?.saveCredentialsToKeychain(idToken: idToken, accessToken: accessToken, user: authUser)
+            print("🍎 [HushhAuth] Saved to Keychain")
+            
+            print("🍎 [HushhAuth] About to call.resolve()...")
+            
+            // Return result
+            let response: [String: Any] = [
+                "idToken": idToken,
+                "accessToken": accessToken,
+                "user": [
+                    "id": authUser.id,
+                    "email": authUser.email,
+                    "displayName": authUser.displayName,
+                    "photoUrl": authUser.photoUrl,
+                    "emailVerified": authUser.emailVerified
+                ] as [String: Any]
             ]
-        ])
+            print("🍎 [HushhAuth] Response prepared, calling resolve now")
+            call.resolve(response)
+            print("✅ [HushhAuth] call.resolve() completed!")
+        }
+        print("🍎 [HushhAuth] signIn(withPresenting:) was called, waiting for user...")
     }
     
     // MARK: - Sign Out
     
     @objc func signOut(_ call: CAPPluginCall) {
+        // Sign out from Google SDK
+        GIDSignIn.sharedInstance.signOut()
+        
+        // Clear local state
         currentUser = nil
         currentIdToken = nil
         currentAccessToken = nil
         
-        // Clear from Keychain
-        clearKeychain()
+        // Clear Keychain
+        clearKeychainCredentials()
         
-        print("✅ [HushhAuth] Signed out")
+        print("🍎 [HushhAuth] Signed out")
         call.resolve()
     }
     
@@ -254,6 +197,25 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
+        // Try to refresh from Google Sign-In SDK
+        if let currentUser = GIDSignIn.sharedInstance.currentUser {
+            currentUser.refreshTokensIfNeeded { user, error in
+                if let error = error {
+                    print("🍎 [HushhAuth] Token refresh failed: \(error)")
+                    call.resolve(["idToken": NSNull()])
+                    return
+                }
+                
+                if let idToken = user?.idToken?.tokenString {
+                    self.currentIdToken = idToken
+                    call.resolve(["idToken": idToken])
+                } else {
+                    call.resolve(["idToken": NSNull()])
+                }
+            }
+            return
+        }
+        
         call.resolve(["idToken": NSNull()])
     }
     
@@ -262,6 +224,28 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getCurrentUser(_ call: CAPPluginCall) {
         // Try memory first
         if let user = currentUser {
+            call.resolve([
+                "user": [
+                    "id": user.id,
+                    "email": user.email,
+                    "displayName": user.displayName,
+                    "photoUrl": user.photoUrl,
+                    "emailVerified": user.emailVerified
+                ]
+            ])
+            return
+        }
+        
+        // Try Google Sign-In SDK
+        if let gidUser = GIDSignIn.sharedInstance.currentUser {
+            let user = AuthUser(
+                id: gidUser.userID ?? "",
+                email: gidUser.profile?.email ?? "",
+                displayName: gidUser.profile?.name ?? "",
+                photoUrl: gidUser.profile?.imageURL(withDimension: 200)?.absoluteString ?? "",
+                emailVerified: true
+            )
+            currentUser = user
             call.resolve([
                 "user": [
                     "id": user.id,
@@ -295,66 +279,104 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Is Signed In
     
     @objc func isSignedIn(_ call: CAPPluginCall) {
-        let signedIn = currentIdToken != nil || loadIdTokenFromKeychain() != nil
-        call.resolve(["signedIn": signedIn])
+        // Check Google Sign-In SDK first
+        if GIDSignIn.sharedInstance.hasPreviousSignIn() {
+            call.resolve(["signedIn": true])
+            return
+        }
+        
+        // Check local state
+        if currentIdToken != nil {
+            call.resolve(["signedIn": true])
+            return
+        }
+        
+        // Check Keychain
+        if loadIdTokenFromKeychain() != nil {
+            call.resolve(["signedIn": true])
+            return
+        }
+        
+        call.resolve(["signedIn": false])
     }
     
-    // MARK: - Keychain Helpers
+    // MARK: - Keychain Storage
     
     private let keychainService = "com.hushh.pda.auth"
+    private let idTokenKey = "google_id_token"
+    private let accessTokenKey = "google_access_token"
+    private let userDataKey = "google_user_data"
     
-    private func saveToKeychain(idToken: String, accessToken: String, user: AuthUser) {
-        let keychain = KeychainHelper.shared
-        keychain.save(idToken, forKey: "idToken", service: keychainService)
-        keychain.save(accessToken, forKey: "accessToken", service: keychainService)
+    private func saveCredentialsToKeychain(idToken: String, accessToken: String, user: AuthUser) {
+        saveToKeychain(key: idTokenKey, value: idToken)
+        saveToKeychain(key: accessTokenKey, value: accessToken)
         
-        if let userData = try? JSONEncoder().encode(user) {
-            keychain.save(userData, forKey: "user", service: keychainService)
+        // Save user as JSON
+        if let userData = try? JSONEncoder().encode(user),
+           let userString = String(data: userData, encoding: .utf8) {
+            saveToKeychain(key: userDataKey, value: userString)
         }
     }
     
     private func loadIdTokenFromKeychain() -> String? {
-        return KeychainHelper.shared.load(forKey: "idToken", service: keychainService)
+        return loadFromKeychain(key: idTokenKey)
     }
     
     private func loadUserFromKeychain() -> AuthUser? {
-        guard let data: Data = KeychainHelper.shared.loadData(forKey: "user", service: keychainService) else {
+        guard let userString = loadFromKeychain(key: userDataKey),
+              let userData = userString.data(using: .utf8),
+              let user = try? JSONDecoder().decode(AuthUser.self, from: userData) else {
             return nil
         }
-        return try? JSONDecoder().decode(AuthUser.self, from: data)
+        return user
     }
     
-    private func clearKeychain() {
-        let keychain = KeychainHelper.shared
-        keychain.delete(forKey: "idToken", service: keychainService)
-        keychain.delete(forKey: "accessToken", service: keychainService)
-        keychain.delete(forKey: "user", service: keychainService)
+    private func clearKeychainCredentials() {
+        deleteFromKeychain(key: idTokenKey)
+        deleteFromKeychain(key: accessTokenKey)
+        deleteFromKeychain(key: userDataKey)
     }
     
-    // MARK: - Nonce Generation
-    
-    private func generateNonce(length: Int = 32) -> String {
-        let charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._"
-        var result = ""
-        var remainingLength = length
+    private func saveToKeychain(key: String, value: String) {
+        let data = value.data(using: .utf8)!
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
         
-        while remainingLength > 0 {
-            let randoms: [UInt8] = (0..<16).map { _ in
-                var random: UInt8 = 0
-                _ = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
-                return random
-            }
-            
-            randoms.forEach { random in
-                if remainingLength == 0 { return }
-                if random < charset.count {
-                    result.append(charset[charset.index(charset.startIndex, offsetBy: Int(random))])
-                    remainingLength -= 1
-                }
-            }
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+    
+    private func loadFromKeychain(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: key,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let string = String(data: data, encoding: .utf8) {
+            return string
         }
-        
-        return result
+        return nil
+    }
+    
+    private func deleteFromKeychain(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -366,65 +388,4 @@ struct AuthUser: Codable {
     let displayName: String
     let photoUrl: String
     let emailVerified: Bool
-}
-
-// MARK: - Keychain Helper
-
-class KeychainHelper {
-    static let shared = KeychainHelper()
-    private init() {}
-    
-    func save(_ value: String, forKey key: String, service: String) {
-        guard let data = value.data(using: .utf8) else { return }
-        save(data, forKey: key, service: service)
-    }
-    
-    func save(_ data: Data, forKey key: String, service: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data
-        ]
-        
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
-    }
-    
-    func load(forKey key: String, service: String) -> String? {
-        guard let data: Data = loadData(forKey: key, service: service) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-    
-    func loadData(forKey key: String, service: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        
-        var result: AnyObject?
-        SecItemCopyMatching(query as CFDictionary, &result)
-        return result as? Data
-    }
-    
-    func delete(forKey key: String, service: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key
-        ]
-        
-        SecItemDelete(query as CFDictionary)
-    }
-}
-
-// MARK: - ASWebAuthenticationPresentationContextProviding
-
-extension UIViewController: ASWebAuthenticationPresentationContextProviding {
-    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return self.view.window ?? ASPresentationAnchor()
-    }
 }
