@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
@@ -108,42 +109,85 @@ export default function LoginPage() {
 
   // Effect 1: Handle auth state changes
   useEffect(() => {
-    // Safety timeout: If auth state doesn't respond in 3 seconds, show login
-    const timeout = setTimeout(() => {
-      if (step === "checking") {
-        console.log("⚠️ Auth state timeout - showing login");
-        setStep("ready");
-      }
-    }, 3000);
+    let mounted = true;
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      clearTimeout(timeout);
+    async function checkAuth() {
+      // 1. Native Platform: Check Native Plugin first (Keychain)
+      // This allows us to start immediately without waiting for Firebase JS SDK
+      if (Capacitor.isNativePlatform()) {
+        try {
+          // FIX: Use restoreNativeSession to get the FIREBASE UID
+          // getNativeUser() returns the Google Subject ID, which doesn't match the vault key
+          // CRITICAL: We MUST have a timeout here. If native/firebase stalls, we must recover.
+          const firebaseUser = await withTimeout(
+            AuthService.restoreNativeSession(),
+            10000, 
+            "Native session restore timed out"
+          ).catch(e => {
+            console.warn("🍎 [LoginPage] Native restore timed out or failed:", e);
+            return null;
+          });
+          
+          if (!mounted) return;
 
-      if (user) {
-        // If vault is already unlocked, don't re-check (handled by separate effect)
-        if (isVaultUnlocked) {
-          return;
+          if (firebaseUser) {
+            console.log("🍎 [LoginPage] Native session restored:", firebaseUser.uid);
+            setUserId(firebaseUser.uid);
+            setUserDisplayName(firebaseUser.displayName || "");
+            
+            // Re-sync Firebase Logic
+            sessionStorage.setItem("user_id", firebaseUser.uid);
+            sessionStorage.setItem("user_uid", firebaseUser.uid);
+            sessionStorage.setItem("user_email", firebaseUser.email || "");
+            sessionStorage.setItem("user_displayName", firebaseUser.displayName || "");
+            sessionStorage.setItem("user_photo", firebaseUser.photoURL || "");
+            
+            await checkVaultAndProceed(firebaseUser.uid);
+            return; 
+          }
+           console.log("🍎 [LoginPage] No native session available (or timed out)");
+           setStep("ready");
+           return;
+        } catch (err) {
+          console.error("🍎 [LoginPage] Native session restore catch block:", err);
+          // Fallback to Firebase listener below
         }
-
-        setUserId(user.uid);
-        setUserDisplayName(user.displayName || "");
-
-        // Save Firebase profile to session
-        sessionStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_uid", user.uid);
-        sessionStorage.setItem("user_email", user.email || "");
-        sessionStorage.setItem("user_displayName", user.displayName || "");
-        sessionStorage.setItem("user_photo", user.photoURL || "");
-
-        await checkVaultAndProceed(user.uid);
-      } else {
-        setStep("ready");
       }
-    });
+
+      // 2. Web Platform / Fallback: Use Firebase Listener
+      // This is the standard path for web
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!mounted) return;
+
+        if (user) {
+          if (isVaultUnlocked) return;
+
+          setUserId(user.uid);
+          setUserDisplayName(user.displayName || "");
+
+          sessionStorage.setItem("user_id", user.uid);
+          sessionStorage.setItem("user_uid", user.uid);
+          sessionStorage.setItem("user_email", user.email || "");
+          sessionStorage.setItem("user_displayName", user.displayName || "");
+          sessionStorage.setItem("user_photo", user.photoURL || "");
+
+          await checkVaultAndProceed(user.uid);
+        } else {
+          // Only set ready if we haven't already found a native user
+          // (Though native check returns early, so this is safe)
+          setStep("ready");
+        }
+      });
+      
+      return unsubscribe;
+    }
+
+    const authCheckPromise = checkAuth();
 
     return () => {
-      clearTimeout(timeout);
-      unsubscribe();
+      mounted = false;
+      // Cleanup subscription if it was created
+      authCheckPromise.then(unsubscribe => unsubscribe && unsubscribe());
     };
   }, [router]);
 
@@ -161,17 +205,41 @@ export default function LoginPage() {
   // VAULT CHECK
   // ============================================================================
 
+  // Helper: Timeout Promise Wrapper
+  const withTimeout = (promise: Promise<any>, ms: number, errorMsg: string) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(errorMsg)), ms)
+      ),
+    ]);
+  };
+
   async function checkVaultAndProceed(uid: string) {
     try {
       console.log("🔐 [LoginPage] Checking vault for:", uid);
-      const hasVault = await VaultService.checkVault(uid);
+
+      // Add 10s timeout for Vault Check to prevent infinite loader
+      const hasVault = await withTimeout(
+        VaultService.checkVault(uid),
+        10000,
+        "Vault check timed out. Please check your connection."
+      );
+
       console.log("🔐 [LoginPage] hasVault result:", hasVault);
 
       if (hasVault) {
         // Existing user - fetch vault data and unlock
         try {
           console.log("🔐 [LoginPage] Fetching vault data...");
-          const data = await VaultService.getVault(uid);
+          
+          // Add 10s timeout for Vault Data fetch
+          const data = await withTimeout(
+            VaultService.getVault(uid),
+            10000, 
+            "Vault data fetch timed out. Please retry."
+          );
+          
           console.log("🔐 [LoginPage] Vault data received");
           setVaultData({
             encryptedVaultKey: data.encryptedVaultKey,
@@ -216,7 +284,13 @@ export default function LoginPage() {
       // Use AuthService for platform-aware sign-in
       // iOS: Native Google Sign-In → Firebase credential sync
       // Web: Firebase signInWithPopup (unchanged)
-      const result = await AuthService.signInWithGoogle();
+      
+      // Add 120s timeout for Google Sign-In (accounts for slower user interaction)
+      const result = await withTimeout(
+        AuthService.signInWithGoogle(),
+        120000,
+        "Sign-in timed out. Please try again."
+      );
       const user = result.user;
 
       setUserId(user.uid);

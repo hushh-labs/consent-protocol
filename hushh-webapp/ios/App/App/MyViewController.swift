@@ -13,7 +13,7 @@ class MyViewController: CAPBridgeViewController {
     
     override open func capacitorDidLoad() {
         // Register all local native plugins with Capacitor bridge
-        print("🔌 [MyViewController] Registering all native plugins...")
+        NSLog("🔌 [MyViewController] Registering all native plugins...")
         
         bridge?.registerPluginInstance(HushhAuthPlugin())
         bridge?.registerPluginInstance(HushhVaultPlugin())
@@ -22,6 +22,6 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HushhSettingsPlugin())
         bridge?.registerPluginInstance(HushhSyncPlugin())
         
-        print("✅ [MyViewController] All 6 plugins registered successfully")
+        NSLog("✅ [MyViewController] All 6 plugins registered successfully")
     }
 }

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { signOut, onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { useAuth } from "@/hooks/use-auth";
 
 interface NavItem {
   label: string;
@@ -92,19 +93,12 @@ export const Navbar = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Check if user is Firebase authenticated (persists across tabs)
-  const [firebaseUser, setFirebaseUser] = React.useState<User | null>(null);
-  const [authLoading, setAuthLoading] = React.useState(true);
+  // Check if user is authenticated (Unified Native/Web Logic via Hook)
+  // This ensures Navbar state matches the rest of the app (e.g. protected routes)
+  const { user, loading: authLoading } = useAuth();
+  const firebaseUser = user;
 
-  React.useEffect(() => {
-    // Use Firebase onAuthStateChanged which persists across tabs via IndexedDB
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      setAuthLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+  // No local useEffect needed anymore - useAuth handles the listener and native restore
 
   const handleLogout = async () => {
     // Destroy session tokens via consent protocol
@@ -131,7 +125,9 @@ export const Navbar = () => {
 
     // Clear local storage and sign out
     sessionStorage.clear();
-    await signOut(auth);
+    // Use AuthService to ensure native keychain is also cleared
+    const { AuthService } = await import("@/lib/services/auth-service");
+    await AuthService.signOut();
     router.push("/login");
   };
 
