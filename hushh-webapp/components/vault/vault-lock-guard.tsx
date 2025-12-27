@@ -69,46 +69,85 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   // ============================================================================
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        // Not authenticated - redirect to login
-        setStatus("no_auth");
-        router.push("/login");
-        return;
-      }
+    let mounted = true;
+    let unsubscribe: () => void;
 
-      // User is authenticated
-      setUserId(user.uid);
+    async function init() {
+       // Helper: Timeout wrapper to prevent infinite hangs (function syntax for TSX compatibility)
+       function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+         return Promise.race([
+           promise,
+           new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
+         ]);
+       }
 
-      // Check if vault is already unlocked
-      if (isVaultUnlocked) {
-        setStatus("unlocked");
-        return;
-      }
+       // NATIVE: Ensure session is restored so user.uid is correct
+       try {
+         const { Capacitor } = await import("@capacitor/core");
+         if (Capacitor.isNativePlatform()) {
+             const { AuthService } = await import("@/lib/services/auth-service");
+             // Add 10s timeout to prevent loader hanging if native plugin stalls
+             await withTimeout(AuthService.restoreNativeSession(), 10000);
+         }
+       } catch (e) {
+         console.warn("🍎 [VaultLockGuard] Native restore check", e);
+       }
 
-      // Vault is locked - fetch vault data for unlock
-      try {
-        const response = await fetch(`/api/vault/get?userId=${user.uid}`);
-        if (response.ok) {
-          const data = await response.json();
-          setVaultData({
-            encryptedVaultKey: data.encryptedVaultKey,
-            salt: data.salt,
-            iv: data.iv,
-          });
-          setStatus("vault_locked");
-        } else {
-          // No vault exists - might be new user, redirect to login
-          console.error("Failed to fetch vault data");
+       if (!mounted) return;
+
+       unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!mounted) return;
+        
+        if (!user) {
+          // Not authenticated - redirect to login
+          setStatus("no_auth");
+          router.push("/login");
+          return;
+        }
+
+        // User is authenticated
+        setUserId(user.uid);
+
+        // Check if vault is already unlocked
+        if (isVaultUnlocked) {
+          setStatus("unlocked");
+          return;
+        }
+
+        // Vault is locked - fetch vault data for unlock
+        try {
+          // Use VaultService for platform-aware fetching (Native vs Web)
+          // This ensures we don't try to fetch /api URLs on native
+          const { VaultService } = await import("@/lib/services/vault-service");
+          console.log("🔐 [VaultLockGuard] Fetching vault data via Service...");
+          
+          const data = await VaultService.getVault(user.uid);
+          
+          if (data && data.encryptedVaultKey) {
+            setVaultData({
+              encryptedVaultKey: data.encryptedVaultKey,
+              salt: data.salt,
+              iv: data.iv,
+            });
+            setStatus("vault_locked");
+          } else {
+             console.error("Failed to fetch vault data: Data empty");
+             setStatus("no_auth");
+             router.push("/login");
+          }
+        } catch (err) {
+          console.error("Error fetching vault:", err);
           router.push("/login");
         }
-      } catch (err) {
-        console.error("Error fetching vault:", err);
-        router.push("/login");
-      }
-    });
+      });
+    }
 
-    return () => unsubscribe();
+    init();
+
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [router, isVaultUnlocked]);
 
   // Re-check vault status when it changes

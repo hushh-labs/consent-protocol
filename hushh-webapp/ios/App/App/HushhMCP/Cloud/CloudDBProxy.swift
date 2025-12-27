@@ -119,6 +119,30 @@ public class CloudDBProxy {
     
     // MARK: - HTTP Client
     
+    private func get<T: Decodable>(
+        endpoint: String,
+        params: [String: String],
+        authToken: String?
+    ) async throws -> T {
+        var components = URLComponents(string: CLOUD_DB_URL + endpoint)
+        components?.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        
+        guard let url = components?.url else {
+            throw CloudDBError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10.0
+        
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        return try await execute(request)
+    }
+    
     private func post<T: Decodable>(
         endpoint: String,
         body: [String: Any],
@@ -131,26 +155,26 @@ public class CloudDBProxy {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10.0
         
-        // Add Firebase auth token if available
         if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
-        // Serialize body
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
-        // Execute request
+        return try await execute(request)
+    }
+    
+    private func execute<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        // Check response status
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CloudDBError.invalidResponse
         }
         
         switch httpResponse.statusCode {
         case 200, 201:
-            // Decode response
             do {
                 return try JSONDecoder().decode(T.self, from: data)
             } catch {
