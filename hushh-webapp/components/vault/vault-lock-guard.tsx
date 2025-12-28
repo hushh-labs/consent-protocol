@@ -15,8 +15,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase/config";
+import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
 import { unlockVaultWithPassphrase } from "@/lib/vault/passphrase-key";
 import {
@@ -30,7 +29,7 @@ import { Button } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Lock, AlertCircle, Loader2 } from "lucide-react";
+import { Lock, AlertCircle, Loader2, RefreshCw, LogOut } from "lucide-react";
 
 // ============================================================================
 // Types
@@ -46,6 +45,14 @@ interface VaultData {
   iv: string;
 }
 
+// Timeout helper definition outside component to avoid re-creation
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms))
+    ]);
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -53,10 +60,11 @@ interface VaultData {
 export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const router = useRouter();
   const { isVaultUnlocked, unlockVault } = useVault();
+  const { user, loading: authLoading, signOut } = useAuth();
 
   // State
   const [status, setStatus] = useState<
-    "checking" | "no_auth" | "vault_locked" | "unlocked"
+    "checking" | "no_auth" | "vault_locked" | "unlocked" | "error"
   >("checking");
   const [passphrase, setPassphrase] = useState("");
   const [error, setError] = useState("");
@@ -70,85 +78,70 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   useEffect(() => {
     let mounted = true;
-    let unsubscribe: () => void;
 
-    async function init() {
-       // Helper: Timeout wrapper to prevent infinite hangs (function syntax for TSX compatibility)
-       function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-         return Promise.race([
-           promise,
-           new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
-         ]);
-       }
+    async function checkVault() {
+      // 1. Wait for Auth Loading
+      if (authLoading) return;
 
-       // NATIVE: Ensure session is restored so user.uid is correct
-       try {
-         const { Capacitor } = await import("@capacitor/core");
-         if (Capacitor.isNativePlatform()) {
-             const { AuthService } = await import("@/lib/services/auth-service");
-             // Add 10s timeout to prevent loader hanging if native plugin stalls
-             await withTimeout(AuthService.restoreNativeSession(), 10000);
-         }
-       } catch (e) {
-         console.warn("🍎 [VaultLockGuard] Native restore check", e);
-       }
+      // 2. Check Auth Status
+      if (!user) {
+        setStatus("no_auth");
+        return;
+      }
 
-       if (!mounted) return;
+      setUserId(user.uid);
 
-       unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if (!mounted) return;
-        
-        if (!user) {
-          // Not authenticated - redirect to login
-          setStatus("no_auth");
-          router.push("/login");
-          return;
-        }
+      // 3. Check Vault Lock Status
+      if (isVaultUnlocked) {
+        setStatus("unlocked");
+        return;
+      }
 
-        // User is authenticated
-        setUserId(user.uid);
-
-        // Check if vault is already unlocked
-        if (isVaultUnlocked) {
-          setStatus("unlocked");
-          return;
-        }
-
-        // Vault is locked - fetch vault data for unlock
+      // 4. Fetch Vault Data (if not already loaded)
+      if (!vaultData) {
         try {
           // Use VaultService for platform-aware fetching (Native vs Web)
-          // This ensures we don't try to fetch /api URLs on native
           const { VaultService } = await import("@/lib/services/vault-service");
           console.log("🔐 [VaultLockGuard] Fetching vault data via Service...");
           
-          const data = await VaultService.getVault(user.uid);
+          // Use timeout to prevent hanging (15s)
+          const data = await withTimeout(VaultService.getVault(user.uid), 15000);
           
-          if (data && data.encryptedVaultKey) {
-            setVaultData({
-              encryptedVaultKey: data.encryptedVaultKey,
-              salt: data.salt,
-              iv: data.iv,
-            });
-            setStatus("vault_locked");
-          } else {
-             console.error("Failed to fetch vault data: Data empty");
-             setStatus("no_auth");
-             router.push("/login");
+          if (mounted) {
+            if (data && data.encryptedVaultKey) {
+              setVaultData({
+                encryptedVaultKey: data.encryptedVaultKey,
+                salt: data.salt,
+                iv: data.iv,
+              });
+              setStatus("vault_locked");
+            } else {
+               console.error("Failed to fetch vault data: Data empty");
+               // If data is empty, maybe they haven't set up a vault?
+               // But they are in dashboard. 
+               setError("Vault data missing.");
+               setStatus("error");
+            }
           }
-        } catch (err) {
-          console.error("Error fetching vault:", err);
-          router.push("/login");
+        } catch (err: any) {
+          if (mounted) {
+            console.error("Error fetching vault:", err);
+            setError(err.message === "Timeout" ? "Connection timed out checking vault." : "Failed to load vault.");
+            setStatus("error");
+          }
         }
-      });
+      } else {
+        // Vault data exists but locked
+        setStatus("vault_locked");
+      }
     }
 
-    init();
+    checkVault();
 
     return () => {
       mounted = false;
-      if (unsubscribe) unsubscribe();
     };
-  }, [router, isVaultUnlocked]);
+  }, [user, authLoading, isVaultUnlocked, vaultData, router]);
 
   // Re-check vault status when it changes
   useEffect(() => {
@@ -197,6 +190,15 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       setLoading(false);
     }
   }
+  
+  const handleRetry = () => {
+      setStatus("checking");
+      setVaultData(null); // Force refetch
+  };
+
+  const handleLogout = async () => {
+      await signOut();
+  };
 
   // ============================================================================
   // Render
@@ -222,6 +224,44 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
           <p className="text-muted-foreground">Redirecting to login...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Error State
+  if (status === "error") {
+      return (
+      <div className="flex items-center justify-center min-h-[60vh] p-4">
+        <Card variant="none" effect="glass" className="w-full max-w-md border-destructive/20">
+          <CardHeader className="text-center">
+            <div className="mx-auto h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
+              <AlertCircle className="h-6 w-6 text-destructive" />
+            </div>
+            <CardTitle>Connection Error</CardTitle>
+            <CardDescription className="text-destructive">
+              {error}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              variant="glass"
+              className="w-full"
+              onClick={handleRetry}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+            
+             <Button
+              variant="link"
+              className="w-full text-muted-foreground hover:text-destructive"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -284,11 +324,15 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
               )}
             </Button>
 
-            <p className="text-xs text-center text-muted-foreground">
-              Your vault key is stored in memory only for security.
-              <br />
-              Page refresh requires re-entering your passphrase.
-            </p>
+            <div className="flex justify-center pt-2">
+                <Button
+                  variant="link"
+                  className="text-xs text-muted-foreground h-auto p-0 hover:text-foreground"
+                  onClick={handleLogout}
+                >
+                  Not you? Sign Out
+                </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

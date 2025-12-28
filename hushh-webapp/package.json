@@ -13,6 +13,7 @@
     "cap:ios:run": "npm run cap:build && npm run cap:sync && npx cap run ios"
   },
   "dependencies": {
+    "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/ios": "^8.0.0",

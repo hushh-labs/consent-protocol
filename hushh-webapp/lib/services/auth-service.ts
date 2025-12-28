@@ -66,10 +66,12 @@ export class AuthService {
       
       console.log("✅ [AuthService] Native sign-in complete:", result.user?.email);
       
-      // Step 2: Create a mock Firebase User from native credentials
-      // Firebase signInWithCredential hangs in Capacitor WebView, so we bypass it
-      // The vault uses the user ID for encryption keys, which we get from native
-      console.log("🍎 [AuthService] Creating mock Firebase user from native credentials...");
+      console.log("✅ [AuthService] Native sign-in complete:", result.user?.email);
+      
+      // Step 2: Construct user object from verified native Firebase credentials
+      // Note: We still construct a JS User object because we bypassed the JS SDK's signInWithCredential
+      // but the data now comes from a real native Firebase sign-in.
+      console.log("🍎 [AuthService] Constructing user from native Firebase result...");
       
       // Create a minimal user object that satisfies the User interface
       // We use the native user ID as the Firebase UID for vault key consistency
@@ -280,28 +282,50 @@ export class AuthService {
 
     try {
       // 1. Check if we have a native user/token stored in Keychain
+      // Use getCurrentUser() which verifies the session is valid
+      const { user } = await HushhAuth.getCurrentUser();
       const { idToken } = await HushhAuth.getIdToken();
       
-      // NSNull from Swift becomes null in JS, not the string "null"
-      if (!idToken || idToken === null || idToken === "null") {
-        console.log("🍎 [AuthService] No native ID token found");
+      if (!user || !user.id || !idToken || idToken === "null") {
+        console.log("🍎 [AuthService] No native session found");
         return null;
       }
 
-      console.log("🍎 [AuthService] Restoring native session with token...");
+      console.log("🍎 [AuthService] Restoring native session for:", user.email);
 
-      // 2. Exchange Google ID Token for Firebase Credential
-      // This is fast and ensures we get the *real* Firebase UID
-      // Add 15s timeout to prevent hanging on slow network
-      const credential = GoogleAuthProvider.credential(idToken);
-      const result = await withTimeout(
-        signInWithCredential(auth, credential),
-        15000,
-        "Firebase credential exchange timed out"
-      );
+      // 2. Construct User object from native data
+      // We skip signInWithCredential because it hangs in WebView
+      const restoredUser = {
+        uid: user.id, // This is the Firebase UID from native plugin
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoUrl,
+        emailVerified: user.emailVerified,
+        isAnonymous: false,
+        metadata: {
+          creationTime: new Date().toISOString(),
+          lastSignInTime: new Date().toISOString(),
+        },
+        providerData: [{
+          providerId: 'google.com',
+          uid: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          photoURL: user.photoUrl,
+        }],
+        getIdToken: async () => idToken,
+        getIdTokenResult: async () => ({ token: idToken, claims: {}, authTime: '', issuedAtTime: '', expirationTime: '', signInProvider: 'google.com', signInSecondFactor: null }),
+        delete: async () => {},
+        reload: async () => {},
+        toJSON: () => ({}),
+        phoneNumber: null,
+        providerId: 'google.com',
+        refreshToken: '',
+        tenantId: null,
+      } as unknown as User;
       
-      console.log("🍎 [AuthService] Session restored! Firebase UID:", result.user.uid);
-      return result.user;
+      console.log("🍎 [AuthService] Session restored! UID:", restoredUser.uid);
+      return restoredUser;
 
     } catch (error) {
       console.error("🍎 [AuthService] Failed to restore native session:", error);

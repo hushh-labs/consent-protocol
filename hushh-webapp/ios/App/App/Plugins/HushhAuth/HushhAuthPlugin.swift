@@ -13,6 +13,7 @@
 import Foundation
 import Capacitor
 import GoogleSignIn
+import FirebaseAuth
 
 // MARK: - Plugin Registration
 
@@ -106,10 +107,10 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("No sign-in result")
                 return
             }
-            print("✅ [HushhAuth] Got sign-in result")
+            print("✅ [HushhAuth] Got Google sign-in result")
             
             let user = result.user
-            print("🍎 [HushhAuth] User: \(user.profile?.email ?? "no email")")
+            print("🍎 [HushhAuth] Google User: \(user.profile?.email ?? "no email")")
             
             // Get ID token
             guard let idToken = user.idToken?.tokenString else {
@@ -117,48 +118,87 @@ public class HushhAuthPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("No ID token received from Google")
                 return
             }
-            print("✅ [HushhAuth] Got ID token: \(idToken.prefix(50))...")
             
             let accessToken = user.accessToken.tokenString
-            print("✅ [HushhAuth] Got access token: \(accessToken.prefix(20))...")
             
-            // Build user info
-            let authUser = AuthUser(
-                id: user.userID ?? "",
-                email: user.profile?.email ?? "",
-                displayName: user.profile?.name ?? "",
-                photoUrl: user.profile?.imageURL(withDimension: 200)?.absoluteString ?? "",
-                emailVerified: true
+            // ---------------------------------------------------------
+            // NATIVE FIREBASE AUTHENTICATION
+            // ---------------------------------------------------------
+            print("🔥 [HushhAuth] Exchanging Google credential for Firebase credential...")
+            
+            let credential = GoogleAuthProvider.credential(
+                withIDToken: idToken,
+                accessToken: accessToken
             )
-            print("✅ [HushhAuth] Built authUser: \(authUser.email)")
             
-            // Store locally
-            self?.currentUser = authUser
-            self?.currentIdToken = idToken
-            self?.currentAccessToken = accessToken
-            print("🍎 [HushhAuth] Stored credentials locally")
-            
-            // Save to Keychain for session persistence
-            self?.saveCredentialsToKeychain(idToken: idToken, accessToken: accessToken, user: authUser)
-            print("🍎 [HushhAuth] Saved to Keychain")
-            
-            print("🍎 [HushhAuth] About to call.resolve()...")
-            
-            // Return result
-            let response: [String: Any] = [
-                "idToken": idToken,
-                "accessToken": accessToken,
-                "user": [
-                    "id": authUser.id,
-                    "email": authUser.email,
-                    "displayName": authUser.displayName,
-                    "photoUrl": authUser.photoUrl,
-                    "emailVerified": authUser.emailVerified
-                ] as [String: Any]
-            ]
-            print("🍎 [HushhAuth] Response prepared, calling resolve now")
-            call.resolve(response)
-            print("✅ [HushhAuth] call.resolve() completed!")
+            Auth.auth().signIn(with: credential) { authResult, error in
+                if let error = error {
+                    print("❌ [HushhAuth] Firebase native sign-in failed: \(error.localizedDescription)")
+                    call.reject("Firebase sign-in failed: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let firebaseUser = authResult?.user else {
+                    print("❌ [HushhAuth] No Firebase user returned!")
+                    call.reject("No Firebase user returned")
+                    return
+                }
+                
+                print("✅ [HushhAuth] Firebase native sign-in success!")
+                print("🔥 [HushhAuth] Firebase UID: \(firebaseUser.uid)")
+                
+                // Get Firebase ID Token
+                firebaseUser.getIDToken { firebaseIdToken, error in
+                    if let error = error {
+                        print("❌ [HushhAuth] Failed to get Firebase ID token: \(error.localizedDescription)")
+                        call.reject("Failed to get Firebase ID token: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    guard let firebaseIdToken = firebaseIdToken else {
+                        print("❌ [HushhAuth] specific Firebase ID token is nil")
+                        call.reject("Firebase ID token is nil")
+                        return
+                    }
+                    
+                    print("✅ [HushhAuth] Got Firebase ID token: \(firebaseIdToken.prefix(20))...")
+                
+                    // Build user info using FIREBASE UID
+                    let authUser = AuthUser(
+                        id: firebaseUser.uid,
+                        email: firebaseUser.email ?? user.profile?.email ?? "",
+                        displayName: firebaseUser.displayName ?? user.profile?.name ?? "",
+                        photoUrl: firebaseUser.photoURL?.absoluteString ?? user.profile?.imageURL(withDimension: 200)?.absoluteString ?? "",
+                        emailVerified: firebaseUser.isEmailVerified
+                    )
+                    
+                    print("✅ [HushhAuth] Built authUser with Firebase UID: \(authUser.id)")
+                    
+                    // Store locally
+                    self?.currentUser = authUser
+                    self?.currentIdToken = firebaseIdToken // Store Firebase ID token!
+                    self?.currentAccessToken = accessToken
+                    
+                    // Save to Keychain
+                    self?.saveCredentialsToKeychain(idToken: firebaseIdToken, accessToken: accessToken, user: authUser)
+                    
+                    // Return result
+                    let response: [String: Any] = [
+                        "idToken": firebaseIdToken, // Return Firebase ID token!
+                        "accessToken": accessToken,
+                        "user": [
+                            "id": authUser.id,
+                            "email": authUser.email,
+                            "displayName": authUser.displayName,
+                            "photoUrl": authUser.photoUrl,
+                            "emailVerified": authUser.emailVerified
+                        ] as [String: Any]
+                    ]
+                    
+                    call.resolve(response)
+                    print("✅ [HushhAuth] call.resolve() completed with Firebase UID and Token")
+                }
+            }
         }
         print("🍎 [HushhAuth] signIn(withPresenting:) was called, waiting for user...")
     }
