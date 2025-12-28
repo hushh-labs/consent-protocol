@@ -52,6 +52,26 @@ export async function encryptData(
   };
 }
 
+// Helper to safely decode Base64 strings (handles URL-safe and padding)
+function safeBase64Decode(str: string): Uint8Array {
+  // 1. Convert Base64URL to Base64
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  
+  // 2. Add padding if missing
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+
+  // 3. Decode
+  try {
+    const binaryString = atob(base64);
+    return Uint8Array.from(binaryString, c => c.charCodeAt(0));
+  } catch (e) {
+    console.error("Failed to decode Base64 string:", str);
+    throw new Error("Invalid Base64 string format");
+  }
+}
+
 export async function decryptData(
   payload: EncryptedPayload,
   vaultKeyHex: string
@@ -68,18 +88,19 @@ export async function decryptData(
     ["decrypt"]
   );
 
-  const ciphertext = Uint8Array.from(atob(payload.ciphertext), c => c.charCodeAt(0));
-  const tag = Uint8Array.from(atob(payload.tag), c => c.charCodeAt(0));
-  const iv = Uint8Array.from(atob(payload.iv), c => c.charCodeAt(0));
+  // Use safe decoder
+  const ciphertext = safeBase64Decode(payload.ciphertext);
+  const tag = safeBase64Decode(payload.tag);
+  const iv = safeBase64Decode(payload.iv);
 
   const combined = new Uint8Array(ciphertext.length + tag.length);
   combined.set(ciphertext);
   combined.set(tag, ciphertext.length);
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: iv as any },
     key,
-    combined
+    combined as any
   );
 
   const dec = new TextDecoder();
