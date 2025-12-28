@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { HushhVault } from "@/lib/capacitor";
+import { HushhVault, HushhAuth } from "@/lib/capacitor";
 import {
   createVaultWithPassphrase as webCreateVault,
   unlockVaultWithPassphrase as webUnlockVault,
@@ -226,6 +226,11 @@ export class VaultService {
    */
   private static async getFirebaseToken(): Promise<string | undefined> {
     try {
+      if (Capacitor.isNativePlatform()) {
+        const result = await HushhAuth.getIdToken();
+        return result.idToken || undefined;
+      }
+
       const user = auth.currentUser;
       if (user) {
         return await user.getIdToken();
