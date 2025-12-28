@@ -3,7 +3,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
@@ -95,44 +95,20 @@ export const Navbar = () => {
 
   // Check if user is authenticated (Unified Native/Web Logic via Hook)
   // This ensures Navbar state matches the rest of the app (e.g. protected routes)
-  const { user, loading: authLoading } = useAuth();
-  const firebaseUser = user;
-
-  // No local useEffect needed anymore - useAuth handles the listener and native restore
+  const { isAuthenticated, user, signOut } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const handleLogout = async () => {
-    // Destroy session tokens via consent protocol
-    const userId = sessionStorage.getItem("user_id");
-    if (userId) {
-      try {
-        await fetch("/api/consent/logout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId }),
-        });
-        console.log("✅ Session tokens destroyed");
-      } catch (err) {
-        console.warn("⚠️ Failed to destroy session tokens:", err);
-      }
-    }
-
-    // Clear session cookie via API
     try {
-      await fetch("/api/auth/session", { method: "DELETE" });
-    } catch (e) {
-      console.warn("⚠️ Failed to clear session cookie:", e);
+        await signOut();
+    } catch (err) {
+        console.warn("Logout error:", err);
     }
-
-    // Clear local storage and sign out
-    sessionStorage.clear();
-    // Use AuthService to ensure native keychain is also cleared
-    const { AuthService } = await import("@/lib/services/auth-service");
-    await AuthService.signOut();
-    router.push("/login");
+    // Router push is handled by signOut in useAuth, but safe to do here too if needed
   };
 
-  // Filter navigation items based on auth status (Firebase auth, not vault)
-  const isAuthenticated = !!firebaseUser;
+  // Filter navigation items based on auth status
   const filteredItems = navigationItems.filter(
     (item) => !item.requiresAuth || isAuthenticated
   );
