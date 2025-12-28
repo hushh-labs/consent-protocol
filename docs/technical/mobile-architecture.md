@@ -1,12 +1,12 @@
-# Mobile Architecture (iOS/Android via Capacitor)
+# Mobile Architecture (iOS via Capacitor)
 
-> Native mobile deployment with on-device consent protocol and future MLX LLM integration.
+> Native mobile deployment with on-device consent protocol vs Cloud fallback.
 
 ---
 
 ## 🎯 Overview
 
-The Hushh mobile architecture enables **offline-first, on-device data** while maintaining UI parity with the web application. The Next.js UI runs in a native WebView, while the consent protocol is implemented in Swift (iOS) and Kotlin (Android).
+The Hushh mobile architecture enables **offline-first, on-device data** while maintaining UI parity with the web application. The Next.js UI runs in a native WebView, while critical security and consent operations are handled by native Swift plugins.
 
 ### Design Goals
 
@@ -14,12 +14,15 @@ The Hushh mobile architecture enables **offline-first, on-device data** while ma
 "Same UI, native security, offline-first data, future on-device AI"
 ```
 
-| Goal                 | Implementation                           |
-| -------------------- | ---------------------------------------- |
-| **UI Parity**        | Next.js static export in WKWebView       |
-| **Consent Parity**   | Swift/Kotlin port of Python protocol     |
-| **Offline-First**    | SQLCipher local vault, no cloud required |
-| **Future MLX/Gemma** | Plugin architecture for on-device LLM    |
+| Goal                | Implementation                            |
+| ------------------- | ----------------------------------------- |
+| **UI Parity**       | Next.js static export in WKWebView        |
+| **Native Security** | **Google Sign-In** & **Keychain** storage |
+| **Offline-First**   | SQLCipher local vault (in progress)       |
+| **Future MLX**      | Plugin architecture for on-device LLM     |
+
+> **⚠️ Current State (Debugging Mode):**
+> As of Dec 2025, the app defaults to **Cloud Mode** for stability. It uses native plugins for Auth and Consent, but routes database requests to Cloud Run via `CloudDBProxy` while `SQLCipherDatabase` is finalized.
 
 ---
 
@@ -27,30 +30,56 @@ The Hushh mobile architecture enables **offline-first, on-device data** while ma
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                   CAPACITOR iOS/Android APP                     │
+│                   CAPACITOR iOS APP                             │
 ├────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │           WKWebView (Next.js Static Export)              │  │
 │  │  • React 19 + TailwindCSS UI (unchanged)                 │  │
 │  │  • Morphy-UX components                                  │  │
-│  │  • Client-side rendering only                            │  │
+│  │  • useAuth Hook (Native Session Management)              │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓ Capacitor.call()                     │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │        Swift Native Plugins (Consent Protocol)           │  │
+│  │  • HushhAuthPlugin    → Native Google Sign-In            │  │
 │  │  • HushhConsentPlugin → Token issue/validate/revoke      │  │
-│  │  • HushhVaultPlugin   → SQLCipher encrypted storage      │  │
-│  │  • HushhKeychainPlugin → iOS Keychain for secrets        │  │
-│  │  • HushhLLMPlugin     → MLX integration (Phase 2)        │  │
+│  │  • HushhVaultPlugin   → Encrypted storage router         │  │
+│  │  • HushhKeychainPlugin → Secure secrets storage          │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │             Local Encrypted Storage                       │  │
-│  │  • SQLCipher (AES-256 encrypted SQLite)                  │  │
-│  │  • iOS Keychain (vault key + passphrase derivation)      │  │
+│  │             Data Layer (Abstracted)                       │  │
+│  │  • LocalVaultStorage (SQLCipher) [Planned Default]       │  │
+│  │  • CloudVaultStorage (Cloud Run) [Current Default]       │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 🔐 Native Authentication Flow (Critical)
+
+iOS WKWebView restricts third-party cookies, breaking standard Firebase JavaScript SDK flows (`signInWithPopup`, `signInWithRedirect`). We use a **Native-First Authentication** strategy:
+
+1.  **Google Sign-In**: Performed natively via `GoogleSignIn` SDK (User consents via system dialog).
+2.  **Credential Exchange**: `HushhAuthPlugin` exchanges the Google ID Token for a **Firebase Credential** directly on the native layer.
+3.  **Session Restoration**:
+    - **JS SDK Bypass**: The web app's `useAuth` hook **manually claims** the session from the native plugin on launch.
+    - It bypasses `onAuthStateChanged` (which hangs or returns null in WebView) and directly sets the React state with the native user.
+4.  **Security**:
+    - `vault_key` is stored in **Secure Enclave/Keychain** ONLY.
+    - It is cleared from memory when the app enters the background (via `App.addListener('appStateChange')`).
+
+---
+
+## 🛠️ Troubleshooting & Common Issues
+
+| Issue             | Symptom                                              | Root Cause                                                                   | Fix                                                                                                      |
+| :---------------- | :--------------------------------------------------- | :--------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
+| **Login Hang**    | App stuck on "Verifying identity..." or "Loading..." | **Firebase JS SDK** tries to initialize `iframe` for auth, which is blocked. | **`AuthService.ts`** detects Native platform and calls `HushhAuthPlugin` directly, bypassing JS SDK.     |
+| **Vault Spinner** | Infinite "Checking vault status..."                  | `VaultLockGuard` waiting for `onAuthStateChanged` (which never fires).       | **`useAuth` hook** manually restores session. **Timeout (15s)** added to `VaultLockGuard` with Retry UI. |
+| **Profile Crash** | "Invalid Base64 string" error on load                | Python/Swift URL-safe Base64 vs Standard Base64 mismatch.                    | **`safeBase64Decode`** helper in `encrypt.ts` handles padding and URL-safe chars automatically.          |
+| **Sign Out**      | Navbar state doesn't update, requires restart        | JS SDK logout listener doesn't fire.                                         | **`useAuth().signOut()`** explicitly clears React state and LocalStorage immediately.                    |
 
 ---
 
@@ -64,32 +93,27 @@ hushh-webapp/
 │
 ├── lib/capacitor/            # TypeScript Plugin Layer
 │   ├── index.ts              # Plugin registration
-│   ├── types.ts              # ConsentScope, HushhConsentToken, etc.
-│   ├── platform.ts           # isNative(), isIOS(), isWeb()
-│   └── plugins/
-│       ├── consent-web.ts    # Web fallback (calls API routes)
-│       ├── vault-web.ts      # Web fallback (Web Crypto API)
-│       └── keychain-web.ts   # Web fallback (sessionStorage)
+│   ├── types.ts              # Type definitions
+│   └── plugins/              # Web fallbacks (for dev)
 │
-└── ios/                      # Generated by `npx cap add ios`
+└── ios/                      # Native Project (Gitignored, regenerated on sync)
     └── App/
         └── Plugins/          # Swift native plugins
             ├── HushhConsentPlugin/
             ├── HushhVaultPlugin/
-            └── HushhKeychainPlugin/
+            ├── HushhKeychainPlugin/
+            └── HushhAuthPlugin/
 ```
 
 ---
 
 ## 🔐 Consent Protocol Parity
 
-The Swift implementation must exactly match the Python consent protocol:
+The Swift implementation matches the Python consent-protocol exactly to ensure cross-compatibility.
 
 ### Token Format
 
-```
-HCT:base64(userId|agentId|scope|issuedAt|expiresAt).hmac_sha256_signature
-```
+`HCT:base64(userId|agentId|scope|issuedAt|expiresAt).hmac_sha256_signature`
 
 ### Python → Swift Mapping
 
@@ -98,107 +122,29 @@ HCT:base64(userId|agentId|scope|issuedAt|expiresAt).hmac_sha256_signature
 | `hmac.new(SECRET_KEY, raw, sha256)` | `HMAC<SHA256>.authenticationCode(for:using:)` |
 | `base64.urlsafe_b64encode()`        | `Data.base64EncodedString()`                  |
 | `time.time() * 1000`                | `Date().timeIntervalSince1970 * 1000`         |
-| `ConsentScope` enum                 | `ConsentScope` Swift enum                     |
-
-### Encryption Parity
-
-| Web (`lib/vault/encrypt.ts`)       | Swift (CryptoKit) |
-| ---------------------------------- | ----------------- |
-| `crypto.subtle.encrypt("AES-GCM")` | `AES.GCM.seal()`  |
-| 12-byte IV                         | 12-byte nonce     |
-| 128-bit auth tag                   | 128-bit tag       |
-| Base64 encoding                    | Base64 encoding   |
-
----
-
-## 💾 Local Storage Architecture
-
-### SQLCipher Database
-
-```sql
--- Schema matches cloud PostgreSQL for sync compatibility
-CREATE TABLE vault_food (
-    user_id TEXT PRIMARY KEY,
-    dietary_restrictions BLOB,  -- encrypted
-    cuisine_preferences BLOB,   -- encrypted
-    monthly_food_budget BLOB,   -- encrypted
-    created_at INTEGER,
-    updated_at INTEGER
-);
-
-CREATE TABLE consent_tokens (
-    token_id TEXT PRIMARY KEY,
-    user_id TEXT,
-    agent_id TEXT,
-    scope TEXT,
-    issued_at INTEGER,
-    expires_at INTEGER,
-    revoked INTEGER DEFAULT 0
-);
-```
-
-### Keychain Storage
-
-| Key               | Purpose                        |
-| ----------------- | ------------------------------ |
-| `hushh_vault_key` | AES-256 vault encryption key   |
-| `hushh_salt`      | PBKDF2 salt for key derivation |
-| `hushh_user_id`   | Firebase user ID               |
 
 ---
 
 ## 📱 Build Commands
 
 ```bash
-# Development: Static export for Capacitor
-npm run cap:build        # Build with next.config.capacitor.ts
+# 1. Build Web App (Static Export)
+npm run cap:build
 
-# Sync to native projects
-npm run cap:sync         # Copy web assets + sync plugins
+# 2. Sync to iOS Platform
+npm run cap:sync
 
-# iOS development (requires macOS + Xcode)
-npm run cap:ios          # Build, sync, and open Xcode
-npm run cap:ios:run      # Build and run on simulator
+# 3. Open Xcode
+npm run cap:ios
 ```
 
 ---
 
-## 🚀 Phase 2: MLX On-Device LLM
+## 🚀 Future: On-Device LLM (Phase 2)
 
-The plugin architecture supports future MLX integration:
+Architecture supports `HushhLLMPlugin` wrapping **MLX** for local inference (Gemma 2B) on iPhone logic board neural engines.
 
 ```swift
-// HushhLLMPlugin.swift (Phase 2)
-import MLX
-import MLXLLM
-
-@objc func generateResponse(_ call: CAPPluginCall) {
-    let prompt = call.getString("prompt") ?? ""
-    Task {
-        let response = try await LLMInference.generate(
-            model: "gemma-2b-it-4bit",
-            prompt: prompt
-        )
-        call.resolve(["response": response])
-    }
-}
+// Concept:
+let response = try await LLMInference.generate(model: "gemma-2b", prompt: input)
 ```
-
-### Model Recommendations
-
-| Model          | Size   | RAM Required | Use Case                     |
-| -------------- | ------ | ------------ | ---------------------------- |
-| Gemma 2B 4-bit | ~1.5GB | 3-4GB        | Full agent capabilities      |
-| Gemma 270M     | ~150MB | 1GB          | Lightweight intent detection |
-
----
-
-## 🔗 Related Documentation
-
-- [architecture.md](architecture.md) - Cloud system architecture
-- [consent-implementation.md](consent-implementation.md) - Token lifecycle
-- [frontend-design-system.md](frontend-design-system.md) - Morphy-UX components
-
----
-
-_Version: 1.0 | Branch: feature/ios-capacitor | December 2025_
