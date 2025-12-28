@@ -2,6 +2,7 @@ import UIKit
 import Capacitor
 import AuthenticationServices
 import GoogleSignIn
+import FirebaseCore
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -11,6 +12,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
         print("🚀 [Hushh PDA] App launched")
+        
+        // Initialize Firebase
+        FirebaseApp.configure()
+        print("🔥 [AppDelegate] Firebase configured")
         
         // Restore previous Google Sign-In session if available
         GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
