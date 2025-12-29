@@ -26,6 +26,8 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
+import { getApiBaseUrl } from "@/lib/services/api-service";
+import { getSessionItem } from "@/lib/utils/session-storage";
 
 // ============================================================================
 // Types
@@ -95,9 +97,9 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
   const MAX_RECONNECT_DELAY = 30000;
   const BASE_RECONNECT_DELAY = 2000;
 
-  const connect = useCallback(() => {
-    // Get user ID from sessionStorage
-    const userId = sessionStorage.getItem("user_id");
+  const connect = useCallback(async () => {
+    // Get user ID from platform-aware storage
+    const userId = await getSessionItem("user_id");
     if (!userId) {
       console.log("🔌 [SSE] No user_id found, skipping connection");
       setConnectionState("disconnected");
@@ -115,7 +117,9 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
     setConnectionState("connecting");
 
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      getApiBaseUrl() ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      "http://localhost:8000";
     const sseUrl = `${backendUrl}/api/consent/events/${userId}`;
 
     console.log(`🔌 [SSE] Connecting to ${sseUrl}`);
@@ -211,8 +215,8 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
 
   // Also reconnect if user_id changes (e.g., after login)
   useEffect(() => {
-    const checkUserId = () => {
-      const currentUserId = sessionStorage.getItem("user_id");
+    const checkUserId = async () => {
+      const currentUserId = await getSessionItem("user_id");
 
       // User ID changed (logged in or out)
       if (currentUserId !== userIdRef.current) {

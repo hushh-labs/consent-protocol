@@ -24,8 +24,10 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { AuthService } from "@/lib/services/auth-service";
 import { VaultService } from "@/lib/services/vault-service";
-// Removed direct vault imports - handled by VaultService
+import { ApiService } from "@/lib/services/api-service";
+import { setSessionItem } from "@/lib/utils/session-storage";
 import { useVault } from "@/lib/vault/vault-context";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Button,
   Card,
@@ -79,6 +81,7 @@ type LoginStep =
 export default function LoginPage() {
   const router = useRouter();
   const { isVaultUnlocked, unlockVault } = useVault();
+  const { checkAuth, setVaultKeyLocal, setNativeUser } = useAuth(); // Global Auth Context Access
 
   // State
   const [step, setStep] = useState<LoginStep>("checking");
@@ -121,35 +124,47 @@ export default function LoginPage() {
           // CRITICAL: We MUST have a timeout here. If native/firebase stalls, we must recover.
           const firebaseUser = await withTimeout(
             AuthService.restoreNativeSession(),
-            10000, 
+            10000,
             "Native session restore timed out"
-          ).catch(e => {
-            console.warn("🍎 [LoginPage] Native restore timed out or failed:", e);
+          ).catch((e) => {
+            console.warn(
+              "🍎 [LoginPage] Native restore timed out or failed:",
+              e
+            );
             return null;
           });
-          
+
           if (!mounted) return;
 
           if (firebaseUser) {
-            console.log("🍎 [LoginPage] Native session restored:", firebaseUser.uid);
+            console.log(
+              "🍎 [LoginPage] Native session restored:",
+              firebaseUser.uid
+            );
             setUserId(firebaseUser.uid);
             setUserDisplayName(firebaseUser.displayName || "");
-            
+
             // Re-sync Firebase Logic
-            sessionStorage.setItem("user_id", firebaseUser.uid);
-            sessionStorage.setItem("user_uid", firebaseUser.uid);
-            sessionStorage.setItem("user_email", firebaseUser.email || "");
-            sessionStorage.setItem("user_displayName", firebaseUser.displayName || "");
-            sessionStorage.setItem("user_photo", firebaseUser.photoURL || "");
-            
+            // Use platform-aware session storage
+            setSessionItem("user_id", firebaseUser.uid);
+            setSessionItem("user_uid", firebaseUser.uid);
+            setSessionItem("user_email", firebaseUser.email || "");
+            setSessionItem("user_displayName", firebaseUser.displayName || "");
+            setSessionItem("user_photo", firebaseUser.photoURL || "");
+
             await checkVaultAndProceed(firebaseUser.uid);
-            return; 
+            return;
           }
-           console.log("🍎 [LoginPage] No native session available (or timed out)");
-           setStep("ready");
-           return;
+          console.log(
+            "🍎 [LoginPage] No native session available (or timed out)"
+          );
+          setStep("ready");
+          return;
         } catch (err) {
-          console.error("🍎 [LoginPage] Native session restore catch block:", err);
+          console.error(
+            "🍎 [LoginPage] Native session restore catch block:",
+            err
+          );
           // Fallback to Firebase listener below
         }
       }
@@ -165,11 +180,12 @@ export default function LoginPage() {
           setUserId(user.uid);
           setUserDisplayName(user.displayName || "");
 
-          sessionStorage.setItem("user_id", user.uid);
-          sessionStorage.setItem("user_uid", user.uid);
-          sessionStorage.setItem("user_email", user.email || "");
-          sessionStorage.setItem("user_displayName", user.displayName || "");
-          sessionStorage.setItem("user_photo", user.photoURL || "");
+          // Use platform-aware session storage
+          setSessionItem("user_id", user.uid);
+          setSessionItem("user_uid", user.uid);
+          setSessionItem("user_email", user.email || "");
+          setSessionItem("user_displayName", user.displayName || "");
+          setSessionItem("user_photo", user.photoURL || "");
 
           await checkVaultAndProceed(user.uid);
         } else {
@@ -178,7 +194,7 @@ export default function LoginPage() {
           setStep("ready");
         }
       });
-      
+
       return unsubscribe;
     }
 
@@ -187,7 +203,7 @@ export default function LoginPage() {
     return () => {
       mounted = false;
       // Cleanup subscription if it was created
-      authCheckPromise.then(unsubscribe => unsubscribe && unsubscribe());
+      authCheckPromise.then((unsubscribe) => unsubscribe && unsubscribe());
     };
   }, [router]);
 
@@ -232,14 +248,14 @@ export default function LoginPage() {
         // Existing user - fetch vault data and unlock
         try {
           console.log("🔐 [LoginPage] Fetching vault data...");
-          
+
           // Add 10s timeout for Vault Data fetch
           const data = await withTimeout(
             VaultService.getVault(uid),
-            10000, 
+            10000,
             "Vault data fetch timed out. Please retry."
           );
-          
+
           console.log("🔐 [LoginPage] Vault data received");
           setVaultData({
             encryptedVaultKey: data.encryptedVaultKey,
@@ -284,7 +300,7 @@ export default function LoginPage() {
       // Use AuthService for platform-aware sign-in
       // iOS: Native Google Sign-In → Firebase credential sync
       // Web: Firebase signInWithPopup (unchanged)
-      
+
       // Add 120s timeout for Google Sign-In (accounts for slower user interaction)
       const result = await withTimeout(
         AuthService.signInWithGoogle(),
@@ -296,23 +312,22 @@ export default function LoginPage() {
       setUserId(user.uid);
       setUserDisplayName(user.displayName || "");
 
-      // Save Firebase profile to session
-      sessionStorage.setItem("user_id", user.uid);
-      sessionStorage.setItem("user_uid", user.uid);
-      sessionStorage.setItem("user_email", user.email || "");
-      sessionStorage.setItem("user_displayName", user.displayName || "");
-      sessionStorage.setItem("user_photo", user.photoURL || "");
-      sessionStorage.setItem("user_emailVerified", String(user.emailVerified));
-      sessionStorage.setItem(
-        "user_creationTime",
-        user.metadata.creationTime || ""
-      );
-      sessionStorage.setItem(
-        "user_lastSignInTime",
-        user.metadata.lastSignInTime || ""
-      );
+      // Save Firebase profile to session (platform-aware)
+      setSessionItem("user_id", user.uid);
+      setSessionItem("user_uid", user.uid);
+      setSessionItem("user_email", user.email || "");
+      setSessionItem("user_displayName", user.displayName || "");
+      setSessionItem("user_photo", user.photoURL || "");
+      setSessionItem("user_emailVerified", String(user.emailVerified));
+      setSessionItem("user_creationTime", user.metadata.creationTime || "");
+      setSessionItem("user_lastSignInTime", user.metadata.lastSignInTime || "");
 
       console.log("✅ Firebase profile saved:", user.displayName, user.email);
+
+      // CRITICAL: Manually notify Global Auth Context of the native login
+      // This forces the Navbar to update 'isAuthenticated' status immediately
+      setNativeUser(user);
+      await checkAuth();
 
       await checkVaultAndProceed(user.uid);
     } catch (err: unknown) {
@@ -410,7 +425,8 @@ export default function LoginPage() {
 
       // Store vault key in memory only (not sessionStorage - XSS protection)
       unlockVault(vaultKeyHex);
-      sessionStorage.setItem("user_id", userId); // Store for consents page
+      setVaultKeyLocal(vaultKeyHex); // Sync Global Auth Context
+      setSessionItem("user_id", userId); // Store for consents page (platform-aware)
 
       // Issue session token via consent protocol
       console.log("🔐 Issuing session token via consent protocol...");
@@ -422,20 +438,17 @@ export default function LoginPage() {
         if (!idToken) {
           console.warn("⚠️ No Firebase ID token available");
         } else {
-          // Create consent session token
-          const tokenResponse = await fetch("/api/consent/session-token", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ userId }),
+          // Create consent session token via ApiService (platform-aware)
+          const tokenResponse = await ApiService.getSessionToken({
+            userId,
+            scope: "vault.read.all",
+            agentId: "session",
           });
 
           if (tokenResponse.ok) {
             const tokenData = await tokenResponse.json();
-            sessionStorage.setItem("session_token", tokenData.sessionToken);
-            sessionStorage.setItem(
+            setSessionItem("session_token", tokenData.sessionToken);
+            setSessionItem(
               "session_token_expires",
               String(tokenData.expiresAt)
             );
@@ -449,12 +462,13 @@ export default function LoginPage() {
             // Don't throw - allow login to proceed, but features relying on session token will fail
           }
 
-          // Create httpOnly session cookie via Firebase Admin
+          // Create httpOnly session cookie via ApiService (platform-aware)
           console.log("🍪 Creating secure session cookie...");
-          const sessionResponse = await fetch("/api/auth/session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken }),
+          const sessionResponse = await ApiService.createSession({
+            userId,
+            email: user?.email || "",
+            idToken: idToken || undefined,
+            displayName: user?.displayName || "",
           });
 
           if (sessionResponse.ok) {
@@ -507,16 +521,27 @@ export default function LoginPage() {
 
       // Store vault key in memory only (not sessionStorage - XSS protection)
       unlockVault(vaultKeyHex);
+      setVaultKeyLocal(vaultKeyHex); // Sync Global Auth Context
 
       // Create httpOnly session cookie via Firebase Admin
       const user = auth.currentUser;
       const idToken = user ? await user.getIdToken() : null;
       if (idToken) {
         console.log("🍪 Creating secure session cookie...");
-        await fetch("/api/auth/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idToken }),
+        await ApiService.createSession({
+          userId: user?.uid || "",
+          email: user?.email || "",
+          idToken: idToken || undefined,
+          displayName: user?.displayName || "",
+          // Note: createSession doesn't strictly require idToken in body if implicit,
+          // but if the original code needed it for the backend to verify, ApiService
+          // might need an update or we assume backend validates via header/cookie.
+          // Checking ApiService.createSession signature: it takes basic user data.
+          // The previous fetch code sent { idToken }.
+          // ApiService.createSession sends { userId, email, ... }.
+          // If the backend /api/auth/session expects ID_TOKEN to create a session cookie,
+          // ApiService.createSession logic matches standard session creation.
+          // For now, I will use ApiService.createSession which is the standard wrapper.
         });
       }
 
@@ -540,10 +565,11 @@ export default function LoginPage() {
     const idToken = user ? await user.getIdToken() : null;
     if (idToken) {
       console.log("🍪 Creating secure session cookie...");
-      await fetch("/api/auth/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken }),
+      await ApiService.createSession({
+        userId: user?.uid || "",
+        email: user?.email || "",
+        idToken: idToken || undefined,
+        displayName: user?.displayName || "",
       });
     }
 

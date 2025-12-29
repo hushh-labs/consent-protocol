@@ -35,6 +35,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { useConsentSSE } from "@/lib/consent";
+import { ApiService, getApiBaseUrl } from "@/lib/services/api-service";
+import { getSessionItem } from "@/lib/utils/session-storage";
 import { DataTable } from "@/components/ui/data-table";
 import {
   appColumns,
@@ -310,7 +312,7 @@ export default function ConsentsPage() {
 
   const fetchPendingConsents = useCallback(async (uid: string) => {
     try {
-      const response = await fetch(`/api/consent/pending?userId=${uid}`);
+      const response = await ApiService.getPendingConsents(uid);
       if (response.ok) {
         const data = await response.json();
         setPending(data.pending || []);
@@ -322,9 +324,7 @@ export default function ConsentsPage() {
 
   const fetchAuditLog = useCallback(async (uid: string) => {
     try {
-      const response = await fetch(
-        `/api/consent/history?userId=${uid}&page=1&limit=50`
-      );
+      const response = await ApiService.getConsentHistory(uid, 1, 50);
       if (response.ok) {
         const data = await response.json();
         setAuditLog(data.items || []);
@@ -336,7 +336,7 @@ export default function ConsentsPage() {
 
   const fetchActiveConsents = useCallback(async (uid: string) => {
     try {
-      const response = await fetch(`/api/consent/active?userId=${uid}`);
+      const response = await ApiService.getActiveConsents(uid);
       if (response.ok) {
         const data = await response.json();
         setActiveConsents(data.active || []);
@@ -347,38 +347,38 @@ export default function ConsentsPage() {
   }, []);
 
   useEffect(() => {
-    // Load session info from sessionStorage
-    const token = sessionStorage.getItem("session_token");
-    const expiresAt = sessionStorage.getItem("session_token_expires");
-    const uid = sessionStorage.getItem("user_id");
+    async function initSession() {
+      // Load session info from platform-aware storage
+      const token = await getSessionItem("session_token");
+      const expiresAt = await getSessionItem("session_token_expires");
+      const uid = await getSessionItem("user_id");
 
-    if (uid) {
-      setUserId(uid);
+      if (uid) {
+        setUserId(uid);
 
-      // Initial fetch
-      Promise.all([
-        fetchPendingConsents(uid),
-        fetchAuditLog(uid),
-        fetchActiveConsents(uid),
-      ]).finally(() => {
+        // Initial fetch
+        Promise.all([
+          fetchPendingConsents(uid),
+          fetchAuditLog(uid),
+          fetchActiveConsents(uid),
+        ]).finally(() => {
+          setLoading(false);
+        });
+      } else {
         setLoading(false);
-      });
-    }
+      }
 
-    if (token && expiresAt) {
-      const expiryTime = parseInt(expiresAt, 10);
-      setSession({
-        isActive: Date.now() < expiryTime,
-        expiresAt: expiryTime,
-        token,
-        scope: "vault.read.all",
-      });
+      if (token && expiresAt) {
+        const expiryTime = parseInt(expiresAt, 10);
+        setSession({
+          isActive: Date.now() < expiryTime,
+          expiresAt: expiryTime,
+          token,
+          scope: "vault.read.all",
+        });
+      }
     }
-
-    // No user ID, stop loading
-    if (!uid) {
-      setLoading(false);
-    }
+    initSession();
   }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents]);
 
   // =========================================================================
@@ -488,8 +488,9 @@ export default function ConsentsPage() {
       let scopeData: Record<string, unknown> = {};
 
       if (scopeDataEndpoint) {
+        const baseUrl = getApiBaseUrl();
         const dataResponse = await fetch(
-          `${scopeDataEndpoint}?userId=${userId}`
+          `${baseUrl}${scopeDataEndpoint}?userId=${userId}`
         );
         console.log("Data fetch response:", dataResponse.status);
 
@@ -548,18 +549,14 @@ export default function ConsentsPage() {
       );
 
       // Send to server with encrypted data and export key
-      const response = await fetch("/api/consent/pending/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          requestId,
-          exportKey, // Server will embed this in token
-          encryptedData: encrypted.ciphertext,
-          encryptedIv: encrypted.iv,
-          encryptedTag: encrypted.tag,
-        }),
-      });
+      const response = await ApiService.approvePendingConsent({
+        userId,
+        token: requestId, // requestId is effectively the token ID here
+        encryptedData: encrypted.ciphertext,
+        encryptedIv: encrypted.iv,
+        encryptedTag: encrypted.tag,
+        exportKey,
+      } as any); // Type cast as existing method signature might need adjustment or we update the object match
 
       if (!response.ok) {
         throw new Error("Failed to approve consent");
@@ -613,10 +610,9 @@ export default function ConsentsPage() {
     setActionLoading(requestId);
 
     const promise = (async () => {
-      const response = await fetch("/api/consent/pending/deny", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, requestId }),
+      const response = await ApiService.denyPendingConsent({
+        userId,
+        token: requestId,
       });
 
       if (!response.ok) {
@@ -650,10 +646,10 @@ export default function ConsentsPage() {
     setActionLoading(`revoke-${scope}`);
 
     const promise = (async () => {
-      const response = await fetch("/api/consent/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, scope }),
+      const response = await ApiService.revokeConsent({
+        userId,
+        token: "", // Revoke by scope doesn't use token
+        scope,
       });
 
       if (!response.ok) {

@@ -1,28 +1,43 @@
 import type { NextConfig } from "next";
 
 /**
- * Next.js Configuration for Capacitor iOS/Android Static Export
+ * Next.js Configuration
  *
- * IMPORTANT: This config is used for building the mobile app.
- * For cloud deployment, use the standard next.config.ts
+ * Supports two modes:
+ * 1. Web/Cloud Run (Default): Standard server-side build, API routes enabled.
+ * 2. Capacitor (Mobile): Static export, API routes disabled (ignored).
  *
- * Usage: CAPACITOR_BUILD=true npm run build
+ * Usage:
+ * - Web: npm run build
+ * - Mobile: npm run cap:build (sets CAPACITOR_BUILD=true)
  */
-const capacitorConfig: NextConfig = {
-  // Static export for Capacitor WebView
-  output: "export",
+
+const isCapacitorBuild = process.env.CAPACITOR_BUILD === "true";
+
+const config: NextConfig = {
+  // Dynamic output mode
+  output: isCapacitorBuild ? "export" : undefined,
 
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
 
   // Trailing slash is important for static export routing
-  trailingSlash: true,
+  trailingSlash: isCapacitorBuild,
+
+  // Page Extensions Strategy for Mobile Build
+  // When building for mobile, we ONLY want to include UI pages (.tsx)
+  // This effectively ignores app/api/ route.ts files, preventing invalid export errors.
+  pageExtensions: isCapacitorBuild
+    ? ["tsx"] // Mobile: Only include .tsx pages (no .ts routes)
+    : ["tsx", "ts", "jsx", "js"], // Web: Include everything
 
   images: {
-    // Must be unoptimized for static export
-    unoptimized: true,
+    // Unoptimized for static export (Mobile)
+    // Optimized for cloud (Web)
+    unoptimized: isCapacitorBuild,
     formats: ["image/webp", "image/avif"],
+    // Standard device sizes
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 60,
@@ -33,15 +48,8 @@ const capacitorConfig: NextConfig = {
   // Performance optimizations
   compress: true,
   poweredByHeader: false,
-
-  // Disable features not supported in static export
-  // Note: async headers() not supported in static export
-
-  // React strict mode
   reactStrictMode: false,
-
-  // Disable source maps for smaller bundle
   productionBrowserSourceMaps: false,
 };
 
-export default capacitorConfig;
+export default config;

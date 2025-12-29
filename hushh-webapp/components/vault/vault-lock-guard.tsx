@@ -13,10 +13,11 @@
  * - Auth ✅ + Vault ✅ → Render children
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
+import { VaultService } from "@/lib/services/vault-service";
 import { unlockVaultWithPassphrase } from "@/lib/vault/passphrase-key";
 import {
   Card,
@@ -76,17 +77,43 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // ============================================================================
   // Effects
-  // ============================================================================
+  // Use ref for mount state to prevent stale closure issues
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let mounted = true;
+    mountedRef.current = true;
+
+    // Safety timeout: If checking takes more than 20s, show error with retry
+    const safetyTimeout = setTimeout(() => {
+      if (mountedRef.current && status === "checking") {
+        console.error("❌ [VaultLockGuard] Auth check timeout after 20s");
+        setError("Authentication check timed out. Please try again.");
+        setStatus("error");
+      }
+    }, 20000);
 
     async function checkVault() {
+      // Debug: Log current state to understand why status might not update
+      console.log(
+        "🔐 [VaultLockGuard] checkVault() called - authLoading:",
+        authLoading,
+        "user:",
+        user?.uid || "null",
+        "isVaultUnlocked:",
+        isVaultUnlocked,
+        "vaultData:",
+        !!vaultData
+      );
+
       // 1. Wait for Auth Loading
-      if (authLoading) return;
+      if (authLoading) {
+        console.log("🔐 [VaultLockGuard] Still waiting for auth loading...");
+        return;
+      }
 
       // 2. Check Auth Status
       if (!user) {
+        console.log("🔐 [VaultLockGuard] No user -> setting no_auth");
         setStatus("no_auth");
         return;
       }
@@ -95,6 +122,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
       // 3. Check Vault Lock Status
       if (isVaultUnlocked) {
+        console.log("🔐 [VaultLockGuard] Vault already unlocked");
         setStatus("unlocked");
         return;
       }
@@ -102,18 +130,24 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       // 4. Fetch Vault Data (if not already loaded)
       if (!vaultData) {
         try {
-          // Use VaultService for platform-aware fetching (Native vs Web)
-          const { VaultService } = await import("@/lib/services/vault-service");
           console.log("🔐 [VaultLockGuard] Fetching vault data via Service...");
 
-          // Use timeout to prevent hanging (15s)
+          // Match LoginPage timeout (15s) for consistency
           const data = await withTimeout(
             VaultService.getVault(user.uid),
             15000
           );
 
-          if (mounted) {
+          console.log(
+            "🔐 [VaultLockGuard] Got vault response:",
+            JSON.stringify(data)
+          );
+
+          if (mountedRef.current) {
             if (data && data.encryptedVaultKey) {
+              console.log(
+                "🔐 [VaultLockGuard] >> Setting status to vault_locked"
+              );
               setVaultData({
                 encryptedVaultKey: data.encryptedVaultKey,
                 salt: data.salt,
@@ -121,16 +155,20 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
               });
               setStatus("vault_locked");
             } else {
-              console.error("Failed to fetch vault data: Data empty");
-              // If data is empty, maybe they haven't set up a vault?
-              // But they are in dashboard.
+              console.error(
+                "❌ [VaultLockGuard] Vault data empty, setting error"
+              );
               setError("Vault data missing.");
               setStatus("error");
             }
+          } else {
+            console.log(
+              "🔐 [VaultLockGuard] Component unmounted (mountedRef=false), skipping status update"
+            );
           }
         } catch (err: any) {
-          if (mounted) {
-            console.error("Error fetching vault:", err);
+          if (mountedRef.current) {
+            console.error("❌ [VaultLockGuard] Error fetching vault:", err);
             setError(
               err.message === "Timeout"
                 ? "Connection timed out checking vault."
@@ -141,6 +179,9 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
         }
       } else {
         // Vault data exists but locked
+        console.log(
+          "🔐 [VaultLockGuard] >> Setting status to vault_locked (existing data)"
+        );
         setStatus("vault_locked");
       }
     }
@@ -148,8 +189,10 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     checkVault();
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
+      clearTimeout(safetyTimeout);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, isVaultUnlocked, vaultData, router]);
 
   // Re-check vault status when it changes
@@ -158,6 +201,11 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       setStatus("unlocked");
     }
   }, [isVaultUnlocked, status]);
+
+  // Debug: Log every status change
+  useEffect(() => {
+    console.log("🔐 [VaultLockGuard] STATUS CHANGED TO:", status);
+  }, [status]);
 
   // ============================================================================
   // Handlers
@@ -220,6 +268,11 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
         <div className="text-center space-y-4">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
           <p className="text-muted-foreground">Checking vault status...</p>
+          {/* Debug Info for User Feedback */}
+          <div className="text-xs text-muted-foreground/50 mt-2 font-mono">
+            Auth: {authLoading ? "Loading..." : "Done"} | User:{" "}
+            {user ? "Yes" : "No"} | Vault: {isVaultUnlocked ? "Open" : "Locked"}
+          </div>
         </div>
       </div>
     );
