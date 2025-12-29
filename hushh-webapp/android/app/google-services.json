@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "1006304528804",
+    "project_id": "hushh-pda",
+    "storage_bucket": "hushh-pda.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1006304528804:android:9036786e2e837bafcfd931",
+        "android_client_info": {
+          "package_name": "com.hushh.pda"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1006304528804-3dnrnqrga1nrv9p823bos2itrg5bra1c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "GCP_API_KEY_PLACEHOLDER"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1006304528804-3dnrnqrga1nrv9p823bos2itrg5bra1c.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.hushh.pda"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
