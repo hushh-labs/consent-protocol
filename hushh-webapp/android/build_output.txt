@@ -1,0 +1,17 @@
+
+FAILURE: Build failed with an exception.
+
+* Where:
+Settings file 'C:\OneDrive - NS\Repository\hushh-research\hushh-webapp\android\settings.gradle' line: 5
+
+* What went wrong:
+A problem occurred evaluating settings 'android'.
+> Could not read script 'C:\OneDrive - NS\Repository\hushh-research\hushh-webapp\android\capacitor.settings.gradle' as it does not exist.
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 1s

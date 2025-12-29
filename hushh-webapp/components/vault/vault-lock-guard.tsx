@@ -47,10 +47,12 @@ interface VaultData {
 
 // Timeout helper definition outside component to avoid re-creation
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return Promise.race([
-        promise,
-        new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms))
-    ]);
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), ms)
+    ),
+  ]);
 }
 
 // ============================================================================
@@ -103,10 +105,13 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
           // Use VaultService for platform-aware fetching (Native vs Web)
           const { VaultService } = await import("@/lib/services/vault-service");
           console.log("🔐 [VaultLockGuard] Fetching vault data via Service...");
-          
+
           // Use timeout to prevent hanging (15s)
-          const data = await withTimeout(VaultService.getVault(user.uid), 15000);
-          
+          const data = await withTimeout(
+            VaultService.getVault(user.uid),
+            15000
+          );
+
           if (mounted) {
             if (data && data.encryptedVaultKey) {
               setVaultData({
@@ -116,17 +121,21 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
               });
               setStatus("vault_locked");
             } else {
-               console.error("Failed to fetch vault data: Data empty");
-               // If data is empty, maybe they haven't set up a vault?
-               // But they are in dashboard. 
-               setError("Vault data missing.");
-               setStatus("error");
+              console.error("Failed to fetch vault data: Data empty");
+              // If data is empty, maybe they haven't set up a vault?
+              // But they are in dashboard.
+              setError("Vault data missing.");
+              setStatus("error");
             }
           }
         } catch (err: any) {
           if (mounted) {
             console.error("Error fetching vault:", err);
-            setError(err.message === "Timeout" ? "Connection timed out checking vault." : "Failed to load vault.");
+            setError(
+              err.message === "Timeout"
+                ? "Connection timed out checking vault."
+                : "Failed to load vault."
+            );
             setStatus("error");
           }
         }
@@ -190,14 +199,14 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       setLoading(false);
     }
   }
-  
+
   const handleRetry = () => {
-      setStatus("checking");
-      setVaultData(null); // Force refetch
+    setStatus("checking");
+    setVaultData(null); // Force refetch
   };
 
   const handleLogout = async () => {
-      await signOut();
+    await signOut();
   };
 
   // ============================================================================
@@ -230,9 +239,13 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // Error State
   if (status === "error") {
-      return (
+    return (
       <div className="flex items-center justify-center min-h-[60vh] p-4">
-        <Card variant="none" effect="glass" className="w-full max-w-md border-destructive/20">
+        <Card
+          variant="none"
+          effect="glass"
+          className="w-full max-w-md border-destructive/20"
+        >
           <CardHeader className="text-center">
             <div className="mx-auto h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
               <AlertCircle className="h-6 w-6 text-destructive" />
@@ -243,16 +256,12 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button
-              variant="glass"
-              className="w-full"
-              onClick={handleRetry}
-            >
+            <Button variant="none" className="w-full" onClick={handleRetry}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Retry
             </Button>
-            
-             <Button
+
+            <Button
               variant="link"
               className="w-full text-muted-foreground hover:text-destructive"
               onClick={handleLogout}
@@ -325,13 +334,13 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
             </Button>
 
             <div className="flex justify-center pt-2">
-                <Button
-                  variant="link"
-                  className="text-xs text-muted-foreground h-auto p-0 hover:text-foreground"
-                  onClick={handleLogout}
-                >
-                  Not you? Sign Out
-                </Button>
+              <Button
+                variant="link"
+                className="text-xs text-muted-foreground h-auto p-0 hover:text-foreground"
+                onClick={handleLogout}
+              >
+                Not you? Sign Out
+              </Button>
             </div>
           </CardContent>
         </Card>
