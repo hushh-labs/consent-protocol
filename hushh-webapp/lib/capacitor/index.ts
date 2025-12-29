@@ -193,7 +193,10 @@ export interface HushhVaultPlugin {
    * Check if user has a vault on Cloud DB
    * Replaces: /api/vault/check endpoint on iOS
    */
-  hasVault(options: { userId: string; authToken?: string }): Promise<{ exists: boolean }>;
+  hasVault(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ exists: boolean }>;
 
   /**
    * Get encrypted vault key from Cloud DB
@@ -224,6 +227,65 @@ export interface HushhVaultPlugin {
     recoveryIv: string;
     authToken?: string;
   }): Promise<{ success: boolean }>;
+
+  /**
+   * Get Food Preferences from Cloud DB
+   * Replaces: /api/vault/food on iOS
+   */
+  getFoodPreferences(options: {
+    userId: string;
+    authToken?: string;
+    sessionToken?: string;
+  }): Promise<{
+    domain: string;
+    preferences: Record<string, EncryptedPayload> | null;
+  }>;
+
+  /**
+   * Get Professional Data from Cloud DB
+   * Replaces: /api/vault/professional on iOS
+   */
+  getProfessionalData(options: {
+    userId: string;
+    authToken?: string;
+    sessionToken?: string;
+  }): Promise<{
+    domain: string;
+    preferences: Record<string, EncryptedPayload> | null;
+  }>;
+
+  // Consents (New)
+  /**
+   * Store a single encrypted preference field to the Cloud DB.
+   * Native method mapping to /db/$domain/store
+   */
+  storePreferencesToCloud(options: {
+    userId: string;
+    domain: string;
+    fieldName: string;
+    ciphertext: string;
+    iv: string;
+    tag: string;
+    consentTokenId: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
+
+  getPendingConsents(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ pending: any[] }>;
+
+  getActiveConsents(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ active: any[] }>;
+
+  getConsentHistory(options: {
+    userId: string;
+    authToken?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: any[] }>;
 }
 
 export const HushhVault = registerPlugin<HushhVaultPlugin>("HushhVault", {
@@ -298,7 +360,9 @@ export interface HushhSettingsData {
 
 export interface HushhSettingsPlugin {
   getSettings(): Promise<HushhSettingsData>;
-  updateSettings(options: Partial<HushhSettingsData>): Promise<{ success: boolean }>;
+  updateSettings(
+    options: Partial<HushhSettingsData>
+  ): Promise<{ success: boolean }>;
   resetSettings(): Promise<{ success: boolean }>;
   shouldUseLocalAgents(): Promise<{ value: boolean }>;
   shouldSyncToCloud(): Promise<{ value: boolean }>;
@@ -432,17 +496,24 @@ export interface HushhSyncPlugin {
   /**
    * Push local changes to cloud
    */
-  push(options?: { authToken?: string }): Promise<{ success: boolean; pushedRecords: number }>;
+  push(options?: {
+    authToken?: string;
+  }): Promise<{ success: boolean; pushedRecords: number }>;
 
   /**
    * Pull remote changes to local
    */
-  pull(options?: { authToken?: string }): Promise<{ success: boolean; pulledRecords: number }>;
+  pull(options?: {
+    authToken?: string;
+  }): Promise<{ success: boolean; pulledRecords: number }>;
 
   /**
    * Sync a specific user's vault
    */
-  syncVault(options: { userId: string; authToken?: string }): Promise<{ success: boolean }>;
+  syncVault(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
 
   /**
    * Get current sync status

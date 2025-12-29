@@ -235,29 +235,46 @@ class HushhAuthPlugin : Plugin() {
 
     @PluginMethod
     fun getIdToken(call: PluginCall) {
-        // Try memory first
+        val user = firebaseAuth.currentUser
+        
+        if (user != null) {
+            // Priority 1: Get fresh token from Firebase SDK (auto-refreshes if needed)
+            user.getIdToken(false).addOnCompleteListener(activity) { task ->
+                if (task.isSuccessful) {
+                    val token = task.result?.token
+                    currentIdToken = token
+                    // Update storage with fresh token
+                    if (token != null && currentUser != null) {
+                        saveCredentialsToSecureStorage(token, currentAccessToken ?: "", currentUser!!)
+                    }
+                    call.resolve(JSObject().put("idToken", token))
+                } else {
+                    Log.w(TAG, "⚠️ [HushhAuth] Failed to refresh token: ${task.exception?.message}")
+                    // Fallback to storage if network fails
+                    resolveFromStorage(call)
+                }
+            }
+        } else {
+            // Priority 2: Fallback to Secure Storage/Memory if SDK isn't ready
+            resolveFromStorage(call)
+        }
+    }
+
+    private fun resolveFromStorage(call: PluginCall) {
+        // Try memory
         currentIdToken?.let {
             call.resolve(JSObject().put("idToken", it))
             return
         }
 
-        // Try secure storage
+        // Try storage
         loadIdTokenFromSecureStorage()?.let {
             currentIdToken = it
             call.resolve(JSObject().put("idToken", it))
             return
         }
 
-        // Try to refresh from Firebase
-        firebaseAuth.currentUser?.getIdToken(true)?.addOnCompleteListener { task ->
-            if (task.isSuccessful) {
-                val token = task.result?.token
-                currentIdToken = token
-                call.resolve(JSObject().put("idToken", token))
-            } else {
-                call.resolve(JSObject().put("idToken", JSONObject.NULL))
-            }
-        } ?: call.resolve(JSObject().put("idToken", JSONObject.NULL))
+        call.resolve(JSObject().put("idToken", JSONObject.NULL))
     }
 
     // ==================== Get Current User ====================

@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.security.SecureRandom
+import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -29,7 +30,18 @@ import javax.crypto.spec.SecretKeySpec
 class HushhVaultPlugin : Plugin() {
 
     private val TAG = "HushhVault"
-    private val httpClient = OkHttpClient()
+    
+    // Configure OkHttpClient with 30-second timeouts to prevent infinite hangs
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    override fun load() {
+        super.load()
+        Log.d(TAG, "⚡ [HushhVault] Plugin Loaded")
+    }
 
     // Default Cloud Run backend URL (fallback if not provided by JS layer)
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
@@ -166,6 +178,9 @@ class HushhVaultPlugin : Plugin() {
 
     // ==================== Cloud DB Methods ====================
 
+    // ==================== Cloud DB Methods ====================
+    // These call Cloud Run backend directly (Python Agent API)
+
     @PluginMethod
     fun hasVault(call: PluginCall) {
         val userId = call.getString("userId")
@@ -176,21 +191,18 @@ class HushhVaultPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
-        // iOS uses POST to /db/vault/check with JSON body
+        // Use Native Python Backend Route (POST)
         val url = "$backendUrl/db/vault/check"
         
         Log.d(TAG, "🔐 [hasVault] Checking vault for userId: $userId")
-        Log.d(TAG, "🔐 [hasVault] URL: $url")
-        Log.d(TAG, "🔐 [hasVault] AuthToken present: ${authToken != null}")
 
         Thread {
             try {
-                // Create JSON body like iOS does
                 val jsonBody = JSONObject().apply {
                     put("userId", userId)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
+
                 val requestBuilder = Request.Builder()
                     .url(url)
                     .post(requestBody)
@@ -205,20 +217,22 @@ class HushhVaultPlugin : Plugin() {
                 val body = response.body?.string() ?: "{}"
                 
                 Log.d(TAG, "🔐 [hasVault] Response code: $responseCode")
-                Log.d(TAG, "🔐 [hasVault] Response body: $body")
                 
-                val json = JSONObject(body)
+                // Handle non-200 responses gracefully? 
+                // Python API returns 200 with { hasVault: boolean }
                 
-                // Backend returns hasVault
-                val exists = json.optBoolean("hasVault", false)
-                
-                Log.d(TAG, "🔐 [hasVault] Parsed exists: $exists")
-
-                activity.runOnUiThread {
-                    call.resolve(JSObject().put("exists", exists))
+                if (response.isSuccessful) {
+                    val json = JSONObject(body)
+                    val exists = json.optBoolean("hasVault", false)
+                    activity.runOnUiThread {
+                        call.resolve(JSObject().put("exists", exists))
+                    }
+                } else {
+                     activity.runOnUiThread {
+                        call.reject("Failed to check vault: HTTP $responseCode")
+                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ [hasVault] Error: ${e.message}")
                 activity.runOnUiThread {
                     call.reject("Failed to check vault: ${e.message}")
                 }
@@ -229,6 +243,8 @@ class HushhVaultPlugin : Plugin() {
     @PluginMethod
     fun getVault(call: PluginCall) {
         val userId = call.getString("userId")
+        Log.d(TAG, "⚡ [getVault] Called for userId: $userId")
+        
         if (userId == null) {
             call.reject("Missing required parameter: userId")
             return
@@ -236,17 +252,18 @@ class HushhVaultPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
-        // iOS uses POST to /db/vault/get with JSON body
+        // Use Native Python Backend Route (POST)
         val url = "$backendUrl/db/vault/get"
 
         Thread {
             try {
-                // Create JSON body like iOS does
+                Log.d(TAG, "⚡ [getVault] Thread started. Building request to $url")
+                
                 val jsonBody = JSONObject().apply {
                     put("userId", userId)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
+
                 val requestBuilder = Request.Builder()
                     .url(url)
                     .post(requestBody)
@@ -254,14 +271,19 @@ class HushhVaultPlugin : Plugin() {
 
                 if (authToken != null) {
                     requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                    Log.d(TAG, "⚡ [getVault] Added Auth Token")
                 }
 
+                Log.d(TAG, "⚡ [getVault] Executing network request...")
                 val response = httpClient.newCall(requestBuilder.build()).execute()
+                Log.d(TAG, "⚡ [getVault] Response received. Code: ${response.code}")
+                
                 val body = response.body?.string() ?: "{}"
-                val json = JSONObject(body)
-
-                activity.runOnUiThread {
-                    call.resolve(JSObject().apply {
+                
+                if (response.isSuccessful) {
+                    val json = JSONObject(body)
+                    Log.d(TAG, "⚡ [getVault] Parsing success response...")
+                    val result = JSObject().apply {
                         put("authMethod", json.optString("authMethod", "passphrase"))
                         put("encryptedVaultKey", json.optString("encryptedVaultKey", ""))
                         put("salt", json.optString("salt", ""))
@@ -269,11 +291,22 @@ class HushhVaultPlugin : Plugin() {
                         put("recoveryEncryptedVaultKey", json.optString("recoveryEncryptedVaultKey", ""))
                         put("recoverySalt", json.optString("recoverySalt", ""))
                         put("recoveryIv", json.optString("recoveryIv", ""))
-                    })
+                    }
+                    
+                    activity.runOnUiThread {
+                        Log.d(TAG, "⚡ [getVault] Resolving promise on UI thread")
+                        call.resolve(result)
+                    }
+                } else {
+                    Log.e(TAG, "⚡ [getVault] Server error: ${response.code}")
+                    activity.runOnUiThread {
+                        call.reject("Failed to get vault: HTTP ${response.code}")
+                    }
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                Log.e(TAG, "⚡ [getVault] CRASH/ERROR: ${t.message}", t)
                 activity.runOnUiThread {
-                    call.reject("Failed to get vault: ${e.message}")
+                    call.reject("Failed to get vault: ${t.message}")
                 }
             }
         }.start()
@@ -336,7 +369,6 @@ class HushhVaultPlugin : Plugin() {
     }
 
     // ==================== Domain Data Methods ====================
-    // These call Cloud Run backend to get/store encrypted user data
 
     @PluginMethod
     fun getFoodPreferences(call: PluginCall) {
@@ -349,9 +381,12 @@ class HushhVaultPlugin : Plugin() {
         val authToken = call.getString("authToken")
         val sessionToken = call.getString("sessionToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        
+        // Use Python consent-protocol backend: POST /db/food/get
+        // (Next.js /api/* routes don't exist in static export for Android)
         val url = "$backendUrl/db/food/get"
 
-        Log.d(TAG, "🍽️ [getFoodPreferences] Fetching food data for userId: $userId")
+        Log.d(TAG, "🍽️ [getFoodPreferences] Fetching food data from: $url")
 
         Thread {
             try {
@@ -379,7 +414,7 @@ class HushhVaultPlugin : Plugin() {
                 Log.d(TAG, "🍽️ [getFoodPreferences] Response code: $responseCode")
 
                 if (responseCode == 404) {
-                    // No data found - return empty preferences
+                    // No food preferences found - return null preferences
                     activity.runOnUiThread {
                         call.resolve(JSObject().apply {
                             put("domain", "food")
@@ -426,9 +461,12 @@ class HushhVaultPlugin : Plugin() {
         val authToken = call.getString("authToken")
         val sessionToken = call.getString("sessionToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        
+        // Use Python consent-protocol backend: POST /db/professional/get
+        // (Next.js /api/* routes don't exist in static export for Android)
         val url = "$backendUrl/db/professional/get"
 
-        Log.d(TAG, "💼 [getProfessionalData] Fetching professional data for userId: $userId")
+        Log.d(TAG, "💼 [getProfessionalData] Fetching professional data from: $url")
 
         Thread {
             try {
@@ -436,7 +474,7 @@ class HushhVaultPlugin : Plugin() {
                     put("userId", userId)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
+
                 val requestBuilder = Request.Builder()
                     .url(url)
                     .post(requestBody)
@@ -456,7 +494,7 @@ class HushhVaultPlugin : Plugin() {
                 Log.d(TAG, "💼 [getProfessionalData] Response code: $responseCode")
 
                 if (responseCode == 404) {
-                    // No data found - return empty preferences
+                    // No professional data found - return null preferences
                     activity.runOnUiThread {
                         call.resolve(JSObject().apply {
                             put("domain", "professional")
@@ -492,6 +530,94 @@ class HushhVaultPlugin : Plugin() {
         }.start()
     }
 
+    // ==================== Consent Methods ====================
+    // Keep using /api/consent/* because we verified these exist on Python backend
+
+    @PluginMethod
+    fun getPendingConsents(call: PluginCall) {
+        val userId = call.getString("userId")
+        val authToken = call.getString("authToken")
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        // Python Backend supports this via /api/consent/pending
+        val url = "$backendUrl/api/consent/pending?userId=$userId"
+
+        Thread {
+            try {
+                val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
+                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+                val response = httpClient.newCall(requestBuilder.build()).execute()
+                val body = response.body?.string() ?: "{}"
+                
+                if (response.code == 200) {
+                     val json = JSONObject(body)
+                     activity.runOnUiThread { call.resolve(JSObject().put("pending", json.optJSONArray("pending"))) }
+                } else {
+                     activity.runOnUiThread { call.reject("Failed to fetch pending consents: ${response.code}") }
+                }
+            } catch (e: Exception) {
+                activity.runOnUiThread { call.reject("Error: ${e.message}") }
+            }
+        }.start()
+    }
+
+    @PluginMethod
+    fun getActiveConsents(call: PluginCall) {
+        val userId = call.getString("userId")
+        val authToken = call.getString("authToken")
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val url = "$backendUrl/api/consent/active?userId=$userId"
+
+        Thread {
+            try {
+                val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
+                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+                val response = httpClient.newCall(requestBuilder.build()).execute()
+                val body = response.body?.string() ?: "{}"
+                
+                if (response.code == 200) {
+                     val json = JSONObject(body)
+                     activity.runOnUiThread { call.resolve(JSObject().put("active", json.optJSONArray("active"))) }
+                } else {
+                     activity.runOnUiThread { call.reject("Failed to fetch active consents: ${response.code}") }
+                }
+            } catch (e: Exception) {
+                activity.runOnUiThread { call.reject("Error: ${e.message}") }
+            }
+        }.start()
+    }
+
+    @PluginMethod
+    fun getConsentHistory(call: PluginCall) {
+        val userId = call.getString("userId")
+        val page = call.getInt("page") ?: 1
+        val limit = call.getInt("limit") ?: 50
+        val authToken = call.getString("authToken")
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val url = "$backendUrl/api/consent/history?userId=$userId&page=$page&limit=$limit"
+
+        Thread {
+            try {
+                val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
+                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+
+                val response = httpClient.newCall(requestBuilder.build()).execute()
+                val body = response.body?.string() ?: "{}"
+                
+                if (response.code == 200) {
+                     val json = JSONObject(body)
+                     activity.runOnUiThread { call.resolve(JSObject().put("items", json.optJSONArray("items"))) }
+                } else {
+                     activity.runOnUiThread { call.reject("Failed to fetch consent history: ${response.code}") }
+                }
+            } catch (e: Exception) {
+                activity.runOnUiThread { call.reject("Error: ${e.message}") }
+            }
+        }.start()
+    }
+
+
     @PluginMethod
     fun storePreferencesToCloud(call: PluginCall) {
         val userId = call.getString("userId")
@@ -500,16 +626,17 @@ class HushhVaultPlugin : Plugin() {
         val ciphertext = call.getString("ciphertext")
         val iv = call.getString("iv")
         val tag = call.getString("tag")
+        val consentToken = call.getString("consentToken")
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val authToken = call.getString("authToken")
 
         if (userId == null || domain == null || fieldName == null || 
             ciphertext == null || iv == null || tag == null) {
-            call.reject("Missing required parameters")
+            call.reject("Missing params")
             return
         }
 
-        val authToken = call.getString("authToken")
-        val consentToken = call.getString("consentToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        // Revert to /db/$domain/store
         val url = "$backendUrl/db/$domain/store"
 
         Log.d(TAG, "💾 [storePreferencesToCloud] Storing $fieldName for userId: $userId")
@@ -522,46 +649,33 @@ class HushhVaultPlugin : Plugin() {
                     put("ciphertext", ciphertext)
                     put("iv", iv)
                     put("tag", tag)
-                    if (consentToken != null) {
-                        put("consentToken", consentToken)
-                    }
+                    if (consentToken != null) put("consentToken", consentToken)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
                 
                 val requestBuilder = Request.Builder()
                     .url(url)
-                    .post(requestBody)
+                    .post(requestBody) // Native storage uses POST
                     .addHeader("Content-Type", "application/json")
 
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
+                // Python sometimes returns 200 or 201
                 val responseCode = response.code
-                val body = response.body?.string() ?: "{}"
                 
-                Log.d(TAG, "💾 [storePreferencesToCloud] Response code: $responseCode")
-
-                if (responseCode != 200 && responseCode != 201) {
-                    Log.e(TAG, "❌ [storePreferencesToCloud] Error: $body")
-                    activity.runOnUiThread {
-                        call.reject("Failed to store preferences: HTTP $responseCode")
+                activity.runOnUiThread {
+                    if (response.isSuccessful) {
+                         call.resolve(JSObject().apply {
+                            put("success", true)
+                            put("field", fieldName)
+                        })
+                    } else {
+                         call.reject("Failed to store: $responseCode")
                     }
-                    return@Thread
                 }
-
-                activity.runOnUiThread {
-                    call.resolve(JSObject().apply {
-                        put("success", true)
-                        put("field", fieldName)
-                    })
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ [storePreferencesToCloud] Error: ${e.message}")
-                activity.runOnUiThread {
-                    call.reject("Failed to store preferences: ${e.message}")
-                }
+            } catch(e: Exception) {
+                 activity.runOnUiThread { call.reject("Error: ${e.message}") }
             }
         }.start()
     }

@@ -7,12 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "cap:build": "mv app/api app/_api && cp next.config.capacitor.ts next.config.ts.bak && cp next.config.capacitor.ts next.config.ts && next build; mv next.config.ts.bak next.config.ts; mv app/_api app/api",
+    "cap:build": "cross-env CAPACITOR_BUILD=true next build",
     "cap:sync": "npx cap sync",
     "cap:ios": "npm run cap:build && npm run cap:sync && npx cap open ios",
-    "cap:ios:run": "npm run cap:build && npm run cap:sync && npx cap run ios"
+    "cap:ios:run": "npm run cap:build && npm run cap:sync && npx cap run ios",
+    "cap:android": "npm run cap:build && npm run cap:sync && npx cap open android",
+    "cap:android:run": "npm run cap:build && npm run cap:sync && npx cap run android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
@@ -58,6 +61,7 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.7",
     "tailwindcss": "^4",

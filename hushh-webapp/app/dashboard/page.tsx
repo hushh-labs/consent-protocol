@@ -10,70 +10,102 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { AgentChat, PendingUI } from "@/components/chat/agent-chat";
+// import { useRouter } from "next/navigation"; // Removed unused
+import { AgentChat } from "@/components/chat/agent-chat";
 import { CollectedDataCard } from "@/components/chat/collected-data-card";
 import { ConsentStatusBar } from "@/components/consent/status-bar";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/lib/morphy-ux/morphy";
-import { Shield, Sparkles, Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/lib/morphy-ux/morphy";
+import { Shield, Sparkles } from "lucide-react";
+// import { useVault } from "@/lib/vault/vault-context"; // Removed unused
+import { ApiService } from "@/lib/services/api-service";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { decryptData } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const { isVaultUnlocked } = useVault();
+  // const router = useRouter(); // Removed unused
+  const { user } = useAuth();
+  const { getVaultKey } = useVault();
+
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>(
     {}
   );
+  const [loadingData, setLoadingData] = useState(false);
 
-  // Check vault on mount - redirect to login if not unlocked
-  // Use a small delay to allow context state to propagate after navigation
+  // Fetch existing data on mount
   useEffect(() => {
-    // First check the sessionStorage flag (set by vault-context on unlock)
-    const vaultUnlockedFlag =
-      sessionStorage.getItem("vault_unlocked") === "true";
+    async function loadExistingData() {
+      if (!user) return;
+      const vaultKey = getVaultKey();
+      if (!vaultKey) return; // Data is encrypted, need key to show it
 
-    if (!isVaultUnlocked && !vaultUnlockedFlag) {
-      // Neither context nor sessionStorage indicates vault is unlocked
-      // Wait a moment in case context is still propagating
-      const timeoutId = setTimeout(() => {
-        if (!isVaultUnlocked) {
-          console.log(
-            "🔒 [Dashboard] Vault not unlocked, redirecting to login"
-          );
-          router.push("/login?redirect=/dashboard");
+      try {
+        setLoadingData(true);
+        const [foodRes, profRes] = await Promise.all([
+          ApiService.getFoodPreferences(user.uid),
+          ApiService.getProfessionalProfile(user.uid),
+        ]);
+
+        const baseData: Record<string, unknown> = {};
+
+        // Process Food Data
+        if (foodRes.ok) {
+          const foodJson = await foodRes.json();
+          const prefs = foodJson.preferences || {};
+
+          if (prefs.dietary_restrictions) {
+            const decrypted = await decryptData(
+              prefs.dietary_restrictions,
+              vaultKey
+            );
+            if (decrypted)
+              baseData.dietary_restrictions = JSON.parse(decrypted);
+          }
+          if (prefs.cuisine_preferences) {
+            const decrypted = await decryptData(
+              prefs.cuisine_preferences,
+              vaultKey
+            );
+            if (decrypted) baseData.cuisine_preferences = JSON.parse(decrypted);
+          }
+          if (prefs.monthly_food_budget) {
+            const decrypted = await decryptData(
+              prefs.monthly_food_budget,
+              vaultKey
+            );
+            if (decrypted) baseData.monthly_budget = JSON.parse(decrypted);
+          }
         }
-      }, 100);
 
-      return () => clearTimeout(timeoutId);
+        // Process Professional Data
+        if (profRes.ok) {
+          const profJson = await profRes.json();
+          const prefs = profJson.preferences || {};
+
+          if (prefs.professional_title) {
+            const decrypted = await decryptData(
+              prefs.professional_title,
+              vaultKey
+            );
+            if (decrypted) baseData.professional_title = JSON.parse(decrypted);
+          }
+          if (prefs.skills) {
+            const decrypted = await decryptData(prefs.skills, vaultKey);
+            if (decrypted) baseData.skills = JSON.parse(decrypted);
+          }
+        }
+
+        setCollectedData((prev) => ({ ...prev, ...baseData }));
+      } catch (error) {
+        console.error("Failed to load existing data:", error);
+      } finally {
+        setLoadingData(false);
+      }
     }
-    // Vault is unlocked, no cleanup needed
-    return undefined;
-  }, [isVaultUnlocked, router]);
 
-  // Show loading while checking vault
-  // Also check sessionStorage for faster initial render
-  const vaultUnlockedFlag =
-    typeof window !== "undefined"
-      ? sessionStorage.getItem("vault_unlocked") === "true"
-      : false;
+    loadExistingData();
+  }, [user, getVaultKey]);
 
-  if (!isVaultUnlocked && !vaultUnlockedFlag) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Checking vault status...
-          </p>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Consent Status Bar */}
@@ -119,7 +151,7 @@ What would you like to set up?`}
           <CollectedDataCard data={collectedData} domain="Current Session" />
 
           {/* Empty state when no data collected yet */}
-          {Object.keys(collectedData).length === 0 && (
+          {Object.keys(collectedData).length === 0 && !loadingData && (
             <Card variant="none" effect="glass">
               <CardContent className="p-4 text-center">
                 <Sparkles className="h-8 w-8 mx-auto mb-2 text-blue-500 opacity-50" />
