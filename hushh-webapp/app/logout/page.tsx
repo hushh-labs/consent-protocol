@@ -12,6 +12,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { ApiService } from "@/lib/services/api-service";
+import { clearSessionStorage } from "@/lib/utils/session-storage";
 
 export default function LogoutPage() {
   const router = useRouter();
@@ -37,14 +39,14 @@ export default function LogoutPage() {
 
         // Clear session cookie via API (httpOnly cookie)
         try {
-          await fetch("/api/auth/session", { method: "DELETE" });
+          await ApiService.deleteSession();
           console.log("🍪 Session cookie cleared");
         } catch (e) {
           console.warn("⚠️ Failed to clear session cookie:", e);
         }
 
-        // Clear session storage
-        sessionStorage.clear();
+        // Clear session storage (platform-aware)
+        await clearSessionStorage();
 
         // Sign out from Firebase
         await signOut(auth);

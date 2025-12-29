@@ -76,9 +76,13 @@ export class VaultService {
     if (Capacitor.isNativePlatform()) {
       console.log("🔐 [VaultService] Using native plugin for getVault");
       try {
+        console.log("🔐 [VaultService] Requesting Firebase ID Token...");
         const authToken = await this.getFirebaseToken();
+        console.log(
+          "🔐 [VaultService] Firebase ID Token received. Calling HushhVault.getVault..."
+        );
         const result = await HushhVault.getVault({ userId, authToken });
-        console.log("🔐 [VaultService] getVault result received");
+        console.log("🔐 [VaultService] HushhVault.getVault returned success.");
         return {
           encryptedVaultKey: result.encryptedVaultKey,
           salt: result.salt,
