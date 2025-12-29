@@ -208,3 +208,99 @@ async def vault_setup(request: VaultSetupRequest):
     except Exception as e:
         logger.error(f"vault/setup error: {e}")
         raise HTTPException(status_code=500, detail="Database error")
+
+
+# ============================================================================
+# Domain Data Endpoints (Food & Professional)
+# ============================================================================
+
+class DomainGetRequest(BaseModel):
+    userId: str
+
+
+class DomainPreferencesResponse(BaseModel):
+    domain: str
+    preferences: dict | None
+
+
+@router.post("/food/get", response_model=DomainPreferencesResponse)
+async def food_get(request: DomainGetRequest):
+    """
+    Get all food preferences for the user.
+    
+    Returns encrypted data from vault_food table.
+    Data is still encrypted - decryption happens on the client.
+    """
+    try:
+        pool = await get_pool()
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT field_name, ciphertext, iv, tag, algorithm
+                FROM vault_food WHERE user_id = $1
+                """,
+                request.userId
+            )
+        
+        if not rows:
+            return DomainPreferencesResponse(domain="food", preferences=None)
+        
+        # Build preferences object from rows
+        preferences = {}
+        for row in rows:
+            preferences[row["field_name"]] = {
+                "ciphertext": row["ciphertext"],
+                "iv": row["iv"],
+                "tag": row["tag"],
+                "algorithm": row["algorithm"] or "aes-256-gcm",
+                "encoding": "base64"
+            }
+        
+        return DomainPreferencesResponse(domain="food", preferences=preferences)
+    
+    except Exception as e:
+        logger.error(f"food/get error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/professional/get", response_model=DomainPreferencesResponse)
+async def professional_get(request: DomainGetRequest):
+    """
+    Get all professional data for the user.
+    
+    Returns encrypted data from vault_professional table.
+    Data is still encrypted - decryption happens on the client.
+    """
+    try:
+        pool = await get_pool()
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT field_name, ciphertext, iv, tag, algorithm
+                FROM vault_professional WHERE user_id = $1
+                """,
+                request.userId
+            )
+        
+        if not rows:
+            return DomainPreferencesResponse(domain="professional", preferences=None)
+        
+        # Build preferences object from rows
+        preferences = {}
+        for row in rows:
+            preferences[row["field_name"]] = {
+                "ciphertext": row["ciphertext"],
+                "iv": row["iv"],
+                "tag": row["tag"],
+                "algorithm": row["algorithm"] or "aes-256-gcm",
+                "encoding": "base64"
+            }
+        
+        return DomainPreferencesResponse(domain="professional", preferences=preferences)
+    
+    except Exception as e:
+        logger.error(f"professional/get error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+

@@ -260,7 +260,10 @@ export class HushhVaultWeb extends WebPlugin {
   /**
    * Check if user has a vault - web fallback calls API route
    */
-  async hasVault(options: { userId: string; authToken?: string }): Promise<{ exists: boolean }> {
+  async hasVault(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ exists: boolean }> {
     try {
       const response = await fetch(`/api/vault/check?userId=${options.userId}`);
       if (!response.ok) return { exists: false };
@@ -309,5 +312,94 @@ export class HushhVaultWeb extends WebPlugin {
     });
     if (!response.ok) throw new Error("Failed to setup vault");
     return { success: true };
+  }
+
+  // ==================== Domain Data Methods (Web Fallback) ====================
+
+  async getFoodPreferences(options: {
+    userId: string;
+    authToken?: string;
+    sessionToken?: string;
+  }): Promise<{
+    domain: string;
+    preferences: Record<string, EncryptedPayload> | null;
+  }> {
+    const response = await fetch(`/api/vault/food?userId=${options.userId}`);
+    if (!response.ok) return { domain: "food", preferences: null };
+    const data = await response.json();
+    return { domain: "food", preferences: data.preferences || null };
+  }
+
+  async getProfessionalData(options: {
+    userId: string;
+    authToken?: string;
+    sessionToken?: string;
+  }): Promise<{
+    domain: string;
+    preferences: Record<string, EncryptedPayload> | null;
+  }> {
+    const response = await fetch(
+      `/api/vault/professional?userId=${options.userId}`
+    );
+    if (!response.ok) return { domain: "professional", preferences: null };
+    const data = await response.json();
+    return { domain: "professional", preferences: data.preferences || null };
+  }
+
+  // ==================== Consent Methods (Web Fallback) ====================
+
+  async storePreferencesToCloud(options: {
+    userId: string;
+    domain: string;
+    fieldName: string;
+    ciphertext: string;
+    iv: string;
+    tag: string;
+    consentTokenId: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }> {
+    console.log("Web Stub: storePreferencesToCloud", options);
+    // On web, this should fallback to API calls, but this is a native-only path in ApiService.
+    return { success: true };
+  }
+
+  async getPendingConsents(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ pending: any[] }> {
+    const response = await fetch(
+      `/api/consent/pending?userId=${options.userId}`
+    );
+    if (!response.ok) throw new Error("Failed to fetch pending");
+    const data = await response.json();
+    return { pending: data.pending || [] };
+  }
+
+  async getActiveConsents(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ active: any[] }> {
+    const response = await fetch(
+      `/api/consent/active?userId=${options.userId}`
+    );
+    if (!response.ok) throw new Error("Failed to fetch active");
+    const data = await response.json();
+    return { active: data.active || [] };
+  }
+
+  async getConsentHistory(options: {
+    userId: string;
+    authToken?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: any[] }> {
+    const page = options.page || 1;
+    const limit = options.limit || 50;
+    const response = await fetch(
+      `/api/consent/history?userId=${options.userId}&page=${page}&limit=${limit}`
+    );
+    if (!response.ok) throw new Error("Failed to fetch history");
+    const data = await response.json();
+    return { items: data.items || [] };
   }
 }

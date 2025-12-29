@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { encryptData } from "@/lib/vault/encrypt";
+import { ApiService } from "@/lib/services/api-service";
+import { getSessionItem } from "@/lib/utils/session-storage";
 
 interface Message {
   role: "user" | "agent";
@@ -94,14 +96,10 @@ export function FoodAgentChat({
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/agents/food-dining/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          message: userMessage,
-          sessionState,
-        }),
+      const response = await ApiService.sendFoodAgentMessage({
+        userId,
+        message: userMessage,
+        sessionState: (sessionState as any) || undefined, // Type match
       });
 
       const data = await response.json();
@@ -162,9 +160,7 @@ export function FoodAgentChat({
 
     try {
       setIsLoading(true);
-      const vaultKey =
-        localStorage.getItem("vault_key") ||
-        sessionStorage.getItem("vault_key");
+      const vaultKey = await getSessionItem("vault_key");
 
       if (!vaultKey) {
         throw new Error("No vault key found");
@@ -176,17 +172,13 @@ export function FoodAgentChat({
           typeof value === "string" ? value : JSON.stringify(value);
         const encrypted = await encryptData(stringValue, vaultKey);
 
-        await fetch("/api/vault/food", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            fieldName: key,
-            ciphertext: encrypted.ciphertext,
-            iv: encrypted.iv,
-            tag: encrypted.tag,
-            consentTokenId: "temp_token_id",
-          }),
+        await ApiService.storeEncryptedFoodPreference({
+          userId,
+          fieldName: key,
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          tag: encrypted.tag,
+          consentTokenId: "temp_token_id",
         });
       }
 
