@@ -10,6 +10,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { decryptData } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
+import { ApiService } from "@/lib/services/api-service";
+import { getSessionItem } from "@/lib/utils/session-storage";
 import {
   Button,
   Card,
@@ -95,8 +97,9 @@ export default function FoodDashboardPage() {
 
   async function loadDashboard() {
     try {
+      // Use platform-aware session storage
       const userId =
-        localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+        localStorage.getItem("user_id") || getSessionItem("user_id");
       const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
 
       if (!userId || !vaultKey) {
@@ -104,28 +107,19 @@ export default function FoodDashboardPage() {
         return;
       }
 
-      // Call domain-specific endpoint with session token (Header + Query Param fallback)
-      const sessionToken = sessionStorage.getItem("session_token");
+      // Get session token from platform-aware storage
+      const sessionToken = getSessionItem("session_token");
       console.log(
         `🔍 [FoodDashboard] Loading preferences. UserId: ${userId}, SessionToken: ${
           sessionToken ? "Present" : "Missing"
         }`
       );
 
-      const headers: HeadersInit = {};
-      let url = `/api/vault/food?userId=${userId}`;
-
-      if (sessionToken) {
-        headers["X-Session-Token"] = sessionToken;
-        // Add as query param too as backup
-        url += `&sessionToken=${encodeURIComponent(sessionToken)}`;
-      } else {
-        console.warn(
-          "⚠️ [FoodDashboard] No session token found in sessionStorage!"
-        );
-      }
-
-      const response = await fetch(url, { headers });
+      // Use ApiService for platform-aware API calls
+      const response = await ApiService.getFoodPreferences(
+        userId,
+        sessionToken || undefined
+      );
 
       if (!response.ok) {
         if (response.status === 404) {
