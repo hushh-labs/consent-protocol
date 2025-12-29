@@ -93,27 +93,16 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     }, 20000);
 
     async function checkVault() {
-      // Debug: Log current state to understand why status might not update
-      console.log(
-        "🔐 [VaultLockGuard] checkVault() called - authLoading:",
-        authLoading,
-        "user:",
-        user?.uid || "null",
-        "isVaultUnlocked:",
-        isVaultUnlocked,
-        "vaultData:",
-        !!vaultData
-      );
+      // Only log in development to avoid blocking main thread in production
+      const isDev = process.env.NODE_ENV === "development";
 
       // 1. Wait for Auth Loading
       if (authLoading) {
-        console.log("🔐 [VaultLockGuard] Still waiting for auth loading...");
         return;
       }
 
       // 2. Check Auth Status
       if (!user) {
-        console.log("🔐 [VaultLockGuard] No user -> setting no_auth");
         setStatus("no_auth");
         return;
       }
@@ -122,7 +111,6 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
       // 3. Check Vault Lock Status
       if (isVaultUnlocked) {
-        console.log("🔐 [VaultLockGuard] Vault already unlocked");
         setStatus("unlocked");
         return;
       }
@@ -130,7 +118,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       // 4. Fetch Vault Data (if not already loaded)
       if (!vaultData) {
         try {
-          console.log("🔐 [VaultLockGuard] Fetching vault data via Service...");
+          if (isDev) console.log("🔐 [VaultLockGuard] Fetching vault data...");
 
           // Match LoginPage timeout (15s) for consistency
           const data = await withTimeout(
@@ -138,16 +126,8 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
             15000
           );
 
-          console.log(
-            "🔐 [VaultLockGuard] Got vault response:",
-            JSON.stringify(data)
-          );
-
           if (mountedRef.current) {
             if (data && data.encryptedVaultKey) {
-              console.log(
-                "🔐 [VaultLockGuard] >> Setting status to vault_locked"
-              );
               setVaultData({
                 encryptedVaultKey: data.encryptedVaultKey,
                 salt: data.salt,
@@ -155,20 +135,14 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
               });
               setStatus("vault_locked");
             } else {
-              console.error(
-                "❌ [VaultLockGuard] Vault data empty, setting error"
-              );
+              if (isDev) console.error("❌ [VaultLockGuard] Vault data empty");
               setError("Vault data missing.");
               setStatus("error");
             }
-          } else {
-            console.log(
-              "🔐 [VaultLockGuard] Component unmounted (mountedRef=false), skipping status update"
-            );
           }
         } catch (err: any) {
           if (mountedRef.current) {
-            console.error("❌ [VaultLockGuard] Error fetching vault:", err);
+            if (isDev) console.error("❌ [VaultLockGuard] Error:", err);
             setError(
               err.message === "Timeout"
                 ? "Connection timed out checking vault."
@@ -179,9 +153,6 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
         }
       } else {
         // Vault data exists but locked
-        console.log(
-          "🔐 [VaultLockGuard] >> Setting status to vault_locked (existing data)"
-        );
         setStatus("vault_locked");
       }
     }
@@ -195,17 +166,12 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, isVaultUnlocked, vaultData, router]);
 
-  // Re-check vault status when it changes
+  // Vault status sync effect
   useEffect(() => {
     if (isVaultUnlocked && status !== "unlocked") {
       setStatus("unlocked");
     }
   }, [isVaultUnlocked, status]);
-
-  // Debug: Log every status change
-  useEffect(() => {
-    console.log("🔐 [VaultLockGuard] STATUS CHANGED TO:", status);
-  }, [status]);
 
   // ============================================================================
   // Handlers

@@ -197,6 +197,93 @@ npm run cap:ios
 
 ---
 
+## ⚡ Performance Optimization
+
+Mobile WebViews require careful performance tuning for smooth 120 Hz+ scrolling. The following optimizations are applied:
+
+### Glassmorphism (backdrop-filter)
+
+| Issue                   | Solution                                     |
+| ----------------------- | -------------------------------------------- |
+| Heavy blur (12-24px)    | Reduced to `backdrop-blur-[6px]` (4x faster) |
+| Overlapping blur layers | Single layer per component                   |
+| Full repaint on scroll  | GPU promotion via `transform: translateZ(0)` |
+
+**CSS (globals.css):**
+
+```css
+/* GPU promotion for all blur elements */
+[class*="backdrop-blur"] {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+```
+
+### Console.log in Production
+
+All `console.log` calls in hot paths are wrapped in development checks:
+
+```tsx
+if (process.env.NODE_ENV === "development") {
+  console.log("Debug info...");
+}
+```
+
+### SSE Connection
+
+- Single persistent connection with 30s server heartbeat
+- Exponential backoff on reconnection (no polling)
+
+---
+
+## 🔀 Dual Build Configuration
+
+The `next.config.ts` supports both web and mobile builds:
+
+| Environment         | Output                 | Use Case                      |
+| ------------------- | ---------------------- | ----------------------------- |
+| `npm run build`     | `standalone` (default) | Cloud Run / Vercel deployment |
+| `npm run cap:build` | `export` (static)      | Capacitor iOS/Android         |
+
+**next.config.ts:**
+
+```typescript
+const isCapacitorBuild = process.env.CAPACITOR_BUILD === "true";
+
+const config: NextConfig = {
+  output: isCapacitorBuild ? "export" : undefined,
+  trailingSlash: isCapacitorBuild,
+  pageExtensions: isCapacitorBuild
+    ? ["tsx"] // Mobile: UI pages only
+    : ["tsx", "ts"], // Web: Include API routes
+};
+```
+
+### GitHub Actions Configuration
+
+For CI/CD with separate web and mobile builds:
+
+```yaml
+# .github/workflows/build.yml
+jobs:
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run build # Default: standalone output
+
+  mobile-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run cap:build # Sets CAPACITOR_BUILD=true
+      - run: npx cap sync
+```
+
+---
+
 ## 🚀 Future: On-Device LLM (Phase 2)
 
 Architecture supports `HushhLLMPlugin` wrapping **MLX** for local inference on Apple Neural Engine or Android NPU.

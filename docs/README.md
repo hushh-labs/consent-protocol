@@ -278,8 +278,7 @@ hushh-research/
 │
 ├── 📚 docs/                         # Documentation
 │   ├── technical/                   # Architecture, DB Schema
-│   ├── business/                    # Non-technical overview
-│   └── ai-context/                  # LLM context
+│   └── business/                    # Non-technical overview
 │
 └── 📦 consent-protocol/docs/        # Protocol Specification
     ├── manifesto.md                 # Design principles
@@ -296,9 +295,8 @@ hushh-research/
 | [Architecture](./technical/architecture.md)                     | Developers    | System design & data flow  |
 | [Database Schema](./technical/database-schema.md)               | Developers    | PostgreSQL table structure |
 | [Consent Implementation](./technical/consent-implementation.md) | Developers    | How agents issue tokens    |
-| [Design System](./design-system.md)                             | Frontend Devs | Morphy-UX components       |
+| [Design System](./technical/frontend-design-system.md)          | Frontend Devs | Morphy-UX components       |
 | [Business Overview](./business/overview.md)                     | Everyone      | Plain-English explanation  |
-| [AI Context](./ai-context/system_context.md)                    | AI/LLMs       | Development context        |
 
 ---
 

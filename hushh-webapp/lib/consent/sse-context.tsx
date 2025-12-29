@@ -101,7 +101,7 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
     // Get user ID from platform-aware storage
     const userId = await getSessionItem("user_id");
     if (!userId) {
-      console.log("🔌 [SSE] No user_id found, skipping connection");
+      // console.log("🔌 [SSE] No user_id found, skipping connection");
       setConnectionState("disconnected");
       return;
     }
@@ -122,19 +122,19 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
       "http://localhost:8000";
     const sseUrl = `${backendUrl}/api/consent/events/${userId}`;
 
-    console.log(`🔌 [SSE] Connecting to ${sseUrl}`);
+    // console.log(`🔌 [SSE] Connecting to ${sseUrl}`);
 
     const eventSource = new EventSource(sseUrl);
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
-      console.log("✅ [SSE] Connection established");
+      // console.log("✅ [SSE] Connection established");
       setConnectionState("connected");
       reconnectAttemptsRef.current = 0; // Reset backoff on success
     };
 
     eventSource.addEventListener("consent_update", (event) => {
-      console.log("📡 [SSE] Event received:", event.data);
+      // console.log("📡 [SSE] Event received:", event.data);
 
       try {
         const data = JSON.parse(event.data) as ConsentEvent;
@@ -147,7 +147,7 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
 
     // Heartbeat listener (server sends these to keep connection alive)
     eventSource.addEventListener("heartbeat", () => {
-      console.log("💓 [SSE] Heartbeat received");
+      // console.log("💓 [SSE] Heartbeat received");
     });
 
     eventSource.onerror = (error) => {
@@ -164,11 +164,7 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
         MAX_RECONNECT_DELAY
       );
 
-      console.log(
-        `🔄 [SSE] Reconnecting in ${delay / 1000}s (attempt ${
-          reconnectAttemptsRef.current + 1
-        })`
-      );
+      // Reconnection with exponential backoff
 
       reconnectTimeoutRef.current = setTimeout(() => {
         reconnectAttemptsRef.current++;
@@ -200,7 +196,7 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
     connect();
 
     return () => {
-      console.log("🔌 [SSE] Cleaning up connection");
+      // console.log("🔌 [SSE] Cleaning up connection");
 
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -213,23 +209,9 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
     };
   }, [connect]);
 
-  // Also reconnect if user_id changes (e.g., after login)
-  useEffect(() => {
-    const checkUserId = async () => {
-      const currentUserId = await getSessionItem("user_id");
-
-      // User ID changed (logged in or out)
-      if (currentUserId !== userIdRef.current) {
-        console.log("👤 [SSE] User changed, reconnecting...");
-        reconnect();
-      }
-    };
-
-    // Check periodically (in case sessionStorage changes)
-    const intervalId = setInterval(checkUserId, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [reconnect]);
+  // Note: SSE reconnection is handled via error handler with exponential backoff.
+  // The 30s heartbeat from server keeps connection alive.
+  // No polling needed - user_id changes are handled by auth state changes.
 
   const value: ConsentSSEContextType = {
     lastEvent,
