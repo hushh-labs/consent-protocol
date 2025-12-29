@@ -12,6 +12,7 @@ import { CollectedDataCard } from "./collected-data-card";
 import { CheckboxSelector } from "./checkbox-selector";
 import { encryptData } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
+import { ApiService } from "@/lib/services/api-service";
 
 /**
  * Save collected data to encrypted vault
@@ -101,14 +102,10 @@ async function saveToVault(
     console.log("📦 Saving fields:", Object.keys(preferences));
 
     // Store encrypted data WITH consent token
-    const response = await fetch("/api/vault/store-preferences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        preferences,
-        consentToken, // CONSENT PROTOCOL: Include token for validation
-      }),
+    const response = await ApiService.storePreferences({
+      userId,
+      preferences,
+      consentToken,
     });
 
     if (!response.ok) {

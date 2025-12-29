@@ -1,18 +1,44 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Next.js: Dev Server",
-        "type": "node",
-        "request": "launch",
-        "runtimeExecutable": "npm",
-        "runtimeArgs": ["run", "dev"],
-        "console": "integratedTerminal",
-        "skipFiles": ["<node_internals>/**"],
-        "env": {
-          "NODE_OPTIONS": "--inspect"
-        }
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js: Dev Server",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "env": {
+        "NODE_OPTIONS": "--inspect"
       }
-    ]
-  }
-  
+    },
+    {
+      "name": "Capacitor: Attach to Android WebView",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "urlFilter": "*",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack://_N_E/*": "${workspaceFolder}/*"
+      }
+    },
+    {
+      "name": "Capacitor: Live Reload (Dev)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "preLaunchTask": "npm: dev"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Next.js + Android Debug",
+      "configurations": ["Next.js: Dev Server"]
+    }
+  ]
+}

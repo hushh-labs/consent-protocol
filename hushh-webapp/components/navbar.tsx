@@ -30,7 +30,6 @@ interface NavItem {
 
 const navigationItems: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
-  { label: "Docs", href: "/docs", icon: FileText },
   { label: "API", href: "/api-docs", icon: Code },
   {
     label: "Dashboard",
@@ -67,7 +66,7 @@ const NavButton = ({
         className={cn(
           "h-4 w-4 sm:h-5 sm:w-5 mb-0.5",
           // Active icon: gradient start color (blue light, gold dark)
-          isActive && "text-[var(--morphy-primary-start)]"
+          isActive && "text-(--morphy-primary-start)"
         )}
       />
       <span
@@ -101,9 +100,9 @@ export const Navbar = () => {
 
   const handleLogout = async () => {
     try {
-        await signOut();
+      await signOut();
     } catch (err) {
-        console.warn("Logout error:", err);
+      console.warn("Logout error:", err);
     }
     // Router push is handled by signOut in useAuth, but safe to do here too if needed
   };
