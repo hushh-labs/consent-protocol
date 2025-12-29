@@ -1,4 +1,4 @@
-# Mobile Architecture (iOS via Capacitor)
+# Mobile Architecture (iOS & Android via Capacitor)
 
 > Native mobile deployment with on-device consent protocol vs Cloud fallback.
 
@@ -6,7 +6,7 @@
 
 ## 🎯 Overview
 
-The Hushh mobile architecture enables **offline-first, on-device data** while maintaining UI parity with the web application. The Next.js UI runs in a native WebView, while critical security and consent operations are handled by native Swift plugins.
+The Hushh mobile architecture enables **offline-first, on-device data** while maintaining UI parity with the web application. The Next.js UI runs in a native WebView (WKWebView on iOS, Android WebView on Android), while critical security and consent operations are handled by native plugins.
 
 ### Design Goals
 
@@ -14,15 +14,15 @@ The Hushh mobile architecture enables **offline-first, on-device data** while ma
 "Same UI, native security, offline-first data, future on-device AI"
 ```
 
-| Goal                | Implementation                            |
-| ------------------- | ----------------------------------------- |
-| **UI Parity**       | Next.js static export in WKWebView        |
-| **Native Security** | **Google Sign-In** & **Keychain** storage |
-| **Offline-First**   | SQLCipher local vault (in progress)       |
-| **Future MLX**      | Plugin architecture for on-device LLM     |
+| Goal                | Implementation                                     |
+| ------------------- | -------------------------------------------------- |
+| **UI Parity**       | Next.js static export in native WebView            |
+| **Native Security** | **Google Sign-In** & **Keychain/Keystore** storage |
+| **Offline-First**   | SQLCipher local vault (planned)                    |
+| **Future MLX**      | Plugin architecture for on-device LLM              |
 
-> **⚠️ Current State (Debugging Mode):**
-> As of Dec 2025, the app defaults to **Cloud Mode** for stability. It uses native plugins for Auth and Consent, but routes database requests to Cloud Run via `CloudDBProxy` while `SQLCipherDatabase` is finalized.
+> **Current State (Dec 2025):**  
+> Both iOS and Android use **Cloud Mode** by default, routing database requests to Cloud Run via native HTTP clients while local SQLite/SQLCipher storage is finalized.
 
 ---
 
@@ -30,111 +30,168 @@ The Hushh mobile architecture enables **offline-first, on-device data** while ma
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                   CAPACITOR iOS APP                             │
+│              CAPACITOR MOBILE APP (iOS/Android)                │
 ├────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │           WKWebView (Next.js Static Export)              │  │
+│  │           Native WebView (Next.js Static Export)         │  │
 │  │  • React 19 + TailwindCSS UI (unchanged)                 │  │
 │  │  • Morphy-UX components                                  │  │
 │  │  • useAuth Hook (Native Session Management)              │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓ Capacitor.call()                     │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │        Swift Native Plugins (Consent Protocol)           │  │
-│  │  • HushhAuthPlugin    → Native Google Sign-In            │  │
-│  │  • HushhConsentPlugin → Token issue/validate/revoke      │  │
-│  │  • HushhVaultPlugin   → Encrypted storage router         │  │
-│  │  • HushhKeychainPlugin → Secure secrets storage          │  │
+│  │        Native Plugins (Consent Protocol)                  │  │
+│  │  iOS (Swift)                │ Android (Kotlin)            │  │
+│  │  • HushhAuthPlugin         │ • HushhAuthPlugin.kt        │  │
+│  │  • HushhConsentPlugin      │ • HushhConsentPlugin.kt     │  │
+│  │  • HushhVaultPlugin        │ • HushhVaultPlugin.kt       │  │
+│  │  • HushhKeychainPlugin     │ • HushhSettingsPlugin.kt    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                          ↓ HTTP (OkHttp/URLSession)             │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │             Python Backend (Cloud Run)                    │  │
+│  │  • /db/vault/* - Vault key operations                    │  │
+│  │  • /db/food/get - Food preferences                       │  │
+│  │  • /db/professional/get - Professional profile           │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                          ↓                                      │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │             Data Layer (Abstracted)                       │  │
-│  │  • LocalVaultStorage (SQLCipher) [Planned Default]       │  │
-│  │  • CloudVaultStorage (Cloud Run) [Current Default]       │  │
+│  │             PostgreSQL (Cloud SQL)                        │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔐 Native Authentication Flow (Critical)
+## 📱 Platform-Specific Implementations
 
-iOS WKWebView restricts third-party cookies, breaking standard Firebase JavaScript SDK flows (`signInWithPopup`, `signInWithRedirect`). We use a **Native-First Authentication** strategy:
+### Android
 
-1.  **Google Sign-In**: Performed natively via `GoogleSignIn` SDK (User consents via system dialog).
-2.  **Credential Exchange**: `HushhAuthPlugin` exchanges the Google ID Token for a **Firebase Credential** directly on the native layer.
-3.  **Session Restoration**:
-    - **JS SDK Bypass**: The web app's `useAuth` hook **manually claims** the session from the native plugin on launch.
-    - It bypasses `onAuthStateChanged` (which hangs or returns null in WebView) and directly sets the React state with the native user.
-4.  **Security**:
-    - `vault_key` is stored in **Secure Enclave/Keychain** ONLY.
-    - It is cleared from memory when the app enters the background (via `App.addListener('appStateChange')`).
+| Component           | Implementation                                     |
+| ------------------- | -------------------------------------------------- |
+| **WebView**         | Android WebView (Chromium-based)                   |
+| **HTTP Client**     | OkHttpClient with 30s timeout                      |
+| **Plugin Location** | `android/app/src/main/java/com/hushh/pda/plugins/` |
+| **Key Storage**     | Android Keystore (planned)                         |
+
+### iOS
+
+| Component           | Implementation            |
+| ------------------- | ------------------------- |
+| **WebView**         | WKWebView                 |
+| **HTTP Client**     | URLSession                |
+| **Plugin Location** | `ios/App/App/Plugins/`    |
+| **Key Storage**     | Secure Enclave + Keychain |
+
+---
+
+## 🔐 Native Authentication Flow
+
+Mobile WebViews restrict third-party cookies, breaking standard Firebase JavaScript SDK flows (`signInWithPopup`, `signInWithRedirect`). We use a **Native-First Authentication** strategy:
+
+1. **Google Sign-In**: Performed natively via platform SDK
+2. **Credential Exchange**: Native plugin exchanges Google ID Token for Firebase Credential
+3. **Session Restoration**: `useAuth` hook manually claims the session from native plugin
+4. **Security**: `vault_key` stored in Keychain/Keystore only
 
 ---
 
 ## 🛠️ Troubleshooting & Common Issues
 
-| Issue             | Symptom                                              | Root Cause                                                                   | Fix                                                                                                      |
-| :---------------- | :--------------------------------------------------- | :--------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------- |
-| **Login Hang**    | App stuck on "Verifying identity..." or "Loading..." | **Firebase JS SDK** tries to initialize `iframe` for auth, which is blocked. | **`AuthService.ts`** detects Native platform and calls `HushhAuthPlugin` directly, bypassing JS SDK.     |
-| **Vault Spinner** | Infinite "Checking vault status..."                  | `VaultLockGuard` waiting for `onAuthStateChanged` (which never fires).       | **`useAuth` hook** manually restores session. **Timeout (15s)** added to `VaultLockGuard` with Retry UI. |
-| **Profile Crash** | "Invalid Base64 string" error on load                | Python/Swift URL-safe Base64 vs Standard Base64 mismatch.                    | **`safeBase64Decode`** helper in `encrypt.ts` handles padding and URL-safe chars automatically.          |
-| **Sign Out**      | Navbar state doesn't update, requires restart        | JS SDK logout listener doesn't fire.                                         | **`useAuth().signOut()`** explicitly clears React state and LocalStorage immediately.                    |
+| Issue                        | Symptom                             | Root Cause                                         | Fix                                              |
+| :--------------------------- | :---------------------------------- | :------------------------------------------------- | :----------------------------------------------- |
+| **Login Hang**               | Stuck on "Verifying identity..."    | Firebase JS SDK tries iframe (blocked in WebView)  | `AuthService` detects native and uses plugin     |
+| **Vault Spinner**            | Infinite "Checking vault status..." | `VaultLockGuard` waiting for auth that never fires | Added 20s safety timeout + useRef mount tracking |
+| **404 on Food/Professional** | Shows "Set Up" when data exists     | Plugin calling wrong endpoint                      | Use `/db/food/get` and `/db/professional/get`    |
+| **Sign Out**                 | Navbar doesn't update               | JS SDK logout listener doesn't fire                | `useAuth().signOut()` clears state explicitly    |
 
 ---
 
 ## 📂 File Structure
 
+### Android
+
 ```
-hushh-webapp/
-├── capacitor.config.ts       # iOS WebView configuration
-├── next.config.capacitor.ts  # Static export config for mobile
-├── package.json              # cap:build, cap:sync, cap:ios scripts
-│
-├── lib/capacitor/            # TypeScript Plugin Layer
-│   ├── index.ts              # Plugin registration
-│   ├── types.ts              # Type definitions
-│   └── plugins/              # Web fallbacks (for dev)
-│
-└── ios/                      # Native Project (Gitignored, regenerated on sync)
-    └── App/
-        └── Plugins/          # Swift native plugins
-            ├── HushhConsentPlugin/
-            ├── HushhVaultPlugin/
-            ├── HushhKeychainPlugin/
-            └── HushhAuthPlugin/
+hushh-webapp/android/app/src/main/java/com/hushh/pda/
+├── MainActivity.java
+└── plugins/
+    ├── HushhAuth/HushhAuthPlugin.kt
+    ├── HushhConsent/HushhConsentPlugin.kt
+    ├── HushhVault/HushhVaultPlugin.kt
+    └── HushhSettings/HushhSettingsPlugin.kt
+```
+
+### iOS (TBD)
+
+```
+hushh-webapp/ios/App/App/
+├── AppDelegate.swift
+├── MyViewController.swift
+└── Plugins/
+    ├── HushhAuthPlugin/
+    ├── HushhConsentPlugin/
+    ├── HushhVaultPlugin/
+    └── HushhKeychainPlugin/
+```
+
+### Shared TypeScript Layer
+
+```
+hushh-webapp/lib/
+├── capacitor/
+│   ├── index.ts          # Plugin registration & interfaces
+│   ├── types.ts          # Type definitions
+│   └── plugins/          # Web fallbacks
+├── services/
+│   ├── api-service.ts    # Platform-aware API routing
+│   ├── auth-service.ts   # Native auth abstraction
+│   └── vault-service.ts  # Vault operations
+└── utils/
+    └── session-storage.ts # Platform-aware storage
 ```
 
 ---
 
-## 🔐 Consent Protocol Parity
+## 🔒 Backend Endpoints (Python)
 
-The Swift implementation matches the Python consent-protocol exactly to ensure cross-compatibility.
+Native plugins call these endpoints on Cloud Run:
 
-### Token Format
+| Endpoint               | Method | Purpose                  |
+| ---------------------- | ------ | ------------------------ |
+| `/db/vault/check`      | POST   | Check if vault exists    |
+| `/db/vault/get`        | POST   | Get encrypted vault key  |
+| `/db/vault/setup`      | POST   | Store vault key          |
+| `/db/food/get`         | POST   | Get food preferences     |
+| `/db/professional/get` | POST   | Get professional profile |
 
-`HCT:base64(userId|agentId|scope|issuedAt|expiresAt).hmac_sha256_signature`
-
-### Python → Swift Mapping
-
-| Python (consent-protocol)           | Swift (iOS Plugin)                            |
-| ----------------------------------- | --------------------------------------------- |
-| `hmac.new(SECRET_KEY, raw, sha256)` | `HMAC<SHA256>.authenticationCode(for:using:)` |
-| `base64.urlsafe_b64encode()`        | `Data.base64EncodedString()`                  |
-| `time.time() * 1000`                | `Date().timeIntervalSince1970 * 1000`         |
+See [`consent-protocol/api/routes/db_proxy.py`](../../consent-protocol/api/routes/db_proxy.py) for implementation.
 
 ---
 
 ## 📱 Build Commands
 
-```bash
-# 1. Build Web App (Static Export)
-npm run cap:build
+### Android
 
-# 2. Sync to iOS Platform
+```bash
+# Build static export + sync to Android
+npm run cap:build
+npx cap sync android
+
+# Open Android Studio
+npx cap open android
+
+# Or install directly via ADB
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### iOS
+
+```bash
+# Build static export + sync to iOS
+npm run cap:build
 npm run cap:sync
 
-# 3. Open Xcode
+# Open Xcode
 npm run cap:ios
 ```
 
@@ -142,9 +199,14 @@ npm run cap:ios
 
 ## 🚀 Future: On-Device LLM (Phase 2)
 
-Architecture supports `HushhLLMPlugin` wrapping **MLX** for local inference (Gemma 2B) on iPhone logic board neural engines.
+Architecture supports `HushhLLMPlugin` wrapping **MLX** for local inference on Apple Neural Engine or Android NPU.
 
 ```swift
-// Concept:
+// iOS Concept:
 let response = try await LLMInference.generate(model: "gemma-2b", prompt: input)
+```
+
+```kotlin
+// Android Concept (TensorFlow Lite or ONNX):
+val response = LLMInference.generate(model = "gemma-2b", prompt = input)
 ```
