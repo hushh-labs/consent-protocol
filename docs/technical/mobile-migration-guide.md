@@ -1,10 +1,10 @@
-# iOS Migration Checklist
+# Mobile Migration Checklist (iOS & Android)
 
-> **Living Document**: Update this when adding new Next.js features that need iOS consideration.
+> **Living Document**: Update this when adding new Next.js features that need mobile consideration.
 
 ## Quick Reference
 
-When adding new features to the Next.js app, check if they need iOS handling:
+When adding new features to the Next.js app, check if they need mobile handling:
 
 ### 1. New API Routes (`/api/*`)
 
