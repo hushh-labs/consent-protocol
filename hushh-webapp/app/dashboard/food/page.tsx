@@ -109,11 +109,13 @@ export default function FoodDashboardPage() {
 
       // Get session token from platform-aware storage
       const sessionToken = getSessionItem("session_token");
-      console.log(
-        `🔍 [FoodDashboard] Loading preferences. UserId: ${userId}, SessionToken: ${
-          sessionToken ? "Present" : "Missing"
-        }`
-      );
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          `🔍 [FoodDashboard] Loading preferences. UserId: ${userId}, SessionToken: ${
+            sessionToken ? "Present" : "Missing"
+          }`
+        );
+      }
 
       // Use ApiService for platform-aware API calls
       const response = await ApiService.getFoodPreferences(

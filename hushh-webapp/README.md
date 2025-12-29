@@ -62,6 +62,8 @@ hushh-experimental/
 ```css
 .glass              /* Standard frosted glass */
 /* Standard frosted glass */
+/* Standard frosted glass */
+/* Standard frosted glass */
 .glass-prominent    /* Heavy glass for sidebars */
 .glass-interactive  /* With hover effects */
 .card-glass         /* Glass card */
@@ -72,6 +74,8 @@ hushh-experimental/
 
 ```css
 .text-headline      /* 2.5rem/700 - Page titles */
+/* 2.5rem/700 - Page titles */
+/* 2.5rem/700 - Page titles */
 /* 2.5rem/700 - Page titles */
 .text-title         /* 1.375rem/600 - Section headers */
 .text-body          /* 1rem - Body text */
@@ -219,4 +223,4 @@ npm run dev
 
 ---
 
-_Built with Next.js 15, Tailwind CSS, Framer Motion, Google ADK_
+_Built with Next.js 16, Tailwind CSS, Framer Motion, Google ADK_
