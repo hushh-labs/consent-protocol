@@ -237,13 +237,37 @@
     scrollbar-gutter: stable;
     overflow-x: hidden;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
-    transition: background-color 200ms ease-in-out, 
-                color 200ms ease-in-out,
-                border-color 200ms ease-in-out;
+    transition: background-color 200ms ease-in-out, color 200ms ease-in-out,
+      border-color 200ms ease-in-out;
   }
   html {
     scrollbar-gutter: stable;
   }
+}
+
+/* ============================================================================
+ * GLASS PERFORMANCE OPTIMIZATIONS
+ * GPU layer promotion + lighter blur for 120 Hz+ refresh rate support
+ * Applied to all glass elements for buttery smooth scrolling
+ * ============================================================================ */
+
+/* GPU optimization class - promotes element to its own compositor layer */
+.glass-performant {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  isolation: isolate;
+}
+
+/* Lighter blur variant for performance-critical areas */
+.backdrop-blur-optimized {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* Apply GPU promotion to all glass elements automatically */
+[class*="backdrop-blur"] {
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 /* 
@@ -254,9 +278,8 @@
 
 /* Theme transition class - apply to containers for smooth theme switching */
 .theme-transition {
-  transition: background-color 200ms ease-in-out, 
-              border-color 200ms ease-in-out, 
-              color 200ms ease-in-out;
+  transition: background-color 200ms ease-in-out, border-color 200ms ease-in-out,
+    color 200ms ease-in-out;
 }
 
 /* Standard interaction transitions for buttons, cards, links */
@@ -265,11 +288,9 @@
     transition: all 200ms ease-in-out;
   }
   .morphy-transition-colors {
-    transition: background-color 200ms ease-in-out, 
-                border-color 200ms ease-in-out, 
-                color 200ms ease-in-out,
-                fill 200ms ease-in-out,
-                stroke 200ms ease-in-out;
+    transition: background-color 200ms ease-in-out,
+      border-color 200ms ease-in-out, color 200ms ease-in-out,
+      fill 200ms ease-in-out, stroke 200ms ease-in-out;
   }
   .morphy-transition-shadow {
     transition: box-shadow 200ms ease-in-out;

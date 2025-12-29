@@ -39,7 +39,13 @@
 | Document                                                         | Description          |
 | ---------------------------------------------------------------- | -------------------- |
 | [frontend-design-system.md](technical/frontend-design-system.md) | Morphy-UX components |
-| [hushh-platform-apis.md](technical/hushh-platform-apis.md)       | External Hushh APIs  |
+
+### Mobile
+
+| Document                                                         | Description                        |
+| ---------------------------------------------------------------- | ---------------------------------- |
+| [mobile-architecture.md](technical/mobile-architecture.md)       | iOS/Android architecture & plugins |
+| [mobile-migration-guide.md](technical/mobile-migration-guide.md) | Checklist for new mobile features  |
 
 ---
 
