@@ -68,11 +68,13 @@ export default function ProfessionalProfilePage() {
 
       // Get session token from platform-aware storage
       const sessionToken = getSessionItem("session_token");
-      console.log(
-        `🔍 [ProfDashboard] Loading profile. UserId: ${userId}, SessionToken: ${
-          sessionToken ? "Present" : "Missing"
-        }`
-      );
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          `🔍 [ProfDashboard] Loading profile. UserId: ${userId}, SessionToken: ${
+            sessionToken ? "Present" : "Missing"
+          }`
+        );
+      }
 
       // Use ApiService for platform-aware API calls
       const response = await ApiService.getProfessionalProfile(
@@ -91,7 +93,9 @@ export default function ProfessionalProfilePage() {
       const { preferences: encryptedPrefs } = await response.json();
 
       // Decrypt client-side
-      console.log("🔓 Decrypting professional profile...");
+      if (process.env.NODE_ENV === "development") {
+        console.log("🔓 Decrypting professional profile...");
+      }
 
       // Try to decrypt each field if it exists
       let profileData: ProfessionalProfile = {

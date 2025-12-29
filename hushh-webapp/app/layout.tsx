@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/firebase";
 import { VaultProvider } from "@/lib/vault/vault-context";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
+import { RootLayoutClient } from "./layout-client";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -53,16 +54,9 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
       </head>
-      <body
-        suppressHydrationWarning
-        className={`${inter.variable} ${quicksand.variable} ${exo2.variable} font-sans antialiased h-full flex flex-col morphy-app-bg`}
-        style={{
-          fontFamily: "var(--font-quicksand), sans-serif",
-        }}
+      <RootLayoutClient
+        fontClasses={`${inter.variable} ${quicksand.variable} ${exo2.variable}`}
       >
-        {/* Subtle radial glow overlay */}
-        <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-0" />
-
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -87,7 +81,7 @@ export default function RootLayout({
             </VaultProvider>
           </AuthProvider>
         </ThemeProvider>
-      </body>
+      </RootLayoutClient>
     </html>
   );
 }
