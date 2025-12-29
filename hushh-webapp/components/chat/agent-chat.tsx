@@ -38,11 +38,13 @@ async function saveToVault(
       return false;
     }
 
-    console.log(
-      "🔐 Consent token received:",
-      consentToken.substring(0, 30) + "..."
-    );
-    console.log("🔒 Encrypting preferences for vault...", collectedData);
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        "🔐 Consent token received:",
+        consentToken.substring(0, 30) + "..."
+      );
+      console.log("🔒 Encrypting preferences for vault...", collectedData);
+    }
 
     // Detect which domain based on collected data keys
     const isFood =
@@ -99,7 +101,9 @@ async function saveToVault(
       );
     }
 
-    console.log("📦 Saving fields:", Object.keys(preferences));
+    if (process.env.NODE_ENV === "development") {
+      console.log("📦 Saving fields:", Object.keys(preferences));
+    }
 
     // Store encrypted data WITH consent token
     const response = await ApiService.storePreferences({
@@ -114,7 +118,9 @@ async function saveToVault(
       throw new Error(error.error || "Failed to save to vault");
     }
 
-    console.log("✅ Preferences saved to encrypted vault (consent verified)");
+    if (process.env.NODE_ENV === "development") {
+      console.log("✅ Preferences saved to encrypted vault (consent verified)");
+    }
     return true;
   } catch (error) {
     console.error("Vault save error:", error);
@@ -486,7 +492,7 @@ export function AgentChat({
       {/* Main Chat */}
       <Card
         className={cn(
-          "flex flex-col h-[600px] flex-1 overflow-hidden border-0 shadow-2xl bg-white/50 dark:bg-black/50 backdrop-blur-xl",
+          "flex flex-col h-[600px] flex-1 overflow-hidden border-0 shadow-2xl bg-white/60 dark:bg-black/60 backdrop-blur-[6px]",
           className
         )}
         variant="none"
@@ -628,8 +634,8 @@ export function AgentChat({
           )}
         </div>
 
-        {/* Input Area */}
-        <div className="p-4 bg-white/30 dark:bg-black/30 border-t border-gray-200/50 dark:border-gray-800/50 backdrop-blur-md">
+        {/* Input Area - solid bg instead of blur for performance */}
+        <div className="p-4 bg-white/90 dark:bg-black/90 border-t border-gray-200/50 dark:border-gray-800/50">
           <div className="relative flex items-center">
             <Input
               value={input}
