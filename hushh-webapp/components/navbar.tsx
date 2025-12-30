@@ -113,7 +113,7 @@ export const Navbar = () => {
   );
 
   return (
-    <nav className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4">
+    <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4">
       <Card
         variant="none"
         effect="fill"
