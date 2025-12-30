@@ -32,6 +32,8 @@ import {
 } from "firebase/auth";
 import { auth, getRecaptchaVerifier, resetRecaptcha } from "./config";
 import { getSessionItem } from "@/lib/utils/session-storage";
+import { Capacitor } from "@capacitor/core";
+import { AuthService } from "@/lib/services/auth-service";
 
 // ============================================================================
 // Types
@@ -105,7 +107,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const storedVaultKey =
       typeof window !== "undefined"
         ? localStorage.getItem("vault_key") ||
-          sessionStorage.getItem("vault_key")
+        sessionStorage.getItem("vault_key")
         : null;
     const storedUserId =
       typeof window !== "undefined"
@@ -116,37 +118,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUserId(storedUserId);
 
     // 2. Native Session Restoration
-    if (typeof window !== "undefined") {
-      const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // Use timeout to avoid hanging
+        const nativeUser = await withTimeout(
+          AuthService.restoreNativeSession(),
+          5000
+        );
 
-      if (Capacitor.isNativePlatform()) {
-        try {
-          const { AuthService } = await import("@/lib/services/auth-service");
-          // Use timeout to avoid hanging
-          const nativeUser = await withTimeout(
-            AuthService.restoreNativeSession(),
-            5000
+        if (nativeUser) {
+          console.log(
+            "🍎 [AuthProvider] Native session restored:",
+            nativeUser.uid
           );
-
-          if (nativeUser) {
-            console.log(
-              "🍎 [AuthProvider] Native session restored:",
-              nativeUser.uid
-            );
-            setUser(nativeUser);
-          } else {
-            console.log("🍎 [AuthProvider] No native session found");
-          }
-        } catch (e) {
-          console.warn("🍎 [AuthProvider] Native restore error/timeout:", e);
-          // User will need to log in again
-        } finally {
-          // ✅ CRITICAL: Always set loading to false after native check
-          // This ensures VaultLockGuard can proceed (to login or vault unlock)
-          setLoading(false);
+          setUser(nativeUser);
+        } else {
+          console.log("🍎 [AuthProvider] No native session found");
         }
-        return; // Exit early for native - don't wait for onAuthStateChanged
+      } catch (e) {
+        console.warn("🍎 [AuthProvider] Native restore error/timeout:", e);
+        // User will need to log in again
+      } finally {
+        // ✅ CRITICAL: Always set loading to false after native check
+        // This ensures VaultLockGuard can proceed (to login or vault unlock)
+        setLoading(false);
       }
+      return; // Exit early for native - don't wait for onAuthStateChanged
     }
 
     // 3. Web Platform: Let onAuthStateChanged handle loading state
@@ -173,7 +170,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // App State Listener (Background clear)
       if (typeof window !== "undefined") {
         const { App } = await import("@capacitor/app");
-        const { Capacitor } = await import("@capacitor/core");
 
         if (Capacitor.isNativePlatform()) {
           App.addListener("appStateChange", ({ isActive }) => {
