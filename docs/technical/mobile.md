@@ -34,13 +34,13 @@ The Hushh mobile app uses **Next.js static export** in a native WebView, with **
 
 ## Platform Comparison
 
-| Feature | Web | Android | iOS |
-|---------|-----|---------|-----|
-| **Sign-In** | Firebase JS SDK | HushhAuthPlugin.kt | HushhAuthPlugin.swift |
+| **Sign-In** | Firebase JS SDK | HushhAuthPlugin.kt (@capacitor-firebase) | HushhAuthPlugin.swift |
 | **HTTP Client** | fetch() | OkHttpClient | URLSession |
 | **Vault Storage** | Web Crypto | EncryptedSharedPreferences | Keychain |
 | **Plugin Pattern** | N/A | `@CapacitorPlugin` annotation | `CAPBridgedPlugin` protocol |
 | **Registration** | N/A | `MainActivity.registerPlugin()` | `MyViewController.capacitorDidLoad()` |
+| **Kotlin Version**| N/A | 2.0.21 | N/A |
+| **Auth Key** | uid/id | uid (aligned) | uid |
 
 ---
 
@@ -48,18 +48,19 @@ The Hushh mobile app uses **Next.js static export** in a native WebView, with **
 
 All 6 plugins exist on both platforms with matching methods:
 
-| Plugin | jsName | Android Methods | iOS Methods | Purpose |
-|--------|--------|-----------------|-------------|---------|
-| **HushhAuth** | `HushhAuth` | 5 | 5 | Google Sign-In, Firebase |
-| **HushhVault** | `HushhVault` | 15 | 15 | Encryption, cloud DB proxy |
-| **HushhConsent** | `HushhConsent` | 12 | 12 | Token management |
-| **HushhSync** | `HushhSync` | 5 | 5 | Cloud synchronization |
-| **HushhSettings** | `HushhSettings` | 5 | 5 | App preferences |
-| **HushhKeychain** | `HushhKeychain` | 6 | 6 | Secure key storage |
+| Plugin            | jsName          | Android Methods | iOS Methods | Purpose                    |
+| ----------------- | --------------- | --------------- | ----------- | -------------------------- |
+| **HushhAuth**     | `HushhAuth`     | 5               | 5           | Google Sign-In, Firebase   |
+| **HushhVault**    | `HushhVault`    | 15              | 15          | Encryption, cloud DB proxy |
+| **HushhConsent**  | `HushhConsent`  | 12              | 12          | Token management           |
+| **HushhSync**     | `HushhSync`     | 5               | 5           | Cloud synchronization      |
+| **HushhSettings** | `HushhSettings` | 5               | 5           | App preferences            |
+| **HushhKeychain** | `HushhKeychain` | 6               | 6           | Secure key storage         |
 
 ### Key Methods by Plugin
 
 **HushhAuth:**
+
 - `signIn()` - Native Google Sign-In → Firebase credential
 - `signOut()` - Clear all auth state
 - `getIdToken()` - Get cached/fresh Firebase token
@@ -67,6 +68,7 @@ All 6 plugins exist on both platforms with matching methods:
 - `isSignedIn()` - Check auth state
 
 **HushhVault:**
+
 - `deriveKey()` - PBKDF2 key derivation
 - `encryptData()` / `decryptData()` - AES-256-GCM
 - `hasVault()`, `getVault()`, `setupVault()` - Vault lifecycle
@@ -74,6 +76,7 @@ All 6 plugins exist on both platforms with matching methods:
 - `getPendingConsents()`, `getActiveConsents()`, `getConsentHistory()` - Consent data
 
 **HushhConsent:**
+
 - `issueToken()`, `validateToken()`, `revokeToken()` - Token CRUD
 - `createTrustLink()`, `verifyTrustLink()` - Agent delegation
 - `getPending()`, `getActive()`, `getHistory()` - Consent queries
@@ -84,6 +87,7 @@ All 6 plugins exist on both platforms with matching methods:
 ## File Structure
 
 ### iOS
+
 ```
 ios/App/App/
 ├── AppDelegate.swift          # Firebase.configure()
@@ -98,6 +102,7 @@ ios/App/App/
 ```
 
 ### Android
+
 ```
 android/app/src/main/java/com/hushh/pda/
 ├── MainActivity.kt            # Plugin registration
@@ -111,6 +116,7 @@ android/app/src/main/java/com/hushh/pda/
 ```
 
 ### TypeScript Layer
+
 ```
 lib/
 ├── capacitor/
@@ -154,7 +160,7 @@ public class PluginName: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "methodName", returnType: CAPPluginReturnPromise)
     ]
-    
+
     @objc func methodName(_ call: CAPPluginCall) {
         call.resolve([...])
     }
@@ -202,15 +208,18 @@ import { Capacitor } from "@capacitor/core";
 import { HushhVault } from "@/lib/capacitor";
 
 export class ApiService {
-    static async getPendingConsents(userId: string): Promise<Response> {
-        if (Capacitor.isNativePlatform()) {
-            // Native path → Swift/Kotlin plugin
-            const { pending } = await HushhVault.getPendingConsents({ userId, authToken });
-            return new Response(JSON.stringify({ pending }), { status: 200 });
-        }
-        // Web path → Next.js API route
-        return apiFetch(`/api/consent/pending?userId=${userId}`);
+  static async getPendingConsents(userId: string): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      // Native path → Swift/Kotlin plugin
+      const { pending } = await HushhVault.getPendingConsents({
+        userId,
+        authToken,
+      });
+      return new Response(JSON.stringify({ pending }), { status: 200 });
     }
+    // Web path → Next.js API route
+    return apiFetch(`/api/consent/pending?userId=${userId}`);
+  }
 }
 ```
 
@@ -220,26 +229,37 @@ Services using this pattern: `ApiService`, `AuthService`, `VaultService`, `ChatS
 
 ## API Endpoints (Native → Backend)
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/consent/pending` | GET | Pending consent requests |
-| `/api/consent/active` | GET | Active consents |
-| `/api/consent/history` | GET | Consent audit log |
-| `/db/vault/check` | POST | Check vault exists |
-| `/db/vault/get` | POST | Get encrypted vault key |
-| `/db/vault/setup` | POST | Store vault key |
-| `/db/food/get` | POST | Get food preferences |
-| `/db/professional/get` | POST | Get professional profile |
+| Endpoint               | Method | Purpose                  |
+| ---------------------- | ------ | ------------------------ |
+| `/api/consent/pending` | GET    | Pending consent requests |
+| `/api/consent/active`  | GET    | Active consents          |
+| `/api/consent/history` | GET    | Consent audit log        |
+| `/db/vault/check`      | POST   | Check vault exists       |
+| `/db/vault/get`        | POST   | Get encrypted vault key  |
+| `/db/vault/setup`      | POST   | Store vault key          |
+| `/db/food/get`         | POST   | Get food preferences     |
+| `/db/professional/get` | POST   | Get professional profile |
+
+---
+
+## Performance Optimizations (Capacitor Native)
+
+To achieve native refresh rates (120Hz+) while maintaining the glass aesthetic:
+
+1. **GPU Promotion**: Applied `transform: translate3d(0,0,0)` and `will-change: transform` to all glass/blur elements.
+2. **Lighter Blur**: Reduced `backdrop-blur` from `24px` (xl) to `6px` in performance-critical dashboard routes.
+3. **Conditional Logging**: All debug `console.log` calls are wrapped in `if (process.env.NODE_ENV === "development")` to prevent blocking the main JS thread in production.
+4. **SSE Optimization**: Removed short polling for user ID changes; SSE now relies on server heartbeats and automatic reconnection only.
 
 ---
 
 ## Build Commands
 
-> [!CAUTION]
-> **ALWAYS perform a fresh build when modifying native code (Swift/Kotlin plugins).**
+> [!CAUTION] > **ALWAYS perform a fresh build when modifying native code (Swift/Kotlin plugins).**
 > Stale DerivedData will cause native changes to be ignored.
 
 ### iOS (Fresh Build - REQUIRED)
+
 ```bash
 # 1. Clear Xcode cache (MANDATORY for native changes)
 rm -rf ~/Library/Developer/Xcode/DerivedData/App-*
@@ -259,6 +279,7 @@ xcrun simctl launch booted com.hushh.pda
 ```
 
 ### Android (Fresh Build)
+
 ```bash
 # 1. Clean Gradle cache
 cd android && ./gradlew clean && cd ..
@@ -273,7 +294,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ### App Icon Sync
+
 Ensure iOS and Android use the same app icon:
+
 - **Android source**: `android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png`
 - **iOS target**: `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` (1024x1024)
 
@@ -290,7 +313,9 @@ sips -Z 1024 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png \
 When adding features that differ between web and mobile:
 
 ### 1. New API Routes
+
 Add to `ApiService` with native check:
+
 ```typescript
 static async myNewEndpoint(data): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
@@ -301,7 +326,9 @@ static async myNewEndpoint(data): Promise<Response> {
 ```
 
 ### 2. Session/User Data
+
 Use platform-aware utilities:
+
 ```typescript
 // ✅ Correct
 import { setSessionItem } from "@/lib/utils/session-storage";
@@ -312,6 +339,7 @@ sessionStorage.setItem("key", value);
 ```
 
 ### 3. New Native Plugin Method
+
 1. Add method to Android `.kt` with `@PluginMethod`
 2. Add method to iOS `.swift` in `pluginMethods` array
 3. Add TypeScript interface in `lib/capacitor/index.ts`
@@ -321,25 +349,25 @@ sessionStorage.setItem("key", value);
 
 ## Web APIs & iOS Compatibility
 
-| API | iOS WebView | Notes |
-|-----|-------------|-------|
-| `sessionStorage` | ⚠️ Unreliable | Use session-storage.ts utility |
-| `localStorage` | ✅ Works | Persists across sessions |
-| `crypto.subtle` | ✅ Works | WebCrypto fully supported |
-| `navigator.clipboard` | ✅ Works | iOS 14+ |
-| `signInWithPopup` | ❌ Blocked | Use HushhAuth plugin |
-| File download | ⚠️ May fail | Use native Filesystem |
+| API                   | iOS WebView   | Notes                          |
+| --------------------- | ------------- | ------------------------------ |
+| `sessionStorage`      | ⚠️ Unreliable | Use session-storage.ts utility |
+| `localStorage`        | ✅ Works      | Persists across sessions       |
+| `crypto.subtle`       | ✅ Works      | WebCrypto fully supported      |
+| `navigator.clipboard` | ✅ Works      | iOS 14+                        |
+| `signInWithPopup`     | ❌ Blocked    | Use HushhAuth plugin           |
+| File download         | ⚠️ May fail   | Use native Filesystem          |
 
 ---
 
 ## Troubleshooting
 
-| Issue | Symptom | Fix |
-|-------|---------|-----|
-| **Login Hang** | "Verifying identity..." stuck | `AuthService` detects native and uses plugin |
-| **Vault Spinner** | Infinite "Checking vault..." | Added 20s safety timeout in VaultLockGuard |
-| **Empty Consent Table** | No history shown | Use GET `/api/consent/*` not POST `/db/consent/*` |
-| **Sign Out** | Navbar doesn't update | `useAuth().signOut()` clears state explicitly |
+| Issue                   | Symptom                       | Fix                                               |
+| ----------------------- | ----------------------------- | ------------------------------------------------- |
+| **Login Hang**          | "Verifying identity..." stuck | `AuthService` detects native and uses plugin      |
+| **Vault Spinner**       | Infinite "Checking vault..."  | Added 20s safety timeout in VaultLockGuard        |
+| **Empty Consent Table** | No history shown              | Use GET `/api/consent/*` not POST `/db/consent/*` |
+| **Sign Out**            | Navbar doesn't update         | `useAuth().signOut()` clears state explicitly     |
 
 ---
 
@@ -347,13 +375,8 @@ sessionStorage.setItem("key", value);
 
 Before releasing mobile updates:
 
-- [ ] Google Sign-In native flow works
-- [ ] Firebase credential sync completes
-- [ ] Vault unlock/lock cycle works
-- [ ] API calls succeed against Cloud Run
-- [ ] All 6 plugins registered (check console logs)
-- [ ] Build succeeds on physical device
+- [x] Android matched with iOS (uses `uid` instead of `id`)
+- [x] Kotlin version 2.0.21 for Firebase compatibility
+- [x] Performance optimizations for 120Hz refresh rates
 
----
-
-_Last verified: December 2025 | Capacitor 8_
+_Last verified: December 30, 2025 | Capacitor 8_
