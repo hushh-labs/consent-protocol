@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Quicksand, Exo_2 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -39,6 +39,18 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -65,7 +77,7 @@ export default function RootLayout({
           <AuthProvider>
             <VaultProvider>
               <Navbar />
-              <div className="pb-24 flex-1 flex flex-col relative z-10">
+              <div className="pb-[calc(6rem+env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] flex-1 flex flex-col relative z-10">
                 {children}
               </div>
               {/* Sonner Toast Notifications - high z-index to appear above everything */}

@@ -2,8 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>GIDClientID</key>
+    <string>1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm.apps.googleusercontent.com</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.googleusercontent.apps.1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm</string>
+            </array>
+        </dict>
+    </array>
     <key>CAPACITOR_DEBUG</key>
-	<string>$(CAPACITOR_DEBUG)</string>
+    <string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
@@ -47,36 +58,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	
-	<!-- Google Sign-In Configuration -->
-	<key>CFBundleURLTypes</key>
-	<array>
-		<!-- Google OAuth callback URL scheme -->
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>com.hushh.pda</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.hushh.pda</string>
-			</array>
-		</dict>
-		<!-- Reversed iOS Client ID from GoogleService-Info.plist -->
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>google</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm</string>
-			</array>
-		</dict>
-	</array>
-	
-	<!-- Google Client ID from GoogleService-Info.plist -->
-	<key>GIDClientID</key>
-	<string>1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm.apps.googleusercontent.com</string>
 </dict>
 </plist>
