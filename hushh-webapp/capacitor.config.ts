@@ -41,6 +41,9 @@ const config: CapacitorConfig = {
     HushhVault: {
       backendUrl: BACKEND_URL,
     },
+    HushhConsent: {
+      backendUrl: BACKEND_URL,
+    },
   },
 };
 

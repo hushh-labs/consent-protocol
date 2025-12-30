@@ -260,6 +260,68 @@ def verify_trust_link(link) -> bool:
 
 ---
 
+## 🔐 Authentication Security Layers
+
+### Three-Layer Security Model
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AUTHENTICATION LAYERS                         │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 1: Firebase Auth     → IDENTITY (who you are)             │
+│ Layer 2: Session Cookie    → ROUTE ACCESS (httpOnly, secure)    │
+│ Layer 3: Vault Key         → DATA ACCESS (memory only, BYOK)    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Session Cookie (Firebase Admin SDK)
+
+| Approach            | XSS Vulnerable | Cross-Tab | Recommended |
+| ------------------- | -------------- | --------- | ----------- |
+| sessionStorage      | ✅ Yes         | ❌ No     | ❌          |
+| localStorage        | ✅ Yes         | ✅ Yes    | ❌          |
+| **httpOnly Cookie** | ❌ No          | ✅ Yes    | ✅          |
+
+```typescript
+// POST /api/auth/session
+cookies().set("hushh_session", sessionCookie, {
+  httpOnly: true,      // JavaScript cannot read
+  secure: true,        // HTTPS only
+  sameSite: "lax",
+  path: "/",
+});
+```
+
+### Vault Key (Memory Only)
+
+The vault key is stored in **React Context (memory)**, NOT sessionStorage:
+
+```typescript
+// ❌ OLD (XSS vulnerable)
+sessionStorage.setItem("vault_key", vaultKeyHex);
+
+// ✅ NEW (XSS protected)
+const { unlockVault } = useVault();
+unlockVault(vaultKeyHex);  // Stored in React state only
+```
+
+**Security Benefits:**
+- XSS cannot steal vault key
+- Page refresh requires re-authentication
+- Each tab has separate vault state
+
+### Key Files
+
+| File                            | Purpose                       |
+| ------------------------------- | ----------------------------- |
+| `lib/firebase/config.ts`        | Client-side Firebase          |
+| `lib/firebase/admin.ts`         | Server-side Firebase Admin    |
+| `lib/vault/vault-context.tsx`   | Memory-only vault key storage |
+| `app/api/auth/session/route.ts` | httpOnly cookie management    |
+| `middleware.ts`                 | Route protection              |
+
+---
+
 ## 🔒 Security Compliance
 
 | Principle          | Implementation                                        |
