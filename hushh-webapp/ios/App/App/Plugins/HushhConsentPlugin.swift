@@ -35,7 +35,10 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     private let DEFAULT_CONSENT_TOKEN_EXPIRY_MS: Int64 = 1000 * 60 * 60 * 24 * 7  // 7 days
     private let DEFAULT_TRUST_LINK_EXPIRY_MS: Int64 = 1000 * 60 * 60 * 24 * 30    // 30 days
     
-    private let defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
+    private var defaultBackendUrl: String {
+        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) ?? "https://consent-protocol-1006304528804.us-central1.run.app"
+    }
+    
     private static var revokedTokens = Set<String>()
     
     private var secretKey: String {
@@ -161,18 +164,21 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
               let fromAgent = link["fromAgent"] as? String,
               let toAgent = link["toAgent"] as? String,
               let scope = link["scope"] as? String,
-              let createdAt = link["createdAt"] as? Int64,
-              let expiresAt = link["expiresAt"] as? Int64,
+              let createdAt = link["createdAt"] as? NSNumber,
+              let expiresAt = link["expiresAt"] as? NSNumber,
               let signedByUser = link["signedByUser"] as? String,
               let signature = link["signature"] as? String else {
             call.reject("Invalid link object")
             return
         }
         
+        let createdAtVal = createdAt.int64Value
+        let expiresAtVal = expiresAt.int64Value
+        
         let requiredScope = call.getString("requiredScope")
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         
-        if now > expiresAt {
+        if now > expiresAtVal {
             call.resolve(["valid": false, "reason": "Trust link expired"])
             return
         }
@@ -182,7 +188,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let raw = "\(fromAgent)|\(toAgent)|\(scope)|\(createdAt)|\(expiresAt)|\(signedByUser)"
+        let raw = "\(fromAgent)|\(toAgent)|\(scope)|\(createdAtVal)|\(expiresAtVal)|\(signedByUser)"
         let expectedSig = sign(raw)
         
         if signature != expectedSig {
@@ -215,8 +221,8 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         let body: [String: Any] = ["userId": userId, "page": page, "limit": limit]
         
-        performRequest(url: "\(backendUrl)/db/consent/history", body: body, authToken: authToken) { json, error in
-            if let json = json {
+        performRequest(url: "\(backendUrl)/db/consent/history", body: body, authToken: authToken) { result, error in
+            if let json = result as? [String: Any] {
                 call.resolve(json)
             } else {
                 call.reject(error ?? "Failed to get consent history")
@@ -246,11 +252,19 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         
-        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["userId": userId], authToken: authToken) { json, error in
-            if let json = json {
-                call.resolve(["consents": json["consents"] ?? []])
+        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["userId": userId], authToken: authToken) { result, error in
+            if let error = error {
+                call.reject(error)
+                return
+            }
+            
+            // Backend returns a JSON array directly, matching Android's JSONArray(body)
+            if let array = result as? [[String: Any]] {
+                call.resolve(["consents": array])
+            } else if let dict = result as? [String: Any], let consents = dict["consents"] as? [[String: Any]] {
+                call.resolve(["consents": consents])
             } else {
-                call.reject(error ?? "Failed to get \(endpoint) consents")
+                call.resolve(["consents": []])
             }
         }
     }
@@ -264,12 +278,13 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         
-        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["requestId": requestId], authToken: authToken) { _, error in
+        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["requestId": requestId], authToken: authToken) { result, error in
+            // Handle success based on HTTP status or response content
             call.resolve(["success": error == nil])
         }
     }
     
-    private func performRequest(url: String, body: [String: Any], authToken: String?, completion: @escaping ([String: Any]?, String?) -> Void) {
+    private func performRequest(url: String, body: [String: Any], authToken: String?, completion: @escaping (Any?, String?) -> Void) {
         guard let requestUrl = URL(string: url) else {
             completion(nil, "Invalid URL")
             return
@@ -289,9 +304,14 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        urlSession.dataTask(with: request) { data, _, error in
+        urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(nil, error.localizedDescription)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                completion(nil, "HTTP Error: \(httpResponse.statusCode)")
                 return
             }
             
@@ -301,11 +321,8 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             
             do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    completion(json, nil)
-                } else {
-                    completion(nil, "Invalid JSON")
-                }
+                let json = try JSONSerialization.jsonObject(with: data)
+                completion(json, nil)
             } catch {
                 completion(nil, "Parse error")
             }

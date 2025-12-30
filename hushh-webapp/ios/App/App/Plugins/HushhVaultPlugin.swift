@@ -26,7 +26,11 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "storePreferencesToCloud", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storePreference", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreferences", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "deletePreferences", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "deletePreferences", returnType: CAPPluginReturnPromise),
+        // Consent methods called by ApiService
+        CAPPluginMethod(name: "getPendingConsents", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getActiveConsents", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getConsentHistory", returnType: CAPPluginReturnPromise)
     ]
     
     private let TAG = "HushhVault"
@@ -281,6 +285,109 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getPreferences(_ call: CAPPluginCall) { call.resolve(["preferences": [:]]) }
     @objc func deletePreferences(_ call: CAPPluginCall) { call.resolve() }
     
+    // MARK: - Consent Integration Methods (Called by ApiService on native)
+    
+    @objc func getPendingConsents(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        
+        let authToken = call.getString("authToken")
+        let urlStr = "\(defaultBackendUrl)/api/consent/pending?userId=\(userId)"
+        
+        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+            if let dict = result as? [String: Any], let pending = dict["pending"] as? [[String: Any]] {
+                call.resolve(["pending": pending])
+            } else if let array = result as? [[String: Any]] {
+                call.resolve(["pending": array])
+            } else {
+                call.resolve(["pending": []])
+            }
+        }
+    }
+    
+    @objc func getActiveConsents(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        
+        let authToken = call.getString("authToken")
+        let urlStr = "\(defaultBackendUrl)/api/consent/active?userId=\(userId)"
+        
+        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+            if let dict = result as? [String: Any], let active = dict["active"] as? [[String: Any]] {
+                call.resolve(["active": active])
+            } else if let array = result as? [[String: Any]] {
+                call.resolve(["active": array])
+            } else {
+                call.resolve(["active": []])
+            }
+        }
+    }
+    
+    @objc func getConsentHistory(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        
+        let page = call.getInt("page") ?? 1
+        let limit = call.getInt("limit") ?? 50
+        let authToken = call.getString("authToken")
+        let urlStr = "\(defaultBackendUrl)/api/consent/history?userId=\(userId)&page=\(page)&limit=\(limit)"
+        
+        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+            if let dict = result as? [String: Any], let items = dict["items"] as? [[String: Any]] {
+                call.resolve(["items": items])
+            } else if let array = result as? [[String: Any]] {
+                call.resolve(["items": array])
+            } else {
+                call.resolve(["items": []])
+            }
+        }
+    }
+    
+    // GET request helper (for consent endpoints)
+    private func performGetRequest(urlStr: String, authToken: String?, completion: @escaping (Any?, String?) -> Void) {
+        guard let url = URL(string: urlStr) else {
+            completion(nil, "Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        urlSession.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                completion(nil, "No data")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                completion(nil, "HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data)
+                completion(json, nil)
+            } catch {
+                completion(nil, "Parse error")
+            }
+        }.resume()
+    }
+    
     // MARK: - HTTP Helper
     private func performRequest(urlStr: String, body: [String: Any], authToken: String?, completion: @escaping ([String: Any]?, String?) -> Void) {
         guard let url = URL(string: urlStr) else {
@@ -324,6 +431,52 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     completion(nil, "Invalid JSON")
                 }
+            } catch {
+                completion(nil, "Parse error")
+            }
+        }.resume()
+    }
+    
+    // performRequestAny: returns Any to handle both Array and Dict responses
+    private func performRequestAny(urlStr: String, body: [String: Any], authToken: String?, completion: @escaping (Any?, String?) -> Void) {
+        guard let url = URL(string: urlStr) else {
+            completion(nil, "Invalid URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            completion(nil, "Failed to encode body")
+            return
+        }
+        
+        urlSession.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(nil, error.localizedDescription)
+                return
+            }
+            
+            guard let data = data else {
+                completion(nil, "No data")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                completion(nil, "HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
+            do {
+                let json = try JSONSerialization.jsonObject(with: data)
+                completion(json, nil)
             } catch {
                 completion(nil, "Parse error")
             }
