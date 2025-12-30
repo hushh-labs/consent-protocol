@@ -1,8 +1,8 @@
 import UIKit
 import Capacitor
-import AuthenticationServices
-import GoogleSignIn
 import FirebaseCore
+import FirebaseAuth
+import GoogleSignIn
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -10,23 +10,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
-        print("🚀 [Hushh PDA] App launched")
-        
-        // Initialize Firebase
+        // Initialize Firebase - must happen before any Firebase/Google Sign-In usage
         FirebaseApp.configure()
-        print("🔥 [AppDelegate] Firebase configured")
-        
-        // Restore previous Google Sign-In session if available
-        GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
-            if let user = user {
-                print("🍎 [AppDelegate] Restored previous sign-in: \(user.profile?.email ?? "unknown")")
-            }
-        }
-        
+        print("🔥 [AppDelegate] Firebase initialized")
         return true
     }
-
 
     func applicationWillResignActive(_ application: UIApplication) {
         // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
@@ -51,11 +39,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Handle Google Sign-In callback
-        if GIDSignIn.sharedInstance.handle(url) {
-            return true
-        }
-        
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
@@ -69,4 +52,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
 }
-

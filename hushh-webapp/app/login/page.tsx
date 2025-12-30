@@ -297,16 +297,18 @@ export default function LoginPage() {
     setStep("oauth_loading");
 
     try {
-      // Use AuthService for platform-aware sign-in
-      // iOS: Native Google Sign-In → Firebase credential sync
-      // Web: Firebase signInWithPopup (unchanged)
+      console.log("🍎 [LoginPage] Platform:", Capacitor.getPlatform());
+      console.log("🍎 [LoginPage] Is Native:", Capacitor.isNativePlatform());
+      toast.info("Starting Google Sign-In...");
 
+      console.log("🍎 [LoginPage] Starting handleGoogleLogin flow...");
       // Add 120s timeout for Google Sign-In (accounts for slower user interaction)
       const result = await withTimeout(
         AuthService.signInWithGoogle(),
         120000,
         "Sign-in timed out. Please try again."
       );
+      console.log("🍎 [LoginPage] AuthService.signInWithGoogle returned success");
       const user = result.user;
 
       setUserId(user.uid);
@@ -326,8 +328,10 @@ export default function LoginPage() {
 
       // CRITICAL: Manually notify Global Auth Context of the native login
       // This forces the Navbar to update 'isAuthenticated' status immediately
+      console.log("🍎 [LoginPage] Calling setNativeUser with:", user.uid);
       setNativeUser(user);
-      await checkAuth();
+      console.log("🍎 [LoginPage] setNativeUser complete");
+      // await checkAuth(); // Removed redundant call to prevent hangs
 
       await checkVaultAndProceed(user.uid);
     } catch (err: unknown) {
@@ -835,7 +839,7 @@ export default function LoginPage() {
       </div>
 
       {/* Recovery Key Dialog (New User) */}
-      <Dialog open={step === "recovery_key_show"} onOpenChange={() => {}}>
+      <Dialog open={step === "recovery_key_show"} onOpenChange={() => { }}>
         <DialogContent
           className="sm:max-w-md"
           onPointerDownOutside={(e) => e.preventDefault()}

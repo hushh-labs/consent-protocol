@@ -1,5 +1,5 @@
 {
-  "originHash" : "aa77e6bdbc5cdc3d815eb5686d3e9278adec3fb3449cd0d974009be1c800f58d",
+  "originHash" : "1d6884f88cbcec500251ee795d41ab6709bec5386fcb01a4b0d8d556ff87a694",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/openid/AppAuth-iOS.git",
       "state" : {
-        "revision" : "2781038865a80e2c425a1da12cc1327bcd56501f",
-        "version" : "1.7.6"
+        "revision" : "145104f5ea9d58ae21b60add007c33c1cc0c948e",
+        "version" : "2.0.0"
       }
     },
     {
@@ -38,12 +38,21 @@
       }
     },
     {
+      "identity" : "facebook-ios-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/facebook/facebook-ios-sdk.git",
+      "state" : {
+        "revision" : "32da5bdef917ccd845fcf319c5fb67c654459d27",
+        "version" : "18.0.2"
+      }
+    },
+    {
       "identity" : "firebase-ios-sdk",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/firebase/firebase-ios-sdk",
+      "location" : "https://github.com/firebase/firebase-ios-sdk.git",
       "state" : {
-        "revision" : "fdc352fabaf5916e7faa1f96ad02b1957e93e5a5",
-        "version" : "11.15.0"
+        "revision" : "45210bd1ea695779e6de016ab00fea8c0b7eb2ef",
+        "version" : "12.7.0"
       }
     },
     {
@@ -51,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/googleads/google-ads-on-device-conversion-ios-sdk",
       "state" : {
-        "revision" : "a2d0f1f1666de591eb1a811f40b1706f5c63a2ed",
-        "version" : "2.3.0"
+        "revision" : "35b601a60fbbea2de3ea461f604deaaa4d8bbd0c",
+        "version" : "3.2.0"
       }
     },
     {
@@ -60,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/GoogleAppMeasurement.git",
       "state" : {
-        "revision" : "45ce435e9406d3c674dd249a042b932bee006f60",
-        "version" : "11.15.0"
+        "revision" : "c2d59acf17a8ba7ed80a763593c67c9c7c006ad1",
+        "version" : "12.5.0"
       }
     },
     {
@@ -78,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/GoogleSignIn-iOS",
       "state" : {
-        "revision" : "65fb3f1aa6ffbfdc79c4e22178a55cd91561f5e9",
-        "version" : "8.0.0"
+        "revision" : "3996d908c7b3ce8a87d39c808f9a6b2a08fbe043",
+        "version" : "9.0.0"
       }
     },
     {
@@ -114,8 +123,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/GTMAppAuth.git",
       "state" : {
-        "revision" : "5d7d66f647400952b1758b230e019b07c0b4b22a",
-        "version" : "4.1.1"
+        "revision" : "56e0ccf09a6dd29dc7e68bdf729598240ca8aa16",
+        "version" : "5.0.0"
       }
     },
     {
