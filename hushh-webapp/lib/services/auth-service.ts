@@ -1,11 +1,11 @@
 /**
  * Auth Service - Platform-Aware Authentication
- * 
+ *
  * Production-grade authentication service that handles:
  * - iOS: Native Google Sign-In via @capacitor-firebase/authentication
  * - Web: Firebase signInWithPopup (unchanged behavior)
  * - Credential sync: Native tokens synced with Firebase for consistent UIDs
- * 
+ *
  * IMPORTANT: This is the single source of truth for authentication.
  * Components should use this service instead of direct Firebase calls.
  */
@@ -33,13 +33,12 @@ export interface AuthResult {
  * Platform-aware authentication service
  */
 export class AuthService {
-
   /**
    * Sign in with Google using the appropriate method for the current platform.
-   * 
+   *
    * iOS: Uses @capacitor-firebase/authentication plugin
    * Web: Uses Firebase signInWithPopup directly
-   * 
+   *
    * @returns Firebase User object (consistent on both platforms)
    */
   static async signInWithGoogle(): Promise<AuthResult> {
@@ -55,11 +54,13 @@ export class AuthService {
    * 1. FirebaseAuthentication.signInWithGoogle() presents native Google UI
    * 2. Automatically syncs with Firebase
    * 3. Returns authenticated user
-   * 
+   *
    * Falls back to web auth if native plugin is not available
    */
   private static async nativeGoogleSignIn(): Promise<AuthResult> {
-    console.log("🍎 [AuthService] Starting native Google Sign-In via HushhAuth Plugin");
+    console.log(
+      "🍎 [AuthService] Starting native Google Sign-In via HushhAuth Plugin"
+    );
     toast.info("1. Starting Native Hushh Authorization...");
 
     try {
@@ -83,7 +84,10 @@ export class AuthService {
       const accessToken = result.accessToken;
       const nativeAuthUser = result.user; // AuthUser type
 
-      console.log("✅ [AuthService] Got ID token:", idToken ? "YES (len: " + idToken.length + ")" : "NO");
+      console.log(
+        "✅ [AuthService] Got ID token:",
+        idToken ? "YES (len: " + idToken.length + ")" : "NO"
+      );
       toast.info(`3. ID Token received`);
 
       // Step 3: Sync with Firebase JS SDK if needed
@@ -97,10 +101,7 @@ export class AuthService {
 
         // We need a credential to sign in the JS SDK.
         // We have the Google ID Token and Access Token from the native result.
-        const credential = GoogleAuthProvider.credential(
-          idToken,
-          accessToken
-        );
+        const credential = GoogleAuthProvider.credential(idToken, accessToken);
 
         try {
           // Wrapped in a timeout to prevent hanging on iOS
@@ -109,12 +110,21 @@ export class AuthService {
             setTimeout(() => reject(new Error("JS SDK Sync Timed Out")), 5000)
           );
 
-          const firebaseResult = await Promise.race([syncPromise, timeoutPromise]) as any;
+          const firebaseResult = (await Promise.race([
+            syncPromise,
+            timeoutPromise,
+          ])) as any;
           firebaseUser = firebaseResult.user;
-          console.log("✅ [AuthService] Firebase JS SDK synced, UID:", firebaseUser?.uid);
+          console.log(
+            "✅ [AuthService] Firebase JS SDK synced, UID:",
+            firebaseUser?.uid
+          );
           toast.success("5. JS SDK Synced!");
         } catch (syncError) {
-          console.warn("⚠️ [AuthService] JS SDK Sync Failed/Timed Out:", syncError);
+          console.warn(
+            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out:",
+            syncError
+          );
           // Don't show error toast to user as this is a background sync issue
           // toast.error("JS SDK Sync Failed (proceeding with native user)");
           console.log("⚠️ Proceeding with Native User anyway.");
@@ -125,7 +135,8 @@ export class AuthService {
 
       // Construct final User object
       // If JS SDK failed, we wrap the native user data into a Firebase-like User object
-      const user = firebaseUser || this.createUserFromNative(nativeAuthUser, idToken);
+      const user =
+        firebaseUser || this.createUserFromNative(nativeAuthUser, idToken);
 
       return {
         user,
@@ -133,13 +144,19 @@ export class AuthService {
         accessToken,
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       toast.error("Auth Fail: " + errorMessage);
       console.error("❌ [AuthService] nativeGoogleSignIn error:", errorMessage);
 
       // If native plugin not implemented, fall back to web auth
-      if (errorMessage.includes("not implemented") || errorMessage.includes("not available")) {
-        console.warn("⚠️ [AuthService] Native plugin not available, falling back to web auth");
+      if (
+        errorMessage.includes("not implemented") ||
+        errorMessage.includes("not available")
+      ) {
+        console.warn(
+          "⚠️ [AuthService] Native plugin not available, falling back to web auth"
+        );
         return this.webGoogleSignIn();
       }
 
@@ -163,23 +180,33 @@ export class AuthService {
         creationTime: new Date().toISOString(),
         lastSignInTime: new Date().toISOString(),
       },
-      providerData: [{
-        providerId: 'google.com',
-        uid: nativeUser.uid,
-        displayName: nativeUser.displayName,
-        email: nativeUser.email,
-        phoneNumber: null,
-        photoURL: nativeUser.photoUrl,
-      }],
-      refreshToken: '',
+      providerData: [
+        {
+          providerId: "google.com",
+          uid: nativeUser.uid,
+          displayName: nativeUser.displayName,
+          email: nativeUser.email,
+          phoneNumber: null,
+          photoURL: nativeUser.photoUrl,
+        },
+      ],
+      refreshToken: "",
       tenantId: null,
-      delete: async () => { },
+      delete: async () => {},
       getIdToken: async () => idToken,
-      getIdTokenResult: async () => ({ token: idToken, claims: {}, authTime: '', issuedAtTime: '', expirationTime: '', signInProvider: 'google.com', signInSecondFactor: null }),
-      reload: async () => { },
+      getIdTokenResult: async () => ({
+        token: idToken,
+        claims: {},
+        authTime: "",
+        issuedAtTime: "",
+        expirationTime: "",
+        signInProvider: "google.com",
+        signInSecondFactor: null,
+      }),
+      reload: async () => {},
       toJSON: () => ({}),
       phoneNumber: null,
-      providerId: 'google.com',
+      providerId: "google.com",
     } as unknown as User;
   }
 
@@ -189,7 +216,9 @@ export class AuthService {
    * This is ALSO the fallback for native if the native plugin fails
    */
   private static async webGoogleSignIn(): Promise<AuthResult> {
-    console.log("🌐 [AuthService] Starting web Google Sign-In (Firebase popup)");
+    console.log(
+      "🌐 [AuthService] Starting web Google Sign-In (Firebase popup)"
+    );
 
     try {
       // Import Firebase auth methods for popup sign-in
@@ -356,7 +385,10 @@ export class AuthService {
 
       // Check if Firebase JS SDK has the user
       if (auth.currentUser) {
-        console.log("✅ [AuthService] Firebase JS SDK user available, UID:", auth.currentUser.uid);
+        console.log(
+          "✅ [AuthService] Firebase JS SDK user available, UID:",
+          auth.currentUser.uid
+        );
         return auth.currentUser;
       }
 
@@ -365,7 +397,6 @@ export class AuthService {
 
       console.log("🍎 [AuthService] Session restored! UID:", restoredUser.uid);
       return restoredUser;
-
     } catch (error) {
       console.error("🍎 [AuthService] Failed to restore session:", error);
       return null;
