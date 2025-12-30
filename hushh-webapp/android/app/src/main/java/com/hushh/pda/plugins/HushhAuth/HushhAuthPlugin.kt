@@ -180,7 +180,7 @@ class HushhAuthPlugin : Plugin() {
                                         put("idToken", firebaseIdToken)
                                         put("accessToken", idToken)
                                         put("user", JSObject().apply {
-                                            put("id", authUser.id)
+                                            put("uid", authUser.id)
                                             put("email", authUser.email)
                                             put("displayName", authUser.displayName)
                                             put("photoUrl", authUser.photoUrl)
@@ -386,7 +386,7 @@ data class AuthUser(
     val emailVerified: Boolean
 ) {
     fun toJSObject(): JSObject = JSObject().apply {
-        put("id", id)
+        put("uid", id)
         put("email", email)
         put("displayName", displayName)
         put("photoUrl", photoUrl)
