@@ -2,7 +2,7 @@
  * Auth Service - Platform-Aware Authentication
  * 
  * Production-grade authentication service that handles:
- * - iOS: Native Google Sign-In via HushhAuth plugin
+ * - iOS: Native Google Sign-In via @capacitor-firebase/authentication
  * - Web: Firebase signInWithPopup (unchanged behavior)
  * - Credential sync: Native tokens synced with Firebase for consistent UIDs
  * 
@@ -11,15 +11,17 @@
  */
 
 import { Capacitor } from "@capacitor/core";
-import { 
-  GoogleAuthProvider, 
-  signInWithCredential, 
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
   signOut as firebaseSignOut,
   User,
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { HushhAuth, type AuthUser } from "@/lib/capacitor";
+import { toast } from "sonner";
 
 export interface AuthResult {
   user: User;
@@ -31,11 +33,11 @@ export interface AuthResult {
  * Platform-aware authentication service
  */
 export class AuthService {
-  
+
   /**
    * Sign in with Google using the appropriate method for the current platform.
    * 
-   * iOS: Uses native HushhAuth plugin → syncs with Firebase
+   * iOS: Uses @capacitor-firebase/authentication plugin
    * Web: Uses Firebase signInWithPopup directly
    * 
    * @returns Firebase User object (consistent on both platforms)
@@ -49,84 +51,136 @@ export class AuthService {
   }
 
   /**
-   * Native iOS Google Sign-In flow
-   * 1. HushhAuth.signIn() presents native Google UI
-   * 2. Returns idToken + accessToken
-   * 3. Syncs with Firebase using signInWithCredential
+   * Native iOS/Android Google Sign-In flow using @capacitor-firebase/authentication
+   * 1. FirebaseAuthentication.signInWithGoogle() presents native Google UI
+   * 2. Automatically syncs with Firebase
+   * 3. Returns authenticated user
    * 
    * Falls back to web auth if native plugin is not available
    */
   private static async nativeGoogleSignIn(): Promise<AuthResult> {
-    console.log("🍎 [AuthService] Starting native Google Sign-In");
-    
+    console.log("🍎 [AuthService] Starting native Google Sign-In via HushhAuth Plugin");
+    toast.info("1. Starting Native Hushh Authorization...");
+
     try {
-      // Step 1: Native sign-in
+      // Step 1: Native sign-in using Custom HushhAuth plugin
       console.log("🍎 [AuthService] Calling HushhAuth.signIn()...");
+
       const result = await HushhAuth.signIn();
-      
-      console.log("✅ [AuthService] Native sign-in complete:", result.user?.email);
-      
-      console.log("✅ [AuthService] Native sign-in complete:", result.user?.email);
-      
-      // Step 2: Construct user object from verified native Firebase credentials
-      // Note: We still construct a JS User object because we bypassed the JS SDK's signInWithCredential
-      // but the data now comes from a real native Firebase sign-in.
-      console.log("🍎 [AuthService] Constructing user from native Firebase result...");
-      
-      // Create a minimal user object that satisfies the User interface
-      // We use the native user ID as the Firebase UID for vault key consistency
-      const mockUser = {
-        uid: result.user.id,
-        email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoUrl,
-        emailVerified: result.user.emailVerified ?? true,
-        // Required Firebase User properties
-        isAnonymous: false,
-        metadata: {
-          creationTime: new Date().toISOString(),
-          lastSignInTime: new Date().toISOString(),
-        },
-        providerData: [{
-          providerId: 'google.com',
-          uid: result.user.id,
-          displayName: result.user.displayName,
-          email: result.user.email,
-          phoneNumber: null,
-          photoURL: result.user.photoUrl,
-        }],
-        refreshToken: '',
-        tenantId: null,
-        // Stub methods (not used in our flow)
-        delete: async () => {},
-        getIdToken: async () => result.idToken,
-        getIdTokenResult: async () => ({ token: result.idToken, claims: {}, authTime: '', issuedAtTime: '', expirationTime: '', signInProvider: 'google.com', signInSecondFactor: null }),
-        reload: async () => {},
-        toJSON: () => ({}),
-        phoneNumber: null,
-        providerId: 'google.com',
-      } as unknown as User;
-      
-      console.log("✅ [AuthService] Mock user created with UID:", mockUser.uid);
-      
+
+      console.log("✅ [AuthService] Native sign-in returned result");
+      toast.info("2. Native Sign-In Success.");
+
+      if (!result.user || !result.idToken) {
+        console.error("❌ [AuthService] Invalid response from native sign-in");
+        toast.error("Invalid native auth response");
+        throw new Error("Invalid response from native sign-in");
+      }
+
+      // Result from HushhAuth.signIn() matches:
+      // { idToken: string, accessToken: string, user: AuthUser }
+      const idToken = result.idToken;
+      const accessToken = result.accessToken;
+      const nativeAuthUser = result.user; // AuthUser type
+
+      console.log("✅ [AuthService] Got ID token:", idToken ? "YES (len: " + idToken.length + ")" : "NO");
+      toast.info(`3. ID Token received`);
+
+      // Step 3: Sync with Firebase JS SDK if needed
+      // The native plugin already signed in to Firebase on the native layer.
+      // We usually want the JS layer to also know about it for consistency.
+      let firebaseUser = auth.currentUser;
+
+      if (!firebaseUser) {
+        console.log("🔄 [AuthService] Syncing with Firebase JS SDK...");
+        toast.info("4. Syncing with JS SDK...");
+
+        // We need a credential to sign in the JS SDK.
+        // We have the Google ID Token and Access Token from the native result.
+        const credential = GoogleAuthProvider.credential(
+          idToken,
+          accessToken
+        );
+
+        try {
+          // Wrapped in a timeout to prevent hanging on iOS
+          const syncPromise = signInWithCredential(auth, credential);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("JS SDK Sync Timed Out")), 5000)
+          );
+
+          const firebaseResult = await Promise.race([syncPromise, timeoutPromise]) as any;
+          firebaseUser = firebaseResult.user;
+          console.log("✅ [AuthService] Firebase JS SDK synced, UID:", firebaseUser?.uid);
+          toast.success("5. JS SDK Synced!");
+        } catch (syncError) {
+          console.warn("⚠️ [AuthService] JS SDK Sync Failed/Timed Out:", syncError);
+          // Don't show error toast to user as this is a background sync issue
+          // toast.error("JS SDK Sync Failed (proceeding with native user)");
+          console.log("⚠️ Proceeding with Native User anyway.");
+        }
+      } else {
+        toast.info("4. JS SDK already has user");
+      }
+
+      // Construct final User object
+      // If JS SDK failed, we wrap the native user data into a Firebase-like User object
+      const user = firebaseUser || this.createUserFromNative(nativeAuthUser, idToken);
+
       return {
-        user: mockUser,
-        idToken: result.idToken,
-        accessToken: result.accessToken,
+        user,
+        idToken,
+        accessToken,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error("Auth Fail: " + errorMessage);
       console.error("❌ [AuthService] nativeGoogleSignIn error:", errorMessage);
-      
+
       // If native plugin not implemented, fall back to web auth
       if (errorMessage.includes("not implemented") || errorMessage.includes("not available")) {
         console.warn("⚠️ [AuthService] Native plugin not available, falling back to web auth");
         return this.webGoogleSignIn();
       }
-      
+
       console.error("❌ [AuthService] Native sign-in failed:", error);
       throw error;
     }
+  }
+
+  /**
+   * Create a User-like object from native Firebase user data
+   */
+  private static createUserFromNative(nativeUser: any, idToken: string): User {
+    return {
+      uid: nativeUser.uid,
+      email: nativeUser.email,
+      displayName: nativeUser.displayName,
+      photoURL: nativeUser.photoUrl,
+      emailVerified: nativeUser.emailVerified ?? true,
+      isAnonymous: false,
+      metadata: {
+        creationTime: new Date().toISOString(),
+        lastSignInTime: new Date().toISOString(),
+      },
+      providerData: [{
+        providerId: 'google.com',
+        uid: nativeUser.uid,
+        displayName: nativeUser.displayName,
+        email: nativeUser.email,
+        phoneNumber: null,
+        photoURL: nativeUser.photoUrl,
+      }],
+      refreshToken: '',
+      tenantId: null,
+      delete: async () => { },
+      getIdToken: async () => idToken,
+      getIdTokenResult: async () => ({ token: idToken, claims: {}, authTime: '', issuedAtTime: '', expirationTime: '', signInProvider: 'google.com', signInSecondFactor: null }),
+      reload: async () => { },
+      toJSON: () => ({}),
+      phoneNumber: null,
+      providerId: 'google.com',
+    } as unknown as User;
   }
 
   /**
@@ -136,26 +190,26 @@ export class AuthService {
    */
   private static async webGoogleSignIn(): Promise<AuthResult> {
     console.log("🌐 [AuthService] Starting web Google Sign-In (Firebase popup)");
-    
+
     try {
       // Import Firebase auth methods for popup sign-in
       const { signInWithPopup } = await import("firebase/auth");
-      
+
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      
+
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
-      
+
       if (!credential) {
         throw new Error("No credential returned from Google Sign-In");
       }
-      
+
       const idToken = await result.user.getIdToken();
       const accessToken = credential.accessToken || "";
-      
+
       console.log("✅ [AuthService] Web sign-in complete:", result.user.email);
-      
+
       return {
         user: result.user,
         idToken,
@@ -169,22 +223,25 @@ export class AuthService {
 
   /**
    * Sign out from all platforms
+   * Uses @capacitor-firebase/authentication for uniform behavior
    */
   static async signOut(): Promise<void> {
     console.log("🚪 [AuthService] Signing out...");
-    
+    toast.info("Signing out from Native...");
+
     try {
-      // Sign out from native (if on iOS)
-      if (Capacitor.isNativePlatform()) {
-        await HushhAuth.signOut();
-      }
-      
-      // Sign out from Firebase
+      // Sign out using Custom HushhAuth plugin
+      await HushhAuth.signOut();
+      toast.success("Native SignOut Done");
+
+      // Also sign out from Firebase JS SDK for web consistency
       await firebaseSignOut(auth);
-      
+      toast.success("Web SignOut Done");
+
       console.log("✅ [AuthService] Sign-out complete");
     } catch (error) {
       console.error("❌ [AuthService] Sign-out error:", error);
+      toast.error("SignOut Failed: " + error);
       throw error;
     }
   }
@@ -198,32 +255,45 @@ export class AuthService {
 
   /**
    * Check if user is signed in
+   * Uses @capacitor-firebase/authentication for uniform behavior
    */
   static async isSignedIn(): Promise<boolean> {
-    // Check Firebase first
+    // Check Firebase JS SDK first
     if (auth.currentUser) {
       return true;
     }
-    
-    // On native, also check Keychain
-    if (Capacitor.isNativePlatform()) {
-      const result = await HushhAuth.isSignedIn();
-      return result.signedIn;
+
+    // Use Capacitor Firebase plugin (works on all platforms)
+    try {
+      const result = await FirebaseAuthentication.getCurrentUser();
+      return result.user !== null;
+    } catch {
+      return false;
     }
-    
-    return false;
   }
 
   /**
-   * Get native user info (platform-aware)
+   * Get current user info (platform-aware)
+   * Uses @capacitor-firebase/authentication for uniform behavior
    */
   static async getNativeUser(): Promise<AuthUser | null> {
-    if (Capacitor.isNativePlatform()) {
-      const result = await HushhAuth.getCurrentUser();
-      return result.user;
+    // Use Capacitor Firebase plugin (works on all platforms)
+    try {
+      const result = await FirebaseAuthentication.getCurrentUser();
+      if (result.user) {
+        return {
+          id: result.user.uid,
+          email: result.user.email || "",
+          displayName: result.user.displayName || "",
+          photoUrl: result.user.photoUrl || "",
+          emailVerified: result.user.emailVerified ?? true,
+        };
+      }
+    } catch {
+      // Fall through to Firebase JS SDK
     }
-    
-    // Map Firebase user to AuthUser format
+
+    // Fallback to Firebase JS SDK
     const firebaseUser = auth.currentUser;
     if (firebaseUser) {
       return {
@@ -234,7 +304,7 @@ export class AuthService {
         emailVerified: firebaseUser.emailVerified,
       };
     }
-    
+
     return null;
   }
 
@@ -251,86 +321,53 @@ export class AuthService {
         console.warn("[AuthService] Failed to get Firebase ID token");
       }
     }
-    
-    // Fallback to native token on iOS
-    if (Capacitor.isNativePlatform()) {
-      const result = await HushhAuth.getIdToken();
-      return result.idToken;
+
+    // Fallback to Capacitor Firebase plugin
+    try {
+      const result = await FirebaseAuthentication.getIdToken();
+      return result.token;
+    } catch {
+      return null;
     }
-    
-    return null;
   }
 
   /**
    * Subscribe to auth state changes
    */
   /**
-   * Restores the session on Native iOS by exchanging the stored Google ID Token
-   * for a Firebase Credential. This ensures we have the correct Firebase UID
-   * (which differs from the Google Subject ID) for backend vault checks.
+   * Restores the session using @capacitor-firebase/authentication
+   * Works on all platforms for uniform behavior
    */
   static async restoreNativeSession(): Promise<User | null> {
-    if (!Capacitor.isNativePlatform()) return null;
-
-    // Helper: Internal timeout wrapper
-    const withTimeout = <T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))
-      ]);
-    };
-
     try {
-      // 1. Check if we have a native user/token stored in Keychain
-      // Use getCurrentUser() which verifies the session is valid
-      const { user } = await HushhAuth.getCurrentUser();
-      const { idToken } = await HushhAuth.getIdToken();
-      
-      if (!user || !user.id || !idToken || idToken === "null") {
-        console.log("🍎 [AuthService] No native session found");
+      // Use Capacitor Firebase plugin to get current user
+      const result = await FirebaseAuthentication.getCurrentUser();
+
+      if (!result.user) {
+        console.log("🍎 [AuthService] No session found");
         return null;
       }
 
-      console.log("🍎 [AuthService] Restoring native session for:", user.email);
+      console.log("🍎 [AuthService] Restoring session for:", result.user.email);
 
-      // 2. Construct User object from native data
-      // We skip signInWithCredential because it hangs in WebView
-      const restoredUser = {
-        uid: user.id, // This is the Firebase UID from native plugin
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoUrl,
-        emailVerified: user.emailVerified,
-        isAnonymous: false,
-        metadata: {
-          creationTime: new Date().toISOString(),
-          lastSignInTime: new Date().toISOString(),
-        },
-        providerData: [{
-          providerId: 'google.com',
-          uid: user.id,
-          displayName: user.displayName,
-          email: user.email,
-          photoURL: user.photoUrl,
-        }],
-        getIdToken: async () => idToken,
-        getIdTokenResult: async () => ({ token: idToken, claims: {}, authTime: '', issuedAtTime: '', expirationTime: '', signInProvider: 'google.com', signInSecondFactor: null }),
-        delete: async () => {},
-        reload: async () => {},
-        toJSON: () => ({}),
-        phoneNumber: null,
-        providerId: 'google.com',
-        refreshToken: '',
-        tenantId: null,
-      } as unknown as User;
-      
+      // Get ID token
+      const tokenResult = await FirebaseAuthentication.getIdToken();
+      const idToken = tokenResult.token || "";
+
+      // Check if Firebase JS SDK has the user
+      if (auth.currentUser) {
+        console.log("✅ [AuthService] Firebase JS SDK user available, UID:", auth.currentUser.uid);
+        return auth.currentUser;
+      }
+
+      // Construct User object from native data
+      const restoredUser = this.createUserFromNative(result.user, idToken);
+
       console.log("🍎 [AuthService] Session restored! UID:", restoredUser.uid);
       return restoredUser;
 
     } catch (error) {
-      console.error("🍎 [AuthService] Failed to restore native session:", error);
-      // If restoration fails (e.g. revoked token), clear native state
-      await HushhAuth.signOut();
+      console.error("🍎 [AuthService] Failed to restore session:", error);
       return null;
     }
   }

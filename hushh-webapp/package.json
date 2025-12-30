@@ -15,6 +15,7 @@
     "cap:android:run": "npm run cap:build && npm run cap:sync && npx cap run android"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.0.1",
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
@@ -40,7 +41,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
-    "firebase": "^11.1.0",
+    "firebase": "^12.7.0",
     "firebase-admin": "^13.6.0",
     "gsap": "^3.14.2",
     "jose": "^6.1.3",
