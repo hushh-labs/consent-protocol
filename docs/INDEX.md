@@ -19,9 +19,8 @@
 
 | Document                                                         | Description                            |
 | ---------------------------------------------------------------- | -------------------------------------- |
-| [architecture.md](technical/architecture.md)                     | System design, flow diagrams           |
-| [mobile-architecture.md](technical/mobile-architecture.md)       | iOS/Android Capacitor, MLX roadmap     |
-| [authentication.md](technical/authentication.md)                 | Firebase Admin SDK, session cookies    |
+| [architecture.md](technical/architecture.md)                     | System design, security, flow diagrams |
+| [mobile.md](technical/mobile.md)                                 | iOS/Android Capacitor development      |
 | [consent-implementation.md](technical/consent-implementation.md) | Session token flow, 4-layer security   |
 | [mcp-integration.md](technical/mcp-integration.md)               | MCP zero-knowledge vault access        |
 | [developer-api.md](technical/developer-api.md)                   | External developer consent request API |
@@ -39,13 +38,6 @@
 | Document                                                         | Description          |
 | ---------------------------------------------------------------- | -------------------- |
 | [frontend-design-system.md](technical/frontend-design-system.md) | Morphy-UX components |
-
-### Mobile
-
-| Document                                                         | Description                        |
-| ---------------------------------------------------------------- | ---------------------------------- |
-| [mobile-architecture.md](technical/mobile-architecture.md)       | iOS/Android architecture & plugins |
-| [mobile-migration-guide.md](technical/mobile-migration-guide.md) | Checklist for new mobile features  |
 
 ---
 
