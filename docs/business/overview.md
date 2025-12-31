@@ -6,56 +6,129 @@
 
 ## What is Hushh?
 
-Hushh is your **personal data vault** - a secure place where YOU control your information. Think of it like a safety deposit box at a bank, but for your digital data.
+Hushh is your **Personal Data Agent (PDA)** - a fiduciary intelligence that works for YOU.
+
+> _"Hushh is the agent you would hire if your data were your business."_
 
 ### The Problem We Solve
 
-Every app today collects your data - your preferences, habits, purchases. But:
+Every app today collects your data - your preferences, habits, investments. But:
 
 - You don't know what they store
 - You can't access it
-- You can't delete it
-- They can sell it
+- You can't control who sees it
+- They optimize for their profits, not your outcomes
 
-**Hushh flips this.** Your data lives in YOUR vault. Apps ask YOU for permission.
+**Hushh flips this.** Your data lives in YOUR vault. Agents work FOR you, bound by consent.
+
+### What Makes Hushh Different
+
+| Traditional Apps            | Hushh                        |
+| --------------------------- | ---------------------------- |
+| Your data on their servers  | Your data on YOUR device     |
+| AI runs in the cloud        | AI runs on your phone        |
+| Can't work offline          | Works completely offline     |
+| Company can read your data  | Zero-knowledge encryption    |
+| Shares data with "partners" | Never shares without consent |
+
+---
+
+## 🔒 On-Device AI: Your Data Never Leaves
+
+Hushh uses cutting-edge on-device AI that runs entirely on your phone:
+
+| Platform    | Technology   | What It Means                 |
+| ----------- | ------------ | ----------------------------- |
+| **iPhone**  | Apple MLX    | AI runs on your iPhone's chip |
+| **Android** | Google Gemma | AI runs locally via MediaPipe |
+
+**Why this matters:**
+
+1. **Privacy**: Your data never leaves your device
+2. **Speed**: No waiting for internet response
+3. **Offline**: Works without connection
+4. **Security**: No cloud servers to hack
+
+---
+
+## Our Product Focus
+
+### 🎯 Agent Kai — PRIMARY (Investor Intelligence)
+
+> _"Decide like a committee, carry it in your pocket."_
+
+Kai brings an investment committee in silicon to every iPhone. Three specialist agents analyze, debate, and deliver a **Buy/Hold/Reduce decision with receipts**.
+
+| Agent           | Focus                        | Tools                     |
+| --------------- | ---------------------------- | ------------------------- |
+| **Fundamental** | 10-K/10-Q financial analysis | SEC RAG retrieval         |
+| **Sentiment**   | News, earnings calls         | Reflection summarization  |
+| **Valuation**   | P/E ratios, returns          | Deterministic calculators |
+
+> [!IMPORTANT] > **Agent Kai is an EDUCATIONAL TOOL, not investment advice.**
+> Always consult a licensed financial professional before making investment decisions.
+
+**Key Differentiator:** Every recommendation comes with receipts — sources, math, dissent, and risk-persona fit.
+
+---
+
+### 🍽️ Food & Dining — SECONDARY (Agentic Commerce)
+
+Demonstrates the consent-aware agent model for everyday transactions:
+
+- Remember dietary preferences, allergies, budgets
+- **Location Favorites**: Save Home, Work, and custom addresses
+- Order from restaurants with full consent trail
+- AP2 Protocol integration for secure agent payments
 
 ---
 
 ## How Does It Work?
 
-### 1. Your Vault
+### 1. Your Local Vault
 
 When you create a Hushh account:
 
 ```
-📱 You → Login with Google → Create a master passphrase → Done!
+📱 You → Sign In → Create a passphrase → Done!
 ```
 
-Your passphrase is like a key to a safe. **We never see it.** Even if someone hacked our servers, they'd only find encrypted gibberish.
+Your passphrase encrypts everything on YOUR device. **We never see it.**
 
-### 2. AI Assistants (Agents)
+| Storage Mode   | Description                   | Default?    |
+| -------------- | ----------------------------- | ----------- |
+| **Local-Only** | Data stays on your phone only | ✅ Yes      |
+| **Cloud Sync** | E2E encrypted backup (opt-in) | ❌ Optional |
 
-Hushh has helpful AI assistants that can:
+### 2. AI Agents (Work FOR You)
 
-- 🍕 **Food Agent**: Remember your dietary preferences, allergies, favorite cuisines
-- 💼 **Professional Agent**: Store your skills, experience, career goals
-- 🛍️ **Shopping Agent**: Track your shopping preferences
+| Agent               | What It Does                                |
+| ------------------- | ------------------------------------------- |
+| 📈 **Kai**          | Explainable investment analysis with debate |
+| 🍕 **Food**         | Remember dietary preferences, order food    |
+| 💼 **Professional** | Store skills, experience, career goals      |
 
-These agents work FOR you, not for advertisers.
+These agents work FOR you, not for platforms or advertisers.
 
 ### 3. Permission System
 
-Before any agent can save data to your vault, you see a permission prompt:
+Before any agent can access your data, you see a permission prompt:
 
 ```
-┌─────────────────────────────────────┐
-│  🔐 Permission Request             │
-│                                     │
-│  "Food Agent wants to save your    │
-│   dietary preferences"             │
-│                                     │
-│  [Deny]           [Allow]          │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  🔐 Permission Request                                          │
+│                                                                  │
+│  "Agent Kai wants to:                                           │
+│   • Analyze stocks you request                                  │
+│   • Remember your risk profile                                  │
+│   • Store decision history on your device"                      │
+│                                                                  │
+│  ⚠️ Kai will NEVER:                                             │
+│   • Execute trades without explicit consent                     │
+│   • Share your data with third parties                          │
+│                                                                  │
+│  [Deny]                         [Approve with FaceID 👆]        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **You choose. Always.**
@@ -66,11 +139,11 @@ Before any agent can save data to your vault, you see a permission prompt:
 
 ### Your Passphrase
 
-| What We Know                            | What We DON'T Know  |
-| --------------------------------------- | ------------------- |
-| Your email (for login)                  | Your passphrase     |
-| Encrypted data (looks like random text) | The actual contents |
-| That you have a vault                   | What's in it        |
+| What We Know             | What We DON'T Know  |
+| ------------------------ | ------------------- |
+| Your email (for login)   | Your passphrase     |
+| That you have an account | Your vault contents |
+| Nothing else             | Your data           |
 
 ### If You Forget Your Passphrase
 
@@ -85,30 +158,42 @@ Keep this somewhere safe (write it down, save in password manager). It's your ba
 ### Why This Is Safe
 
 1. **Zero-Knowledge**: We can't read your data even if we wanted to
-2. **Strong Encryption**: Same technology banks use (AES-256)
-3. **Your Control**: You can delete everything anytime
+2. **On-Device Encryption**: AES-256-GCM (same as banks)
+3. **Local-First**: Data stays on your device by default
+4. **Your Control**: You can delete everything anytime
 
 ---
 
-## What Can You Store?
+## ⚖️ Legal & Privacy Compliance
 
-### Food & Dining 🍽️
+### USA Regulations
 
-- Dietary restrictions (vegetarian, gluten-free, allergies)
-- Favorite cuisines
-- Monthly food budget
+| Regulation                 | How Hushh Complies                             |
+| -------------------------- | ---------------------------------------------- |
+| **CCPA/CPRA** (California) | Full data transparency, deletion rights        |
+| **SEC Regulations**        | Kai is educational only, not investment advice |
+| **Consumer Protection**    | Clear pricing, receipts, cancellation rights   |
 
-### Professional 💼
+### Your Rights
 
-- Job title and skills
-- Experience level
-- Career goals
+- **Know**: See all data we have about you
+- **Delete**: One-tap deletion, both local and cloud
+- **Control**: Every data access requires your consent
+- **Port**: Export all your data anytime
 
-### Coming Soon
+---
 
-- Financial preferences
-- Health data
-- Travel preferences
+## Target Audience
+
+**Privacy-Conscious Individuals**
+
+People who are:
+
+- Highly private
+- Security-focused
+- Expect fiduciary duty
+- Protective of their digital footprint
+- Want AI that works FOR them, not against them
 
 ---
 
@@ -116,30 +201,44 @@ Keep this somewhere safe (write it down, save in password manager). It's your ba
 
 ### "Can Hushh employees read my data?"
 
-**No.** Your data is encrypted with YOUR passphrase. We never see the passphrase.
+**No.** Your data is encrypted with YOUR passphrase, on YOUR device. We never see the passphrase or your data.
+
+### "How is Kai different from other investing apps?"
+
+1. **Runs on-device**: Analysis never leaves your phone
+2. **Shows the debate**: Three agents discuss, you see why
+3. **Receipts, not ratings**: Sources, math, dissent for every recommendation
+4. **Educational only**: We don't give investment advice
 
 ### "What if Hushh goes out of business?"
 
-You can export all your data anytime. It's YOUR data.
+You can export all your data anytime. Decision artifacts are stored on-device. It's YOUR data.
 
 ### "Is this really free?"
 
-The basic vault is free. Premium features (more storage, advanced agents) will be paid.
+Basic features are free. Pro features (advanced analysis, priority processing) will be subscription-based.
 
 ### "Why should I trust you?"
 
-- The code is open source (anyone can verify)
+- Data stays on YOUR device by default (local-first)
 - We use industry-standard encryption
 - We never sell your data (that's literally our entire point)
+- Every decision has a complete audit trail
 
 ---
 
 ## Getting Started
 
-1. Go to [hushh.ai](https://hushh.ai)
-2. Click "Login with Google"
+1. Download Hushh from the App Store (iOS) or Play Store (Android)
+2. Sign in with Google
 3. Create a strong passphrase
 4. **Save your recovery key!**
-5. Start talking to agents
+5. Set your risk profile (for Kai)
+6. Save your favorite locations (for Food & Dining)
+7. Start using AI that actually works for you
 
-That's it. You now own your data.
+That's it. Private AI in your pocket.
+
+---
+
+_Hushh — Because your data should work for you._

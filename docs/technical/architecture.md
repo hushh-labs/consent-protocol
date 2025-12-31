@@ -6,27 +6,118 @@
 
 ## 🎯 Overview
 
-Hushh is a **Consent-First Personal Data Agent System** that gives users complete control over their digital context through cryptographic consent primitives.
+Hushh is a **Consent-First Personal Data Agent System** that gives users complete control over their digital context through cryptographic consent primitives and **on-device AI processing**.
 
 ### Design Philosophy
 
 ```
 "Agents should serve the person — and only when asked to."
+"Your data never leaves your device unless you explicitly choose."
 ```
 
 ### The Stack
 
-| Layer        | Technology                  | Purpose                    |
-| ------------ | --------------------------- | -------------------------- |
-| **Frontend** | Next.js 15, React, Tailwind | User interface             |
-| **Protocol** | HushhMCP (Python)           | Consent tokens, TrustLinks |
-| **API**      | FastAPI                     | Agent chat endpoints       |
-| **Storage**  | PostgreSQL + AES-256-GCM    | Encrypted vault            |
-| **Auth**     | Firebase + PBKDF2           | Identity + Key derivation  |
+| Layer             | Technology                   | Purpose                        |
+| ----------------- | ---------------------------- | ------------------------------ |
+| **On-Device AI**  | MLX (iOS) / Gemma (Android)  | Local LLM inference            |
+| **Local Vault**   | SQLite + AES-256-GCM         | Encrypted on-device storage    |
+| **Local MCP**     | HushhMCP (on-device)         | Consent protocol for system AI |
+| **Frontend**      | Next.js 16, React, Capacitor | User interface                 |
+| **Protocol**      | HushhMCP (Python)            | Consent tokens, TrustLinks     |
+| **API**           | FastAPI                      | Agent chat endpoints (opt-in)  |
+| **Cloud Storage** | PostgreSQL + AES-256-GCM     | Encrypted vault (opt-in sync)  |
+| **Auth**          | Firebase + PBKDF2            | Identity + Key derivation      |
 
 ---
 
-## 🏗️ System Diagram
+## 🏗️ On-Device AI Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           ON-DEVICE AI LAYER                                  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   ┌─────────────────────────────────┐  ┌─────────────────────────────────┐   │
+│   │        iOS (Apple Silicon)       │  │          Android                 │   │
+│   │  ┌────────────────────────────┐  │  │  ┌────────────────────────────┐ │   │
+│   │  │   MLX Framework            │  │  │  │   MediaPipe + Gemma        │ │   │
+│   │  │   • A-series/M-series opt  │  │  │  │   • LLM Inference API      │ │   │
+│   │  │   • Unified Memory Model   │  │  │  │   • LiteRT runtime         │ │   │
+│   │  │   • 4-bit quantization     │  │  │  │   • GPU/NPU acceleration   │ │   │
+│   │  │   • MLX Swift integration  │  │  │  │   • Gemini Nano (14+)      │ │   │
+│   │  └────────────────────────────┘  │  │  └────────────────────────────┘ │   │
+│   └─────────────────────────────────┘  └─────────────────────────────────┘   │
+│                          │                              │                     │
+│                          └──────────────┬───────────────┘                     │
+│                                         ▼                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │            LOCAL MCP SERVER (Offline HushhMCP)                       │   │
+│   │                                                                      │   │
+│   │  • Runs on-device (like Claude Desktop MCP pattern)                 │   │
+│   │  • Connects to Apple Intelligence / Gemini locally                  │   │
+│   │  • Consent-first tool access                                        │   │
+│   │  • JSON-RPC 2.0 / stdio transport                                   │   │
+│   │  • Same protocol as cloud MCP (code reuse)                          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                         │                                     │
+│                                         ▼                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    LOCAL ENCRYPTED VAULT                             │   │
+│   │                                                                      │   │
+│   │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐ │   │
+│   │  │   SQLite DB     │  │   AES-256-GCM   │  │   Keychain/Keystore  │ │   │
+│   │  │   (CoreData)    │  │   Encryption    │  │   (Key Storage)      │ │   │
+│   │  └─────────────────┘  └─────────────────┘  └──────────────────────┘ │   │
+│   │                                                                      │   │
+│   │  ⚠️ Data NEVER leaves device unless user opts-in to cloud sync      │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         │ OPT-IN ONLY
+                                         ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           CLOUD LAYER (OPT-IN)                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │               Cloud Sync (if user enables)                           │   │
+│   │                                                                      │   │
+│   │  • Multi-device sync                                                 │   │
+│   │  • Cloud backup                                                      │   │
+│   │  • E2E encrypted (same BYOK model)                                   │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │               Online Services (per-request consent)                  │   │
+│   │                                                                      │   │
+│   │  • SEC filings retrieval (for Kai Fundamental Agent)                │   │
+│   │  • News APIs (for Kai Sentiment Agent)                              │   │
+│   │  • Restaurant APIs (for Food & Dining ordering)                     │   │
+│   │  • Each external call requires explicit user consent                │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📱 Platform Availability Matrix
+
+| Feature                | Web App | iOS Native        | Android Native     |
+| ---------------------- | ------- | ----------------- | ------------------ |
+| **On-Device LLM**      | ❌      | ✅ MLX            | ✅ Gemma/MediaPipe |
+| **Local SQLite Vault** | ❌      | ✅                | ✅                 |
+| **Local MCP Server**   | ❌      | ✅                | ✅                 |
+| **Cloud Vault**        | ✅      | ✅ (opt-in)       | ✅ (opt-in)        |
+| **Offline Mode**       | ❌      | ✅ Full           | ✅ Full            |
+| **Apple Intelligence** | N/A     | ✅                | N/A                |
+| **Gemini Integration** | N/A     | N/A               | ✅                 |
+| **Biometric Auth**     | ❌      | ✅ FaceID/TouchID | ✅ Fingerprint     |
+
+---
+
+## 🏗️ System Diagram (Web + Cloud Mode)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -114,55 +205,69 @@ Hushh is a **Consent-First Personal Data Agent System** that gives users complet
 
 ---
 
-## 🔐 Consent Protocol Flow
+## 🔐 Local MCP Server (Offline HushhMCP)
 
-### Data Collection Flow
+The on-device MCP server enables Apple Intelligence and Google Gemini to interact with Hushh data locally:
 
 ```
-┌──────────┐   ┌─────────────┐   ┌───────────────┐   ┌────────────────┐   ┌───────────┐
-│   User   │   │   Next.js   │   │  Orchestrator │   │  Domain Agent  │   │   Vault   │
-│          │   │  /api/chat  │   │    (10000)    │   │  (10001/10002) │   │           │
-└────┬─────┘   └──────┬──────┘   └───────┬───────┘   └───────┬────────┘   └─────┬─────┘
-     │                │                   │                   │                  │
-     │ "Set up food"  │                   │                   │                  │
-     │───────────────►│                   │                   │                  │
-     │                │    POST /agent/   │                   │                  │
-     │                │────────chat───────►                   │                  │
-     │                │                   │                   │                  │
-     │                │                   │ Classify intent   │                  │
-     │                │                   │ Create TrustLink  │                  │
-     │                │                   │──────────────────►│                  │
-     │                │                   │                   │                  │
-     │                │◄──────Delegation info + TrustLink─────│                  │
-     │                │                   │                   │                  │
-     │◄───Agent starts conversation───────│                   │                  │
-     │                │                   │                   │                  │
-     │ Multi-turn conversation            │                   │                  │
-     │◄──────────────►│                   │                   │                  │
-     │                │                   │                   │ (collecting data)│
-     │                │                   │                   │                  │
-     │ "Save"         │                   │                   │                  │
-     │───────────────►│                   │                   │                  │
-     │                │───────────────────┼───────────────────►                  │
-     │                │                   │                   │                  │
-     │                │                   │                   │ issue_token()    │
-     │                │                   │                   │──────────────────►
-     │                │                   │                   │                  │
-     │◄────────consent_token + collected_data─────────────────│                  │
-     │                │                   │                   │                  │
-     │ Encrypt locally│                   │                   │                  │
-     │ (vault key)    │                   │                   │                  │
-     │                │                   │                   │                  │
-     │ POST /api/vault/store-preferences──►                   │                  │
-     │ (userId, encrypted_data, consent_token)                │                  │
-     │                │                   │                   │                  │
-     │                │ validate_token()  │                   │                  │
-     │                │───────────────────┼───────────────────┼─────────────────►│
-     │                │                   │                   │                  │
-     │                │                   │                   │ if valid: INSERT │
-     │                │                   │                   │                  │
-     │◄───────────────"Saved successfully"─────────────────────────────────────┘
-     │
+┌─────────────────────────────────────────────────────────────────────┐
+│                    LOCAL MCP CONNECTIONS                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   ┌─────────────────┐              ┌─────────────────┐              │
+│   │ Apple           │              │ Gemini          │              │
+│   │ Intelligence    │◄────────────►│ (on Android)    │              │
+│   │ (Siri, etc.)    │              │                 │              │
+│   └────────┬────────┘              └────────┬────────┘              │
+│            │                                │                        │
+│            │     JSON-RPC 2.0 / stdio       │                        │
+│            │                                │                        │
+│            ▼                                ▼                        │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                  LOCAL HUSHH MCP SERVER                      │   │
+│   │                                                              │   │
+│   │  Tools:                                                      │   │
+│   │  • request_consent          (prompt user for permission)     │   │
+│   │  • validate_token           (verify consent token)           │   │
+│   │  • get_food_preferences     (read dietary data)              │   │
+│   │  • get_professional_profile (read work data)                 │   │
+│   │  • get_kai_decisions        (read investment history)        │   │
+│   │  • delegate_to_agent        (A2A delegation)                 │   │
+│   │                                                              │   │
+│   │  Resources:                                                  │   │
+│   │  • hushh://version                                           │   │
+│   │  • hushh://compliance                                        │   │
+│   │  • hushh://scopes                                            │   │
+│   └──────────────────────────┬──────────────────────────────────┘   │
+│                              │                                       │
+│                              ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                     LOCAL SQLITE VAULT                       │   │
+│   │                                                              │   │
+│   │  • Encrypted with user's passphrase (PBKDF2 → AES-256)       │   │
+│   │  • Never synced unless user opts in                          │   │
+│   │  • Same schema as cloud vault                                │   │
+│   │  • iOS: Keychain for key storage                             │   │
+│   │  • Android: EncryptedSharedPreferences                       │   │
+│   └─────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Example: Siri + Hushh Integration
+
+```
+User: "Hey Siri, what should I have for dinner based on my preferences?"
+
+Apple Intelligence → Local HushhMCP Server
+                  → request_consent(scope: "vault.read.food")
+                  → User approves via FaceID
+                  → get_food_preferences(consent_token)
+                  → Returns: {vegetarian: true, budget: $30}
+
+Apple Intelligence → Generates contextual response
+
+⚠️ No data ever leaves the device. Siri gets the answer locally.
 ```
 
 ---
@@ -183,9 +288,10 @@ User Passphrase
       ▼
 AES-256 Vault Key
       │
-      ├── Stored in React Context (memory only, XSS protection)
-      ├── Session cookie (httpOnly, Firebase Admin SDK)
-      └── NEVER stored in sessionStorage or sent to server
+      ├── iOS: Stored in Keychain (SecureEnclave where available)
+      ├── Android: Stored in EncryptedSharedPreferences (Keystore)
+      ├── Web: React Context (memory only, XSS protection)
+      └── NEVER stored in plaintext or transmitted
 ```
 
 ### Recovery Key Flow
@@ -204,7 +310,83 @@ AES-256 Recovery Key
       ▼
 Encrypt(Vault Key, Recovery Key) → recovery_encrypted_vault_key
       │
-      └── Stored in database (allows key recovery)
+      └── Stored locally (or cloud if sync enabled)
+```
+
+---
+
+## 🔐 Authentication Security Layers
+
+### Four-Layer Security Model
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AUTHENTICATION LAYERS                         │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer 1: Device Auth      → IDENTITY (FaceID/TouchID/PIN)       │
+│ Layer 2: Firebase Auth    → ACCOUNT (who you are)               │
+│ Layer 3: Passphrase       → KNOWLEDGE (zero-knowledge vault)    │
+│ Layer 4: Consent Token    → PERMISSION (what agents can access) │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## ⚖️ Legal & Compliance (USA)
+
+### CCPA/CPRA Compliance (California)
+
+| Requirement           | Hushh Implementation                               |
+| --------------------- | -------------------------------------------------- |
+| **Right to Know**     | User dashboard shows all collected data categories |
+| **Right to Delete**   | One-tap vault deletion, both local and cloud       |
+| **Right to Opt-Out**  | Cloud sync is opt-in; local-only is default        |
+| **Data Minimization** | Agents collect only data necessary for function    |
+| **Transparency**      | Consent prompts explain exactly what and why       |
+| **ADMT Disclosure**   | AI decision explanations in Kai decision cards     |
+
+### On-Device Privacy Advantage
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CCPA COMPLIANCE BY DESIGN                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   LOCAL-ONLY MODE (Default):                                     │
+│   • Data never transmitted = No "sale" under CCPA                │
+│   • No third-party sharing = No opt-out required                 │
+│   • User has complete control via device storage                 │
+│                                                                  │
+│   CLOUD SYNC (Opt-In):                                           │
+│   • E2E encrypted = Server cannot read data                      │
+│   • No sharing with third parties                                │
+│   • User can delete at any time                                  │
+│   • Clear consent before enabling                                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### SEC Considerations (Agent Kai)
+
+> ⚠️ **IMPORTANT**: Agent Kai provides informational analysis, NOT investment advice.
+
+| Regulatory Aspect          | Kai Position                                      |
+| -------------------------- | ------------------------------------------------- |
+| **Investment Adviser Act** | Kai is NOT a registered investment adviser        |
+| **Fiduciary Duty**         | Kai does NOT execute trades or manage portfolios  |
+| **Disclaimers**            | Every decision card includes required disclaimers |
+| **No Recommendations**     | Kai presents analysis; user makes all decisions   |
+| **Audit Trail**            | Complete debate history available for user review |
+
+Required Disclaimer (shown on every decision card):
+
+```
+⚠️ DISCLAIMER: Agent Kai provides educational analysis only. This is NOT
+investment advice. The information presented does not constitute a
+recommendation to buy, sell, or hold any security. Past performance does
+not guarantee future results. Always consult a licensed financial advisor
+before making investment decisions. Hushh, Inc. is not a registered
+investment adviser with the SEC or any state securities regulatory authority.
 ```
 
 ---
@@ -216,8 +398,9 @@ Encrypt(Vault Key, Recovery Key) → recovery_encrypted_vault_key
 | **10000** | Orchestrator  | Intent detection, routing                             |
 | **10001** | Food & Dining | `VAULT_WRITE_FOOD`, `VAULT_READ_FOOD`                 |
 | **10002** | Professional  | `VAULT_WRITE_PROFESSIONAL`, `VAULT_READ_PROFESSIONAL` |
-| 10003     | Identity      | `AGENT_IDENTITY_VERIFY`                               |
-| 10004     | Shopping      | `AGENT_SHOPPING_PURCHASE`                             |
+| **10003** | Agent Kai     | `VAULT_READ_FINANCE`, `AGENT_KAI_ANALYZE`             |
+| 10004     | Identity      | `AGENT_IDENTITY_VERIFY`                               |
+| 10005     | Shopping      | `AGENT_SHOPPING_PURCHASE`                             |
 | **8000**  | FastAPI Dev   | All agent endpoints                                   |
 
 ---
@@ -260,73 +443,12 @@ def verify_trust_link(link) -> bool:
 
 ---
 
-## 🔐 Authentication Security Layers
-
-### Three-Layer Security Model
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AUTHENTICATION LAYERS                         │
-├─────────────────────────────────────────────────────────────────┤
-│ Layer 1: Firebase Auth     → IDENTITY (who you are)             │
-│ Layer 2: Session Cookie    → ROUTE ACCESS (httpOnly, secure)    │
-│ Layer 3: Vault Key         → DATA ACCESS (memory only, BYOK)    │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Session Cookie (Firebase Admin SDK)
-
-| Approach            | XSS Vulnerable | Cross-Tab | Recommended |
-| ------------------- | -------------- | --------- | ----------- |
-| sessionStorage      | ✅ Yes         | ❌ No     | ❌          |
-| localStorage        | ✅ Yes         | ✅ Yes    | ❌          |
-| **httpOnly Cookie** | ❌ No          | ✅ Yes    | ✅          |
-
-```typescript
-// POST /api/auth/session
-cookies().set("hushh_session", sessionCookie, {
-  httpOnly: true,      // JavaScript cannot read
-  secure: true,        // HTTPS only
-  sameSite: "lax",
-  path: "/",
-});
-```
-
-### Vault Key (Memory Only)
-
-The vault key is stored in **React Context (memory)**, NOT sessionStorage:
-
-```typescript
-// ❌ OLD (XSS vulnerable)
-sessionStorage.setItem("vault_key", vaultKeyHex);
-
-// ✅ NEW (XSS protected)
-const { unlockVault } = useVault();
-unlockVault(vaultKeyHex);  // Stored in React state only
-```
-
-**Security Benefits:**
-- XSS cannot steal vault key
-- Page refresh requires re-authentication
-- Each tab has separate vault state
-
-### Key Files
-
-| File                            | Purpose                       |
-| ------------------------------- | ----------------------------- |
-| `lib/firebase/config.ts`        | Client-side Firebase          |
-| `lib/firebase/admin.ts`         | Server-side Firebase Admin    |
-| `lib/vault/vault-context.tsx`   | Memory-only vault key storage |
-| `app/api/auth/session/route.ts` | httpOnly cookie management    |
-| `middleware.ts`                 | Route protection              |
-
----
-
 ## 🔒 Security Compliance
 
 | Principle          | Implementation                                        |
 | ------------------ | ----------------------------------------------------- |
 | **Consent First**  | `issue_token()` before any vault write                |
+| **Local First**    | On-device SQLite is default; cloud is opt-in          |
 | **Scoped Access**  | Domain-specific scopes enforced by `validate_token()` |
 | **Data Vaulted**   | AES-256-GCM encryption, server only sees ciphertext   |
 | **Zero-Knowledge** | Passphrase → PBKDF2 → Key (client-only)               |
@@ -340,6 +462,7 @@ unlockVault(vaultKeyHex);  // Stored in React state only
 consent-protocol/
 ├── server.py              # FastAPI entry point (80 lines)
 ├── mcp_server.py          # MCP Server entry point (170 lines)
+├── local_mcp_server.py    # On-device MCP server (NEW)
 ├── consent_db.py          # DB compatibility shim
 │
 ├── api/                   # FastAPI Route Modules
@@ -363,6 +486,7 @@ consent-protocol/
 │
 ├── db/                    # Database Modules
 │   ├── connection.py      # Pool management
+│   ├── local_sqlite.py    # Local SQLite (NEW)
 │   ├── consent.py         # Consent event insertion
 │   ├── queries.py         # Pending/active/audit queries
 │   └── migrate.py         # Modular migration script
@@ -374,7 +498,8 @@ consent-protocol/
     ├── agents/
     │   ├── orchestrator/  # Intent routing
     │   ├── food_dining/   # HushhFoodDiningAgent
-    │   └── professional_profile/
+    │   ├── professional_profile/
+    │   └── kai/           # Agent Kai (NEW)
     ├── consent/
     │   └── token.py       # issue, validate, revoke
     ├── trust/
@@ -395,6 +520,7 @@ consent-protocol/
 ```bash
 POST /api/agents/food-dining/chat
 POST /api/agents/professional-profile/chat
+POST /api/agents/kai/analyze           # Agent Kai (NEW)
 ```
 
 ### Developer API (v1)
@@ -421,4 +547,4 @@ python db/migrate.py --status                  # Show summary
 
 ---
 
-_Version: 3.0 | Updated: December 2025 | Modular Architecture Release_
+_Version: 4.0 | Updated: December 2025 | On-Device AI + Legal Compliance Release_
