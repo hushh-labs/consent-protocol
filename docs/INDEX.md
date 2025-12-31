@@ -13,6 +13,18 @@
 
 ---
 
+## Vision Documentation
+
+> **The philosophical foundation and product vision for Hushh**
+
+| Document                             | Description                                          |
+| ------------------------------------ | ---------------------------------------------------- |
+| [Vision Overview](vision/README.md)  | Core philosophy and principles                       |
+| [Agent Kai](vision/kai/)             | **PRIMARY** — Explainable investing copilot for UHNW |
+| [Food & Dining](vision/food-dining/) | Agentic commerce with MCP + AP2                      |
+
+---
+
 ## Technical Documentation
 
 ### Core
