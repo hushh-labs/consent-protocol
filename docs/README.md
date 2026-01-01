@@ -204,6 +204,19 @@ local_db.insert(encrypted_data)
 
 ## ⚖️ Legal & Compliance
 
+### Entity Structure
+
+<!-- TODO: LEGAL REVIEW REQUIRED - Finalize entity names after legal paperwork -->
+
+| Entity                         | Website       | Role                                     |
+| ------------------------------ | ------------- | ---------------------------------------- |
+| **[LEGAL ENTITY NAME - TBD]**  | [TBD]         | Operating entity for Agent Kai           |
+| **Hushh Technology Fund L.P.** | hushhtech.com | Delaware L.P. hedge fund (SEC compliant) |
+
+> [!WARNING] > **PENDING LEGAL REVIEW**: The exact legal entity structure will be finalized upon completion of partnership/entity paperwork.
+
+Agent Kai is an **educational tool**. It is NOT part of Hushh Technology Fund L.P.'s investment advisory services.
+
 ### USA Regulations
 
 | Regulation              | How Hushh Complies                                             |
