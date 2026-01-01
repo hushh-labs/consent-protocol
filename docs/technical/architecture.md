@@ -385,8 +385,12 @@ Required Disclaimer (shown on every decision card):
 investment advice. The information presented does not constitute a
 recommendation to buy, sell, or hold any security. Past performance does
 not guarantee future results. Always consult a licensed financial advisor
-before making investment decisions. Hushh, Inc. is not a registered
-investment adviser with the SEC or any state securities regulatory authority.
+before making investment decisions. [LEGAL ENTITY NAME - TBD] is not a
+registered investment adviser with the SEC or any state securities regulatory
+authority. Agent Kai is not part of Hushh Technology Fund L.P.'s investment
+services.
+
+<!-- TODO: LEGAL REVIEW - Replace [LEGAL ENTITY NAME - TBD] with final entity -->
 ```
 
 ---
