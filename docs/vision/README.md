@@ -149,6 +149,21 @@ People who are:
 
 ## ⚖️ Regulatory Compliance
 
+### Entity Structure
+
+<!-- TODO: LEGAL REVIEW REQUIRED - Finalize entity names after legal paperwork -->
+
+| Entity                         | Website       | Role                                     |
+| ------------------------------ | ------------- | ---------------------------------------- |
+| **[LEGAL ENTITY NAME - TBD]**  | [TBD]         | Operating entity for Agent Kai           |
+| **Hushh Technology Fund L.P.** | hushhtech.com | Delaware L.P. hedge fund (SEC compliant) |
+
+> **PENDING LEGAL REVIEW**: The exact legal entity structure will be finalized upon completion of partnership/entity paperwork.
+
+Agent Kai is an **educational tool**. It is NOT part of Hushh Technology Fund L.P.'s investment advisory services.
+
+### Regulations
+
 | Regulation              | Hushh Approach                            |
 | ----------------------- | ----------------------------------------- |
 | **CCPA/CPRA**           | Local-first storage = no "sale" of data   |
