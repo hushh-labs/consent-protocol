@@ -166,6 +166,21 @@ Keep this somewhere safe (write it down, save in password manager). It's your ba
 
 ## ⚖️ Legal & Privacy Compliance
 
+### About the Companies
+
+<!-- TODO: LEGAL REVIEW REQUIRED - Finalize entity names after legal paperwork -->
+
+Hushh is built through a collaboration between entities in the Hushh ecosystem:
+
+| Entity                         | Website       | Role                                     |
+| ------------------------------ | ------------- | ---------------------------------------- |
+| **[LEGAL ENTITY NAME - TBD]**  | [TBD]         | Operating entity for Agent Kai           |
+| **Hushh Technology Fund L.P.** | hushhtech.com | Delaware L.P. hedge fund (SEC compliant) |
+
+> **PENDING LEGAL REVIEW**: The exact legal entity structure will be finalized upon completion of partnership/entity paperwork.
+
+Agent Kai is an **educational tool**. It is NOT part of Hushh Technology Fund L.P.'s investment advisory services.
+
 ### USA Regulations
 
 | Regulation                 | How Hushh Complies                             |
