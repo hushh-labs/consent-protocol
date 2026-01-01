@@ -21,9 +21,41 @@
 ## ⚠️ Important Legal Notice
 
 > [!CAUTION] > **Agent Kai is an EDUCATIONAL TOOL, NOT a registered investment adviser.**
->
-> The information provided by Kai is for informational and educational purposes only. It does NOT constitute investment advice, a recommendation, or an offer to buy or sell any security. Hushh, Inc. is not registered with the SEC or any state securities regulatory authority as an investment adviser.
->
+
+### Entity Structure
+
+<!-- TODO: LEGAL REVIEW REQUIRED - Finalize entity names after legal paperwork -->
+
+Agent Kai is developed through a collaboration between entities in the Hushh ecosystem:
+
+| Entity                         | Website       | Role                                     |
+| ------------------------------ | ------------- | ---------------------------------------- |
+| **[LEGAL ENTITY NAME - TBD]**  | [TBD]         | Operating entity for Agent Kai           |
+| **Hushh Technology Fund L.P.** | hushhtech.com | Delaware L.P. hedge fund (SEC compliant) |
+
+> [!WARNING] > **PENDING LEGAL REVIEW**: The exact legal entity operating Agent Kai will be finalized upon completion of partnership/entity paperwork. This section will be updated accordingly.
+
+### Educational Tool Disclaimer
+
+Agent Kai is provided as an **educational and informational tool**. It is NOT part of Hushh Technology Fund L.P.'s investment advisory or fund management services.
+
+**The information provided by Kai:**
+
+- Is for informational and educational purposes only
+- Does NOT constitute investment advice, recommendations, or offers to buy/sell securities
+- Should NOT be relied upon for making investment decisions
+- Is NOT a solicitation for Hushh Technology Fund L.P. or any investment product
+
+### Regulatory Status
+
+| Aspect                         | Status                                               |
+| ------------------------------ | ---------------------------------------------------- |
+| **Agent Kai**                  | Educational tool, NOT investment advice              |
+| **Operating Entity**           | [PENDING LEGAL FINALIZATION]                         |
+| **Hushh Technology Fund L.P.** | SEC compliant (Reg D, ICA exemptions), Delaware L.P. |
+
+Agent Kai's operating entity is NOT registered with the SEC or any state securities regulatory authority as an investment adviser.
+
 > **Always consult a licensed financial professional before making investment decisions.**
 
 ---
@@ -302,6 +334,8 @@ The culmination of the debate process is a comprehensive **Decision Card** that 
 
 ### Required Disclaimer on Every Decision Card
 
+<!-- TODO: LEGAL REVIEW - Replace [LEGAL ENTITY NAME - TBD] with final entity -->
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  ⚠️ IMPORTANT DISCLOSURE                                                 │
@@ -309,7 +343,8 @@ The culmination of the debate process is a comprehensive **Decision Card** that 
 │  This analysis is provided for EDUCATIONAL PURPOSES ONLY.                │
 │                                                                           │
 │  • This is NOT investment advice                                         │
-│  • Hushh, Inc. is NOT a registered investment adviser                   │
+│  • [LEGAL ENTITY NAME - TBD] is NOT a registered investment adviser     │
+│  • Agent Kai is NOT part of Hushh Technology Fund L.P.'s services       │
 │  • Past performance does not guarantee future results                    │
 │  • You may lose money; there is no assurance of profit                  │
 │  • Always consult a licensed financial advisor before investing         │
@@ -450,6 +485,22 @@ class KaiConsentScope:
 
 ## ⚖️ Regulatory Compliance (USA)
 
+### Entity Structure
+
+<!-- TODO: LEGAL REVIEW REQUIRED - Finalize entity names after legal paperwork -->
+
+Agent Kai is developed through a collaboration between entities in the Hushh ecosystem:
+
+| Entity                         | Role in Agent Kai                 | Regulatory Status                    |
+| ------------------------------ | --------------------------------- | ------------------------------------ |
+| **[LEGAL ENTITY NAME - TBD]**  | Develops and operates Agent Kai   | [PENDING LEGAL FINALIZATION]         |
+| **Hushh Technology Fund L.P.** | Related entity in Hushh ecosystem | SEC compliant (Reg D), Delaware L.P. |
+
+> [!IMPORTANT]
+> Agent Kai is NOT part of Hushh Technology Fund L.P.'s investment services. The fund's SEC registration relates to its own fund operations, not to Agent Kai.
+
+> [!WARNING] > **PENDING LEGAL REVIEW**: The exact legal entity operating Agent Kai will be finalized upon completion of partnership/entity paperwork.
+
 ### SEC Considerations
 
 | Aspect                             | Kai's Position                                      |
@@ -459,6 +510,7 @@ class KaiConsentScope:
 | **Suitability**                    | Risk personas are user-selected, not Kai-determined |
 | **Disclosure**                     | Every decision card includes required disclaimers   |
 | **Audit Trail**                    | Complete debate history available for review        |
+| **Not a Solicitation**             | Kai does NOT solicit for Hushh Technology Fund L.P. |
 
 ### FINRA Compliance Alignment
 
