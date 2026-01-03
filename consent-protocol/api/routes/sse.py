@@ -183,10 +183,17 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
                         "resolved": True
                     })
                 }
+                # Wait briefly to ensure client receives the event before we close connection
+                logger.info(f"✅ Consent resolved for {request_id}, keeping connection open briefly")
+                await asyncio.sleep(2.0)
                 break
             
             await asyncio.sleep(0.5)
             elapsed += 0.5
+            
+            # Keep connection alive every 15s
+            if elapsed % 15 == 0:
+                yield {"comment": "keepalive"}
         
         # Timeout event
         if elapsed >= CONSENT_TIMEOUT_SECONDS:
