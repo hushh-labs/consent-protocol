@@ -69,8 +69,10 @@ async def wait_for_consent_via_sse(
                 import time
                 start_time = time.time()
                 
-                buffer = ""
-                async for chunk in response.aiter_text():
+                current_event_type = None
+                current_event_data = []
+                
+                async for line in response.aiter_lines():
                     # Check client-side timeout
                     if time.time() - start_time > timeout_seconds:
                         logger.warning(f"⏰ [SSE] Client-side timeout after {timeout_seconds}s")
@@ -80,27 +82,18 @@ async def wait_for_consent_via_sse(
                             scope=scope,
                             message=f"Consent request timed out after {timeout_seconds} seconds"
                         )
+
+                    line = line.strip()
                     
-                    buffer += chunk
-                    
-                    # Parse SSE events from buffer
-                    while "\n\n" in buffer:
-                        event_block, buffer = buffer.split("\n\n", 1)
-                        
-                        event_type = None
-                        event_data = None
-                        
-                        for line in event_block.split("\n"):
-                            if line.startswith("event:"):
-                                event_type = line[6:].strip()
-                            elif line.startswith("data:"):
-                                event_data = line[5:].strip()
-                        
-                        if event_type and event_data:
+                    # Empty line indicates end of event
+                    if not line:
+                        if current_event_type and current_event_data:
+                            # Process complete event
+                            full_data = "\n".join(current_event_data)
                             try:
-                                data = json.loads(event_data)
+                                data = json.loads(full_data)
                                 
-                                if event_type == "consent_resolved":
+                                if current_event_type == "consent_resolved":
                                     action = data.get("action", "")
                                     if action == "CONSENT_GRANTED":
                                         logger.info(f"🎉 [SSE] Consent GRANTED!")
@@ -119,7 +112,7 @@ async def wait_for_consent_via_sse(
                                             message="User denied consent"
                                         )
                                 
-                                elif event_type == "consent_timeout":
+                                elif current_event_type == "consent_timeout":
                                     logger.warning(f"⏰ [SSE] Server-side timeout")
                                     return ConsentResolution(
                                         status="timeout",
@@ -130,6 +123,18 @@ async def wait_for_consent_via_sse(
                                     
                             except json.JSONDecodeError as e:
                                 logger.warning(f"⚠️ [SSE] Failed to parse event data: {e}")
+                        
+                        # Reset for next event
+                        current_event_type = None
+                        current_event_data = []
+                        continue
+                    
+                    # Parse fields
+                    if line.startswith("event:"):
+                        current_event_type = line[6:].strip()
+                    elif line.startswith("data:"):
+                        current_event_data.append(line[5:].strip())
+                    # Comments (starting with :) or other fields are ignored
                 
                 # Connection closed without resolution
                 logger.warning(f"⚠️ [SSE] Connection closed without resolution")
