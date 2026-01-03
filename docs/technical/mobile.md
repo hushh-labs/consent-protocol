@@ -722,4 +722,40 @@ Before releasing mobile updates:
 
 ---
 
-_Last verified: December 31, 2025 | Capacitor 8 | On-Device AI Edition_
+## Web/Native Symmetric API Reference
+
+Native (iOS/Android) and Web use **symmetric patterns** for reliability. Native plugins call Python backend directly; Web routes go through Next.js.
+
+### Endpoint Mapping
+
+| Operation        | Native (Swift/Kotlin)       | Web (Next.js)                 | Backend            |
+| ---------------- | --------------------------- | ----------------------------- | ------------------ |
+| Vault Check      | `POST /db/vault/check`      | `GET /api/vault/check`        | Python → Cloud SQL |
+| Vault Get        | `POST /db/vault/get`        | `GET /api/vault/get`          | Python → Cloud SQL |
+| Vault Setup      | `POST /db/vault/setup`      | `POST /api/vault/setup`       | Python → Cloud SQL |
+| Food Get         | `POST /db/food/get`         | `GET /api/vault/food`         | Python → Cloud SQL |
+| Professional Get | `POST /db/professional/get` | `GET /api/vault/professional` | Python → Cloud SQL |
+| Consent Pending  | `GET /api/consent/pending`  | `GET /api/consent/pending`    | Python             |
+
+### Backend URLs
+
+| Mode       | URL                                                          |
+| ---------- | ------------------------------------------------------------ |
+| Production | `https://consent-protocol-1006304528804.us-central1.run.app` |
+| Local Dev  | `http://localhost:8000`                                      |
+
+Native plugins have `defaultBackendUrl` hardcoded to production. For local testing, pass `backendUrl` parameter.
+
+### Build Configuration (next.config.ts)
+
+```typescript
+// Web/Cloud Run: undefined (server mode with API routes)
+// Capacitor/Mobile: "export" (static HTML, no API routes)
+output: isCapacitorBuild ? "export" : undefined;
+```
+
+> **Note:** Changes to next.config.ts require restarting `npm run dev`.
+
+---
+
+_Last verified: January 2, 2026 | Capacitor 8 | On-Device AI Edition_

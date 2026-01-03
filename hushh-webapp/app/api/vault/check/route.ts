@@ -3,24 +3,24 @@
 /**
  * Check Vault Existence API
  *
- * CONSENT PROTOCOL COMPLIANT:
- * Returns whether a user has a vault set up.
- * Requires Firebase Auth to prevent enumeration attacks.
+ * SYMMETRIC WITH NATIVE:
+ * This route proxies to Python backend /db/vault/check
+ * to maintain consistency with iOS/Android native plugins.
  *
- * Security: User can only check their own vault status.
- *
- * 3-Layer Security:
- * 1. Firebase Auth (identity) - REQUIRED to prevent enumeration
- * 2. BYOK Encryption - N/A (no data returned)
- * 3. Consent Protocol - N/A (this is auth flow, not data access)
+ * Native (Swift/Kotlin): POST /db/vault/check → Python
+ * Web (Next.js): GET /api/vault/check → Python (proxy)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { hasVault } from "@/lib/db";
 import { validateFirebaseToken } from "@/lib/auth/validate";
 import { isDevelopment, logSecurityEvent } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
+
+// Python backend URL (same as native apps use)
+const PYTHON_API_URL =
+  process.env.PYTHON_API_URL ||
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
 
     // =========================================================================
     // FIREBASE AUTH: Identity verification required
-    // Prevents attackers from enumerating which Firebase UIDs have vaults
     // =========================================================================
     const authHeader = request.headers.get("Authorization");
 
@@ -68,12 +67,33 @@ export async function GET(request: NextRequest) {
     }
 
     // =========================================================================
-    // VAULT CHECK: Now authorized
+    // PROXY TO PYTHON BACKEND (Same as native iOS/Android)
     // =========================================================================
-    const vaultExists = await hasVault(userId);
+    const response = await fetch(`${PYTHON_API_URL}/db/vault/check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+      },
+      body: JSON.stringify({ userId }),
+    });
 
-    logSecurityEvent("VAULT_CHECK_SUCCESS", { userId, exists: vaultExists });
-    return NextResponse.json({ hasVault: vaultExists });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[API] Python backend error:", response.status, errorText);
+      return NextResponse.json(
+        { error: "Backend error", hasVault: false },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+
+    logSecurityEvent("VAULT_CHECK_SUCCESS", {
+      userId,
+      exists: data.hasVault,
+    });
+    return NextResponse.json({ hasVault: data.hasVault });
   } catch (error) {
     console.error("[API] Vault check error:", error);
     return NextResponse.json(
