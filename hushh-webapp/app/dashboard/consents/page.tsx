@@ -37,6 +37,7 @@ import { useVault } from "@/lib/vault/vault-context";
 import { useConsentSSE } from "@/lib/consent";
 import { ApiService, getApiBaseUrl } from "@/lib/services/api-service";
 import { getSessionItem } from "@/lib/utils/session-storage";
+import { useConsentActions } from "@/lib/consent";
 import { DataTable } from "@/components/ui/data-table";
 import {
   appColumns,
@@ -466,212 +467,54 @@ export default function ConsentsPage() {
       );
   }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog]);
 
-  const handleApprove = async (requestId: string) => {
-    if (!userId) return;
-    setActionLoading(requestId);
-
-    const promise = (async () => {
-      // Find the pending request to get scope
-      const pendingRequest = pending.find((p) => p.id === requestId);
-      if (!pendingRequest) throw new Error("Pending request not found");
-      console.log("Approving request for scope:", pendingRequest.scope);
-
-      // Use vault key from React context (memory-only, XSS-safe)
-      if (!vaultKey) {
-        console.error("Vault key not found");
-        throw new Error("Vault not unlocked. Please unlock your vault first.");
-      }
-
-      // Fetch the scope data from vault
-      const scopeDataEndpoint = getScopeDataEndpoint(pendingRequest.scope);
-      console.log("Scope data endpoint:", scopeDataEndpoint);
-      let scopeData: Record<string, unknown> = {};
-
-      if (scopeDataEndpoint) {
-        const baseUrl = getApiBaseUrl();
-        const dataResponse = await fetch(
-          `${baseUrl}${scopeDataEndpoint}?userId=${userId}`
-        );
-        console.log("Data fetch response:", dataResponse.status);
-
-        if (dataResponse.ok) {
-          const data = await dataResponse.json();
-
-          // Decrypt the data with vault key
-          const { decryptData } = await import("@/lib/vault/encrypt");
-          const decryptedFields: Record<string, unknown> = {};
-
-          // Handle food/professional domain data format
-          // API returns Record<string, EncryptedPayload> but code expected Array
-          let preferences = data.preferences || data.data || {};
-
-          // Normalize to array if it's an object (Record)
-          if (!Array.isArray(preferences) && typeof preferences === "object") {
-            preferences = Object.entries(preferences).map(
-              ([key, val]: [string, any]) => ({
-                field_name: key,
-                ...val,
-              })
-            );
-          }
-
-          if (Array.isArray(preferences)) {
-            for (const field of preferences) {
-              try {
-                const decrypted = await decryptData(
-                  {
-                    ciphertext: field.ciphertext,
-                    iv: field.iv,
-                    tag: field.tag,
-                    encoding: "base64",
-                    algorithm: "aes-256-gcm",
-                  },
-                  vaultKey
-                );
-                decryptedFields[field.field_name] = JSON.parse(decrypted);
-              } catch {
-                console.warn(`Failed to decrypt field: ${field.field_name}`);
-              }
-            }
-          }
-          scopeData = decryptedFields;
-        }
-      }
-
-      // Generate export key and encrypt the scope data
-      const { generateExportKey, encryptForExport } = await import(
-        "@/lib/vault/export-encrypt"
-      );
-      const exportKey = await generateExportKey();
-      const encrypted = await encryptForExport(
-        JSON.stringify(scopeData),
-        exportKey
-      );
-
-      // Send to server with encrypted data and export key
-      const response = await ApiService.approvePendingConsent({
-        userId,
-        token: requestId, // requestId is effectively the token ID here
-        encryptedData: encrypted.ciphertext,
-        encryptedIv: encrypted.iv,
-        encryptedTag: encrypted.tag,
-        exportKey,
-      } as any); // Type cast as existing method signature might need adjustment or we update the object match
-
-      if (!response.ok) {
-        throw new Error("Failed to approve consent");
-      }
-
-      // Refresh data
-      await Promise.all([
+  // =========================================================================
+  // Unified Actions Hook (Native Compatible)
+  // =========================================================================
+  const refreshAll = useCallback(() => {
+    if (userId) {
+      Promise.all([
         fetchPendingConsents(userId),
-        fetchAuditLog(userId),
         fetchActiveConsents(userId),
+        fetchAuditLog(userId),
       ]);
+    }
+  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog]);
 
-      return "Consent approved successfully";
-    })();
+  const {
+    handleApprove: hookApprove,
+    handleDeny: hookDeny,
+    handleRevoke: hookRevoke,
+  } = useConsentActions({
+    onActionComplete: refreshAll,
+  });
 
-    toast.promise(promise, {
-      loading: "Approving consent...",
-      success: (data) => `✅ ${data}`,
-      error: (err) => `❌ ${err.message}`,
-      duration: 3000,
-      id: requestId, // Use request ID to avoid duplicates
-    });
-
+  const handleApprove = async (requestId: string) => {
+    const pendingRequest = pending.find((p) => p.id === requestId);
+    if (!pendingRequest) {
+      toast.error("Request not found");
+      return;
+    }
+    setActionLoading(requestId);
     try {
-      await promise;
-    } catch (err) {
-      console.error("Error approving consent:", err);
+      await hookApprove(pendingRequest);
     } finally {
       setActionLoading(null);
     }
   };
 
-  // Map scope to data endpoint
-  const getScopeDataEndpoint = (scope: string): string | null => {
-    const scopeMap: Record<string, string> = {
-      // Underscore format
-      vault_read_food: "/api/vault/food",
-      vault_read_professional: "/api/vault/professional",
-      vault_read_finance: "/api/vault/finance",
-
-      // Dot format (MCP standard)
-      "vault.read.food": "/api/vault/food",
-      "vault.read.professional": "/api/vault/professional",
-      "vault.read.finance": "/api/vault/finance",
-    };
-    return scopeMap[scope] || null;
-  };
-
   const handleDeny = async (requestId: string) => {
-    if (!userId) return;
     setActionLoading(requestId);
-
-    const promise = (async () => {
-      const response = await ApiService.denyPendingConsent({
-        userId,
-        token: requestId,
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to deny consent");
-      }
-
-      await Promise.all([fetchPendingConsents(userId), fetchAuditLog(userId)]);
-
-      return "Consent denied successfully";
-    })();
-
-    toast.promise(promise, {
-      loading: "Denying consent...",
-      success: (data) => `❌ ${data}`,
-      error: (err) => `❌ ${err.message}`,
-      duration: 3000,
-      id: requestId,
-    });
-
     try {
-      await promise;
-    } catch (err) {
-      console.error("Error denying consent:", err);
+      await hookDeny(requestId);
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleRevoke = async (scope: string) => {
-    if (!userId) return;
     setActionLoading(`revoke-${scope}`);
-
-    const promise = (async () => {
-      const response = await ApiService.revokeConsent({
-        userId,
-        token: "", // Revoke by scope doesn't use token
-        scope,
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to revoke consent");
-      }
-
-      await Promise.all([fetchActiveConsents(userId), fetchAuditLog(userId)]);
-
-      return "Consent revoked successfully";
-    })();
-
-    toast.promise(promise, {
-      loading: "Revoking consent...",
-      success: (data) => `🔒 ${data}`,
-      error: (err) => `❌ ${err.message}`,
-      duration: 3000,
-    });
-
     try {
-      await promise;
-    } catch (err) {
-      console.error("Error revoking consent:", err);
+      await hookRevoke(scope);
     } finally {
       setActionLoading(null);
     }
