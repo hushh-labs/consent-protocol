@@ -136,8 +136,32 @@ export class ApiService {
     encryptedTag?: string;
     exportKey?: string;
   }): Promise<Response> {
-    // Map token to requestId for backward compatibility
     const requestId = data.requestId || data.token;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { HushhConsent } = await import("@/lib/capacitor");
+        const authToken = await this.getFirebaseToken();
+
+        await HushhConsent.approve({
+          requestId: requestId!,
+          userId: data.userId,
+          encryptedData: data.encryptedData,
+          encryptedIv: data.encryptedIv,
+          encryptedTag: data.encryptedTag,
+          exportKey: data.exportKey,
+          authToken,
+        });
+
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      } catch (e: any) {
+        console.error("[ApiService] Native approvePendingConsent error:", e);
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500,
+        });
+      }
+    }
+
     return apiFetch("/api/consent/pending/approve", {
       method: "POST",
       body: JSON.stringify({
@@ -159,8 +183,28 @@ export class ApiService {
     requestId?: string;
     userId: string;
   }): Promise<Response> {
-    // Map token to requestId for backward compatibility
     const requestId = data.requestId || data.token;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { HushhConsent } = await import("@/lib/capacitor");
+        const authToken = await this.getFirebaseToken();
+
+        await HushhConsent.deny({
+          requestId: requestId!,
+          userId: data.userId,
+          authToken,
+        });
+
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      } catch (e: any) {
+        console.error("[ApiService] Native denyPendingConsent error:", e);
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500,
+        });
+      }
+    }
+
     return apiFetch("/api/consent/pending/deny", {
       method: "POST",
       body: JSON.stringify({ userId: data.userId, requestId }),
@@ -176,6 +220,25 @@ export class ApiService {
     userId: string;
     scope?: string;
   }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { HushhConsent } = await import("@/lib/capacitor");
+        const authToken = await this.getFirebaseToken();
+
+        // Use new revokeConsent that calls the backend
+        await HushhConsent.revokeConsent({
+          userId: data.userId,
+          scope: data.scope || "",
+          authToken,
+        });
+
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      } catch (e: any) {
+        console.error("[ApiService] Native revokeConsent error:", e);
+        return new Response(e.message || "Failed", { status: 500 });
+      }
+    }
+
     return apiFetch("/api/consent/revoke", {
       method: "POST",
       body: JSON.stringify(data),
