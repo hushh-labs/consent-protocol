@@ -118,6 +118,28 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve()
     }
     
+    // MARK: - Revoke Consent (Backend Call)
+    @objc func revokeConsent(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId"),
+              let scope = call.getString("scope") else {
+            call.reject("Missing required parameters: userId and scope")
+            return
+        }
+        
+        let authToken = call.getString("authToken")
+        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        
+        let body: [String: Any] = ["userId": userId, "scope": scope]
+        
+        performRequest(url: "\(backendUrl)/api/consent/revoke", body: body, authToken: authToken) { result, error in
+            if let error = error {
+                call.reject("Backend rejected revoke: \(error)")
+            } else {
+                call.resolve(["success": true])
+            }
+        }
+    }
+    
     // MARK: - Is Token Revoked
     @objc func isTokenRevoked(_ call: CAPPluginCall) {
         guard let token = call.getString("token") else {
@@ -221,7 +243,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         let body: [String: Any] = ["userId": userId, "page": page, "limit": limit]
         
-        performRequest(url: "\(backendUrl)/db/consent/history", body: body, authToken: authToken) { result, error in
+        performRequest(url: "\(backendUrl)/api/consent/history", body: body, authToken: authToken) { result, error in
             if let json = result as? [String: Any] {
                 call.resolve(json)
             } else {
@@ -231,7 +253,35 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     @objc func approve(_ call: CAPPluginCall) {
-        performActionRequest(call: call, endpoint: "approve")
+        guard let requestId = call.getString("requestId") else {
+            call.reject("Missing required parameter: requestId")
+            return
+        }
+        
+        // Optional params
+        let encryptedData = call.getString("encryptedData")
+        let encryptedIv = call.getString("encryptedIv")
+        let encryptedTag = call.getString("encryptedTag")
+        let exportKey = call.getString("exportKey")
+        let userId = call.getString("userId")
+        
+        let authToken = call.getString("authToken")
+        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        
+        var body: [String: Any] = ["requestId": requestId]
+        if let v = userId { body["userId"] = v }
+        if let v = encryptedData { body["encryptedData"] = v }
+        if let v = encryptedIv { body["encryptedIv"] = v }
+        if let v = encryptedTag { body["encryptedTag"] = v }
+        if let v = exportKey { body["exportKey"] = v }
+        
+        performRequest(url: "\(backendUrl)/api/consent/pending/approve", body: body, authToken: authToken) { result, error in
+            if let error = error {
+                call.reject(error)
+            } else {
+                call.resolve(["success": true])
+            }
+        }
     }
     
     @objc func deny(_ call: CAPPluginCall) {
@@ -252,7 +302,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         
-        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["userId": userId], authToken: authToken) { result, error in
+        performRequest(url: "\(backendUrl)/api/consent/\(endpoint)", body: ["userId": userId], authToken: authToken) { result, error in
             if let error = error {
                 call.reject(error)
                 return
@@ -275,12 +325,29 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
+        let userId = call.getString("userId")
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         
-        performRequest(url: "\(backendUrl)/db/consent/\(endpoint)", body: ["requestId": requestId], authToken: authToken) { result, error in
-            // Handle success based on HTTP status or response content
-            call.resolve(["success": error == nil])
+        if endpoint == "deny" {
+            // deny endpoint expects userId and requestId as query parameters
+            guard let uid = userId else {
+                call.reject("Missing required parameter: userId")
+                return
+            }
+            let url = "\(backendUrl)/api/consent/pending/deny?userId=\(uid)&requestId=\(requestId)"
+            performRequest(url: url, body: [:], authToken: authToken) { result, error in
+                call.resolve(["success": error == nil])
+            }
+        } else {
+            // cancel uses body
+            let path = "/api/consent/cancel"
+            var body: [String: Any] = ["requestId": requestId]
+            if let uid = userId { body["userId"] = uid }
+            
+            performRequest(url: "\(backendUrl)\(path)", body: body, authToken: authToken) { result, error in
+                call.resolve(["success": error == nil])
+            }
         }
     }
     
