@@ -98,8 +98,24 @@ export function ConsentSSEProvider({ children }: ConsentSSEProviderProps) {
   const BASE_RECONNECT_DELAY = 2000;
 
   const connect = useCallback(async () => {
-    // Get user ID from platform-aware storage
-    const userId = await getSessionItem("user_id");
+    let userId: string | null = await getSessionItem("user_id");
+
+    // If native and no session ID, try native auth
+    if (!userId) {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (Capacitor.isNativePlatform()) {
+          const { HushhAuth } = await import("@/lib/capacitor");
+          const { user } = await HushhAuth.getCurrentUser();
+          if (user) {
+            userId = user.id;
+          }
+        }
+      } catch (e) {
+        console.warn(" Failed to get native user for SSE:", e);
+      }
+    }
+
     if (!userId) {
       // console.log("🔌 [SSE] No user_id found, skipping connection");
       setConnectionState("disconnected");
