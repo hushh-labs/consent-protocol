@@ -135,6 +135,52 @@ export interface HushhConsentPlugin {
   verifyTrustLink(
     options: VerifyTrustLinkOptions
   ): Promise<VerifyTrustLinkResult>;
+
+  // ==================== Backend API Methods ====================
+
+  getPending(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ consents: any[] }>;
+
+  getActive(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{ consents: any[] }>;
+
+  getHistory(options: {
+    userId: string;
+    authToken?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: any[] }>;
+
+  approve(options: {
+    requestId: string;
+    userId?: string;
+    encryptedData?: string;
+    encryptedIv?: string;
+    encryptedTag?: string;
+    exportKey?: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
+
+  deny(options: {
+    requestId: string;
+    userId: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
+
+  cancel(options: {
+    requestId: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
+
+  revokeConsent(options: {
+    userId: string;
+    scope: string;
+    authToken?: string;
+  }): Promise<{ success: boolean }>;
 }
 
 export const HushhConsent = registerPlugin<HushhConsentPlugin>("HushhConsent", {

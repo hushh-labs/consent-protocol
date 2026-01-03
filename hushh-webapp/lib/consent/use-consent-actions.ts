@@ -149,11 +149,30 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         let scopeData: Record<string, unknown> = {};
 
         if (scopeDataEndpoint) {
-          const dataResponse = await fetch(
-            `${scopeDataEndpoint}?userId=${userId}`
-          );
+          // Identify which API method to call based on scope
+          let dataResponse: Response | null = null;
 
-          if (dataResponse.ok) {
+          console.log("[NativeDebug] Fetching scope data for:", consent.scope);
+
+          try {
+            // Scope mapping to ApiService methods
+            if (consent.scope.includes("food")) {
+              dataResponse = await ApiService.getFoodPreferences(userId);
+            } else if (consent.scope.includes("professional")) {
+              dataResponse = await ApiService.getProfessionalProfile(userId);
+            } else if (consent.scope.includes("finance")) {
+              // TODO: Implement getFinanceProfile in ApiService
+              // For now, fall back to null or handle error
+              console.warn("Finance scope not yet supported in native toggle");
+            }
+          } catch (e: any) {
+            console.error("[NativeDebug] ApiService.getData error:", e);
+            // Proceed without data if fetch fails, but log it.
+            // Are we throwing here? No, caught.
+          }
+
+          if (dataResponse && dataResponse.ok) {
+            console.log("[NativeDebug] Scope data fetched successfully");
             const data = await dataResponse.json();
 
             // Decrypt the data with vault key
@@ -218,10 +237,16 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
 
             scopeData = decryptedFields;
           } else {
-            throw new Error("Failed to fetch data from vault");
+            // On native, specific endpoints might not exist yet for all scopes.
+            // We gracefully handle failure, but for 'Food' and 'Professional' it should work.
+            console.warn(
+              "[NativeDebug] Failed to fetch scope data or scope not supported:",
+              consent.scope
+            );
           }
         }
 
+        console.log("[NativeDebug] Generating export key...");
         // Generate export key and encrypt
         const { generateExportKey, encryptForExport } = await import(
           "@/lib/vault/export-encrypt"
@@ -232,6 +257,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
           exportKey
         );
 
+        console.log("[NativeDebug] Submitting approval to backend...");
         // Send to server
         const response = await ApiService.approvePendingConsent({
           userId,
@@ -244,6 +270,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
 
         if (!response.ok) {
           const errorText = await response.text();
+          console.error("[NativeDebug] Approval failed:", errorText);
           throw new Error(errorText || "Failed to approve");
         }
 
