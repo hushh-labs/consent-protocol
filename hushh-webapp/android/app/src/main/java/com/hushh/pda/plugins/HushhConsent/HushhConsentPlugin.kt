@@ -145,6 +145,63 @@ class HushhConsentPlugin : Plugin() {
         call.resolve()
     }
 
+    @PluginMethod
+    fun revokeConsent(call: PluginCall) {
+        val userId = call.getString("userId")
+        val scope = call.getString("scope")
+        
+        if (userId == null || scope == null) {
+            call.reject("Missing required parameters: userId and scope")
+            return
+        }
+
+        val authToken = call.getString("authToken")
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val url = "$backendUrl/api/consent/revoke"
+
+        Log.d(TAG, "🔒 [revokeConsent] Revoking consent for scope: $scope")
+
+        Thread {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("userId", userId)
+                    put("scope", scope)
+                }
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                
+                val requestBuilder = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+
+                if (authToken != null) {
+                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                }
+
+                val response = httpClient.newCall(requestBuilder.build()).execute()
+                val success = response.isSuccessful
+                val responseBody = response.body?.string() ?: ""
+
+                if (!success) {
+                    Log.e(TAG, "❌ [revokeConsent] Backend error: $responseBody")
+                }
+                
+                activity.runOnUiThread {
+                    if (success) {
+                        call.resolve(JSObject().put("success", true))
+                    } else {
+                        call.reject("Backend rejected revoke: $responseBody")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [revokeConsent] Error: ${e.message}")
+                activity.runOnUiThread {
+                    call.reject("Failed to revoke consent: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
     // ==================== Is Token Revoked ====================
 
     @PluginMethod
@@ -405,15 +462,30 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
+        // Optional encrypted payload
+        val encryptedData = call.getString("encryptedData")
+        val encryptedIv = call.getString("encryptedIv")
+        val encryptedTag = call.getString("encryptedTag")
+        val exportKey = call.getString("exportKey")
+        val userId = call.getString("userId") // Optional, but good context
+
         val authToken = call.getString("authToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
-        val url = "$backendUrl/db/consent/approve"
+        val url = "$backendUrl/api/consent/pending/approve"
 
         Log.d(TAG, "✅ [approve] Approving consent request: $requestId")
 
         Thread {
             try {
-                val jsonBody = JSONObject().apply { put("requestId", requestId) }
+                val jsonBody = JSONObject().apply {
+                    put("requestId", requestId)
+                    if (userId != null) put("userId", userId)
+                    if (encryptedData != null) put("encryptedData", encryptedData)
+                    if (encryptedIv != null) put("encryptedIv", encryptedIv)
+                    if (encryptedTag != null) put("encryptedTag", encryptedTag)
+                    if (exportKey != null) put("exportKey", exportKey)
+                }
+                
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
                 
                 val requestBuilder = Request.Builder()
@@ -427,9 +499,18 @@ class HushhConsentPlugin : Plugin() {
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
+                val responseBody = response.body?.string() ?: ""
+
+                if (!success) {
+                    Log.e(TAG, "❌ [approve] Backend error: $responseBody")
+                }
                 
                 activity.runOnUiThread {
-                    call.resolve(JSObject().put("success", success))
+                    if (success) {
+                        call.resolve(JSObject().put("success", true))
+                    } else {
+                        call.reject("Backend rejected approval: $responseBody")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [approve] Error: ${e.message}")
@@ -443,21 +524,24 @@ class HushhConsentPlugin : Plugin() {
     @PluginMethod
     fun deny(call: PluginCall) {
         val requestId = call.getString("requestId")
-        if (requestId == null) {
-            call.reject("Missing required parameter: requestId")
+        val userId = call.getString("userId")
+        
+        if (requestId == null || userId == null) {
+            call.reject("Missing required parameters: requestId and userId")
             return
         }
 
         val authToken = call.getString("authToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
-        val url = "$backendUrl/db/consent/deny"
+        // Python backend expects userId and requestId as query parameters
+        val url = "$backendUrl/api/consent/pending/deny?userId=$userId&requestId=$requestId"
 
-        Log.d(TAG, "❌ [deny] Denying consent request: $requestId")
+        Log.d(TAG, "❌ [deny] Denying consent request: $requestId for user: $userId")
 
         Thread {
             try {
-                val jsonBody = JSONObject().apply { put("requestId", requestId) }
-                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                // POST with empty body since params are in URL
+                val requestBody = "".toRequestBody("application/json".toMediaType())
                 
                 val requestBuilder = Request.Builder()
                     .url(url)
@@ -470,9 +554,18 @@ class HushhConsentPlugin : Plugin() {
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
+                val responseBody = response.body?.string() ?: ""
+                
+                if (!success) {
+                    Log.e(TAG, "❌ [deny] Backend error: $responseBody")
+                }
                 
                 activity.runOnUiThread {
-                    call.resolve(JSObject().put("success", success))
+                    if (success) {
+                        call.resolve(JSObject().put("success", true))
+                    } else {
+                        call.reject("Backend rejected deny: $responseBody")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [deny] Error: ${e.message}")
@@ -493,7 +586,7 @@ class HushhConsentPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
-        val url = "$backendUrl/db/consent/cancel"
+        val url = "$backendUrl/api/consent/cancel"
 
         Log.d(TAG, "🚫 [cancel] Canceling consent request: $requestId")
 
