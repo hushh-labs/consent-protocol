@@ -18,6 +18,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "issueToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "validateToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "revokeToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "revokeConsent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isTokenRevoked", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "createTrustLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "verifyTrustLink", returnType: CAPPluginReturnPromise),
@@ -378,7 +379,12 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             
             if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                completion(nil, "HTTP Error: \(httpResponse.statusCode)")
+                var errorMsg = "HTTP Error: \(httpResponse.statusCode)"
+                if let data = data, let body = String(data: data, encoding: .utf8) {
+                    errorMsg += " Body: \(body)"
+                }
+                print("❌ [HushhConsent] Request failed: \(url) - \(errorMsg)")
+                completion(nil, errorMsg)
                 return
             }
             
