@@ -128,16 +128,26 @@ export class ApiService {
    * Approve pending consent
    */
   static async approvePendingConsent(data: {
-    token: string;
+    token?: string;
+    requestId?: string;
     userId: string;
     encryptedData?: string;
     encryptedIv?: string;
     encryptedTag?: string;
     exportKey?: string;
   }): Promise<Response> {
+    // Map token to requestId for backward compatibility
+    const requestId = data.requestId || data.token;
     return apiFetch("/api/consent/pending/approve", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        userId: data.userId,
+        requestId,
+        encryptedData: data.encryptedData,
+        encryptedIv: data.encryptedIv,
+        encryptedTag: data.encryptedTag,
+        exportKey: data.exportKey,
+      }),
     });
   }
 
@@ -145,12 +155,15 @@ export class ApiService {
    * Deny pending consent
    */
   static async denyPendingConsent(data: {
-    token: string;
+    token?: string;
+    requestId?: string;
     userId: string;
   }): Promise<Response> {
+    // Map token to requestId for backward compatibility
+    const requestId = data.requestId || data.token;
     return apiFetch("/api/consent/pending/deny", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ userId: data.userId, requestId }),
     });
   }
 

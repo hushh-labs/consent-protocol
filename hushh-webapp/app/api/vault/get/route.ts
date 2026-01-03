@@ -3,26 +3,24 @@
 /**
  * Get Vault Key Metadata API
  *
- * CONSENT PROTOCOL COMPLIANT:
- * Returns encrypted vault key metadata (salt, iv, encrypted key).
- * Used during login/unlock flow.
+ * SYMMETRIC WITH NATIVE:
+ * This route proxies to Python backend /db/vault/get
+ * to maintain consistency with iOS/Android native plugins.
  *
- * Security: Requires Firebase Auth token since this is identity-gated,
- * not data-access-gated. The vault key is still encrypted with the
- * user's passphrase (BYOK) - server can't decrypt it.
- *
- * 3-Layer Security:
- * 1. Firebase Auth (identity) - REQUIRED for this endpoint
- * 2. BYOK Encryption - vault key is AES-encrypted with passphrase
- * 3. Consent Protocol - N/A (this is auth flow, not data access)
+ * Native (Swift/Kotlin): POST /db/vault/get → Python
+ * Web (Next.js): GET /api/vault/get → Python (proxy)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getVaultKey } from "@/lib/db";
 import { validateFirebaseToken } from "@/lib/auth/validate";
 import { isDevelopment, logSecurityEvent } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
+
+// Python backend URL (same as native apps use)
+const PYTHON_API_URL =
+  process.env.PYTHON_API_URL ||
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -65,21 +63,40 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
-
-    // Note: We can't easily verify userId match without parsing the Firebase token
-    // The backend validates this when the token was issued
   }
 
   // =========================================================================
-  // VAULT KEY FETCH: Now authorized
-  // This returns ENCRYPTED vault key - not decrypted! (BYOK model)
+  // PROXY TO PYTHON BACKEND (Same as native iOS/Android)
   // =========================================================================
-  const vault = await getVaultKey(userId);
+  try {
+    const response = await fetch(`${PYTHON_API_URL}/db/vault/get`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+      },
+      body: JSON.stringify({ userId }),
+    });
 
-  if (!vault) {
-    return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+    if (response.status === 404) {
+      return NextResponse.json({ error: "Vault not found" }, { status: 404 });
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[API] Python backend error:", response.status, errorText);
+      return NextResponse.json(
+        { error: "Backend error" },
+        { status: response.status }
+      );
+    }
+
+    const vault = await response.json();
+
+    logSecurityEvent("VAULT_KEY_SUCCESS", { userId });
+    return NextResponse.json(vault);
+  } catch (error) {
+    console.error("[API] Vault get error:", error);
+    return NextResponse.json({ error: "Failed to get vault" }, { status: 500 });
   }
-
-  logSecurityEvent("VAULT_KEY_SUCCESS", { userId });
-  return NextResponse.json(vault);
 }

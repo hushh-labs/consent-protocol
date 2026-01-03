@@ -1,92 +1,98 @@
-# Agent Kai — v0 Investor Onboarding
+# Personal Agent Kai by Hushh Technologies — v0
 
-> Ship an onboarding flow that collects investor profile data and prepares users for Kai analysis.
-
----
-
-## v0 Scope
-
-### What v0 Does
-
-- Collect user identity (via existing HushhAuth)
-- Obtain legal acknowledgment (educational disclaimer + consent)
-- Capture risk profile (Conservative / Balanced / Aggressive)
-- Store investor profile (via A2A/Supabase)
-- Hand off to Kai agents for analysis
-
-### What v0 Does NOT Do
-
-- Build agents (assume team has this)
-- Portfolio integration
-- Trade execution
-- Fully on-device mode (hybrid only)
+> AI investor concierge that collapses weeks of onboarding friction into minutes.
 
 ---
 
-## Data to Collect
+## Kai Has Two Modes
+
+| Mode                    | Purpose                                     | README.md | v0 Focus     |
+| ----------------------- | ------------------------------------------- | --------- | ------------ |
+| **Investor Onboarding** | Onboard LPs into funds via trusted managers | New       | ✅ Ship this |
+| **Investment Analysis** | Analyze stocks with 3 specialist agents     | Existing  | Later        |
+
+---
+
+## v0: Investor Onboarding
+
+### The 7-Second Opening
+
+```
+"I'm Kai.
+I coordinate onboarding through the people you already trust—
+so you don't spend time on paperwork."
+```
+
+### What the Investor Does (Only 3 Things)
+
+1. Verifies identity once
+2. Declares who manages their capital
+3. Grants explicit consent
+
+Kai handles the rest through their trusted manager.
+
+---
+
+## v0 Flow (60 seconds)
+
+| Time | What Happens                                                |
+| ---- | ----------------------------------------------------------- |
+| 0:07 | Kai introduces itself                                       |
+| 0:15 | "Who currently manages capital on your behalf?"             |
+| 0:20 | Investor selects: Family Office / RIA / Private Bank / Self |
+| 0:30 | Consent screen: "May I coordinate with them?"               |
+| 0:50 | Investor grants consent                                     |
+| 0:60 | "I'll take it from here."                                   |
+
+---
+
+## v0 Operons (3 only)
+
+| Operon                    | What It Does                           |
+| ------------------------- | -------------------------------------- |
+| `create_investor_profile` | Store identity + trusted manager       |
+| `request_manager_consent` | Ask investor to authorize coordination |
+| `initiate_kyc_handoff`    | Begin KYC/AML through trusted manager  |
+
+---
+
+## Data Collected
 
 ### Identity
 
-- `user_id` — Firebase Auth
-- `email` — Google Sign-In
-- `created_at` — Timestamp
+- `investor_id`
+- `email`
+- `identity_verified_at`
 
-### Legal Consent
+### Trust Graph
 
-- `educational_disclaimer_accepted` — Required
-- `data_processing_consent` — Required
-- `terms_accepted_at` — Timestamp
+- `trusted_manager_type`: Family Office / RIA / Private Bank / Self
+- `trusted_manager_name`
+- `trusted_manager_contact`
 
-### Risk Profile
+### Consent
 
-- `risk_persona` — Conservative / Balanced / Aggressive
-- `investment_experience` — Beginner / Intermediate / Advanced
-- `investment_horizon` — Short / Medium / Long term
-
-### Preferences
-
-- `preferred_sectors` — Technology, Healthcare, etc.
-- `processing_mode` — Hybrid (v0 default)
+- `consent_granted_at`
+- `consent_scope`
 
 ---
 
-## Investor Profile Schema
+## Connection to Investment Analysis (Later)
 
-```typescript
-interface KaiInvestorProfile {
-  user_id: string;
-  email: string;
+After onboarding completes, investor can access Kai's **investment analysis mode** (from README.md):
 
-  educational_disclaimer_accepted: boolean;
-  data_processing_consent: boolean;
-  terms_accepted_at: string;
+- 3 specialist agents (Fundamental, Sentiment, Valuation)
+- Debate process
+- Decision Cards with Buy/Hold/Reduce
+- Risk personas (Conservative/Balanced/Aggressive)
 
-  risk_persona: "conservative" | "balanced" | "aggressive";
-  investment_experience: "beginner" | "intermediate" | "advanced";
-  investment_horizon: "short_term" | "medium" | "long_term";
-
-  preferred_sectors: string[];
-  processing_mode: "hybrid";
-
-  created_at: string;
-  onboarding_completed_at?: string;
-}
-```
+This is shipped after v0 onboarding works.
 
 ---
 
-## Integration
+## Compliance
 
-Uses existing infrastructure:
-
-- **Auth**: HushhAuth plugin (Google Sign-In)
-- **Storage**: A2A/Supabase endpoints
-- **Consent**: HushhConsent plugin
-
----
-
-## Questions for Team
-
-1. Profile storage: Existing `profiles` table or new `kai_investor_profiles`?
-2. Are the 3 specialist agents (Fundamental, Sentiment, Valuation) built?
-3. Standard sector taxonomy?
+- Identity verified before any action
+- Consent is specific, scoped, revocable
+- All consents logged with timestamps
+- Educational disclaimer on analysis outputs
