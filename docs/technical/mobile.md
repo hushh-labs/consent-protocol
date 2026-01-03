@@ -586,6 +586,80 @@ export class VaultService {
 
 ---
 
+## 🚨 Critical: API Routes Require Native Plugins
+
+> [!CAUTION] > **Every Next.js `/api` route that needs to work on iOS/Android MUST have a corresponding native Capacitor plugin implementation.**
+
+### Why This Is Required
+
+Next.js `/api` routes run on a Node.js server. When the app is deployed as a Capacitor native app, there is **no server** - the app is a static bundle in a WebView:
+
+```
+❌ Native: fetch("/api/vault/food") → FAILS - No server available!
+✅ Native: HushhVault.getFoodPreferences() → Native plugin → Python backend
+```
+
+### Mandatory 5-Step Workflow
+
+When adding any new API feature:
+
+| Step | Location                      | Action                              |
+| ---- | ----------------------------- | ----------------------------------- |
+| 1    | `app/api/.../route.ts`        | Create Next.js API route (web only) |
+| 2    | `lib/capacitor/index.ts`      | Add TypeScript interface            |
+| 3    | `android/.../Plugin.kt`       | Implement Kotlin method             |
+| 4    | `ios/.../Plugin.swift`        | Implement Swift method              |
+| 5    | `lib/services/api-service.ts` | Add platform-aware routing          |
+
+### Platform-Aware ApiService Pattern
+
+```typescript
+// lib/services/api-service.ts
+import { Capacitor } from "@capacitor/core";
+
+export class ApiService {
+  static async approvePendingConsent(data: {
+    userId: string;
+    requestId: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      // Native: Use Capacitor plugin → calls Python backend directly
+      const { HushhConsent } = await import("@/lib/capacitor");
+      await HushhConsent.approve({
+        requestId: data.requestId,
+        userId: data.userId,
+      });
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    // Web: Use Next.js API route
+    return fetch("/api/consent/pending/approve", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+}
+```
+
+### Common Pitfalls
+
+| Pitfall            | Wrong                               | Correct                                    |
+| ------------------ | ----------------------------------- | ------------------------------------------ |
+| **Wrong endpoint** | `/db/consent/approve`               | `/api/consent/pending/approve`             |
+| **Body vs Query**  | JSON body for FastAPI function args | Query params: `?userId=...&requestId=...`  |
+| **Missing userId** | `HushhConsent.deny({ requestId })`  | `HushhConsent.deny({ requestId, userId })` |
+
+### Checklist: New API Feature
+
+- [ ] Design endpoint in Python backend
+- [ ] Create Next.js `/api` route (web)
+- [ ] Add TypeScript interface to `lib/capacitor/index.ts`
+- [ ] Implement Android Kotlin plugin method
+- [ ] Implement iOS Swift plugin method
+- [ ] Update `ApiService` with platform routing
+- [ ] Test on web, Android, iOS
+
+---
+
 ## ⚖️ Privacy & Compliance
 
 ### Local-First Benefits
