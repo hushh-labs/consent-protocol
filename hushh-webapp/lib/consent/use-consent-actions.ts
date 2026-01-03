@@ -13,6 +13,7 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // Types
@@ -232,17 +233,13 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         );
 
         // Send to server
-        const response = await fetch("/api/consent/pending/approve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            requestId: consent.id,
-            exportKey,
-            encryptedData: encrypted.ciphertext,
-            encryptedIv: encrypted.iv,
-            encryptedTag: encrypted.tag,
-          }),
+        const response = await ApiService.approvePendingConsent({
+          userId,
+          requestId: consent.id,
+          exportKey,
+          encryptedData: encrypted.ciphertext,
+          encryptedIv: encrypted.iv,
+          encryptedTag: encrypted.tag,
         });
 
         if (!response.ok) {
@@ -294,10 +291,9 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
       markAsHandling(requestId);
 
       const promise = (async () => {
-        const response = await fetch("/api/consent/pending/deny", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, requestId }),
+        const response = await ApiService.denyPendingConsent({
+          userId,
+          requestId,
         });
 
         if (!response.ok) {
@@ -344,10 +340,10 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
       if (!userId) return;
 
       const promise = (async () => {
-        const response = await fetch("/api/consent/revoke", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, scope }),
+        const response = await ApiService.revokeConsent({
+          userId,
+          scope,
+          token: "", // Revoke by scope doesn't use token
         });
 
         if (!response.ok) {

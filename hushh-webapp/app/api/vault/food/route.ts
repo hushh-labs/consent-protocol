@@ -1,35 +1,27 @@
 // app/api/vault/food/route.ts
 
 /**
- * Food Domain Vault API
+ * Food Domain Vault API - Symmetric with Native
  *
- * CONSENT PROTOCOL COMPLIANT:
- * GET: Retrieve food preferences (requires session token)
- * POST: Store food preferences (requires consent token with vault.write.food scope)
+ * Native Swift: POST /db/food/get with {userId} body, optional authToken header
+ * Web Next.js: GET /api/vault/food → proxies to Python /db/food/get
  *
- * 3-Layer Security:
- * 1. Firebase Auth (identity) - handled by frontend session
- * 2. BYOK Encryption - data arrives pre-encrypted from client
- * 3. Consent Protocol - validated via Python backend
+ * Auth is handled by Python backend, not here (matches native).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAllFoodData, storeFoodData } from "@/lib/db";
-import {
-  validateConsentToken,
-  validateSessionToken,
-  extractSessionToken,
-  verifyUserMatch,
-} from "@/lib/auth/validate";
-import { isDevelopment, logSecurityEvent } from "@/lib/config";
-
-// ============================================================================
-// GET: Read food preferences (requires session token)
-// ============================================================================
-
-// ============================================================================
 
 export const dynamic = "force-dynamic";
+
+// Python backend URL (same as native apps use)
+const PYTHON_API_URL =
+  process.env.PYTHON_API_URL ||
+  "https://consent-protocol-1006304528804.us-central1.run.app";
+
+// ============================================================================
+// GET: Read food preferences (proxies to Python /db/food/get)
+// Matches Swift: fetchDomainData(domain: "food", call: call)
+// ============================================================================
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -39,86 +31,44 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
-  // =========================================================================
-  // CONSENT PROTOCOL: Session token required for vault read
-  // =========================================================================
-  const sessionToken = extractSessionToken(request);
+  const authHeader = request.headers.get("Authorization");
 
-  if (!sessionToken && !isDevelopment()) {
-    logSecurityEvent("VAULT_READ_REJECTED", {
-      reason: "No session token",
-      userId,
-    });
-    return NextResponse.json(
-      {
-        error: "Session token required for vault read",
-        code: "SESSION_REQUIRED",
+  // =========================================================================
+  // PROXY TO PYTHON BACKEND (Same as native iOS/Android)
+  // Swift calls: performRequest(urlStr: "\(backendUrl)/db/food/get", body: ["userId": userId])
+  // =========================================================================
+  try {
+    const response = await fetch(`${PYTHON_API_URL}/db/food/get`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
       },
-      { status: 401 }
-    );
-  }
+      body: JSON.stringify({ userId }),
+    });
 
-  // Validate session token (skip in development if no token)
-  if (sessionToken) {
-    const validation = await validateSessionToken(sessionToken);
-
-    if (!validation.valid) {
-      logSecurityEvent("VAULT_READ_REJECTED", {
-        reason: validation.reason,
-        userId,
-      });
-      return NextResponse.json(
-        {
-          error: `Session validation failed: ${validation.reason}`,
-          code: "SESSION_INVALID",
-        },
-        { status: 403 }
-      );
-    }
-
-    // Verify user match
-    if (!verifyUserMatch(validation.userId, userId)) {
-      return NextResponse.json(
-        { error: "Session token user mismatch", code: "USER_MISMATCH" },
-        { status: 403 }
-      );
-    }
-  }
-
-  // =========================================================================
-  // VAULT READ: Now authorized
-  // =========================================================================
-  const data = await getAllFoodData(userId);
-
-  if (!data) {
+    // Swift returns: ["domain": domain, "preferences": json["preferences"] ?? NSNull()]
+    const data = await response.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("[API] Food fetch error:", error);
     return NextResponse.json(
-      { error: "No food preferences found" },
-      { status: 404 }
+      { domain: "food", preferences: null },
+      { status: 200 }
     );
   }
-
-  logSecurityEvent("VAULT_READ_SUCCESS", { domain: "food", userId });
-  return NextResponse.json({ domain: "food", preferences: data });
 }
 
 // ============================================================================
-// POST: Write food preferences (requires consent token)
+// POST: Write food preferences (proxies to Python /db/food/store)
+// Matches Swift: storePreferencesToCloud
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      userId,
-      fieldName,
-      ciphertext,
-      iv,
-      tag,
-      consentToken,
-      consentTokenId,
-    } = body;
+    const { userId, fieldName, ciphertext, iv, tag, consentToken } = body;
 
-    // Basic validation
     if (!userId || !fieldName || !ciphertext || !iv || !tag) {
       return NextResponse.json(
         { error: "Missing required fields" },
@@ -126,70 +76,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // =========================================================================
-    // CONSENT PROTOCOL: Token required for vault write
-    // =========================================================================
-    if (!consentToken && !isDevelopment()) {
-      logSecurityEvent("VAULT_WRITE_REJECTED", {
-        reason: "No consent token",
-        userId,
-      });
-      return NextResponse.json(
-        {
-          error: "Consent token required for vault write",
-          code: "CONSENT_REQUIRED",
-        },
-        { status: 403 }
-      );
-    }
+    const authHeader = request.headers.get("Authorization");
 
-    // Validate consent token
-    if (consentToken) {
-      const validation = await validateConsentToken(
+    const response = await fetch(`${PYTHON_API_URL}/db/food/store`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+      },
+      body: JSON.stringify({
+        userId,
+        fieldName,
+        ciphertext,
+        iv,
+        tag,
         consentToken,
-        "vault.write.food"
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[API] Python backend error:", response.status, errorText);
+      return NextResponse.json(
+        { error: "Backend error" },
+        { status: response.status }
       );
-
-      if (!validation.valid) {
-        logSecurityEvent("VAULT_WRITE_REJECTED", {
-          reason: validation.reason,
-          userId,
-        });
-        return NextResponse.json(
-          {
-            error: `Consent validation failed: ${validation.reason}`,
-            code: "CONSENT_INVALID",
-          },
-          { status: 403 }
-        );
-      }
-
-      // Verify user match
-      if (!verifyUserMatch(validation.userId, userId)) {
-        return NextResponse.json(
-          { error: "Consent token user mismatch", code: "USER_MISMATCH" },
-          { status: 403 }
-        );
-      }
-
-      logSecurityEvent("CONSENT_VERIFIED", {
-        agent: validation.agentId,
-        scope: validation.scope,
-        userId,
-      });
     }
 
-    // =========================================================================
-    // VAULT WRITE: Now authorized
-    // Data is already encrypted (BYOK) - we just store ciphertext
-    // =========================================================================
-    await storeFoodData(userId, fieldName, ciphertext, iv, tag, consentTokenId);
-
-    logSecurityEvent("VAULT_WRITE_SUCCESS", {
-      domain: "food",
-      field: fieldName,
-      userId,
-    });
     return NextResponse.json({
       success: true,
       domain: "food",
