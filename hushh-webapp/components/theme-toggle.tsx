@@ -1,42 +1,80 @@
-
 "use client";
 
-import { useState, useEffect } from "react";
-import { Moon, Sun } from "lucide-react";
+import * as React from "react";
 import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
 import { Button } from "@/lib/morphy-ux/morphy";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { Sun, Moon, Monitor } from "lucide-react";
 
-export function ThemeToggle() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+type ThemeOption = "light" | "dark" | "system";
 
-  const handleThemeToggle = () => {
-    const currentTheme = resolvedTheme || theme;
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
+export function ThemeToggle({ className }: { className?: string }) {
+  const { theme, setTheme } = useTheme();
 
-    // Force immediate theme change with fallback
-    setTheme(newTheme);
-
-    // Force DOM update as backup
-    const html = document.documentElement;
-    if (newTheme === "dark") {
-      html.classList.add("dark");
-    } else {
-      html.classList.remove("dark");
-    }
-  };
+  const themeOptions: {
+    value: ThemeOption;
+    icon: React.ElementType;
+    label: string;
+  }[] = [
+    { value: "light", icon: Sun, label: "Light" },
+    { value: "dark", icon: Moon, label: "Dark" },
+    { value: "system", icon: Monitor, label: "System" },
+  ];
 
   return (
-    <Button
-      variant="link"
-      size="icon"
-      effect="glass"
-      onClick={handleThemeToggle}
-      className="rounded-full"
-      showRipple
+    <div
+      className={cn(
+        "flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-lg ring-1 ring-black/5",
+        className
+      )}
     >
-      <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">Toggle theme</span>
-    </Button>
+      {themeOptions.map(({ value, icon: Icon, label }) => {
+        const isActive = theme === value;
+        return (
+          <Tooltip key={value}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="link"
+                showRipple
+                onClick={() => setTheme(value)}
+                className={cn(
+                  "relative flex items-center justify-center gap-2 px-3 py-2 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                  isActive
+                    ? "bg-background text-foreground shadow-sm ring-1 ring-black/5 min-w-[90px]"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50 min-w-[36px]"
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                    isActive && "scale-105"
+                  )}
+                />
+
+                <div
+                  className={cn(
+                    "overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] flex items-center",
+                    isActive
+                      ? "w-auto max-w-[100px] opacity-100 ml-0.5"
+                      : "w-0 max-w-0 opacity-0"
+                  )}
+                >
+                  <span className="text-xs font-medium whitespace-nowrap">
+                    {label}
+                  </span>
+                </div>
+              </Button>
+            </TooltipTrigger>
+            {/* Tooltip only shows if not active (as active shows label) - effectively hidden for now due to expanding pill */}
+            <TooltipContent className="hidden">{label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </div>
   );
 }

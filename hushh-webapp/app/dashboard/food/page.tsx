@@ -89,7 +89,7 @@ export default function FoodDashboardPage() {
   useEffect(() => {
     // Redirect if vault not unlocked
     if (!isVaultUnlocked) {
-      router.push("/login?redirect=/dashboard/food");
+      router.push("/?redirect=/dashboard/food");
       return;
     }
     loadDashboard();
@@ -103,7 +103,11 @@ export default function FoodDashboardPage() {
       const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
 
       if (!userId || !vaultKey) {
-        router.push("/login");
+        console.warn("Redirecting from Food: Missing auth", {
+          userId: !!userId,
+          vaultKey: !!vaultKey,
+        });
+        router.push("/");
         return;
       }
 
@@ -131,21 +135,21 @@ export default function FoodDashboardPage() {
         throw new Error("Failed to load preferences");
       }
 
-      const { preferences: encryptedPrefs } = await response.json();
+      const jsonResponse = await response.json();
+      const encryptedPrefs = jsonResponse.preferences || {};
 
-      // Decrypt client-side
-      const dietaryDecrypted = await decryptData(
-        encryptedPrefs.dietary_restrictions,
-        vaultKey
-      );
-      const cuisineDecrypted = await decryptData(
-        encryptedPrefs.cuisine_preferences,
-        vaultKey
-      );
-      const budgetDecrypted = await decryptData(
-        encryptedPrefs.monthly_food_budget,
-        vaultKey
-      );
+      // Decrypt client-side (Robustly)
+      const dietaryDecrypted = encryptedPrefs.dietary_restrictions
+        ? await decryptData(encryptedPrefs.dietary_restrictions, vaultKey)
+        : "[]";
+
+      const cuisineDecrypted = encryptedPrefs.cuisine_preferences
+        ? await decryptData(encryptedPrefs.cuisine_preferences, vaultKey)
+        : "[]";
+
+      const budgetDecrypted = encryptedPrefs.monthly_food_budget
+        ? await decryptData(encryptedPrefs.monthly_food_budget, vaultKey)
+        : "0";
 
       const prefs: UserPreferences = {
         dietary: JSON.parse(dietaryDecrypted),
@@ -190,7 +194,7 @@ export default function FoodDashboardPage() {
               <span className="text-3xl">😕</span>
             </div>
             <p className="text-destructive font-medium">{error}</p>
-            <Button onClick={() => router.push("/login")} variant="gradient">
+            <Button onClick={() => router.push("/")} variant="gradient">
               Back to Login
             </Button>
           </CardContent>
