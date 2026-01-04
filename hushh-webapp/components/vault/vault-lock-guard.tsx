@@ -90,7 +90,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     return () => {
       mountedRef.current = false;
     };
-  }, [user, authLoading, isVaultUnlocked, router]);
+  }, [user, authLoading, isVaultUnlocked]); // FIXED: Removed `router` - not used in effect
 
   // Vault status sync effect
   useEffect(() => {
