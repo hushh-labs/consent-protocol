@@ -453,7 +453,12 @@ function ConsentScreen({
           Approve
           <Check className="ml-2 h-5 w-5" />
         </Button>
-        <Button variant="outline" size="lg" className="w-full" onClick={onDeny}>
+        <Button
+          variant="none"
+          size="lg"
+          className="w-full border"
+          onClick={onDeny}
+        >
           Deny
         </Button>
       </CardFooter>
