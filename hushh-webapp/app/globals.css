@@ -323,7 +323,7 @@
   pointer-events: none;
 }
 
-/* Subtle App Background Gradients - Smoother with more color stops */
+/* Subtle App Background Gradients - FIXED so content scrolls over static bg */
 .morphy-app-bg {
   background: linear-gradient(
     145deg,
@@ -335,6 +335,7 @@
     #f8f5ff 80%,
     #fafafa 100%
   );
+  background-attachment: fixed;
   min-height: 100vh;
 }
 
@@ -349,6 +350,7 @@
     #0c0c14 80%,
     #09090c 100%
   );
+  background-attachment: fixed;
 }
 
 /* Radial glow overlay - subtle brand color accent from top */
