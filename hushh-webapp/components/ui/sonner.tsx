@@ -9,25 +9,10 @@ type ToasterProps = React.ComponentProps<typeof Sonner>;
 export function Toaster({ ...props }: ToasterProps) {
   const { theme = "system" } = useTheme();
 
-  // Dismiss toasts when window loses focus/visibility (user minimizes or switches tab)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        toast.dismiss();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
-      // Default duration for all toasts
-      duration={3000}
       toastOptions={{
         classNames: {
           toast:
