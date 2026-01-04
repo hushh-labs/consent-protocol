@@ -1,4 +1,4 @@
-# Hushh Frontend Design System (v4.0)
+# Hushh Frontend Design System (v4.1)
 
 > Comprehensive design rules for the Hushh Agent Platform
 > Based on hushh.ai official branding + Morphy-UX physics
@@ -38,16 +38,13 @@ import { Button } from "@/components/ui/button";
 
 // ✅ CORRECT - Use Button with showRipple
 <Button
-  variant="gradient" // ColorVariant
+  variant="gradient" // "none" | "link" | "gradient" | "blue" | "purple" | "green" | "orange" | "metallic"
   effect="glass" // "fill" | "glass" | "fade"
   showRipple // Ripple on CLICK only
   size="lg" // "sm" | "default" | "lg" | "xl"
 >
   Action
 </Button>;
-
-// ❌ WRONG - Do NOT use RippleButton (deleted)
-// RippleButton was redundant - Button has showRipple
 ```
 
 ### Card
@@ -60,22 +57,24 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
   effect="glass"
   showRipple // Only for clickable cards
   onClick={handler}
-  icon={{ icon: HeartIcon, gradient: true }}
 >
-  <CardTitle>Title</CardTitle>
-  <CardDescription>Description</CardDescription>
+  <CardContent>...</CardContent>
 </Card>;
 ```
 
-### ColorVariant Options
+### VaultFlow (Authentication)
 
-`"none"` | `"link"` | `"gradient"` | `"blue"` | `"purple"` | `"green"` | `"orange"` | `"metallic"` | `"multi"`
+The centralized component for all vault operations.
 
-### Effect Options
+```tsx
+import { VaultFlow } from "@/components/vault/vault-flow";
 
-- `"fill"` — Solid background (default)
-- `"glass"` — Frosted glass effect
-- `"fade"` — Soft faded background
+<VaultFlow
+  user={currentUser}
+  onSuccess={handleSuccess}
+  onStepChange={(step) => handleHeaderVisibility(step)}
+/>;
+```
 
 ---
 
@@ -87,7 +86,7 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 
 - Ripple is handled by `@material/web` `<md-ripple>` component
 - **Automatic interaction detection** — hover, press, focus all handled internally
-- Uses `showRipple` prop on Button/Card (same API as before)
+- Uses `showRipple` prop on Button/Card
 
 ### Animation Physics
 
@@ -103,18 +102,6 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | ----- | ------------------------------- |
 | Light | `--morphy-primary-start` (Blue) |
 | Dark  | `--morphy-primary-start` (Blue) |
-
-```tsx
-// ✅ Material 3 ripple is automatic
-<Button variant="gradient" showRipple>
-  Click
-</Button>
-
-// The MaterialRipple component maps:
-// - variant prop → ripple color
-// - effect prop → opacity levels
-// - dark mode → silver accents
-```
 
 ---
 
@@ -180,6 +167,8 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 
 ## 6. Typography
 
+**Fonts:** `Figtree` (Primary), `Quicksand` (Body fallback)
+
 | Class            | Usage                 |
 | ---------------- | --------------------- |
 | `.text-headline` | 2.5rem/700 - H1       |
@@ -188,24 +177,15 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | `.text-caption`  | 0.8125rem - Secondary |
 | `.text-small`    | 0.75rem - Tertiary    |
 
-**Fonts:** Quicksand (body), Exo 2 (headings)
-
-| Class                  | Font      | Weight |
-| ---------------------- | --------- | ------ |
-| `.font-heading-exo2`   | Exo 2     | 650    |
-| `.font-body-quicksand` | Quicksand | 500    |
-
 ---
 
 ## 7. Icons
 
-Use **Phosphor Icons** with `Icon` suffix:
+Use **Lucide React** (`lucide-react`) for all UI icons.
+Use **Phosphor Icons** (`@phosphor-icons/react`) ONLY if a specific icon is missing in Lucide.
 
 ```tsx
-import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
-
-// Use icon prop on Card/Button
-<Card icon={{ icon: HeartIcon, gradient: true }}>...</Card>;
+import { Shield, Lock } from "lucide-react";
 ```
 
 ---
@@ -226,41 +206,35 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 
 ---
 
-## 9. Agent Modes & Data Categories
+## 9. Mobile-First Layout Rules
 
-### Agent Modes
-
-| Mode         | ID             | Color     | Icon |
-| ------------ | -------------- | --------- | ---- |
-| Optimizer    | `optimizer`    | `#0071e3` | 📈   |
-| Curator      | `curator`      | `#10b981` | 🎯   |
-| Professional | `professional` | `#0d7590` | 💼   |
-| Food         | `food_dining`  | `#FF9F0A` | 🍽️   |
-| Orchestrator | `orchestrator` | `#13405d` | 🔗   |
-
-### Data Categories
-
-| Category     | ID             | Color     |
-| ------------ | -------------- | --------- |
-| Financial    | `financial`    | `#10b981` |
-| Calendar     | `calendar`     | `#0071e3` |
-| Professional | `professional` | `#BF5AF2` |
-| Health       | `health`       | `#FF453A` |
-| Food         | `food`         | `#FF9F0A` |
-| Preferences  | `preferences`  | `#FF9F0A` |
+1. **Viewport Height**: use `100dvh` for full-screen containers to handle mobile browser bars.
+2. **Safe Areas**: Respect `env(safe-area-inset-bottom)` and top.
+3. **Overscroll**: Disable body overscroll to prevent "rubber banding" on iOS.
+   ```css
+   html,
+   body {
+     overscroll-behavior: none;
+   }
+   ```
+4. **Backgrounds**: Use fixed, oversized backgrounds (`h-[120vh]`) to prevent white gaps during scroll bounces.
 
 ---
 
-## 10. Common Mistakes to AVOID
+## 10. Authentication & Vault Patterns
 
-| ❌ WRONG                      | ✅ CORRECT                      |
-| ----------------------------- | ------------------------------- |
-| `<RippleButton>`              | `<Button showRipple>`           |
-| `<Ripple><Card>`              | `<Card showRipple>`             |
-| `transform: scale()` on hover | `background`, `shadow` on hover |
-| Raw `<button>` element        | `<Button>` component            |
-| Hardcoded colors              | CSS variables                   |
-| Manual icon rendering         | `icon={{ icon: IconName }}`     |
+### Unified Vault Flow
+
+- **Component**: `VaultFlow`
+- **Location**: `components/vault/vault-flow.tsx`
+- **Usage**:
+  - **Home Page**: Main entry point. Only shows "Welcome Back" header in `create` or `recovery` modes. **Hides header** in `unlock` mode for focus.
+  - **Dashboard**: Uses `VaultFlow` as an **overlay** if the vault is locked (e.g. after refresh). This prevents redirects and maintains navigational context.
+
+### Recovery Key
+
+- Users are forced to download/copy the Recovery Key upon creation.
+- Keep recovery logic integrated within `VaultFlow`.
 
 ---
 
@@ -276,46 +250,14 @@ import { HeartIcon, CalendarIcon, UserIcon } from "@phosphor-icons/react";
 | `lib/morphy-ux/`    | Core Morphy-UX utilities      | 🛠 Custom         |
 | `lib/morphy-ux/ui/` | Morphy-enhanced UI components | 🛠 Custom         |
 
-### When to Use Each
-
-```tsx
-// Stock shadcn component (no physics needed)
-import { Sidebar } from "@/components/ui/sidebar";
-
-// Morphy-UX enhanced component (has ripple, hover effects)
-import { Button } from "@/lib/morphy-ux/morphy";
-import { Card } from "@/lib/morphy-ux/morphy";
-
-// Future: Morphy-UX enhanced UI components
-import { SidebarMenuButton } from "@/lib/morphy-ux/ui/sidebar-menu-button";
-```
-
-### Creating Morphy-UX Versions
-
-When a shadcn component needs physics (ripple, hover borders, etc.):
-
-1. **DO NOT** modify `components/ui/` directly
-2. Create a new file in `lib/morphy-ux/ui/`
-3. Import the base shadcn component or build fresh
-4. Add morphy physics (useRipple, getHoverBorderColor, etc.)
-5. Export from `lib/morphy-ux/ui/index.ts`
-
-This keeps shadcn/ui updatable via `npx shadcn@latest add` commands.
-
 ---
 
 ## 12. File References
 
 - `hushh-webapp/app/globals.css` — Glass classes, colors, typography, Material 3 tokens
-- `hushh-webapp/lib/morphy-ux/button.tsx` — Button with MaterialRipple
-- `hushh-webapp/lib/morphy-ux/card.tsx` — Card with showRipple
-- `hushh-webapp/lib/morphy-ux/material-ripple.tsx` — Material 3 `<md-ripple>` wrapper
-- `hushh-webapp/lib/morphy-ux/ripple.tsx` — Legacy ripple (deprecated)
-- `hushh-webapp/lib/morphy-ux/utils.ts` — getVariantStyles, getRippleColor
-- `hushh-webapp/lib/morphy-ux/ui/` — Morphy-enhanced UI components (custom)
-- `hushh-webapp/components/ui/` — Stock Shadcn/UI (do not customize)
-- `@material/web` — Material 3 web components package
+- `hushh-webapp/components/vault/vault-flow.tsx` — **Core Vault Component**
+- `hushh-webapp/lib/morphy-ux/` — Morphy-UX system
 
 ---
 
-_Version: 5.0 | Updated 2024-12-23 | Material 3 Expressive integration_
+_Version: 5.1 | Updated 2026-01-03 | VaultFlow & Mobile Layouts_

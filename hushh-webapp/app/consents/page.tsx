@@ -56,6 +56,9 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 
+import { useAuth } from "@/hooks/use-auth";
+import { VaultFlow } from "@/components/vault/vault-flow";
+
 interface PendingConsent {
   id: string;
   developer: string;
@@ -328,7 +331,17 @@ export default function ConsentsPage() {
       const response = await ApiService.getConsentHistory(uid, 1, 50);
       if (response.ok) {
         const data = await response.json();
-        setAuditLog(data.items || []);
+        console.log("🔍 [AuditLog] Fetched data:", data);
+        // Handle various potential response structures
+        if (Array.isArray(data)) {
+          setAuditLog(data);
+        } else if (data.items) {
+          setAuditLog(data.items);
+        } else if (data.history) {
+          setAuditLog(data.history);
+        } else {
+          setAuditLog([]);
+        }
       }
     } catch (err) {
       console.error("Error fetching audit log:", err);
@@ -346,6 +359,8 @@ export default function ConsentsPage() {
       console.error("Error fetching active consents:", err);
     }
   }, []);
+
+  const { user, isAuthenticated } = useAuth();
 
   useEffect(() => {
     async function initSession() {

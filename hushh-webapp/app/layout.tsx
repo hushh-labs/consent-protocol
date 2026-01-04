@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Quicksand, Exo_2 } from "next/font/google";
+import { Inter, Quicksand, Exo_2, Figtree } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/firebase";
@@ -24,6 +24,12 @@ const exo2 = Exo_2({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-exo2",
+});
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-figtree",
 });
 
 export const metadata: Metadata = {
@@ -67,29 +73,17 @@ export default function RootLayout({
         />
       </head>
       <RootLayoutClient
-        fontClasses={`${inter.variable} ${quicksand.variable} ${exo2.variable}`}
+        fontClasses={`${inter.variable} ${quicksand.variable} ${exo2.variable} ${figtree.variable}`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem={false}
-        >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <AuthProvider>
             <VaultProvider>
               <Navbar />
-              <div className="pb-[calc(6rem+env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)] flex-1 flex flex-col relative z-10">
+              <div className="pt-[env(safe-area-inset-top)] flex-1 flex flex-col relative z-10">
                 {children}
               </div>
               {/* Sonner Toast Notifications - high z-index to appear above everything */}
-              <Toaster
-                richColors
-                position="top-center"
-                closeButton
-                duration={3000}
-                toastOptions={{
-                  style: { zIndex: 9999 },
-                }}
-              />
+              <Toaster />
             </VaultProvider>
           </AuthProvider>
         </ThemeProvider>
