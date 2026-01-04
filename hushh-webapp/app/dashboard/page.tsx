@@ -12,6 +12,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, Button } from "@/lib/morphy-ux/morphy";
+import { VaultFlow } from "@/components/vault/vault-flow";
 import { ConsentStatusBar } from "@/components/consent/status-bar";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
@@ -30,6 +31,7 @@ import {
   ArrowRight,
   Sparkles,
   Lock,
+  LayoutGrid,
 } from "lucide-react";
 
 // =============================================================================
@@ -144,56 +146,56 @@ function DomainTile({
       effect="glass"
       showRipple={isActive}
       onClick={isActive ? () => router.push(domain.href) : undefined}
-      className={`relative overflow-hidden transition-all duration-300 cursor-pointer group ${
+      className={`relative overflow-hidden transition-all duration-300 cursor-pointer group h-full rounded-2xl ${
         isActive
-          ? "hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1"
+          ? "hover:shadow-lg hover:shadow-primary/10"
           : "opacity-60 cursor-not-allowed"
       }`}
     >
       {/* Gradient accent bar */}
       <div
-        className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${domain.gradient}`}
+        className={`absolute top-0 left-0 right-0 h-1.5 bg-linear-to-r ${domain.gradient} opacity-80`}
       />
 
-      <CardContent className="p-5">
-        <div className="flex items-start gap-4">
+      <CardContent className="p-2.5">
+        <div className="flex flex-col items-center text-center gap-1.5 pt-1">
           {/* Icon with gradient background */}
           <div
-            className={`h-12 w-12 rounded-xl bg-gradient-to-br ${domain.gradient} flex items-center justify-center shadow-lg`}
+            className={`h-9 w-9 rounded-lg bg-linear-to-br ${domain.gradient} flex items-center justify-center shadow-md mb-1`}
           >
-            <Icon className="h-6 w-6 text-white" />
+            <Icon className="h-4 w-4 text-white" />
           </div>
 
           {/* Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-base truncate">
-                {domain.name}
-              </h3>
+          <div className="w-full min-w-0 space-y-1">
+            <h3 className="font-semibold text-xs truncate w-full px-1">
+              {domain.name}
+            </h3>
+
+            <div className="flex justify-center gap-1 flex-wrap min-h-[16px]">
               {isSoon && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="text-[9px] px-1.5 rounded-full bg-muted text-muted-foreground border border-black/5 dark:border-white/10 flex items-center">
                   Soon
                 </span>
               )}
               {dataCount !== undefined && dataCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                  {dataCount} items
+                <span className="text-[9px] px-1.5 rounded-full bg-primary/10 text-primary font-medium border border-primary/20 flex items-center">
+                  {dataCount}
                 </span>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+
+            <p className="text-[10px] text-muted-foreground line-clamp-2 leading-tight px-1 pb-1">
               {domain.description}
             </p>
           </div>
 
-          {/* Arrow or Lock */}
-          <div className="flex items-center">
-            {isActive ? (
-              <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-            ) : (
-              <Lock className="h-4 w-4 text-muted-foreground" />
-            )}
-          </div>
+          {/* Lock Icon for inactive */}
+          {!isActive && (
+            <div className="absolute top-2 right-2">
+              <Lock className="h-3 w-3 text-muted-foreground/40" />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -220,7 +222,7 @@ function StatsCard({
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div
-            className={`h-10 w-10 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center`}
+            className={`h-10 w-10 rounded-lg bg-linear-to-br ${gradient} flex items-center justify-center`}
           >
             <Icon className="h-5 w-5 text-white" />
           </div>
@@ -239,10 +241,38 @@ function StatsCard({
 // =============================================================================
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { getVaultKey } = useVault();
   const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [isLocked, setIsLocked] = useState(false);
+
+  // Auth & Vault protection
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        // Not logged in -> Home/Login
+        router.push("/");
+      } else {
+        // Logged in
+        const key = getVaultKey();
+        if (!key) {
+          // Vault Locked -> Show Unlock Screen (In-Place)
+          setIsLocked(true);
+        } else {
+          // Vault Unlocked -> Hide Unlock Screen
+          setIsLocked(false);
+        }
+      }
+    }
+  }, [authLoading, isAuthenticated, getVaultKey, router]);
+
+  // Handle unlock success
+  const handleUnlockSuccess = () => {
+    setIsLocked(false);
+    // Data fetching will happen automatically due to dependency on getVaultKey or re-render
+  };
 
   // Fetch data counts for each domain
   useEffect(() => {
@@ -338,10 +368,14 @@ export default function DashboardPage() {
 
       {/* Data Domains Grid */}
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <span>Your Data Domains</span>
-        </h2>
-        <div className="grid gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <LayoutGrid className="h-5 w-5 text-primary" />
+            <span>Your Data Domains</span>
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {DATA_DOMAINS.map((domain) => (
             <DomainTile
               key={domain.id}
