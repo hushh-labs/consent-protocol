@@ -1,24 +1,15 @@
 // components/navbar.tsx
-// Bottom Pill Navigation for Hushh PDA
+// Bottom Pill Navigation with Consent Badge for Hushh PDA
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
-import {
-  Home,
-  FileText,
-  LayoutDashboard,
-  LogIn,
-  LogOut,
-  Code,
-} from "lucide-react";
-import { signOut, onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "@/lib/firebase/config";
+import { Home, LayoutDashboard, LogIn, LogOut, Bell } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface NavItem {
@@ -26,18 +17,8 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   requiresAuth?: boolean;
+  badge?: number;
 }
-
-const navigationItems: NavItem[] = [
-  { label: "Home", href: "/", icon: Home },
-  { label: "API", href: "/api-docs", icon: Code },
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    requiresAuth: true,
-  },
-];
 
 const NavButton = ({
   item,
@@ -57,22 +38,27 @@ const NavButton = ({
       showRipple
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center justify-center h-auto px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl",
-        // Inactive: muted text with hover
+        "relative flex flex-col items-center justify-center h-auto px-3 py-2 rounded-xl",
         !isActive && "text-muted-foreground hover:text-foreground"
       )}
     >
-      <Icon
-        className={cn(
-          "h-4 w-4 sm:h-5 sm:w-5 mb-0.5",
-          // Active icon: gradient start color (blue light, gold dark)
-          isActive && "text-(--morphy-primary-start)"
+      <div className="relative">
+        <Icon
+          className={cn(
+            "h-5 w-5 mb-0.5",
+            isActive && "text-(--morphy-primary-start)"
+          )}
+        />
+        {/* Badge for notifications */}
+        {item.badge !== undefined && item.badge > 0 && (
+          <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+            {item.badge > 9 ? "9+" : item.badge}
+          </span>
         )}
-      />
+      </div>
       <span
         className={cn(
-          "text-[10px] sm:text-xs font-medium",
-          // Active text: gradient effect
+          "text-[10px] font-medium",
           isActive && "hushh-gradient-text"
         )}
       >
@@ -88,15 +74,45 @@ const NavButton = ({
   return <Link href={item.href}>{buttonContent}</Link>;
 };
 
+// Hook to get pending consent count (client-side only)
+function usePendingConsents(): number {
+  const [count, setCount] = useState(0);
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setCount(0);
+      return;
+    }
+
+    const fetchCount = async () => {
+      const userId = sessionStorage.getItem("user_id");
+      if (!userId) return;
+
+      try {
+        const res = await fetch(`/api/consent/pending?userId=${userId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCount(data.pending?.length || 0);
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    fetchCount();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  return count;
+}
+
 export const Navbar = () => {
   const pathname = usePathname();
-  const router = useRouter();
-
-  // Check if user is authenticated (Unified Native/Web Logic via Hook)
-  // This ensures Navbar state matches the rest of the app (e.g. protected routes)
-  const { isAuthenticated, user, signOut } = useAuth();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  const { isAuthenticated, signOut } = useAuth();
+  const pendingConsents = usePendingConsents();
 
   const handleLogout = async () => {
     try {
@@ -104,13 +120,21 @@ export const Navbar = () => {
     } catch (err) {
       console.warn("Logout error:", err);
     }
-    // Router push is handled by signOut in useAuth, but safe to do here too if needed
   };
 
-  // Filter navigation items based on auth status
-  const filteredItems = navigationItems.filter(
-    (item) => !item.requiresAuth || isAuthenticated
-  );
+  // Build navigation items dynamically
+  const navigationItems: NavItem[] = [
+    ...(isAuthenticated
+      ? [
+          {
+            label: "Dashboard",
+            href: "/dashboard",
+            icon: LayoutDashboard,
+            requiresAuth: true,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4">
@@ -121,13 +145,26 @@ export const Navbar = () => {
       >
         <div className="flex items-center gap-1">
           {/* Navigation Items */}
-          {filteredItems.map((item) => {
+          {navigationItems.map((item) => {
             const isActive =
               pathname === item.href || pathname?.startsWith(item.href + "/");
             return (
               <NavButton key={item.href} item={item} isActive={isActive} />
             );
           })}
+
+          {/* Consent Notifications (when authenticated) */}
+          {isAuthenticated && (
+            <NavButton
+              item={{
+                label: "Consents",
+                href: "/dashboard/consents",
+                icon: Bell,
+                badge: pendingConsents,
+              }}
+              isActive={pathname === "/dashboard/consents"}
+            />
+          )}
 
           {/* Separator */}
           <div className="h-10 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
@@ -146,7 +183,7 @@ export const Navbar = () => {
             />
           )}
 
-          {/* Theme Toggle - no wrapper hover, Button has its own effects */}
+          {/* Theme Toggle */}
           <div className="flex flex-col items-center justify-center px-2 py-2">
             <ThemeToggle />
           </div>

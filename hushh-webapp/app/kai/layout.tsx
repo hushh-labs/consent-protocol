@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Dashboard Layout - Minimal Mobile-First
+ * Kai Layout - Minimal Mobile-First
  *
- * No sidebar. Uses bottom navbar with consent notifications.
+ * No sidebar. Uses bottom navbar.
  * Keeps VaultLockGuard and ConsentSSEProvider for security.
  */
 
@@ -11,11 +11,7 @@ import { ConsentSSEProvider } from "@/lib/consent";
 import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
 import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function KaiLayout({ children }: { children: React.ReactNode }) {
   return (
     <VaultLockGuard>
       <ConsentSSEProvider>
