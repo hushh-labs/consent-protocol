@@ -167,14 +167,14 @@
   --glass2: #6464643b !important;
   --activeGlassColor: var(--glass2) !important;
   --shadow1: #5959594f;
-  --shadow2: ##0000004f;
+  --shadow2: #0000004f;
   --activeShadowColor: var(--shadow2);
   --fadeGrey: #e5e7eb80;
-  /* Morphy UI Color Tokens - Dark Mode */
-  --morphy-primary-start: #fbbf24;
-  --morphy-primary-end: #f59e0b;
-  --morphy-secondary-start: #13405d;
-  --morphy-secondary-end: #0d7590;
+  /* Morphy UI Color Tokens - Dark Mode - SAME as light mode (blue-purple) */
+  --morphy-primary-start: #0071e3;
+  --morphy-primary-end: #bb62fc;
+  --morphy-secondary-start: #0071e3;
+  --morphy-secondary-end: #bb62fc;
 
   /* Ensure gradient colors are available immediately in dark mode */
   --morphy-secondary-gradient: linear-gradient(
@@ -183,9 +183,9 @@
     var(--morphy-secondary-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens - Silver for Hushh brand */
-  --md-ripple-hover-color: #c0c0c0;
-  --md-ripple-pressed-color: #e8e8e8;
+  /* Material 3 Expressive Ripple Tokens - Blue for Hushh brand */
+  --md-ripple-hover-color: #0071e3;
+  --md-ripple-pressed-color: #bb62fc;
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }

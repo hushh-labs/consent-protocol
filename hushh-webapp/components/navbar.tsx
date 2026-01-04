@@ -158,11 +158,11 @@ export const Navbar = () => {
             <NavButton
               item={{
                 label: "Consents",
-                href: "/dashboard/consents",
+                href: "/consents",
                 icon: Bell,
                 badge: pendingConsents,
               }}
-              isActive={pathname === "/dashboard/consents"}
+              isActive={pathname === "/consents"}
             />
           )}
 
