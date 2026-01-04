@@ -102,7 +102,7 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 | Mode  | Ripple Color                    |
 | ----- | ------------------------------- |
 | Light | `--morphy-primary-start` (Blue) |
-| Dark  | `#c0c0c0` (Silver)              |
+| Dark  | `--morphy-primary-start` (Blue) |
 
 ```tsx
 // ✅ Material 3 ripple is automatic
@@ -164,10 +164,10 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 
 | Token                      | Light Mode         | Dark Mode          |
 | -------------------------- | ------------------ | ------------------ |
-| `--morphy-primary-start`   | `#0071e3` (Blue)   | `#fbbf24` (Gold)   |
-| `--morphy-primary-end`     | `#bb62fc` (Purple) | `#f59e0b` (Orange) |
-| `--morphy-secondary-start` | `#c0c0c0` (Silver) | `#13405d` (Navy)   |
-| `--morphy-secondary-end`   | `#e8e8e8` (Silver) | `#0d7590` (Teal)   |
+| `--morphy-primary-start`   | `#0071e3` (Blue)   | `#0071e3` (Blue)   |
+| `--morphy-primary-end`     | `#bb62fc` (Purple) | `#bb62fc` (Purple) |
+| `--morphy-secondary-start` | `#0071e3` (Blue)   | `#0071e3` (Blue)   |
+| `--morphy-secondary-end`   | `#bb62fc` (Purple) | `#bb62fc` (Purple) |
 
 ### Background Gradient Classes
 
