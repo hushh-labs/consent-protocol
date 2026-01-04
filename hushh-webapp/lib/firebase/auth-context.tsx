@@ -21,6 +21,7 @@ import React, {
   useState,
   ReactNode,
   useCallback,
+  useRef,
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -34,6 +35,9 @@ import { auth, getRecaptchaVerifier, resetRecaptcha } from "./config";
 import { getSessionItem } from "@/lib/utils/session-storage";
 import { Capacitor } from "@capacitor/core";
 import { AuthService } from "@/lib/services/auth-service";
+
+// Pre-compute platform check to avoid dynamic imports in callbacks
+const IS_NATIVE = typeof window !== "undefined" && Capacitor.isNativePlatform();
 
 // ============================================================================
 // Types
@@ -107,7 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const storedVaultKey =
       typeof window !== "undefined"
         ? localStorage.getItem("vault_key") ||
-        sessionStorage.getItem("vault_key")
+          sessionStorage.getItem("vault_key")
         : null;
     const storedUserId =
       typeof window !== "undefined"
@@ -162,32 +166,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, 10000); // 10s safety timeout for web
   }, []);
 
-  // Initialize on Mount
+  // Ref to track current user for null-safety check without causing re-renders
+  const userRef = useRef<User | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  // Initialize on Mount - CRITICAL: Do not depend on `user` to avoid render loops
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
       // App State Listener (Background clear)
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && IS_NATIVE) {
         const { App } = await import("@capacitor/app");
 
-        if (Capacitor.isNativePlatform()) {
-          App.addListener("appStateChange", ({ isActive }) => {
-            if (!isActive) {
-              console.log(
-                "🔒 [AuthProvider] App backgrounded - clearing sensitive data"
-              );
-              setVaultKey(null);
-              localStorage.removeItem("vault_key");
-              sessionStorage.removeItem("vault_key");
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (!isActive) {
+            console.log(
+              "🔒 [AuthProvider] App backgrounded - clearing sensitive data"
+            );
+            setVaultKey(null);
+            localStorage.removeItem("vault_key");
+            sessionStorage.removeItem("vault_key");
 
-              // Force reload if on dashboard to re-trigger auth guards
-              if (window.location.pathname.includes("/dashboard")) {
-                window.location.reload();
-              }
-            }
-          });
-        }
+            // Reactive state will handle UI updates (e.g. VaultLockGuard will see locked vault)
+            // No need to force reload, which causes loops on some Android devices
+          }
+        });
       }
 
       await checkAuth();
@@ -200,38 +208,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // Safety: Don't overwrite a valid User with null if on Native
       // The Firebase JS SDK often fires 'null' on startup or network change in Capacitor apps
-      if (typeof window !== "undefined") {
-        import("@capacitor/core").then(({ Capacitor }) => {
-          if (Capacitor.isNativePlatform()) {
-            // If we already have a user in state (set by setNativeUser or restoreNativeSession)
-            // and Firebase says "null", we must IGNORE it.
-            // We only allow overwriting if we explicitly "Signed Out".
-            if (!firebaseUser && user) {
-              console.log(
-                "🍎 [AuthContext] Ignoring Firebase Null State (Native Mode)"
-              );
-              return;
-            }
-          }
-
-          setUser(firebaseUser);
-          if (firebaseUser?.phoneNumber) {
-            setPhoneNumber(firebaseUser.phoneNumber);
-          }
-          // Only stop loading if we actually got a user or valid null (web)
-          setLoading(false);
-        });
-      } else {
-        setUser(firebaseUser);
-        setLoading(false);
+      // Use ref to check current user without adding `user` to dependencies
+      if (IS_NATIVE) {
+        if (!firebaseUser && userRef.current) {
+          console.log(
+            "🍎 [AuthContext] Ignoring Firebase Null State (Native Mode)"
+          );
+          return;
+        }
       }
+
+      setUser(firebaseUser);
+      if (firebaseUser?.phoneNumber) {
+        setPhoneNumber(firebaseUser.phoneNumber);
+      }
+      // Only stop loading if we actually got a user or valid null (web)
+      setLoading(false);
     });
 
     return () => {
       mounted = false;
       unsubscribe();
     };
-  }, [checkAuth, user]); // Depend on user to allow safety check
+  }, [checkAuth]); // FIXED: Removed `user` from dependencies to prevent render loop
 
   // Manual Vault Key Setter (for login page)
   const setVaultKeyLocal = (key: string | null) => {
