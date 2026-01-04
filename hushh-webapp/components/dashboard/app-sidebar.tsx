@@ -9,11 +9,10 @@ import {
   Plane,
   MessageCircle,
   Dumbbell,
-  FileText,
   UserCheck,
   Shield,
-  Code,
-  Bot,
+  TrendingUp,
+  Home,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,7 +30,13 @@ import { usePendingConsentCount } from "@/components/consent/notification-provid
 
 const domains = [
   {
-    name: "Professional Profile",
+    name: "Investor",
+    href: "/kai",
+    icon: TrendingUp,
+    status: "active",
+  },
+  {
+    name: "Professional",
     href: "/dashboard/professional",
     icon: UserCheck,
     status: "active",
@@ -61,7 +66,7 @@ const domains = [
     status: "soon",
   },
   {
-    name: "Social Media",
+    name: "Social",
     href: "/dashboard/social",
     icon: MessageCircle,
     status: "soon",
@@ -91,11 +96,8 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Orchestrator Group */}
+        {/* Dashboard Overview */}
         <SidebarGroup>
-          <SidebarGroupLabel className="uppercase text-xs font-bold tracking-wider text-muted-foreground/50">
-            Agent Nav
-          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -106,24 +108,24 @@ export function AppSidebar() {
                   className="md:h-12 md:text-base font-semibold"
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Bot className="h-4 w-4" />
+                    <Home className="h-4 w-4" />
                   </div>
-                  <span className="ml-2">Orchestrator Chat</span>
+                  <span className="ml-2">Dashboard</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Data Domains Group */}
+        {/* Data Domains */}
         <SidebarGroup>
-          <SidebarGroupLabel>Vault Data Domains</SidebarGroupLabel>
+          <SidebarGroupLabel>Data Domains</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {domains.map((domain) => {
                 const isActive =
                   pathname === domain.href ||
-                  pathname.startsWith(domain.href + "/");
+                  pathname?.startsWith(domain.href + "/");
                 const Icon = domain.icon;
 
                 return (
@@ -142,7 +144,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Security Group */}
+        {/* Security */}
         <SidebarGroup>
           <SidebarGroupLabel>Security</SidebarGroupLabel>
           <SidebarGroupContent>
