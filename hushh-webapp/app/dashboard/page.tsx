@@ -296,7 +296,7 @@ export default function DashboardPage() {
   // Calculate totals
   const totalDomains = DATA_DOMAINS.filter((d) => d.status === "active").length;
   const activeDomains = Object.keys(dataCounts).filter(
-    (k) => dataCounts[k] > 0
+    (k) => (dataCounts[k] ?? 0) > 0
   ).length;
   const totalDataPoints = Object.values(dataCounts).reduce((a, b) => a + b, 0);
 
