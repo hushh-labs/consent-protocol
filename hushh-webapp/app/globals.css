@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -326,17 +332,12 @@
 /* Subtle App Background Gradients - FIXED so content scrolls over static bg */
 .morphy-app-bg {
   background: linear-gradient(
-    145deg,
-    #fafafa 0%,
-    #f5f8ff 15%,
-    #f0f4ff 30%,
-    #f3f0ff 50%,
-    #f5f0ff 65%,
-    #f8f5ff 80%,
-    #fafafa 100%
+    180deg,
+    #ffffff 0%,
+    #ffffff 40%,
+    #f2f8ff 70%,
+    #e6f2ff 100%
   );
-  background-attachment: fixed;
-  min-height: 100vh;
 }
 
 .dark .morphy-app-bg {
@@ -350,7 +351,6 @@
     #0c0c14 80%,
     #09090c 100%
   );
-  background-attachment: fixed;
 }
 
 /* Radial glow overlay - subtle brand color accent from top */

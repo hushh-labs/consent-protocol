@@ -1,80 +1,24 @@
 // components/navbar.tsx
-// Bottom Pill Navigation with Consent Badge for Hushh PDA
+// Bottom Pill Navigation - Hushh PDA
 
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Home, LayoutDashboard, LogIn, LogOut, Bell } from "lucide-react";
+import { LayoutDashboard, Bell, User } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
-  requiresAuth?: boolean;
   badge?: number;
 }
 
-const NavButton = ({
-  item,
-  isActive,
-  onClick,
-}: {
-  item: NavItem;
-  isActive: boolean;
-  onClick?: () => void;
-}) => {
-  const Icon = item.icon;
-
-  const buttonContent = (
-    <Button
-      variant="link"
-      effect="glass"
-      showRipple
-      onClick={onClick}
-      className={cn(
-        "relative flex flex-col items-center justify-center h-auto px-3 py-2 rounded-xl",
-        !isActive && "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      <div className="relative">
-        <Icon
-          className={cn(
-            "h-5 w-5 mb-0.5",
-            isActive && "text-(--morphy-primary-start)"
-          )}
-        />
-        {/* Badge for notifications */}
-        {item.badge !== undefined && item.badge > 0 && (
-          <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-            {item.badge > 9 ? "9+" : item.badge}
-          </span>
-        )}
-      </div>
-      <span
-        className={cn(
-          "text-[10px] font-medium",
-          isActive && "hushh-gradient-text"
-        )}
-      >
-        {item.label}
-      </span>
-    </Button>
-  );
-
-  if (onClick) {
-    return buttonContent;
-  }
-
-  return <Link href={item.href}>{buttonContent}</Link>;
-};
-
-// Hook to get pending consent count (client-side only)
+// Hook to get pending consent count
 function usePendingConsents(): number {
   const [count, setCount] = useState(0);
   const { isAuthenticated } = useAuth();
@@ -101,7 +45,6 @@ function usePendingConsents(): number {
     };
 
     fetchCount();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchCount, 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -109,86 +52,98 @@ function usePendingConsents(): number {
   return count;
 }
 
+import { ThemeToggle } from "@/components/theme-toggle";
+
+// ... existing imports
+
 export const Navbar = () => {
   const pathname = usePathname();
-  const { isAuthenticated, signOut } = useAuth();
+  const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsents();
 
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (err) {
-      console.warn("Logout error:", err);
-    }
-  };
+  // If not authenticated, ONLY show the theme toggle in a floating pill
+  if (!isAuthenticated) {
+    return (
+      <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+        <div className="pointer-events-auto shadow-2xl rounded-full">
+          <ThemeToggle className="bg-white/80 dark:bg-black/80 backdrop-blur-md border border-gray-200 dark:border-gray-800" />
+        </div>
+      </nav>
+    );
+  }
 
-  // Build navigation items dynamically
+  // Navigation items with consistent sizing
   const navigationItems: NavItem[] = [
-    ...(isAuthenticated
-      ? [
-          {
-            label: "Dashboard",
-            href: "/dashboard",
-            icon: LayoutDashboard,
-            requiresAuth: true,
-          },
-        ]
-      : []),
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      label: "Consents",
+      href: "/consents",
+      icon: Bell,
+      badge: pendingConsents,
+    },
+    {
+      label: "Profile",
+      href: "/profile",
+      icon: User,
+    },
   ];
 
   return (
-    <nav className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4">
-      <Card
-        variant="none"
-        effect="fill"
-        className="px-3 py-2 rounded-full bg-white dark:bg-black border border-gray-200 dark:border-gray-800 shadow-2xl"
-      >
-        <div className="flex items-center gap-1">
-          {/* Navigation Items */}
-          {navigationItems.map((item) => {
-            const isActive =
-              pathname === item.href || pathname?.startsWith(item.href + "/");
-            return (
-              <NavButton key={item.href} item={item} isActive={isActive} />
-            );
-          })}
+    <nav className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+      <div className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5">
+        {navigationItems.map((item) => {
+          const Icon = item.icon;
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/dashboard" &&
+              pathname?.startsWith(item.href + "/"));
 
-          {/* Consent Notifications (when authenticated) */}
-          {isAuthenticated && (
-            <NavButton
-              item={{
-                label: "Consents",
-                href: "/consents",
-                icon: Bell,
-                badge: pendingConsents,
-              }}
-              isActive={pathname === "/consents"}
-            />
-          )}
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "relative flex items-center justify-center gap-2 px-4 py-2.5 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                isActive
+                  ? "bg-background text-foreground shadow-sm ring-1 ring-black/5 min-w-[120px]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50 min-w-[44px]"
+              )}
+            >
+              <div className="relative flex items-center justify-center">
+                <Icon
+                  className={cn(
+                    "h-5 w-5 transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+                    isActive && "scale-105"
+                  )}
+                />
+                {/* Badge */}
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center border-[1.5px] border-muted">
+                    {item.badge > 9 ? "9" : item.badge}
+                  </span>
+                )}
+              </div>
 
-          {/* Separator */}
-          <div className="h-10 w-px bg-gray-300 dark:bg-gray-600 mx-1" />
-
-          {/* Auth Button */}
-          {isAuthenticated ? (
-            <NavButton
-              item={{ label: "Sign Out", href: "/logout", icon: LogOut }}
-              isActive={false}
-              onClick={handleLogout}
-            />
-          ) : (
-            <NavButton
-              item={{ label: "Sign In", href: "/login", icon: LogIn }}
-              isActive={pathname === "/login"}
-            />
-          )}
-
-          {/* Theme Toggle */}
-          <div className="flex flex-col items-center justify-center px-2 py-2">
-            <ThemeToggle />
-          </div>
-        </div>
-      </Card>
+              <div
+                className={cn(
+                  "overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] flex items-center",
+                  isActive
+                    ? "w-auto max-w-[100px] opacity-100 ml-1"
+                    : "w-0 max-w-0 opacity-0"
+                )}
+              >
+                <span className="text-sm font-medium whitespace-nowrap">
+                  {item.label}
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 };

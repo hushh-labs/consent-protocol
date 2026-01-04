@@ -1,11 +1,18 @@
-// middleware.ts
-// Next.js Middleware for Route Protection
+// proxy.ts
+// Next.js 16 Proxy for Route Protection (formerly middleware.ts)
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Routes that don't require authentication
-const PUBLIC_ROUTES = ["/", "/login", "/docs", "/logout", "/privacy"];
+// Routes that don't require authentication (VaultLockGuard handles protected routes)
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/docs",
+  "/logout",
+  "/privacy",
+  "/profile",
+];
 
 // API routes are handled separately
 const API_PREFIX = "/api";
@@ -32,15 +39,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // For protected routes, check for session cookie
-  const hasSession = request.cookies.get("hushh_session");
-
-  // If no session and trying to access protected route, redirect to login
-  if (!hasSession) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
-  }
+  // =========================================================================
+  // IMPORTANT: Firebase Auth is CLIENT-SIDE. We cannot reliably check auth
+  // server-side in proxy without session cookies (which we don't use).
+  //
+  // Auth is handled by:
+  // 1. VaultLockGuard in dashboard/consents layouts (checks Firebase auth + vault)
+  // 2. useAuth hook in individual pages
+  //
+  // The proxy just handles basic routing and allows all requests through.
+  // Protected pages will redirect to "/" if not authenticated.
+  // =========================================================================
 
   return NextResponse.next();
 }

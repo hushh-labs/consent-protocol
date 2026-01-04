@@ -48,7 +48,7 @@ export default function ProfessionalProfilePage() {
   useEffect(() => {
     // Redirect if vault not unlocked
     if (!isVaultUnlocked) {
-      router.push("/login?redirect=/dashboard/professional");
+      router.push("/?redirect=/dashboard/professional");
       return;
     }
     loadProfile();
@@ -62,7 +62,11 @@ export default function ProfessionalProfilePage() {
       const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
 
       if (!userId || !vaultKey) {
-        router.push("/login");
+        console.warn("Redirecting from Professional: Missing auth", {
+          userId: !!userId,
+          vaultKey: !!vaultKey,
+        });
+        router.push("/");
         return;
       }
 
@@ -90,7 +94,8 @@ export default function ProfessionalProfilePage() {
         throw new Error("Failed to load profile");
       }
 
-      const { preferences: encryptedPrefs } = await response.json();
+      const jsonResponse = await response.json();
+      const encryptedPrefs = jsonResponse.preferences || {};
 
       // Decrypt client-side
       if (process.env.NODE_ENV === "development") {
@@ -106,35 +111,51 @@ export default function ProfessionalProfilePage() {
       };
 
       if (encryptedPrefs.professional_title) {
-        const titleDecrypted = await decryptData(
-          encryptedPrefs.professional_title,
-          vaultKey
-        );
-        profileData.professional_title = JSON.parse(titleDecrypted);
+        try {
+          const titleDecrypted = await decryptData(
+            encryptedPrefs.professional_title,
+            vaultKey
+          );
+          profileData.professional_title = JSON.parse(titleDecrypted);
+        } catch (e) {
+          console.warn("Failed to decrypt professional_title", e);
+        }
       }
 
       if (encryptedPrefs.skills) {
-        const skillsDecrypted = await decryptData(
-          encryptedPrefs.skills,
-          vaultKey
-        );
-        profileData.skills = JSON.parse(skillsDecrypted);
+        try {
+          const skillsDecrypted = await decryptData(
+            encryptedPrefs.skills,
+            vaultKey
+          );
+          profileData.skills = JSON.parse(skillsDecrypted);
+        } catch (e) {
+          console.warn("Failed to decrypt skills", e);
+        }
       }
 
       if (encryptedPrefs.experience_level) {
-        const expDecrypted = await decryptData(
-          encryptedPrefs.experience_level,
-          vaultKey
-        );
-        profileData.experience_level = JSON.parse(expDecrypted);
+        try {
+          const expDecrypted = await decryptData(
+            encryptedPrefs.experience_level,
+            vaultKey
+          );
+          profileData.experience_level = JSON.parse(expDecrypted);
+        } catch (e) {
+          console.warn("Failed to decrypt experience_level", e);
+        }
       }
 
       if (encryptedPrefs.job_preferences) {
-        const jobDecrypted = await decryptData(
-          encryptedPrefs.job_preferences,
-          vaultKey
-        );
-        profileData.job_preferences = JSON.parse(jobDecrypted);
+        try {
+          const jobDecrypted = await decryptData(
+            encryptedPrefs.job_preferences,
+            vaultKey
+          );
+          profileData.job_preferences = JSON.parse(jobDecrypted);
+        } catch (e) {
+          console.warn("Failed to decrypt job_preferences", e);
+        }
       }
 
       setProfile(profileData);
