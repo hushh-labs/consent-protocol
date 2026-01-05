@@ -1,22 +1,20 @@
 "use client";
 
 /**
- * Agent Kai — Personal Agent 🤫 by Hushh Technologies
+ * Agent Kai — Luxurious Investor Onboarding
  *
- * This is the main Kai page with:
- * 1. Welcome + Legal Acknowledgment
- * 2. Processing Mode Selection (On-Device / Hybrid)
- * 3. Risk Profile Setup (Conservative / Balanced / Aggressive)
- * 4. Consent Grant
- * 5. Ready to Analyze
+ * Premium onboarding experience with:
+ * - Framer Motion page transitions
+ * - Glassmorphism styling
+ * - Micro-interactions
+ * - Compliance-first design (consent protocol integration)
  *
- * After onboarding, investor can use Kai's investment analysis mode.
- *
- * @see docs/vision/kai/README.md for full specification
+ * @see docs/vision/kai/README.md
  */
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Button,
   Card,
@@ -36,13 +34,10 @@ import {
   Scale,
   TrendingUp,
   Sparkles,
+  Lock,
+  Fingerprint,
 } from "lucide-react";
-import {
-  createInvestorSession,
-  recordManagerSelection,
-  grantConsent,
-  logAudit,
-} from "./actions";
+import { createInvestorSession, grantConsent, logAudit } from "./actions";
 
 // =============================================================================
 // TYPES
@@ -68,25 +63,102 @@ interface OnboardingState {
 }
 
 // =============================================================================
-// STEP INDICATOR
+// ANIMATION VARIANTS
+// =============================================================================
+
+const pageTransition = {
+  duration: 0.4,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+const exitTransition = {
+  duration: 0.3,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+const staggerContainer = {
+  animate: {
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+};
+
+const scaleIn = {
+  initial: { opacity: 0, scale: 0.8 },
+  animate: { opacity: 1, scale: 1, transition: { duration: 0.4 } },
+};
+
+// =============================================================================
+// PREMIUM STEP INDICATOR
 // =============================================================================
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
-    <div className="flex items-center gap-2 justify-center mt-6">
+    <div className="flex items-center justify-center gap-3 mt-8 mb-4">
       {Array.from({ length: total }).map((_, i) => (
-        <div
+        <motion.div
           key={i}
-          className={`h-2 w-8 rounded-full transition-colors ${
-            i < current
-              ? "bg-primary"
-              : i === current
-              ? "bg-primary/50"
-              : "bg-muted"
-          }`}
-        />
+          className="relative"
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: i * 0.1 }}
+        >
+          <motion.div
+            className={`h-2.5 rounded-full transition-all duration-500 ${
+              i < current
+                ? "w-10 bg-gradient-to-r from-blue-500 to-purple-500"
+                : i === current
+                ? "w-10 bg-gradient-to-r from-blue-500/50 to-purple-500/50"
+                : "w-2.5 bg-white/20"
+            }`}
+            layoutId={`step-${i}`}
+          />
+          {i < current && (
+            <motion.div
+              className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+            />
+          )}
+        </motion.div>
       ))}
     </div>
+  );
+}
+
+// =============================================================================
+// GLASSMORPHIC CARD WRAPPER
+// =============================================================================
+
+function GlassCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.98 }}
+      transition={pageTransition}
+      className={`relative max-w-lg mx-auto ${className}`}
+    >
+      {/* Glow effect */}
+      <div className="absolute -inset-1 bg-linear-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 rounded-3xl blur-xl opacity-70" />
+
+      {/* Card */}
+      <div className="relative bg-background/80 dark:bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+        {children}
+      </div>
+    </motion.div>
   );
 }
 
@@ -104,71 +176,138 @@ function WelcomeScreen({ onContinue }: { onContinue: () => void }) {
   const allChecked = checks.notAdvice && checks.consultPro && checks.mayLose;
 
   return (
-    <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <div className="mx-auto h-16 w-16 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl shadow-lg mb-4">
-          🤫
-        </div>
-        <p className="text-sm text-muted-foreground">Personal Agent</p>
-        <CardTitle className="text-2xl">Kai</CardTitle>
-        <CardDescription>by Hushh Technologies</CardDescription>
+    <GlassCard>
+      <CardHeader className="text-center pt-8">
+        <motion.div
+          variants={scaleIn}
+          initial="initial"
+          animate="animate"
+          className="mx-auto h-20 w-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-4xl shadow-lg shadow-purple-500/25 mb-6"
+        >
+          <span className="drop-shadow-lg">🤫</span>
+        </motion.div>
+
+        <motion.div variants={fadeInUp} initial="initial" animate="animate">
+          <p className="text-sm font-medium bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent uppercase tracking-wider mb-2">
+            Personal Agent
+          </p>
+          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-white to-white/80 bg-clip-text">
+            Kai
+          </CardTitle>
+          <CardDescription className="mt-2">
+            by Hushh Technologies
+          </CardDescription>
+        </motion.div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        <p className="text-center text-muted-foreground">
+      <CardContent className="space-y-6">
+        <motion.p
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="text-center text-muted-foreground text-lg"
+        >
           Your personal investment committee.
           <br />
-          Three specialists. One decision. Your receipts.
-        </p>
+          <span className="text-white/90">
+            Three specialists. One decision. Your receipts.
+          </span>
+        </motion.p>
 
-        {/* Legal checkboxes - Yellow/Black in both modes */}
-        <div className="bg-yellow-100 border border-yellow-400 rounded-lg p-4 space-y-3">
-          <p className="text-sm font-medium text-black">
-            ⚠️ Important: Kai provides educational analysis, NOT investment
-            advice.
+        {/* Compliance section - Premium styled */}
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl p-5 space-y-4"
+        >
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-amber-500" />
+            <p className="text-sm font-semibold text-amber-400">
+              Important Disclosure
+            </p>
+          </div>
+          <p className="text-sm text-amber-200/80">
+            Kai provides educational analysis, NOT investment advice.
           </p>
 
-          {[
-            {
-              key: "notAdvice",
-              label: "I understand this is not investment advice",
-            },
-            {
-              key: "consultPro",
-              label: "I will consult professionals before investing",
-            },
-            { key: "mayLose", label: "I understand I may lose money" },
-          ].map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={checks[key as keyof typeof checks]}
-                onChange={(e) =>
-                  setChecks((c) => ({ ...c, [key]: e.target.checked }))
-                }
-                className="w-5 h-5 rounded border-yellow-500 text-yellow-600 focus:ring-yellow-500"
-              />
-              <span className="text-sm text-black">{label}</span>
-            </label>
-          ))}
-        </div>
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="space-y-3"
+          >
+            {[
+              {
+                key: "notAdvice",
+                label: "I understand this is not investment advice",
+              },
+              {
+                key: "consultPro",
+                label: "I will consult professionals before investing",
+              },
+              { key: "mayLose", label: "I understand I may lose money" },
+            ].map(({ key, label }) => (
+              <motion.label
+                key={key}
+                variants={fadeInUp}
+                className="flex items-center gap-3 cursor-pointer group"
+              >
+                <div
+                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all duration-300 ${
+                    checks[key as keyof typeof checks]
+                      ? "bg-gradient-to-br from-amber-500 to-orange-500 border-amber-500"
+                      : "border-amber-500/50 group-hover:border-amber-400"
+                  }`}
+                  onClick={() =>
+                    setChecks((c) => ({
+                      ...c,
+                      [key]: !c[key as keyof typeof c],
+                    }))
+                  }
+                >
+                  {checks[key as keyof typeof checks] && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 500 }}
+                    >
+                      <Check className="h-4 w-4 text-white" />
+                    </motion.div>
+                  )}
+                </div>
+                <span className="text-sm text-amber-100/90">{label}</span>
+              </motion.label>
+            ))}
+          </motion.div>
+        </motion.div>
       </CardContent>
 
-      <CardFooter>
-        <Button
-          variant="gradient"
-          size="lg"
+      <CardFooter className="pb-6">
+        <motion.div
           className="w-full"
-          disabled={!allChecked}
-          onClick={onContinue}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          I Understand - Get Started
-          <ArrowRight className="ml-2 h-5 w-5" />
-        </Button>
+          <Button
+            variant="gradient"
+            size="lg"
+            className={`w-full h-14 text-lg font-semibold transition-all duration-300 ${
+              allChecked
+                ? "opacity-100 shadow-lg shadow-purple-500/25"
+                : "opacity-50"
+            }`}
+            disabled={!allChecked}
+            onClick={onContinue}
+          >
+            I Understand — Get Started
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </motion.div>
       </CardFooter>
 
       <StepIndicator current={0} total={5} />
-    </Card>
+    </GlassCard>
   );
 }
 
@@ -185,6 +324,7 @@ const PROCESSING_MODES = [
     description:
       "Analysis runs entirely on your device. No data ever leaves your phone.",
     highlight: "Uses cached/historical data",
+    gradient: "from-emerald-500 to-teal-500",
   },
   {
     id: "hybrid" as ProcessingMode,
@@ -193,6 +333,7 @@ const PROCESSING_MODES = [
     subtitle: "Best Accuracy",
     description: "Reasoning on-device, live data with your consent.",
     highlight: "You approve each external source",
+    gradient: "from-blue-500 to-purple-500",
   },
 ];
 
@@ -204,75 +345,112 @@ function ProcessingModeScreen({
   const [selected, setSelected] = useState<ProcessingMode | null>(null);
 
   return (
-    <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <CardTitle>How should Kai process your requests?</CardTitle>
-        <CardDescription>
-          Choose your preferred privacy/accuracy balance
-        </CardDescription>
+    <GlassCard>
+      <CardHeader className="text-center pt-8">
+        <motion.div variants={fadeInUp} initial="initial" animate="animate">
+          <CardTitle className="text-2xl">
+            How should Kai process your requests?
+          </CardTitle>
+          <CardDescription className="mt-2">
+            Choose your preferred privacy/accuracy balance
+          </CardDescription>
+        </motion.div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {PROCESSING_MODES.map((mode) => {
-          const Icon = mode.icon;
-          const isSelected = selected === mode.id;
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="space-y-4"
+        >
+          {PROCESSING_MODES.map((mode, idx) => {
+            const Icon = mode.icon;
+            const isSelected = selected === mode.id;
 
-          return (
-            <button
-              key={mode.id}
-              onClick={() => setSelected(mode.id)}
-              className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                isSelected
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
-              }`}
-            >
-              <div className="flex items-start gap-4">
-                <div
-                  className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{mode.title}</span>
-                    <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                      {mode.subtitle}
-                    </span>
+            return (
+              <motion.button
+                key={mode.id}
+                variants={fadeInUp}
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelected(mode.id)}
+                className={`w-full p-5 rounded-xl border-2 transition-all duration-300 text-left ${
+                  isSelected
+                    ? `border-white/30 bg-gradient-to-br ${mode.gradient}/10`
+                    : "border-white/10 hover:border-white/20 bg-white/5"
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <motion.div
+                    animate={{ rotate: isSelected ? 360 : 0 }}
+                    transition={{ duration: 0.5 }}
+                    className={`h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br ${mode.gradient} shadow-lg`}
+                  >
+                    <Icon className="h-6 w-6 text-white" />
+                  </motion.div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-lg">
+                        {mode.title}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full bg-gradient-to-r ${mode.gradient}/20 border border-white/10`}
+                      >
+                        {mode.subtitle}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {mode.description}
+                    </p>
+                    <p className="text-xs text-white/50 mt-2 italic">
+                      {mode.highlight}
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {mode.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1 italic">
-                    {mode.highlight}
-                  </p>
+                  <AnimatePresence>
+                    {isSelected && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        className={`h-6 w-6 rounded-full bg-gradient-to-br ${mode.gradient} flex items-center justify-center`}
+                      >
+                        <Check className="h-4 w-4 text-white" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                {isSelected && <Check className="h-5 w-5 text-primary" />}
-              </div>
-            </button>
-          );
-        })}
+              </motion.button>
+            );
+          })}
+        </motion.div>
       </CardContent>
 
-      <CardFooter>
-        <Button
-          variant="gradient"
-          size="lg"
+      <CardFooter className="pb-6">
+        <motion.div
           className="w-full"
-          disabled={!selected}
-          onClick={() => selected && onSelect(selected)}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          Continue
-          <ArrowRight className="ml-2 h-5 w-5" />
-        </Button>
+          <Button
+            variant="gradient"
+            size="lg"
+            className={`w-full h-14 text-lg font-semibold transition-all duration-300 ${
+              selected
+                ? "opacity-100 shadow-lg shadow-purple-500/25"
+                : "opacity-50"
+            }`}
+            disabled={!selected}
+            onClick={() => selected && onSelect(selected)}
+          >
+            Continue
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </motion.div>
       </CardFooter>
 
       <StepIndicator current={1} total={5} />
-    </Card>
+    </GlassCard>
   );
 }
 
@@ -287,6 +465,7 @@ const RISK_PROFILES = [
     title: "Conservative",
     description: "I prioritize protecting what I have",
     behavior: "Emphasizes downside risks, higher confidence thresholds",
+    gradient: "from-blue-400 to-cyan-400",
   },
   {
     id: "balanced" as RiskProfile,
@@ -294,6 +473,7 @@ const RISK_PROFILES = [
     title: "Balanced",
     description: "I want growth with protection",
     behavior: "Balanced agent weighting",
+    gradient: "from-purple-400 to-pink-400",
   },
   {
     id: "aggressive" as RiskProfile,
@@ -301,6 +481,7 @@ const RISK_PROFILES = [
     title: "Aggressive",
     description: "I'm focused on growth opportunities",
     behavior: "Weighs momentum and opportunity higher",
+    gradient: "from-orange-400 to-red-400",
   },
 ];
 
@@ -312,75 +493,109 @@ function RiskProfileScreen({
   const [selected, setSelected] = useState<RiskProfile | null>(null);
 
   return (
-    <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <CardTitle>How do you approach investing?</CardTitle>
-        <CardDescription>
-          This helps Kai align recommendations to your style
-        </CardDescription>
+    <GlassCard>
+      <CardHeader className="text-center pt-8">
+        <motion.div variants={fadeInUp} initial="initial" animate="animate">
+          <CardTitle className="text-2xl">
+            How do you approach investing?
+          </CardTitle>
+          <CardDescription className="mt-2">
+            This helps Kai align recommendations to your style
+          </CardDescription>
+        </motion.div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {RISK_PROFILES.map((profile) => {
-          const Icon = profile.icon;
-          const isSelected = selected === profile.id;
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="space-y-4"
+        >
+          {RISK_PROFILES.map((profile) => {
+            const Icon = profile.icon;
+            const isSelected = selected === profile.id;
 
-          return (
-            <button
-              key={profile.id}
-              onClick={() => setSelected(profile.id)}
-              className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                isSelected
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
-              }`}
-            >
-              <div className="flex items-start gap-4">
-                <div
-                  className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
+            return (
+              <motion.button
+                key={profile.id}
+                variants={fadeInUp}
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setSelected(profile.id)}
+                className={`w-full p-5 rounded-xl border-2 transition-all duration-300 text-left ${
+                  isSelected
+                    ? `border-white/30 bg-gradient-to-br ${profile.gradient}/10`
+                    : "border-white/10 hover:border-white/20 bg-white/5"
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <motion.div
+                    animate={{ scale: isSelected ? 1.1 : 1 }}
+                    className={`h-12 w-12 rounded-xl flex items-center justify-center bg-gradient-to-br ${profile.gradient} shadow-lg`}
+                  >
+                    <Icon className="h-6 w-6 text-white" />
+                  </motion.div>
+                  <div className="flex-1">
+                    <span className="font-semibold text-lg">
+                      {profile.title}
+                    </span>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {profile.description}
+                    </p>
+                    <p className="text-xs text-white/50 mt-2 italic">
+                      {profile.behavior}
+                    </p>
+                  </div>
+                  <AnimatePresence>
+                    {isSelected && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        className={`h-6 w-6 rounded-full bg-gradient-to-br ${profile.gradient} flex items-center justify-center`}
+                      >
+                        <Check className="h-4 w-4 text-white" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <div className="flex-1">
-                  <span className="font-semibold">{profile.title}</span>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {profile.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1 italic">
-                    {profile.behavior}
-                  </p>
-                </div>
-                {isSelected && <Check className="h-5 w-5 text-primary" />}
-              </div>
-            </button>
-          );
-        })}
+              </motion.button>
+            );
+          })}
+        </motion.div>
       </CardContent>
 
-      <CardFooter>
-        <Button
-          variant="gradient"
-          size="lg"
+      <CardFooter className="pb-6">
+        <motion.div
           className="w-full"
-          disabled={!selected}
-          onClick={() => selected && onSelect(selected)}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          Continue
-          <ArrowRight className="ml-2 h-5 w-5" />
-        </Button>
+          <Button
+            variant="gradient"
+            size="lg"
+            className={`w-full h-14 text-lg font-semibold transition-all duration-300 ${
+              selected
+                ? "opacity-100 shadow-lg shadow-purple-500/25"
+                : "opacity-50"
+            }`}
+            disabled={!selected}
+            onClick={() => selected && onSelect(selected)}
+          >
+            Continue
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </motion.div>
       </CardFooter>
 
       <StepIndicator current={2} total={5} />
-    </Card>
+    </GlassCard>
   );
 }
 
 // =============================================================================
-// SCREEN 4: CONSENT GRANT
+// SCREEN 4: CONSENT GRANT (COMPLIANCE-FIRST)
 // =============================================================================
 
 function ConsentScreen({
@@ -391,119 +606,213 @@ function ConsentScreen({
   onDeny: () => void;
 }) {
   return (
-    <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <div className="mx-auto h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center mb-2">
-          <Shield className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-        </div>
-        <CardTitle>Data Access</CardTitle>
-        <CardDescription>Kai needs your permission to operate</CardDescription>
+    <GlassCard>
+      <CardHeader className="text-center pt-8">
+        <motion.div
+          variants={scaleIn}
+          initial="initial"
+          animate="animate"
+          className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/25 mb-4"
+        >
+          <Lock className="h-8 w-8 text-white" />
+        </motion.div>
+        <motion.div variants={fadeInUp} initial="initial" animate="animate">
+          <CardTitle className="text-2xl">Data Access Consent</CardTitle>
+          <CardDescription className="mt-2">
+            Kai operates under strict consent protocol
+          </CardDescription>
+        </motion.div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* What Kai will do */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Kai will:</p>
+      <CardContent className="space-y-6">
+        {/* What Kai WILL do */}
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="space-y-3"
+        >
+          <p className="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+            <Check className="h-4 w-4" /> Kai will:
+          </p>
           {[
             "Analyze stocks you request",
             "Remember your risk profile",
             "Store decision history on your device",
           ].map((item) => (
-            <div key={item} className="flex items-center gap-3">
-              <div className="h-6 w-6 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-              </div>
-              <span className="text-sm">{item}</span>
-            </div>
+            <motion.div
+              key={item}
+              whileHover={{ x: 4 }}
+              className="flex items-center gap-3 pl-6"
+            >
+              <div className="h-2 w-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-400" />
+              <span className="text-sm text-white/80">{item}</span>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
 
-        {/* What Kai will NOT do */}
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">
-            Kai will NEVER:
+        {/* What Kai will NEVER do */}
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="space-y-3"
+        >
+          <p className="text-sm font-semibold text-red-400 flex items-center gap-2">
+            <span>✗</span> Kai will NEVER:
           </p>
           {[
             "Execute trades without explicit consent",
             "Share your data with third parties",
             "Make decisions without showing you why",
           ].map((item) => (
-            <div
+            <motion.div
               key={item}
-              className="flex items-center gap-3 text-muted-foreground"
+              whileHover={{ x: 4 }}
+              className="flex items-center gap-3 pl-6 text-muted-foreground"
             >
-              <div className="h-6 w-6 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center">
-                <span className="text-red-600 dark:text-red-400 text-sm">
-                  ✗
-                </span>
-              </div>
+              <div className="h-2 w-2 rounded-full bg-red-400/50" />
               <span className="text-sm">{item}</span>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
+
+        {/* Consent Protocol Badge */}
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-white/10"
+        >
+          <Shield className="h-4 w-4 text-blue-400" />
+          <span className="text-xs text-white/60">
+            Protected by Hushh Consent Protocol (MCP)
+          </span>
+        </motion.div>
       </CardContent>
 
-      <CardFooter className="flex flex-col gap-3">
-        <Button
-          variant="gradient"
-          size="lg"
+      <CardFooter className="flex flex-col gap-3 pb-6">
+        <motion.div
           className="w-full"
-          onClick={onGrant}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          Approve
-          <Check className="ml-2 h-5 w-5" />
-        </Button>
-        <Button
-          variant="none"
-          size="lg"
-          className="w-full border"
-          onClick={onDeny}
+          <Button
+            variant="gradient"
+            size="lg"
+            className="w-full h-14 text-lg font-semibold shadow-lg shadow-purple-500/25"
+            onClick={onGrant}
+          >
+            <Fingerprint className="mr-2 h-5 w-5" />
+            Approve
+          </Button>
+        </motion.div>
+        <motion.div
+          className="w-full"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          Deny
-        </Button>
+          <Button
+            variant="none"
+            size="lg"
+            className="w-full h-12 border border-white/20 text-muted-foreground hover:bg-white/5"
+            onClick={onDeny}
+          >
+            Deny
+          </Button>
+        </motion.div>
       </CardFooter>
 
       <StepIndicator current={3} total={5} />
-    </Card>
+    </GlassCard>
   );
 }
 
 // =============================================================================
-// SCREEN 5: READY
+// SCREEN 5: READY (CELEBRATION)
 // =============================================================================
 
 function ReadyScreen({ onStart }: { onStart: () => void }) {
   return (
-    <Card className="max-w-lg mx-auto">
-      <CardHeader className="text-center">
-        <div className="mx-auto h-16 w-16 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center mb-2">
-          <Sparkles className="h-8 w-8 text-green-600 dark:text-green-400" />
-        </div>
-        <CardTitle>You're all set!</CardTitle>
-        <CardDescription>Ask Kai about any stock or ETF</CardDescription>
+    <GlassCard>
+      <CardHeader className="text-center pt-8">
+        <motion.div
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+          className="mx-auto h-20 w-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-500 flex items-center justify-center shadow-lg shadow-emerald-500/25 mb-6"
+        >
+          <Sparkles className="h-10 w-10 text-white" />
+        </motion.div>
+        <motion.div variants={fadeInUp} initial="initial" animate="animate">
+          <CardTitle className="text-3xl font-bold">You're all set!</CardTitle>
+          <CardDescription className="mt-2 text-lg">
+            Ask Kai about any stock or ETF
+          </CardDescription>
+        </motion.div>
       </CardHeader>
 
-      <CardContent className="text-center space-y-4">
-        <p className="text-muted-foreground">Try asking something like:</p>
-        <div className="bg-muted rounded-lg p-4 text-lg font-medium">
-          "Should I buy Apple?"
-        </div>
+      <CardContent className="text-center space-y-6">
+        <motion.p
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          className="text-muted-foreground"
+        >
+          Try asking something like:
+        </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="bg-gradient-to-br from-white/5 to-white/10 border border-white/10 rounded-xl p-6"
+        >
+          <p className="text-xl font-medium text-white/90 italic">
+            "Should I buy Apple?"
+          </p>
+        </motion.div>
+
+        {/* Success badges */}
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="flex flex-wrap justify-center gap-2"
+        >
+          {["Consent Granted", "Profile Saved", "Ready to Analyze"].map(
+            (badge) => (
+              <motion.span
+                key={badge}
+                variants={fadeInUp}
+                className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-xs text-emerald-400"
+              >
+                ✓ {badge}
+              </motion.span>
+            )
+          )}
+        </motion.div>
       </CardContent>
 
-      <CardFooter>
-        <Button
-          variant="gradient"
-          size="lg"
+      <CardFooter className="pb-6">
+        <motion.div
           className="w-full"
-          onClick={onStart}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          Start Analyzing
-          <ArrowRight className="ml-2 h-5 w-5" />
-        </Button>
+          <Button
+            variant="gradient"
+            size="lg"
+            className="w-full h-14 text-lg font-semibold shadow-lg shadow-purple-500/25"
+            onClick={onStart}
+          >
+            Start Analyzing
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </motion.div>
       </CardFooter>
 
       <StepIndicator current={4} total={5} />
-    </Card>
+    </GlassCard>
   );
 }
 
@@ -560,9 +869,9 @@ export default function KaiPage() {
   const handleConsentGrant = useCallback(async () => {
     if (!state.sessionId) return;
     await grantConsent(state.sessionId, [
-      "kyc_verification", // Repurposed: analyze stocks
-      "aml_verification", // Repurposed: remember risk profile
-      "accreditation", // Repurposed: store decision history
+      "vault.read.risk_profile",
+      "vault.write.decision",
+      "agent.kai.analyze",
     ]);
     setState((s) => ({ ...s, consentGranted: true, step: "ready" }));
   }, [state.sessionId]);
@@ -574,29 +883,43 @@ export default function KaiPage() {
   }, []);
 
   const handleStartAnalyzing = useCallback(() => {
-    // TODO: Navigate to Kai analysis/chat interface
-    router.push("/dashboard");
+    // Redirect to Kai Analysis Dashboard after onboarding
+    router.push("/dashboard/kai/analysis");
   }, [router]);
 
-  // Render current step
   return (
-    <div className="py-8">
-      {state.step === "welcome" && (
-        <WelcomeScreen onContinue={handleWelcomeContinue} />
-      )}
-      {state.step === "processing_mode" && (
-        <ProcessingModeScreen onSelect={handleProcessingModeSelect} />
-      )}
-      {state.step === "risk_profile" && (
-        <RiskProfileScreen onSelect={handleRiskProfileSelect} />
-      )}
-      {state.step === "consent" && (
-        <ConsentScreen
-          onGrant={handleConsentGrant}
-          onDeny={handleConsentDeny}
-        />
-      )}
-      {state.step === "ready" && <ReadyScreen onStart={handleStartAnalyzing} />}
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Background effects */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+      </div>
+
+      {/* Content */}
+      <AnimatePresence mode="wait">
+        {state.step === "welcome" && (
+          <WelcomeScreen key="welcome" onContinue={handleWelcomeContinue} />
+        )}
+        {state.step === "processing_mode" && (
+          <ProcessingModeScreen
+            key="mode"
+            onSelect={handleProcessingModeSelect}
+          />
+        )}
+        {state.step === "risk_profile" && (
+          <RiskProfileScreen key="risk" onSelect={handleRiskProfileSelect} />
+        )}
+        {state.step === "consent" && (
+          <ConsentScreen
+            key="consent"
+            onGrant={handleConsentGrant}
+            onDeny={handleConsentDeny}
+          />
+        )}
+        {state.step === "ready" && (
+          <ReadyScreen key="ready" onStart={handleStartAnalyzing} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
