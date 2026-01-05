@@ -97,10 +97,13 @@ export const Navbar = () => {
       <div className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5">
         {navigationItems.map((item) => {
           const Icon = item.icon;
+          // Handle trailing slashes from Capacitor static export
+          const normalizedPathname = pathname?.replace(/\/$/, "") || "";
+          const normalizedHref = item.href.replace(/\/$/, "");
+
           const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" &&
-              pathname?.startsWith(item.href + "/"));
+            normalizedPathname === normalizedHref ||
+            normalizedPathname.startsWith(normalizedHref + "/");
 
           return (
             <Link

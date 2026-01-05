@@ -181,7 +181,7 @@ async def vault_setup(request: VaultSetupRequest):
                     recovery_encrypted_vault_key, recovery_salt, recovery_iv,
                     created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CAST(EXTRACT(EPOCH FROM NOW()) * 1000 AS BIGINT))
                 ON CONFLICT (user_id) DO UPDATE SET
                     auth_method = EXCLUDED.auth_method,
                     encrypted_vault_key = EXCLUDED.encrypted_vault_key,
@@ -190,7 +190,7 @@ async def vault_setup(request: VaultSetupRequest):
                     recovery_encrypted_vault_key = EXCLUDED.recovery_encrypted_vault_key,
                     recovery_salt = EXCLUDED.recovery_salt,
                     recovery_iv = EXCLUDED.recovery_iv,
-                    updated_at = NOW()
+                    updated_at = CAST(EXTRACT(EPOCH FROM NOW()) * 1000 AS BIGINT)
                 """,
                 request.userId,
                 request.authMethod,

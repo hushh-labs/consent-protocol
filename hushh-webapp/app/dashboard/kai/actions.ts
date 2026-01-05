@@ -1,13 +1,25 @@
 /**
- * Kai Onboarding — Server Actions
+ * Kai Onboarding — Session Actions
  *
  * V0 Operons for investor onboarding flow.
- * These are Next.js server actions that can be called from the client.
+ * NOTE: These functions run CLIENT-SIDE for Capacitor compatibility.
+ * V1 will migrate to API routes for proper server-side execution.
  */
 
-"use server";
+// "use server"; // DISABLED: Server Actions not supported in static export
 
-import { randomUUID } from "crypto";
+// Use browser crypto for client-side UUID generation
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // =============================================================================
 // TYPES
@@ -80,7 +92,7 @@ export async function createInvestorSession(
   userId: string,
   fundId: string = "fund_a"
 ): Promise<{ sessionId: string }> {
-  const sessionId = `session_${randomUUID()}`;
+  const sessionId = `session_${generateUUID()}`;
 
   const session: Session = {
     sessionId,
@@ -163,7 +175,7 @@ export async function grantConsent(
     return { consentId: "", success: false };
   }
 
-  const consentId = `consent_${randomUUID()}`;
+  const consentId = `consent_${generateUUID()}`;
 
   const consent: Consent = {
     consentId,
@@ -206,7 +218,7 @@ export async function notifyManager(
     return { notificationId: "", success: false };
   }
 
-  const notificationId = `notif_${randomUUID()}`;
+  const notificationId = `notif_${generateUUID()}`;
 
   // V0: Log notification (actual email sending in V1)
   console.log(`[Kai] NOTIFICATION SENT:`);
@@ -245,7 +257,7 @@ export async function logAudit(
   action: AuditAction,
   metadata: Record<string, unknown> = {}
 ): Promise<{ entryId: string }> {
-  const entryId = `audit_${randomUUID()}`;
+  const entryId = `audit_${generateUUID()}`;
 
   const entry: AuditEntry = {
     entryId,
