@@ -1,0 +1,112 @@
+steps:
+  # ==============================================================================
+  # 1. Build & Push Backend
+  # ==============================================================================
+  - name: "gcr.io/cloud-builders/docker"
+    id: Build Backend
+    args:
+      - "build"
+      - "-f"
+      - "deploy/backend.Dockerfile"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/consent-protocol:latest"
+      - "consent-protocol"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: Push Backend
+    args: ["push", "gcr.io/$PROJECT_ID/consent-protocol:latest"]
+
+  # ==============================================================================
+  # 2. Deploy Backend (Cloud Run)
+  # ==============================================================================
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Deploy Backend
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "consent-protocol"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/consent-protocol:latest"
+      - "--region"
+      - "us-central1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--add-cloudsql-instances"
+      - "hushh-pda:us-central1:hushh-vault-db"
+      - "--set-secrets"
+      - "DATABASE_URL=DATABASE_URL:latest,SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest,FRONTEND_URL=FRONTEND_URL:latest"
+
+  # ==============================================================================
+  # 3. Get Backend URL
+  # ==============================================================================
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Get Backend URL
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        gcloud run services describe consent-protocol --platform managed --region us-central1 --format 'value(status.url)' > /workspace/backend_url.txt
+        echo "Backend URL: $(cat /workspace/backend_url.txt)"
+
+  # ==============================================================================
+  # 4. Build & Push Webapp (with Secrets & Backend URL)
+  # ==============================================================================
+  - name: "gcr.io/cloud-builders/docker"
+    id: Build Webapp
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        export NEXT_PUBLIC_BACKEND_URL=$(cat /workspace/backend_url.txt)
+        echo "Building Webapp with Backend URL: $$NEXT_PUBLIC_BACKEND_URL"
+
+        docker build \
+          -f deploy/webapp.Dockerfile \
+          -t gcr.io/$PROJECT_ID/hushh-webapp:latest \
+          --build-arg NEXT_PUBLIC_API_URL=$$NEXT_PUBLIC_BACKEND_URL \
+          --build-arg NEXT_PUBLIC_BACKEND_URL=$$NEXT_PUBLIC_BACKEND_URL \
+          --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=$$FIREBASE_API_KEY \
+          --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$$FIREBASE_AUTH_DOMAIN \
+          --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=$$FIREBASE_PROJECT_ID \
+          hushh-webapp
+    secretEnv:
+      - "FIREBASE_API_KEY"
+      - "FIREBASE_AUTH_DOMAIN"
+      - "FIREBASE_PROJECT_ID"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: Push Webapp
+    args: ["push", "gcr.io/$PROJECT_ID/hushh-webapp:latest"]
+
+  # ==============================================================================
+  # 5. Deploy Webapp (Cloud Run)
+  # ==============================================================================
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Deploy Webapp
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "hushh-webapp"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/hushh-webapp:latest"
+      - "--region"
+      - "us-central1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/NEXT_PUBLIC_FIREBASE_API_KEY/versions/latest
+      env: "FIREBASE_API_KEY"
+    - versionName: projects/$PROJECT_ID/secrets/NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN/versions/latest
+      env: "FIREBASE_AUTH_DOMAIN"
+    - versionName: projects/$PROJECT_ID/secrets/NEXT_PUBLIC_FIREBASE_PROJECT_ID/versions/latest
+      env: "FIREBASE_PROJECT_ID"
+
+images:
+  - "gcr.io/$PROJECT_ID/consent-protocol:latest"
+  - "gcr.io/$PROJECT_ID/hushh-webapp:latest"

@@ -11,10 +11,18 @@ interface RootLayoutClientProps {
  * Client-side wrapper for body element
  * Enables client-side features in root layout
  */
+import { useStatusBar } from "@/lib/hooks/use-status-bar";
+
+/**
+ * Client-side wrapper for body element
+ * Enables client-side features in root layout
+ */
 export function RootLayoutClient({
   children,
   fontClasses,
 }: RootLayoutClientProps) {
+  useStatusBar();
+
   return (
     <body
       suppressHydrationWarning
