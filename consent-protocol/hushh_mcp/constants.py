@@ -30,6 +30,22 @@ class ConsentScope(str, Enum):
     CUSTOM_TEMPORARY = "custom.temporary"
     CUSTOM_SESSION_WRITE = "custom.session.write"
 
+    # ==================== KAI SCOPES ====================
+    # Vault operations for Kai
+    VAULT_READ_RISK_PROFILE = "vault.read.risk_profile"
+    VAULT_READ_DECISION_HISTORY = "vault.read.decision_history"
+    VAULT_WRITE_RISK_PROFILE = "vault.write.risk_profile"
+    VAULT_WRITE_DECISION = "vault.write.decision"
+
+    # Kai agent operations
+    AGENT_KAI_ANALYZE = "agent.kai.analyze"
+    AGENT_KAI_DEBATE = "agent.kai.debate"
+
+    # External data sources (Hybrid mode - per-request consent)
+    EXTERNAL_SEC_FILINGS = "external.sec.filings"
+    EXTERNAL_NEWS_API = "external.news.api"
+    EXTERNAL_MARKET_DATA = "external.market.data"
+
     @classmethod
     def list(cls):
         return [scope.value for scope in cls]
@@ -44,6 +60,7 @@ AGENT_PORTS = {
     "agent_professional_profile": 10002,
     "agent_identity": 10003,
     "agent_shopper": 10004,
+    "agent_kai": 10005,  # Kai investment analysis agent
 }
 
 # ==================== Token & Link Prefixes ====================
