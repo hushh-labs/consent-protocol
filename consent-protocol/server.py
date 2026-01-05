@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session, db_proxy, sse
+from api.routes import health, agents, consent, developer, session, db_proxy, sse, kai
 
 # Import rate limiting
 from slowapi import _rate_limit_exceeded_handler
@@ -84,6 +84,9 @@ app.include_router(db_proxy.router)
 
 # SSE routes for real-time consent notifications (/api/consent/events/...)
 app.include_router(sse.router)
+
+# Kai investor onboarding routes (/api/kai/...)
+app.include_router(kai.router)
 
 logger.info("🚀 Hushh Consent Protocol server initialized with modular routes")
 
