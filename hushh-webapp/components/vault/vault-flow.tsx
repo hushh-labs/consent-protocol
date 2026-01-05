@@ -70,11 +70,11 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
 
   const handleCreatePassphrase = async () => {
     if (passphrase.length < 8) {
-      setError("Passphrase must be at least 8 characters");
+      toast.error("Passphrase must be at least 8 characters");
       return;
     }
     if (passphrase !== confirmPassphrase) {
-      setError("Passphrases do not match");
+      toast.error("Passphrases do not match");
       return;
     }
 
@@ -89,21 +89,11 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         authMethod: "passphrase",
       });
 
-      // 3. Unlock immediately
-      // Note: VaultService.createVault returns the params, but we need the raw keys for local unlock context?
-      // Actually createVault returns { encryptedVaultKey, ... } but we derived it from 'passphrase'.
-      // We should probably unlock it here too to auto-login.
-      // Basic unlock:
-      // But we have the plaintext key from creation process?
-      // Wait, createVault returns encrypted stuff.
-      // We can just call unlockVault with the derived key if we had it.
-      // For now, let's let them go to recovery.
-
       setRecoveryKey(vaultData.recoveryKey);
       setStep("recovery"); // Show recovery key dialog
     } catch (err: any) {
       console.error("Create vault error:", err);
-      setError(err.message || "Failed to create vault");
+      toast.error(err.message || "Failed to create vault");
     }
   };
 
@@ -126,11 +116,11 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         setStep("success");
         setTimeout(onSuccess, 1000);
       } else {
-        setError("Invalid passphrase");
+        toast.error("Invalid passphrase");
       }
     } catch (err: any) {
       console.error("Unlock error:", err);
-      setError("Invalid passphrase or failed to unlock");
+      toast.error("Invalid passphrase or failed to unlock");
     }
   };
 
@@ -153,11 +143,11 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         setStep("success");
         setTimeout(onSuccess, 1000);
       } else {
-        setError("Invalid recovery key");
+        toast.error("Invalid recovery key");
       }
     } catch (err: any) {
       console.error("Recovery error:", err);
-      setError("Invalid recovery key or failed to recover");
+      toast.error("Invalid recovery key or failed to recover");
     }
   };
 
@@ -201,13 +191,31 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     return (
       <Card variant="none" effect="glass">
         <CardContent className="p-6 text-center py-8">
-          <div className="relative mx-auto w-16 h-16 mb-4">
-            <div className="absolute inset-0 rounded-full bg-linear-to-br from-blue-500 to-purple-600 opacity-20 animate-pulse" />
-            <div className="absolute inset-2 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 text-white animate-spin" />
+          {error ? (
+            <div className="space-y-4">
+              <div className="text-destructive mb-2">
+                <AlertCircle className="h-8 w-8 mx-auto" />
+              </div>
+              <p className="text-muted-foreground">{error}</p>
+              <Button
+                onClick={() => window.location.reload()}
+                variant="none"
+                className="border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              >
+                Retry
+              </Button>
             </div>
-          </div>
-          <p className="text-muted-foreground">Checking vault status...</p>
+          ) : (
+            <>
+              <div className="relative mx-auto w-16 h-16 mb-4">
+                <div className="absolute inset-0 rounded-full bg-linear-to-br from-blue-500 to-purple-600 opacity-20 animate-pulse" />
+                <div className="absolute inset-2 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                  <Loader2 className="h-6 w-6 text-white animate-spin" />
+                </div>
+              </div>
+              <p className="text-muted-foreground">Checking vault status...</p>
+            </>
+          )}
         </CardContent>
       </Card>
     );
@@ -217,13 +225,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     <>
       <Card variant="none" effect="glass">
         <CardContent className="p-6 space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
           {/* Create Passphrase */}
           {step === "create" && (
             <div className="space-y-4">

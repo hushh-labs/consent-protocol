@@ -16,7 +16,8 @@ const isCapacitorBuild = process.env.CAPACITOR_BUILD === "true";
 
 const config: NextConfig = {
   // Dynamic output mode
-  output: isCapacitorBuild ? "export" : undefined,
+  // 'standalone' is REQUIRED for Docker/Cloud Run builds to reduce image size
+  output: isCapacitorBuild ? "export" : "standalone",
 
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react"],
