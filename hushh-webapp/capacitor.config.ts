@@ -4,9 +4,13 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // For development: set to true to use localhost:3000 hot reload
 // For production: set to false to use static build in /out
 const DEV_MODE = false;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || (DEV_MODE ? "http://localhost:3000" : undefined);
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (DEV_MODE ? "http://localhost:3000" : undefined);
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://consent-protocol-1006304528804.us-central1.run.app";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 const config: CapacitorConfig = {
   appId: "com.hushh.pda",
@@ -44,8 +48,12 @@ const config: CapacitorConfig = {
     HushhConsent: {
       backendUrl: BACKEND_URL,
     },
+    StatusBar: {
+      overlaysWebView: true,
+      style: "DARK",
+      backgroundColor: "#ffffffff",
+    },
   },
 };
 
 export default config;
-

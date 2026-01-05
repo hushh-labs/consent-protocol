@@ -240,6 +240,11 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    /* Immersive: Removed padding-top to allow background to flow under status bar */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    /* Safe area bottom is handled by the navbar component */
+    
     scrollbar-gutter: stable;
     overflow-x: hidden;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
@@ -408,6 +413,10 @@ body {
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(156 163 175);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
   }
 }
 

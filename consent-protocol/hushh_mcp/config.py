@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 
-# Load .env file into environment
-load_dotenv()
+# Load .env file into environment (override=False means Secret Manager/Cloud Run env vars take precedence)
+load_dotenv(override=False)
 
 # ==================== Security Keys ====================
 
