@@ -49,7 +49,7 @@ class ValuationAgent:
         consent_token: Optional[str] = None,
     ) -> ValuationInsight:
         """
-        Perform valuation analysis on a ticker.
+        Perform valuation analysis using operons (lightweight orchestrator).
         
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
@@ -59,14 +59,50 @@ class ValuationAgent:
         Returns:
             ValuationInsight with analysis results
         """
-        logger.info(f"[Valuation] Analyzing {ticker} for user {user_id}")
+        logger.info(f"[Valuation] Orchestrating analysis for {ticker} - user {user_id}")
         
-        # TODO: Implement market data retrieval
-        # TODO: Implement valuation calculations
-        # TODO: Implement peer comparison
+        # Operon 1: Fetch market data (with consent check)
+        from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_peer_data
         
-        # Mock data for now
-        return await self._mock_analysis(ticker)
+        try:
+            market_data = await fetch_market_data(ticker, user_id, consent_token)
+            peer_data = await fetch_peer_data(ticker, user_id, consent_token)
+        except PermissionError as e:
+            logger.error(f"[Valuation] Market data access denied: {e}")
+            # Fallback to mock data
+            market_data = await self._mock_market_data(ticker)
+            peer_data = []
+        
+        # Operon 2: Analyze valuation (with consent check)
+        from hushh_mcp.operons.kai.analysis import analyze_valuation
+        
+        analysis = analyze_valuation(
+            ticker=ticker,
+            user_id=user_id,
+            market_data=market_data,
+            peer_data=peer_data,
+            consent_token=consent_token,
+        )
+        
+        # Convert to dataclass
+        return ValuationInsight(
+            summary=analysis["summary"],
+            valuation_metrics=analysis["valuation_metrics"],
+            peer_comparison=analysis["peer_comparison"],
+            confidence=analysis["confidence"],
+            recommendation=analysis["recommendation"],
+            sources=[market_data.get("source", "Unknown")],
+        )
+    
+    async def _mock_market_data(self, ticker: str):
+        """Fallback mock market data for on-device mode."""
+        return {
+            "ticker": ticker,
+            "price": 180.0,
+            "pe_ratio": 28.0,
+            "market_cap": 2_800_000_000_000,
+            "source": "Mock Data",
+        }
     
     async def _mock_analysis(self, ticker: str) -> ValuationInsight:
         """Mock valuation analysis (temporary)."""

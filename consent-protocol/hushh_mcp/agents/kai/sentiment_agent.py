@@ -49,7 +49,7 @@ class SentimentAgent:
         consent_token: Optional[str] = None,
     ) -> SentimentInsight:
         """
-        Perform sentiment analysis on a ticker.
+        Perform sentiment analysis using operons (lightweight orchestrator).
         
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
@@ -59,14 +59,49 @@ class SentimentAgent:
         Returns:
             SentimentInsight with analysis results
         """
-        logger.info(f"[Sentiment] Analyzing {ticker} for user {user_id}")
+        logger.info(f"[Sentiment] Orchestrating analysis for {ticker} - user {user_id}")
         
-        # TODO: Implement news API integration
-        # TODO: Implement sentiment scoring model
-        # TODO: Implement catalyst detection
+        # Operon 1: Fetch news articles (with consent check)
+        from hushh_mcp.operons.kai.fetchers import fetch_market_news
         
-        # Mock data for now
-        return await self._mock_analysis(ticker)
+        try:
+            news_articles = await fetch_market_news(ticker, user_id, consent_token)
+        except PermissionError as e:
+            logger.error(f"[Sentiment] News access denied: {e}")
+            # Fallback to mock data
+            news_articles = await self._mock_news_data(ticker)
+        
+        # Operon 2: Analyze sentiment (with consent check)
+        from hushh_mcp.operons.kai.analysis import analyze_sentiment
+        
+        analysis = analyze_sentiment(
+            ticker=ticker,
+            user_id=user_id,
+            news_articles=news_articles,
+            consent_token=consent_token,
+        )
+        
+        # Convert to dataclass
+        return SentimentInsight(
+            summary=analysis["summary"],
+            sentiment_score=analysis["sentiment_score"],
+            key_catalysts=analysis["key_catalysts"],
+            confidence=analysis["confidence"],
+            recommendation=analysis["recommendation"],
+            sources=[article.get("source", {}).get("name", "Unknown") for article in news_articles[:5]],
+        )
+    
+    async def _mock_news_data(self, ticker: str):
+        """Fallback mock news for on-device mode."""
+        from datetime import datetime, timedelta
+        return [
+            {
+                "title": f"{ticker} reports strong earnings",
+                "description": "Company exceeds expectations",
+                "source": {"name": "Mock News"},
+                "publishedAt": (datetime.utcnow() - timedelta(days=1)).isoformat(),
+            }
+        ]
     
     async def _mock_analysis(self, ticker: str) -> SentimentInsight:
         """Mock sentiment analysis (temporary)."""
