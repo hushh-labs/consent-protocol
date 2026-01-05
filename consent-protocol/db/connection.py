@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 # Database connection pool (singleton)
 _pool: Optional[asyncpg.Pool] = None
 
-# Database URL from environment
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://hushh_app:hushh_secure_2024!@localhost:5432/hushh_vault"
-)
+# Database URL from environment (REQUIRED - no hardcoded fallback for security)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise EnvironmentError(
+        "DATABASE_URL environment variable is required. "
+        "Set it in .env or as an environment variable."
+    )
 
 
 async def get_pool() -> asyncpg.Pool:

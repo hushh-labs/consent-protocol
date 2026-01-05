@@ -32,10 +32,18 @@ export type ManagerType =
   | "self_managed";
 
 export type ConsentScope =
+  // Legacy scopes (LP onboarding)
   | "kyc_verification"
   | "aml_verification"
   | "accreditation"
-  | "contact_coordination";
+  | "contact_coordination"
+  // Kai-specific scopes (MCP compliant)
+  | "vault.read.risk_profile"
+  | "vault.read.decision_history"
+  | "vault.write.risk_profile"
+  | "vault.write.decision"
+  | "agent.kai.analyze"
+  | "agent.kai.debate";
 
 export type AuditAction =
   | "session_started"
