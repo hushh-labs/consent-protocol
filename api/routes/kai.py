@@ -332,6 +332,7 @@ class AnalyzeRequest(BaseModel):
     ticker: str
     session_id: str
     consent_token: str
+    vault_key_hex: str  # Client-provided vault key (from Keychain/Keystore)
 
 
 class AnalyzeResponse(BaseModel):
@@ -355,6 +356,16 @@ async def analyze_ticker(request: AnalyzeRequest):
     3. Orchestrates debate
     4. Generates decision card
     5. Encrypts and stores result
+    
+    Args:
+        request: AnalyzeRequest with user_id, ticker, session_id, consent_token, vault_key_hex
+        
+    Returns:
+        AnalyzeResponse with decision summary
+        
+    Note:
+        vault_key_hex is provided by the client after unlocking the vault locally.
+        This follows the existing pattern from food_dining agent.
     """
     from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator
     from hushh_mcp.vault.encrypt import encrypt_data
@@ -384,10 +395,50 @@ async def analyze_ticker(request: AnalyzeRequest):
             consent_token=request.consent_token,
         )
         
-        # Encrypt decision card for storage
-        vault_key = "demo_key"  # TODO: Retrieve actual vault key
+        # Encrypt decision card for storage using client-provided vault key
         decision_json = orchestrator.decision_generator.to_json(decision_card)
-        encrypted = encrypt_data(decision_json, vault_key)
+        encrypted = encrypt_data(decision_json, request.vault_key_hex)
+        
+        # Store in kai_decisions table
+        await pool.execute(
+            """
+            INSERT INTO kai_decisions (
+                user_id, session_id, ticker, decision_type,
+                decision_ciphertext, debate_ciphertext,
+                iv, tag, algorithm, confidence_score, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            """,
+            request.user_id,
+            request.session_id,
+            request.ticker,
+            decision_card.decision,
+            encrypted["ciphertext"],
+            "",  # Debate stored in main ciphertext
+            encrypted["iv"],
+            encrypted["tag"],
+            "aes-256-gcm",
+            decision_card.confidence,
+            datetime.utcnow(),
+        )
+        
+        logger.info(f"[Kai] Stored decision for {request.ticker}: {decision_card.decision}")
+        
+        return AnalyzeResponse(
+            decision_id=decision_card.decision_id,
+            ticker=decision_card.ticker,
+            decision=decision_card.decision,
+            confidence=decision_card.confidence,
+            headline=decision_card.headline,
+            processing_mode=decision_card.processing_mode,
+            created_at=decision_card.timestamp.isoformat(),
+        )
+        
+    except ValueError as e:
+        logger.error(f"[Kai] Analysis failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Kai] Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
         
         # Store in kai_decisions table
         await pool.execute(
@@ -486,11 +537,19 @@ async def get_decision_history(
 
 
 @router.get("/decision/{decision_id}")
-async def get_decision_detail(decision_id: int):
+async def get_decision_detail(decision_id: int, vault_key_hex: str = Query(...)):
     """
     Get full decision card details (decrypted).
     
     Returns complete decision card with debate transcript.
+    
+    Args:
+        decision_id: ID of the decision to retrieve
+        vault_key_hex: Client-provided vault key for decryption
+        
+    Note:
+        vault_key_hex should be provided by the client after unlocking the vault.
+        This follows the zero-knowledge architecture - server never sees raw vault key.
     """
     from hushh_mcp.vault.encrypt import decrypt_data
     
@@ -504,15 +563,13 @@ async def get_decision_detail(decision_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Decision not found")
     
-    # Decrypt decision card
-    vault_key = "demo_key"  # TODO: Retrieve actual vault key
-    
+    # Decrypt decision card using client-provided vault key
     try:
         decrypted = decrypt_data(
             row["decision_ciphertext"],
             row["iv"],
             row["tag"],
-            vault_key
+            vault_key_hex
         )
         
         # Parse JSON
