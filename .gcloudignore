@@ -46,3 +46,15 @@ test/
 *.log
 .DS_Store
 Thumbs.db
+
+# Mobile Native (Not needed for Web Container)
+android/
+ios/
+capacitor.config.ts
+
+# Large Assets/Misc
+assets/
+# deploy/
+*.sh
+*.ps1
+

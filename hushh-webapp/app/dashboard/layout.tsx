@@ -21,7 +21,7 @@ export default function DashboardLayout({
       <ConsentSSEProvider>
         <ConsentNotificationProvider>
           {/* Simple scrollable content - no sidebar */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="flex-1 overflow-y-auto pt-safe">{children}</main>
         </ConsentNotificationProvider>
       </ConsentSSEProvider>
     </VaultLockGuard>
