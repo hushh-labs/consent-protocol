@@ -1,25 +1,12 @@
 "use client";
 
 /**
- * Kai Layout - Minimal Mobile-First
+ * Kai Layout
  *
- * No sidebar. Uses bottom navbar.
- * Keeps VaultLockGuard and ConsentSSEProvider for security.
+ * Note: VaultLockGuard, ConsentSSEProvider are already provided by parent /dashboard/layout.tsx
+ * This layout only provides Kai-specific styling wrapper.
  */
 
-import { ConsentSSEProvider } from "@/lib/consent";
-import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
-import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
-
 export default function KaiLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <VaultLockGuard>
-      <ConsentSSEProvider>
-        <ConsentNotificationProvider>
-          {/* Simple scrollable content - no sidebar */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
-        </ConsentNotificationProvider>
-      </ConsentSSEProvider>
-    </VaultLockGuard>
-  );
+  return <div className="min-h-screen morphy-app-bg">{children}</div>;
 }

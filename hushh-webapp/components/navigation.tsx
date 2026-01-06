@@ -1,16 +1,19 @@
 /**
  * Navigation Component
  * ====================
- * 
+ *
  * Global navigation header with auth state awareness.
+ * Agent Nav search visible only when vault is unlocked.
  */
 
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from '@/lib/morphy-ux/morphy';
+import { Button } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/lib/firebase";
+import { useVault } from "@/lib/vault/vault-context";
+import { Search } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", public: true },
@@ -21,7 +24,8 @@ const navItems = [
 export function Navigation() {
   const pathname = usePathname();
   const { user, loading, signOut } = useAuth();
-  
+  const { isVaultUnlocked } = useVault();
+
   // Don't show nav on login page
   if (pathname === "/login") return null;
 
@@ -29,7 +33,10 @@ export function Navigation() {
     <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/80 border-b border-white/10">
       <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+        <Link
+          href="/"
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+        >
           <span className="text-2xl">🤫</span>
           <span className="font-semibold text-lg">Hushh</span>
         </Link>
@@ -39,10 +46,11 @@ export function Navigation() {
           {navItems.map((item) => {
             // Skip private items if not logged in
             if (!item.public && !user) return null;
-            
-            const isActive = pathname === item.href || 
+
+            const isActive =
+              pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href));
-            
+
             return (
               <Link key={item.href} href={item.href}>
                 <Button
@@ -58,6 +66,26 @@ export function Navigation() {
               </Link>
             );
           })}
+
+          {/* Agent Nav - Only visible when vault unlocked */}
+          {user && isVaultUnlocked && (
+            <Link href="/dashboard/agent-nav">
+              <Button
+                variant="none"
+                effect="glass"
+                showRipple
+                className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                  pathname.startsWith("/dashboard/agent-nav")
+                    ? "bg-white/10 text-white"
+                    : "text-secondary hover:text-white hover:bg-white/5"
+                }`}
+                title="Agent Nav - Universal Agent Search"
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden lg:inline">Agent Nav</span>
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Auth Actions */}
@@ -80,7 +108,12 @@ export function Navigation() {
             </div>
           ) : (
             <Link href="/login">
-              <Button variant="gradient" effect="glass" showRipple className="text-sm">
+              <Button
+                variant="gradient"
+                effect="glass"
+                showRipple
+                className="text-sm"
+              >
                 Sign In
               </Button>
             </Link>
