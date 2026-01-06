@@ -8,7 +8,7 @@ Uses existing MCP consent infrastructure.
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, List, Literal
+from typing import Optional, List, Dict, Literal
 from datetime import datetime
 import uuid
 import logging
@@ -201,7 +201,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
     )
 
 
-@router.post("/session/{session_id}/consent", response_model=GrantConsentResponse)
+@router.post("/session/{session_id}/consent")
 async def grant_consent(session_id: str, request: GrantConsentRequest):
     """
     Grant consent for Kai data access.
@@ -209,6 +209,8 @@ async def grant_consent(session_id: str, request: GrantConsentRequest):
     Uses existing MCP consent infrastructure:
     - Issues consent token via issue_token()
     - Logs to consent_audit table
+    
+    ✅ UPDATED: Now returns tokens to frontend
     """
     pool = await get_pool()
     
@@ -224,8 +226,10 @@ async def grant_consent(session_id: str, request: GrantConsentRequest):
     user_id = session["user_id"]
     
     # Issue consent tokens for each scope using existing MCP infrastructure
-    tokens = []
+    tokens = {}
     consent_id = f"kai_consent_{uuid.uuid4().hex[:16]}"
+    
+    last_token_issued = None # To capture the expires_at from the last token
     
     for scope_str in request.scopes:
         try:
@@ -235,7 +239,8 @@ async def grant_consent(session_id: str, request: GrantConsentRequest):
                 agent_id="agent_kai",
                 scope=scope
             )
-            tokens.append(token)
+            tokens[scope_str] = token.token  # ✅ Store token string
+            last_token_issued = token
             
             # Log to consent_audit
             await pool.execute(
@@ -248,12 +253,19 @@ async def grant_consent(session_id: str, request: GrantConsentRequest):
                 user_id,
                 "agent_kai",
                 scope_str,
-                "CONSENT_GRANTED",
+                "granted",
                 token.issued_at,
                 token.expires_at,
             )
-        except ValueError:
-            logger.warning(f"[Kai] Unknown scope: {scope_str}")
+            
+            logger.info(f"✅ Issued consent token for {user_id}: {scope_str}")
+            
+        except Exception as e:
+            logger.error(f"Failed to issue token for scope {scope_str}: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid scope: {scope_str}"
+            )
     
     if not tokens:
         raise HTTPException(status_code=400, detail="No valid scopes provided")
@@ -265,18 +277,16 @@ async def grant_consent(session_id: str, request: GrantConsentRequest):
         session_id,
     )
     
-    # Return first token (primary)
-    primary_token = tokens[0]
-    
     logger.info(f"[Kai] Consent granted for session: {session_id}, scopes: {request.scopes}")
     
-    return GrantConsentResponse(
-        consent_id=consent_id,
-        token=primary_token.token,
-        scopes=request.scopes,
-        issued_at=datetime.fromtimestamp(primary_token.issued_at / 1000).isoformat(),
-        expires_at=datetime.fromtimestamp(primary_token.expires_at / 1000).isoformat(),
-    )
+    # ✅ Return tokens to frontend
+    return {
+        "success": True,
+        "tokens": tokens,  # Dict of scope -> token string
+        "consent_id": consent_id,
+        "scopes": request.scopes,
+        "expires_at": last_token_issued.expires_at if last_token_issued else None
+    }
 
 
 @router.get("/session/user/{user_id}", response_model=Optional[SessionResponse])

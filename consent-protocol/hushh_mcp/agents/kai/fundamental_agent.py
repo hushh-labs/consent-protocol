@@ -1,13 +1,16 @@
 """
-Agent Kai — Fundamental Agent
+Agent Kai — Fundamental Agent (AgentNav Compliant)
 
-Analyzes 10-K/10-Q SEC filings and financial fundamentals using RAG retrieval.
+Analyzes 10-K/10-Q SEC filings and financial fundamentals.
+Extended from AgentNav for consent enforcement.
 
 Key Responsibilities:
-- Business fundamentals analysis
+- Business fundamentals analysis (via operons)
 - Financial health assessment
 - Long-term viability evaluation
 - Competitive positioning review
+
+Future: Attention Marketplace integration for premium data sources.
 """
 
 from typing import Dict, List, Optional, Any
@@ -19,62 +22,71 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FundamentalInsight:
-    """Fundamental analysis insight."""
+    """Fundamental analysis insight with sources and confidence."""
     summary: str
     key_metrics: Dict[str, Any]
     strengths: List[str]
     weaknesses: List[str]
     sources: List[str]
     confidence: float
-    recommendation: str  # "bullish", "neutral", "bearish"
+    recommendation: str  # "buy", "hold", "reduce"
 
 
 class FundamentalAgent:
     """
     Fundamental Agent - Analyzes company fundamentals.
     
-    Uses SEC filings, financial statements, and business metrics
-    to assess the intrinsic value and long-term viability of a company.
+    Lightweight orchestrator that composes operons for:
+    - SEC filing retrieval (via fetch_sec_filings operon)
+    - Fundamental analysis (via analyze_fundamentals operon)
+    - Financial ratio calculations
+    
+    All consent validation happens in the operons.
+    Agent simply orchestrates and formats results.
     """
     
     def __init__(self, processing_mode: str = "hybrid"):
         self.agent_id = "fundamental"
         self.processing_mode = processing_mode
-        self.color = "#3b82f6"
+        self.color = "#3b82f6"  # Blue
         
     async def analyze(
         self,
         ticker: str,
         user_id: str,
-        consent_token: Optional[str] = None,
+        consent_token: str,
     ) -> FundamentalInsight:
         """
         Perform fundamental analysis using operons.
         
-        This agent is now a LIGHTWEIGHT ORCHESTRATOR that composes operons.
+        This agent is a LIGHTWEIGHT ORCHESTRATOR.
         All business logic and consent validation is in the operons.
         
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
             user_id: User ID for audit logging
-            consent_token: Consent token for external data access
+            consent_token: Consent token (validated by operons)
             
         Returns:
             FundamentalInsight with analysis results
         """
-        logger.info(f"[Fundamental] Orchestrating analysis for {ticker} - user {user_id}")
+        logger.info(f"[Fundamental] Orchestrating analysis for {ticker}")
         
-        # Operon 1: Fetch SEC filings (with consent check inside)
+        # Step 1: Fetch SEC filings (operon validates consent internally)
         from hushh_mcp.operons.kai.fetchers import fetch_sec_filings
         
         try:
-            sec_filings = await fetch_sec_filings(ticker, user_id, consent_token)
+            sec_filings = await fetch_sec_filings(
+                ticker=ticker,
+                user_id=user_id,
+                consent_token=consent_token
+            )
         except PermissionError as e:
-            logger.error(f"[Fundamental] SEC data access denied: {e}")
-            # Fallback to on-device mode with mock data
+            logger.warning(f"[Fundamental] External data access denied: {e}")
+            # Fallback to mock data (on-device mode)
             sec_filings = await self._mock_sec_data(ticker)
         
-        # Operon 2: Analyze fundamentals (with consent check inside)
+        # Step 2: Analyze fundamentals (operon validates consent internally)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
         
         analysis = analyze_fundamentals(
@@ -84,7 +96,7 @@ class FundamentalAgent:
             consent_token=consent_token,
         )
         
-        # Convert to dataclass
+        # Step 3: Format as FundamentalInsight
         return FundamentalInsight(
             summary=analysis["summary"],
             key_metrics=analysis["key_metrics"],
@@ -92,11 +104,27 @@ class FundamentalAgent:
             weaknesses=analysis["weaknesses"],
             confidence=analysis["confidence"],
             recommendation=analysis["recommendation"],
-            sources=[f"{ticker} 10-K {sec_filings.get('filing_date', 'N/A')}", "SEC EDGAR"],
+            sources=self._format_sources(sec_filings),
         )
     
+    def _format_sources(self, sec_filings: Dict[str, Any]) -> List[str]:
+        """Format SEC filing sources for display."""
+        ticker = sec_filings.get("ticker", "N/A")
+        filing_date = sec_filings.get("filing_date", "N/A")
+        
+        return [
+            f"{ticker} 10-K Annual Report ({filing_date})",
+            "SEC EDGAR Database",
+            "Financial statement analysis",
+        ]
+    
     async def _mock_sec_data(self, ticker: str) -> Dict[str, Any]:
-        """Fallback mock data for on-device mode."""
+        """
+        Fallback mock data for on-device mode.
+        Used when external data consent is denied.
+        """
+        logger.info(f"[Fundamental] Using mock SEC data for {ticker}")
+        
         return {
             "ticker": ticker,
             "cik": "0000000000",
@@ -107,87 +135,66 @@ class FundamentalAgent:
                 "total_liabilities": 300_000_000_000,
             },
             "filing_date": "2024-11-01",
-            "source": "On-Device Mock",
+            "source": "On-Device Mock (No External Consent)",
         }
     
-    async def _mock_analysis(self, ticker: str) -> FundamentalInsight:
-        """Mock fundamental analysis (temporary)."""
-        
-        # Placeholder - will be replaced with real SEC data analysis
-        return FundamentalInsight(
-            summary=f"Based on recent 10-K/10-Q filings, {ticker} demonstrates solid fundamentals with consistent revenue growth and healthy profit margins.",
-            key_metrics={
-                "revenue_growth_yoy": 0.12,  # 12% YoY
-                "profit_margin": 0.25,       # 25%
-                "debt_to_equity": 0.45,      # 0.45x
-                "roe": 0.18,                 # 18%
-                "current_ratio": 1.5,        # 1.5x
-            },
-            strengths=[
-                "Strong revenue growth trajectory (12% YoY)",
-                "Industry-leading profit margins (25%)",
-                "Healthy balance sheet with manageable debt",
-                "Consistent cash flow generation",
-            ],
-            weaknesses=[
-                "Operating in a competitive market",
-                "Dependent on key product lines",
-                "Regulatory uncertainty in some markets",
-            ],
-            sources=[
-                f"{ticker} 10-K 2024 Annual Report",
-                f"{ticker} 10-Q Q3 2024 Quarterly Report",
-                "SEC EDGAR Database",
-            ],
-            confidence=0.75,
-            recommendation="bullish",
-        )
+    # =========================================================================
+    # FUTURE: Attention Marketplace Integration
+    # =========================================================================
     
-    async def fetch_sec_filings(
+    async def fetch_premium_data(
         self,
         ticker: str,
+        data_source: str,
         consent_token: str,
+        bid_amount: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Fetch SEC filings for a ticker (requires consent).
+        [PLACEHOLDER] Fetch premium data via Attention Marketplace.
+        
+        In v2+, users can bid for access to premium data sources:
+        - Bloomberg Terminal data
+        - Proprietary research reports
+        - Real-time SEC filing alerts
+        - Expert analyst insights
+        
+        The Attention Marketplace allows Kai to:
+        1. Request premium data on user's behalf
+        2. Present bid options (cost, quality, speed)
+        3. Execute data purchase with user consent
+        4. Audit all transactions transparently
         
         Args:
             ticker: Stock ticker
-            consent_token: Valid consent token for external.sec.filings
+            data_source: Premium source identifier
+            consent_token: Validated consent token
+            bid_amount: Optional bid amount (USD)
             
         Returns:
-            Dictionary with filing data
+            Premium data payload
+            
+        References:
+            - docs/vision/kai/preparation/attention-marketplace.md
+            - Adaptive Attention Marketplace (AAM) spec
         """
-        # TODO: Validate consent token
-        # TODO: Call SEC EDGAR API
-        # TODO: Parse and structure filing data
+        logger.info(
+            f"[Fundamental] [PLACEHOLDER] Attention Marketplace: "
+            f"Would fetch {data_source} for {ticker} (bid: ${bid_amount})"
+        )
         
-        logger.info(f"[Fundamental] Fetching SEC filings for {ticker}")
+        # TODO: v2+ implementation
+        # - Integrate with Attention Marketplace API
+        # - Present bid UI to user
+        # - Execute transaction with consent
+        # - Return premium data
         
         return {
+            "status": "not_implemented",
+            "message": "Attention Marketplace coming in v2+",
+            "data_source": data_source,
             "ticker": ticker,
-            "filings": [],
-            "error": "Not implemented - placeholder",
         }
-    
-    def calculate_financial_ratios(
-        self,
-        financial_data: Dict[str, Any],
-    ) -> Dict[str, float]:
-        """
-        Calculate key financial ratios.
-        
-        Args:
-            financial_data: Raw financial statement data
-            
-        Returns:
-            Dictionary of calculated ratios
-        """
-        # TODO: Implement ratio calculations
-        # - P/E ratio
-        # - Debt-to-Equity
-        # - Current ratio
-        # - ROE, ROA
-        # - Profit margins
-        
-        return {}
+
+
+# Export singleton for use in KaiAgent orchestration
+fundamental_agent = FundamentalAgent()
