@@ -1,26 +1,24 @@
 """
-Agent Kai — __init__.py
+Kai Agents Module
 
-Exports for the Kai agent system.
+Exports individual specialist agents for stock analysis:
+- FundamentalAgent: SEC filings and fundamentals
+- SentimentAgent: News and social sentiment
+- ValuationAgent: Financial metrics and pricing
+
+All agents are lightweight orchestrators that compose operons.
+Consent validation happens at the operon level.
 """
 
-from .manifest import MANIFEST, get_manifest
-from .config import (
-    AGENT_ID,
-    AgentType,
-    DecisionType,
-    RiskProfile,
-    ProcessingMode,
-    AGENT_WEIGHTS,
-)
+from .fundamental_agent import FundamentalAgent, FundamentalInsight
+from .sentiment_agent import SentimentAgent, SentimentInsight
+from .valuation_agent import ValuationAgent, ValuationInsight
 
 __all__ = [
-    "MANIFEST",
-    "get_manifest",
-    "AGENT_ID",
-    "AgentType",
-    "DecisionType",
-    "RiskProfile",
-    "ProcessingMode",
-    "AGENT_WEIGHTS",
+    "FundamentalAgent",
+    "FundamentalInsight",
+    "SentimentAgent",
+    "SentimentInsight",
+    "ValuationAgent",
+    "ValuationInsight",
 ]
