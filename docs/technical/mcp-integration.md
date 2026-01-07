@@ -202,3 +202,29 @@ Timeout after 300s? → Return timeout status
 - [x] **Time-Limited** - Exports expire with consent token
 - [x] **Audit Trail** - All consent grants logged
 - [x] **Cryptographic Tokens** - HMAC-SHA256 signed consent tokens
+
+---
+
+## 📱 Native Bridge Architecture (Mobile)
+
+The Capacitor plugin **`HushhMCP`** bridges the TypeScript frontend with the Native iOS/Android layer to enable local AI on-device.
+
+### How It Works
+
+1.  **Detection**: `ApiService` checks `Capacitor.isNativePlatform()`.
+2.  **Bridge Call**: Frontend calls `HushhMCP.startServer()` (Kotlin/Swift).
+3.  **Native Server**:
+    - **Android**: Starts a hidden process exposing a JSON-RPC interface.
+    - **iOS**: Integrates with `AppIntents` (future) or runs an in-process request handler.
+4.  **Registration**: The app registers tool definitions with the OS during sensitive access attempts (e.g. "Ask Hushh").
+
+### Code Reference
+
+```typescript
+// lib/capacitor/index.ts
+export interface HushhMCPPlugin {
+  startServer(): Promise<void>;
+  stopServer(): Promise<void>;
+  handleToolCall(options: { json: string }): Promise<{ result: string }>;
+}
+```
