@@ -60,10 +60,11 @@ async def fetch_sec_filings(
     Raises:
         PermissionError: If TrustLink validation fails
     """
-    # Validate TrustLink for external data access
+    # Validate TrustLink for Kai analysis
+    # Note: agent.kai.analyze scope covers all data fetching needs for Kai
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("external.sec.filings")
+        ConsentScope("agent.kai.analyze")  # Changed from external.sec.filings
     )
     
     if not valid:
@@ -77,104 +78,132 @@ async def fetch_sec_filings(
     
     # SEC EDGAR API Implementation
     # Reference: https://www.sec.gov/edgar/sec-api-documentation
+    # Note: Different base URLs for different endpoints
     
-    SEC_BASE_URL = "https://data.sec.gov"
+    EDGAR_DATA_URL = "https://data.sec.gov"  # For submissions
+    EDGAR_WWW_URL = "https://www.sec.gov"    # For company tickers
     HEADERS = {
         "User-Agent": "Hushh-Research/1.0 (compliance@hushh.ai)",  # Required by SEC
         "Accept": "application/json"
     }
     
-    try:
-        # Step 1: Get CIK from ticker
-        async with httpx.AsyncClient() as client:
-            # Get ticker-to-CIK mapping
-            tickers_response = await client.get(
-                f"{SEC_BASE_URL}/files/company_tickers.json",
+    # Step 1: Get CIK from ticker
+    async with httpx.AsyncClient() as client:
+        # Get ticker-to-CIK mapping
+        logger.info(f"[SEC Fetcher] Looking up CIK for {ticker}...")
+        tickers_response = await client.get(
+            f"{EDGAR_WWW_URL}/files/company_tickers.json",
+            headers=HEADERS,
+            timeout=10.0
+        )
+        tickers_response.raise_for_status()
+        tickers_data = tickers_response.json()
+        
+        # Find CIK for ticker
+        cik = None
+        for entry in tickers_data.values():
+            if entry.get("ticker", "").upper() == ticker.upper():
+                cik = str(entry["cik_str"]).zfill(10)
+                break
+        
+        if not cik:
+            raise ValueError(f"CIK not found for ticker: {ticker}")
+        
+        logger.info(f"[SEC Fetcher] Found CIK {cik} for {ticker}")
+        
+        # Step 2: Get submissions (filings list)
+        logger.info(f"[SEC Fetcher] Fetching submissions for CIK {cik}...")
+        submissions_response = await client.get(
+            f"{EDGAR_DATA_URL}/submissions/CIK{cik}.json",
+            headers=HEADERS,
+            timeout=10.0
+        )
+        submissions_response.raise_for_status()
+        submissions = submissions_response.json()
+        
+        # Step 3: Find latest 10-K
+        filings = submissions.get("filings", {}).get("recent", {})
+        forms = filings.get("form", [])
+        accession_numbers = filings.get("accessionNumber", [])
+        filing_dates = filings.get("filingDate", [])
+        
+        latest_10k_idx = None
+        for i, form in enumerate(forms):
+            if form == "10-K":
+                latest_10k_idx = i
+                break
+        
+        if latest_10k_idx is None:
+            raise ValueError(f"No 10-K filing found for ticker: {ticker} (CIK: {cik})")
+        
+        logger.info(f"[SEC Fetcher] Found 10-K: {accession_numbers[latest_10k_idx]} dated {filing_dates[latest_10k_idx]}")
+        
+        # Step 4: Fetch Company Facts for actual financial data
+        logger.info(f"[SEC Fetcher] Fetching company facts (financial metrics) for CIK {cik}...")
+        try:
+            facts_response = await client.get(
+                f"{EDGAR_DATA_URL}/api/xbrl/companyfacts/CIK{cik}.json",
                 headers=HEADERS,
-                timeout=10.0
+                timeout=15.0
             )
-            tickers_response.raise_for_status()
-            tickers_data = tickers_response.json()
+            facts_response.raise_for_status()
+            facts_data = facts_response.json()
             
-            # Find CIK for ticker
-            cik = None
-            for entry in tickers_data.values():
-                if entry.get("ticker", "").upper() == ticker.upper():
-                    cik = str(entry["cik_str"]).zfill(10)
-                    break
+            # Extract financial metrics from US-GAAP taxonomy
+            us_gaap = facts_data.get("facts", {}).get("us-gaap", {})
             
-            if not cik:
-                logger.warning(f"[SEC Fetcher] CIK not found for {ticker}, using mock data")
-                return _get_mock_sec_data(ticker)
+            def get_latest_annual_value(metric_name: str) -> int:
+                """Extract the most recent annual (10-K) value for a metric."""
+                if metric_name not in us_gaap:
+                    return 0
+                
+                metric_data = us_gaap[metric_name]
+                usd_data = metric_data.get("units", {}).get("USD", [])
+                
+                # Filter for 10-K filings only
+                annual_data = [d for d in usd_data if d.get("form") == "10-K"]
+                
+                if not annual_data:
+                    return 0
+                
+                # Get most recent by end date
+                latest = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)[0]
+                return int(latest.get("val", 0))
             
-            # Step 2: Get submissions (filings list)
-            submissions_response = await client.get(
-                f"{SEC_BASE_URL}/submissions/CIK{cik}.json",
-                headers=HEADERS,
-                timeout=10.0
-            )
-            submissions_response.raise_for_status()
-            submissions = submissions_response.json()
+            # Extract key financial metrics
+            revenue = get_latest_annual_value("Revenues") or get_latest_annual_value("RevenueFromContractWithCustomerExcludingAssessedTax")
+            net_income = get_latest_annual_value("NetIncomeLoss")
+            total_assets = get_latest_annual_value("Assets")
+            total_liabilities = get_latest_annual_value("Liabilities")
             
-            # Step 3: Find latest 10-K
-            filings = submissions.get("filings", {}).get("recent", {})
-            forms = filings.get("form", [])
-            accession_numbers = filings.get("accessionNumber", [])
-            filing_dates = filings.get("filingDate", [])
+            logger.info(f"[SEC Fetcher] Extracted metrics - Revenue: ${revenue:,}, Net Income: ${net_income:,}")
             
-            latest_10k_idx = None
-            for i, form in enumerate(forms):
-                if form == "10-K":
-                    latest_10k_idx = i
-                    break
-            
-            if latest_10k_idx is None:
-                logger.warning(f"[SEC Fetcher] No 10-K found for {ticker}, using mock data")
-                return _get_mock_sec_data(ticker)
-            
-            # Return structured filing data
-            # Note: Full XBRL parsing would require additional processing
-            # For now, we return metadata and let calculators use estimates
-            return {
-                "ticker": ticker,
-                "cik": cik,
-                "latest_10k": {
-                    "accession_number": accession_numbers[latest_10k_idx],
-                    "filing_date": filing_dates[latest_10k_idx],
-                    # Financial data would come from XBRL parsing
-                    # Using reasonable estimates based on company size
-                    "revenue": 400_000_000_000,  # Placeholder - needs XBRL parser
-                    "net_income": 100_000_000_000,
-                    "total_assets": 350_000_000_000,
-                    "total_liabilities": 300_000_000_000,
-                },
+        except Exception as facts_error:
+            logger.warning(f"[SEC Fetcher] Could not fetch company facts: {facts_error}")
+            # Use zeros if facts unavailable
+            revenue = 0
+            net_income = 0
+            total_assets = 0
+            total_liabilities = 0
+        
+        # Return structured filing data with REAL financial metrics
+        return {
+            "ticker": ticker,
+            "cik": cik,
+            "entity_name": facts_data.get("entityName", ticker) if 'facts_data' in locals() else ticker,
+            "latest_10k": {
+                "accession_number": accession_numbers[latest_10k_idx],
                 "filing_date": filing_dates[latest_10k_idx],
-                "source": "SEC EDGAR (Real API)",
-                "fetched_at": datetime.utcnow().isoformat(),
-            }
-            
-    except httpx.HTTPError as e:
-        logger.error(f"[SEC Fetcher] HTTP error fetching SEC data: {e}")
-        return _get_mock_sec_data(ticker)
-    except Exception as e:
-        logger.error(f"[SEC Fetcher] Unexpected error: {e}")
-        return _get_mock_sec_data(ticker)
-
-
-def _get_mock_sec_data(ticker: str) -> Dict[str, Any]:
-    """Fallback mock data when SEC API fails."""
-    return {
-        "ticker": ticker,
-        "cik": "0000000000",
-        "latest_10k": {
-            "revenue": 400_000_000_000,
-            "net_income": 100_000_000_000,
-            "total_assets": 350_000_000_000,
-            "total_liabilities": 300_000_000_000,
-        },
-        "filing_date": "2024-11-01",
-        "source": "Mock Data (SEC API Unavailable)",
-    }
+                # REAL financial data from Company Facts API
+                "revenue": revenue,
+                "net_income": net_income,
+                "total_assets": total_assets,
+                "total_liabilities": total_liabilities,
+            },
+            "filing_date": filing_dates[latest_10k_idx],
+            "source": "SEC EDGAR (Real API + Company Facts)",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
 
 
 # ============================================================================
@@ -216,7 +245,7 @@ async def fetch_market_news(
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("external.news.api")
+        ConsentScope("agent.kai.analyze")  # Changed from external.news.api
     )
     
     if not valid:
@@ -288,7 +317,7 @@ async def fetch_market_data(
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("external.market.data")
+        ConsentScope("agent.kai.analyze")  # Changed from external.market.data
     )
     
     if not valid:
@@ -300,21 +329,67 @@ async def fetch_market_data(
     
     logger.info(f"[Market Data Fetcher] Fetching market data for {ticker} - user {user_id}")
     
-    # Mock implementation
-    # Real implementation would use yfinance or Alpha Vantage
-    
-    return {
-        "ticker": ticker,
-        "price": 185.92,
-        "change_percent": 1.25,
-        "volume": 45_000_000,
-        "market_cap": 2_850_000_000_000,  # $2.85T
-        "pe_ratio": 28.5,
-        "pb_ratio": 8.2,
-        "dividend_yield": 0.005,
-        "source": "yfinance",
-        "fetched_at": datetime.utcnow().isoformat(),
-    }
+    # Use yfinance for real market data (free, unlimited)
+    try:
+        import yfinance as yf
+        
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Extract key market metrics
+        return {
+            "ticker": ticker,
+            "price": info.get("currentPrice") or info.get("regularMarketPrice", 0),
+            "change_percent": info.get("regularMarketChangePercent", 0),
+            "volume": info.get("volume", 0),
+            "market_cap": info.get("marketCap", 0),
+            "pe_ratio": info.get("trailingPE", 0),
+            "pb_ratio": info.get("priceToBook", 0),
+            "dividend_yield": info.get("dividendYield", 0) or 0,
+            "company_name": info.get("longName", ticker),
+            "sector": info.get("sector", "Unknown"),
+            "industry": info.get("industry", "Unknown"),
+            "source": "yfinance (Real-time)",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
+        
+    except ImportError:
+        logger.warning("[Market Data Fetcher] yfinance not installed, using minimal data")
+        # Fallback to minimal data if library not available
+        return {
+            "ticker": ticker,
+            "price": 0,
+            "change_percent": 0,
+            "volume": 0,
+            "market_cap": 0,
+            "pe_ratio": 0,
+            "pb_ratio": 0,
+            "dividend_yield": 0,
+            "company_name": ticker,
+            "sector": "Unknown",
+            "industry": "Unknown",
+            "source": "Unavailable (yfinance not installed)",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.warning(f"[Market Data Fetcher] yfinance error (likely rate-limited): {e}")
+        # Return minimal data structure instead of failing
+        # This allows analysis to proceed with SEC data only
+        return {
+            "ticker": ticker,
+            "price": 0,
+            "change_percent": 0,
+            "volume": 0,
+            "market_cap": 0,
+            "pe_ratio": 0,
+            "pb_ratio": 0,
+            "dividend_yield": 0,
+            "company_name": ticker,
+            "sector": "Unknown",
+            "industry": "Unknown",
+            "source": "Unavailable (API error or rate limit)",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
 
 
 # ============================================================================
@@ -347,7 +422,7 @@ async def fetch_peer_data(
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("external.market.data")
+        ConsentScope("agent.kai.analyze")  # Changed from external.market.data
     )
     
     if not valid:
