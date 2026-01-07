@@ -1,0 +1,81 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Hushh Stack",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/hushh-webapp",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "started server on",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "Debug: Next.js Server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/hushh-webapp",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "env": {
+        "NODE_OPTIONS": "--inspect"
+      }
+    },
+    {
+      "name": "Debug: Next.js Client",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "userDataDir": false
+    },
+    {
+      "name": "Attach: Next.js Client",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "urlFilter": "http://localhost:3000/*",
+      "webRoot": "${workspaceFolder}/hushh-webapp",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack://_N_E/*": "${workspaceFolder}/hushh-webapp/*",
+        "webpack-internal:///./*": "${workspaceFolder}/hushh-webapp/*",
+        "webpack:///*": "${workspaceFolder}/hushh-webapp/*"
+      },
+      "timeout": 20000,
+      "preLaunchTask": "Launch Chrome for Debug"
+    },
+    {
+      "name": "Debug: Python FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "cwd": "${workspaceFolder}/consent-protocol",
+      "args": ["server:app", "--reload", "--port", "8000"],
+      "jinja": true,
+      "justMyCode": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug: Full Stack (Auto Browser)",
+      "configurations": [
+        "Debug: Next.js Server",
+        "Debug: Python FastAPI",
+        "Attach: Next.js Client"
+      ]
+    },
+    {
+      "name": "Debug: Full Stack (Launch Browser - No Auth)",
+      "configurations": [
+        "Debug: Next.js Server",
+        "Debug: Python FastAPI",
+        "Debug: Next.js Client"
+      ]
+    }
+  ]
+}
