@@ -1,200 +1,239 @@
 "use client";
 
 /**
- * Agent Kai — Production Onboarding
- * Pure CSS transitions, no Framer Motion
+ * Kai Onboarding Page
+ *
+ * Objectives:
+ * - Introduce Kai (Zero-Knowledge Financial Agent)
+ * - Explain Privacy Model (Hushh Vault)
+ * - Get User Preferences (Risk Profile, Processing Mode)
+ * - Stores new preferences to DB (Encrypted)
  */
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
   CardFooter,
-} from "@/lib/morphy-ux/morphy";
+} from "@/components/ui/card";
 import {
-  ArrowRight,
-  Check,
   Shield,
+  Lock,
   Cpu,
   Cloud,
+  ArrowRight,
+  Check,
   Scale,
   TrendingUp,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
-import {
-  grantKaiConsent,
-  hasValidConsent,
-  type ProcessingMode,
-  type RiskProfile,
-} from "./actions";
+import { useVault } from "@/lib/vault/vault-context";
+import { HushhVault } from "@/lib/capacitor";
+import { grantKaiConsent, hasValidConsent } from "./actions";
+import { type ProcessingMode, type RiskProfile } from "./actions";
+import { storePreferences, getPreferences } from "@/lib/services/kai-service";
 
-// =============================================================================
-// TYPES
-// =============================================================================
+// ============================================================================
+// TYPES & STATE
+// ============================================================================
 
-type OnboardingStep =
-  | "welcome"
-  | "processing_mode"
-  | "risk_profile"
-  | "consent"
-  | "ready";
+type Step = "welcome" | "mode" | "risk" | "consent" | "ready";
 
 interface OnboardingState {
-  step: OnboardingStep;
-  sessionId: string | null;
-  processingMode: ProcessingMode | null;
-  riskProfile: RiskProfile | null;
-  legalAcknowledged: boolean;
-  consentGranted: boolean;
+  step: Step;
+  processingMode: ProcessingMode;
+  riskProfile: RiskProfile;
 }
-
-// =============================================================================
-// MAIN COMPONENT
-// =============================================================================
 
 export default function KaiOnboarding() {
   const router = useRouter();
   const { user } = useAuth();
+  const { isVaultUnlocked, vaultKey } = useVault();
 
   const [state, setState] = useState<OnboardingState>({
     step: "welcome",
-    sessionId: null, // Will remove this entirely later
-    processingMode: null,
-    riskProfile: null,
-    legalAcknowledged: false,
-    consentGranted: false,
+    processingMode: "hybrid",
+    riskProfile: "balanced",
   });
 
   const [loading, setLoading] = useState(false);
+  const [checkingDb, setCheckingDb] = useState(true);
 
-  // ✅ Check for existing consent on mount (no session check needed)
+  // Check for existing preferences on mount (SKIP onboarding if found)
   useEffect(() => {
-    async function checkExistingConsent() {
+    async function checkExistingUser() {
       if (!user?.uid) return;
 
-      // Check if user has valid consent tokens
-      const hasConsent = hasValidConsent("agent.kai.analyze");
-
-      if (hasConsent) {
-        console.log("[Kai] User already has consent, redirecting to analysis");
-        router.push("/dashboard/kai/analysis");
+      try {
+        const { preferences } = await getPreferences(user.uid);
+        if (preferences && preferences.length > 0) {
+          console.log("[Kai] Found existing preferences, skipping onboarding.");
+          router.push("/dashboard/kai/analysis");
+        }
+      } catch (error) {
+        // If 404 or empty, just proceed with onboarding
+        console.log(
+          "[Kai] New user or no prefs found. Proceeding with onboarding."
+        );
+      } finally {
+        setCheckingDb(false);
       }
     }
 
-    checkExistingConsent();
+    // Also check if we already have consent in session
+    const hasConsent = hasValidConsent("agent.kai.analyze");
+    if (hasConsent) {
+      // We might have consent but checking DB is safer source of truth for "completed" state
+    }
+
+    checkExistingUser();
   }, [user, router]);
 
-  // Steps data
-  const steps: OnboardingStep[] = [
-    "welcome",
-    "processing_mode",
-    "risk_profile",
-    "consent",
-    "ready",
-  ];
-  const currentStepIndex = steps.indexOf(state.step);
+  if (checkingDb) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-zinc-500 text-sm">Checking Kai status...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Navigation handlers
-  const handleNext = async () => {
-    const nextIndex = currentStepIndex + 1;
-    if (nextIndex < steps.length) {
-      const nextStep = steps[nextIndex];
-      if (nextStep) {
-        setState((prev) => ({ ...prev, step: nextStep }));
-      }
-    }
+  // ============================================================================
+  // HANDLERS
+  // ============================================================================
+
+  const nextStep = (step: Step) => {
+    setState((prev) => ({ ...prev, step }));
   };
 
-  // Start onboarding (no session creation needed!)
-  const handleStart = () => {
-    console.log("[Kai] Starting onboarding - no session needed");
-    handleNext();
-  };
+  const handleStart = () => nextStep("mode");
 
-  // Mode selection (no session update needed)
   const handleModeSelect = (mode: ProcessingMode) => {
     setState((prev) => ({ ...prev, processingMode: mode }));
-    handleNext();
+    nextStep("risk");
   };
 
-  // Risk profile selection (no session update needed)
-  const handleRiskSelect = (risk: RiskProfile) => {
-    setState((prev) => ({ ...prev, riskProfile: risk }));
-    handleNext();
+  const handleRiskSelect = (profile: RiskProfile) => {
+    setState((prev) => ({ ...prev, riskProfile: profile }));
+    nextStep("consent");
   };
 
-  // Consent handler (✅ uses userId now, not sessionId)
-  const handleGrantConsent = async () => {
+  const handleProceed = async () => {
     if (!user?.uid) return;
+
+    // REQUIRE UNLOCKED VAULT
+    if (!isVaultUnlocked || !vaultKey) {
+      toast.error("Your Vault must be unlocked to save secure preferences.");
+      return;
+    }
 
     setLoading(true);
     try {
-      const scopes = [
+      // 1. Grant Consent (Get Tokens)
+      const consentGranted = await grantKaiConsent(user.uid, [
         "vault.read.risk_profile",
         "vault.write.decision",
-        "agent.kai.analyze",
-      ];
+        "agent.kai.analyze", // The crucial permission
+      ]);
 
-      // ✅ Grant consent with Firebase UID
-      const { tokens } = await grantKaiConsent(user.uid, scopes);
+      if (!consentGranted) throw new Error("Failed to grant consent");
 
-      setState((prev) => ({
-        ...prev,
-        consentGranted: true,
-        legalAcknowledged: true,
-      }));
+      // 2. Encrypt Preferences
+      // We store them in the DB so next time checkingDb finds them
+      const encRisk = await HushhVault.encryptData({
+        keyHex: vaultKey,
+        plaintext: state.riskProfile,
+      });
 
-      console.log("[Kai] Consent granted, tokens stored:", Object.keys(tokens));
-      handleNext();
-    } catch (error) {
-      console.error("Failed to grant consent:", error);
-      alert("Failed to grant consent. Please try again.");
+      const encMode = await HushhVault.encryptData({
+        keyHex: vaultKey,
+        plaintext: state.processingMode,
+      });
+
+      // 3. Store in DB
+      await storePreferences({
+        user_id: user.uid,
+        preferences: [
+          {
+            field_name: "kai_risk_profile",
+            ciphertext: encRisk.ciphertext,
+            iv: encRisk.iv,
+            tag: encRisk.tag,
+          },
+          {
+            field_name: "kai_processing_mode",
+            ciphertext: encMode.ciphertext,
+            iv: encMode.iv,
+            tag: encMode.tag,
+          },
+        ],
+      });
+
+      // 4. Update Session Storage (for immediate use)
+      sessionStorage.setItem("kai_risk_profile", state.riskProfile);
+      sessionStorage.setItem("kai_processing_mode", state.processingMode);
+
+      console.log("[Kai] Setup complete, preferences stored encrypted.");
+      toast.success("Preferences saved securely to your Vault.");
+      nextStep("ready");
+    } catch (error: any) {
+      console.error("Failed to setup:", error);
+      // Check for fetch failure which usually means CORS or server down
+      if (error.message?.includes("Failed to fetch")) {
+        toast.error("Could not connect to Kai Backend. Is the server running?");
+      } else {
+        toast.error("Failed to save preferences. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Complete onboarding
   const handleComplete = () => {
     router.push("/dashboard/kai/analysis");
   };
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   return (
-    <div className="min-h-dvh morphy-app-bg flex items-center justify-center p-4">
-      {/* Background glow effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-      </div>
+    <div className="min-h-screen morphy-app-bg p-6 flex items-center justify-center relative overflow-hidden">
+      {/* 
+          Standard Design System Background is 'morphy-app-bg' 
+          No extra blob divs required.
+      */}
 
-      <div className="relative w-full max-w-2xl">
-        {/* Step Indicator */}
-        <StepIndicator current={currentStepIndex} total={steps.length} />
+      <div className="relative z-10 w-full max-w-2xl">
+        <StepIndicator currentStep={state.step} />
 
-        {/* Step Content */}
-        <div className="transition-opacity duration-300">
+        <div className="mt-8 transition-all duration-500 ease-in-out">
           {state.step === "welcome" && (
             <WelcomeStep onStart={handleStart} loading={loading} />
           )}
-
-          {state.step === "processing_mode" && (
+          {state.step === "mode" && (
             <ModeStep onSelect={handleModeSelect} loading={loading} />
           )}
-
-          {state.step === "risk_profile" && (
+          {state.step === "risk" && (
             <RiskStep onSelect={handleRiskSelect} loading={loading} />
           )}
-
           {state.step === "consent" && (
-            <ConsentStep onGrant={handleGrantConsent} loading={loading} />
+            <ConsentStep
+              onProceed={handleProceed}
+              loading={loading}
+              isVaultUnlocked={isVaultUnlocked}
+            />
           )}
-
           {state.step === "ready" && <ReadyStep onComplete={handleComplete} />}
         </div>
       </div>
@@ -202,32 +241,31 @@ export default function KaiOnboarding() {
   );
 }
 
-// =============================================================================
-// STEP INDICATOR
-// =============================================================================
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
 
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function StepIndicator({ currentStep }: { currentStep: Step }) {
+  const steps: Step[] = ["welcome", "mode", "risk", "consent", "ready"];
+  const current = steps.indexOf(currentStep);
+
   return (
     <div className="flex items-center justify-center gap-2 mb-8">
-      {Array.from({ length: total }).map((_, i) => (
+      {steps.map((s, i) => (
         <div
-          key={i}
+          key={s}
           className={`h-2 rounded-full transition-all duration-500 ${
             i < current
-              ? "w-8 bg-gradient-to-r from-blue-500 to-purple-500"
+              ? "w-8 bg-linear-to-r from-blue-500 to-purple-500"
               : i === current
-              ? "w-8 bg-gradient-to-r from-blue-500/50 to-purple-500/50"
-              : "w-2 bg-white/20"
+              ? "w-8 bg-linear-to-r from-blue-500/50 to-purple-500/50"
+              : "w-2 bg-zinc-200 dark:bg-zinc-800"
           }`}
         />
       ))}
     </div>
   );
 }
-
-// =============================================================================
-// STEP COMPONENTS
-// =============================================================================
 
 function WelcomeStep({
   onStart,
@@ -236,104 +274,76 @@ function WelcomeStep({
   onStart: () => void;
   loading: boolean;
 }) {
-  const [checks, setChecks] = useState({
-    notAdvice: false,
-    consultPro: false,
-    mayLose: false,
-  });
-
-  const allChecked = Object.values(checks).every(Boolean);
-
   return (
-    <div className="opacity-100 transition-opacity duration-300">
-      <Card variant="none" effect="glass">
-        <CardHeader>
-          <div className="mx-auto mb-4 text-6xl">🤫</div>
-          <CardTitle className="text-headline text-center">Agent Kai</CardTitle>
-          <CardDescription className="text-title text-center">
-            Your Investment Committee
-          </CardDescription>
-        </CardHeader>
+    <Card className="glass-interactive border-0 shadow-2xl">
+      <CardHeader className="text-center pb-2">
+        <div className="mx-auto w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-4 text-blue-500">
+          <Sparkles size={32} />
+        </div>
+        <CardTitle className="text-3xl font-bold bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-purple-600 p-1">
+          Your Personal Investment Committee
+        </CardTitle>
+        <CardDescription className="text-lg mt-2">
+          Three specialist agents. Debate-driven analysis. Privacy first.
+        </CardDescription>
+      </CardHeader>
 
-        <CardContent className="space-y-6">
-          <p className="text-body text-center text-muted-foreground">
-            Three specialists. One decision. Your receipts.
-          </p>
-
-          {/* Legal Disclaimer */}
-          <div className="glass-interactive p-6 rounded-xl border border-amber-500/30 space-y-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10">
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-amber-500" />
-              <p className="text-caption font-semibold text-amber-400">
-                Important Disclosure
-              </p>
-            </div>
-            <p className="text-small text-amber-200/80">
-              Kai provides educational analysis, NOT investment advice.
+      <CardContent className="space-y-6 pt-6">
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-sm flex items-start gap-3">
+          <AlertTriangle className="shrink-0 w-5 h-5 text-amber-500" />
+          <div className="space-y-2">
+            <p className="font-semibold">Educational Tool Only</p>
+            <p className="opacity-90">
+              Kai is not an investment advisor. It does not manage portfolios or
+              execute trades. Always consult a professional before making
+              financial decisions.
             </p>
-
-            <div className="space-y-3">
-              {[
-                {
-                  key: "notAdvice",
-                  label: "I understand this is not investment advice",
-                },
-                {
-                  key: "consultPro",
-                  label: "I will consult professionals before investing",
-                },
-                { key: "mayLose", label: "I understand I may lose money" },
-              ].map(({ key, label }) => (
-                <label
-                  key={key}
-                  className="flex items-center gap-3 cursor-pointer group"
-                >
-                  <button
-                    type="button"
-                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors ${
-                      checks[key as keyof typeof checks]
-                        ? "bg-gradient-to-br from-amber-500 to-orange-500 border-amber-500"
-                        : "border-amber-500/50 group-hover:border-amber-400"
-                    }`}
-                    onClick={() =>
-                      setChecks((c) => ({
-                        ...c,
-                        [key]: !c[key as keyof typeof c],
-                      }))
-                    }
-                  >
-                    {checks[key as keyof typeof checks] && (
-                      <Check className="h-4 w-4 text-white" />
-                    )}
-                  </button>
-                  <span className="text-small text-amber-100/90">{label}</span>
-                </label>
-              ))}
-            </div>
           </div>
-        </CardContent>
+        </div>
 
-        <CardFooter>
-          <Button
-            variant="gradient"
-            size="lg"
-            className="w-full"
-            onClick={onStart}
-            disabled={!allChecked || loading}
-            showRipple
-          >
-            {loading ? (
-              "Starting..."
-            ) : (
-              <>
-                Get Started
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </>
-            )}
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="flex flex-col items-center text-center p-3">
+            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-2 text-blue-500">
+              <Shield size={20} />
+            </div>
+            <h4 className="font-semibold text-sm">Privacy First</h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              Your data stays in your vault.
+            </p>
+          </div>
+          <div className="flex flex-col items-center text-center p-3">
+            <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-2 text-purple-500">
+              <Scale size={20} />
+            </div>
+            <h4 className="font-semibold text-sm">Balanced Debate</h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              Agents challenge each other.
+            </p>
+          </div>
+          <div className="flex flex-col items-center text-center p-3">
+            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-2 text-green-500">
+              <Check size={20} />
+            </div>
+            <h4 className="font-semibold text-sm">Explainable</h4>
+            <p className="text-xs text-muted-foreground mt-1">
+              Real receipts, no black boxes.
+            </p>
+          </div>
+        </div>
+      </CardContent>
+
+      <CardFooter>
+        <Button
+          className="w-full bg-linear-to-r from-blue-600 to-purple-600 hover:opacity-90 transition-opacity"
+          size="lg"
+          onClick={onStart}
+          disabled={loading}
+        >
+          {loading ? "Initializing..." : "Get Started"}
+          {!loading && <ArrowRight className="ml-2 w-4 h-4" />}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -341,68 +351,55 @@ function ModeStep({
   onSelect,
   loading,
 }: {
-  onSelect: (mode: ProcessingMode) => void;
+  onSelect: (m: ProcessingMode) => void;
   loading: boolean;
 }) {
   return (
-    <div className="opacity-100 transition-opacity duration-300">
-      <Card variant="none" effect="glass">
-        <CardHeader>
-          <CardTitle className="text-title text-center">
-            Choose Your Mode
-          </CardTitle>
-          <CardDescription className="text-body text-center">
-            How should Kai analyze stocks?
-          </CardDescription>
-        </CardHeader>
+    <Card className="glass-interactive border-0 shadow-2xl">
+      <CardHeader>
+        <CardTitle>Processing Mode</CardTitle>
+        <CardDescription>
+          How should Kai handle your financial data?
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {/* On-Device Option (Disabled) */}
+        <button
+          onClick={() => onSelect("on_device")}
+          disabled={true}
+          className="relative text-left p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 opacity-50 cursor-not-allowed pointer-events-none"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <Cpu className="text-zinc-500" size={24} />
+            <span className="text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full text-zinc-500">
+              Coming Soon
+            </span>
+          </div>
+          <h3 className="font-semibold">On-Device Only</h3>
+          <p className="text-sm text-zinc-500 mt-1">
+            Data never leaves your device. Maximum privacy.
+          </p>
+        </button>
 
-        <CardContent className="space-y-4">
-          <Card
-            variant="none"
-            effect="glass"
-            className="cursor-pointer hover:bg-white/10 transition-colors"
-            showRipple
-            onClick={() => !loading && onSelect("on_device")}
-          >
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div className="h-12 w-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                  <Cpu className="h-6 w-6 text-blue-400" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-title font-semibold mb-1">On-Device</h3>
-                  <p className="text-caption text-muted-foreground">
-                    100% private. Analysis runs locally on your phone.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card
-            variant="none"
-            effect="glass"
-            className="cursor-pointer hover:bg-white/10 transition-colors"
-            showRipple
-            onClick={() => !loading && onSelect("hybrid")}
-          >
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div className="h-12 w-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                  <Cloud className="h-6 w-6 text-purple-400" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-title font-semibold mb-1">Hybrid</h3>
-                  <p className="text-caption text-muted-foreground">
-                    Get real-time data (SEC filings, news, market prices).
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </CardContent>
-      </Card>
-    </div>
+        {/* Hybrid Option (Active) */}
+        <button
+          onClick={() => onSelect("hybrid")}
+          className="relative text-left p-4 rounded-xl border-2 border-primary/50 hover:border-primary bg-primary/5 transition-all cursor-pointer"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <Cloud className="text-primary" size={24} />
+            <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full">
+              Recommended
+            </span>
+          </div>
+          <h3 className="font-semibold text-primary">Hybrid Cloud</h3>
+          <p className="text-sm text-foreground/80 mt-1">
+            Anonymized data is processed securely in the cloud. Faster results
+            with live market data.
+          </p>
+        </button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -410,141 +407,149 @@ function RiskStep({
   onSelect,
   loading,
 }: {
-  onSelect: (risk: RiskProfile) => void;
+  onSelect: (r: RiskProfile) => void;
   loading: boolean;
 }) {
-  const profiles = [
+  const profiles: {
+    id: RiskProfile;
+    icon: any;
+    title: string;
+    desc: string;
+  }[] = [
     {
-      id: "conservative" as RiskProfile,
+      id: "conservative",
       icon: Shield,
-      color: "green",
       title: "Conservative",
-      description: "Prioritize fundamentals and stability",
+      desc: "Prioritize preservation. Low volatility assets.",
     },
     {
-      id: "balanced" as RiskProfile,
+      id: "balanced",
       icon: Scale,
-      color: "blue",
       title: "Balanced",
-      description: "Mix of growth and stability",
+      desc: "Mix of growth and stability. Moderate risk.",
     },
     {
-      id: "aggressive" as RiskProfile,
+      id: "aggressive",
       icon: TrendingUp,
-      color: "red",
-      title: "Aggressive",
-      description: "Focus on growth and momentum",
+      title: "Growth",
+      desc: "Maximize returns. Higher volatility tolerance.",
     },
   ];
 
   return (
-    <div className="opacity-100 transition-opacity duration-300">
-      <Card variant="none" effect="glass">
-        <CardHeader>
-          <CardTitle className="text-title text-center">Risk Profile</CardTitle>
-          <CardDescription className="text-body text-center">
-            This tailors how our agents vote
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          {profiles.map(({ id, icon: Icon, title, description }) => (
-            <Card
-              key={id}
-              variant="none"
-              effect="glass"
-              className="cursor-pointer hover:bg-white/10 transition-colors"
-              showRipple
-              onClick={() => !loading && onSelect(id)}
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                    <Icon className="h-6 w-6 text-blue-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-title font-semibold mb-1">{title}</h3>
-                    <p className="text-caption text-muted-foreground">
-                      {description}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
+    <Card className="glass-interactive border-0 shadow-2xl">
+      <CardHeader>
+        <CardTitle>Risk Profile</CardTitle>
+        <CardDescription>
+          Tailor Kai's recommendations to your style.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {profiles.map(({ id, icon: Icon, title, desc }) => (
+          <button
+            key={id}
+            onClick={() => onSelect(id)}
+            className="w-full text-left p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-primary/50 hover:bg-primary/5 transition-all flex items-center gap-4 group cursor-pointer"
+          >
+            <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+              <Icon size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold">{title}</h3>
+              <p className="text-sm text-muted-foreground">{desc}</p>
+            </div>
+          </button>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
 function ConsentStep({
-  onGrant,
+  onProceed,
   loading,
+  isVaultUnlocked,
 }: {
-  onGrant: () => void;
+  onProceed: () => void;
   loading: boolean;
+  isVaultUnlocked: boolean;
 }) {
   return (
-    <div className="opacity-100 transition-opacity duration-300">
-      <Card variant="none" effect="glass">
-        <CardHeader>
-          <CardTitle className="text-title text-center">Grant Access</CardTitle>
-          <CardDescription className="text-body text-center">
-            Let Kai analyze stocks and save decisions
-          </CardDescription>
-        </CardHeader>
+    <Card className="glass-interactive border-0 shadow-2xl">
+      <CardHeader>
+        <CardTitle>Permissions</CardTitle>
+        <CardDescription>Review what Kai needs to operate.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-start gap-2">
+              <Check className="text-green-500 w-5 h-5 shrink-0" />
+              <span>
+                <strong>Read Risk Profile:</strong> To verify your investment
+                preferences.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Check className="text-green-500 w-5 h-5 shrink-0" />
+              <span>
+                <strong>Write Decisions:</strong> To save analysis results to
+                your protected Vault.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Check className="text-green-500 w-5 h-5 shrink-0" />
+              <span>
+                <strong>Perform Analysis:</strong> To execute financial models
+                on your behalf.
+              </span>
+            </li>
+          </ul>
+        </div>
 
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
-            {[
-              "Read your risk profile",
-              "Analyze stocks on your behalf",
-              "Save decisions to your vault",
-            ].map((scope, i) => (
-              <div key={i} className="flex items-center gap-3 text-caption">
-                <div className="h-6 w-6 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <Check className="h-4 w-4 text-green-400" />
-                </div>
-                <span>{scope}</span>
-              </div>
-            ))}
+        {!isVaultUnlocked && (
+          <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg text-amber-600 dark:text-amber-400 text-sm flex items-center gap-2">
+            <Lock size={16} />
+            <span>Please unlock your Vault (Sidebar) to proceed.</span>
           </div>
-        </CardContent>
-
-        <CardFooter>
-          <Button
-            variant="gradient"
-            size="lg"
-            className="w-full"
-            onClick={onGrant}
-            disabled={loading}
-            showRipple
-          >
-            {loading ? "Granting..." : "Grant Access"}
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
+        )}
+      </CardContent>
+      <CardFooter>
+        <Button
+          className="w-full"
+          disabled={loading || !isVaultUnlocked}
+          onClick={onProceed}
+        >
+          {loading ? "Encrypting & Saving..." : "Proceed"}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
 function ReadyStep({ onComplete }: { onComplete: () => void }) {
   return (
-    <div className="opacity-100 transition-opacity duration-300">
-      <Card variant="none" effect="glass">
-        <CardContent className="p-12 text-center">
-          <div className="mb-6 text-8xl">✅</div>
-          <h2 className="text-headline mb-4">You're Ready!</h2>
-          <p className="text-body text-muted-foreground mb-8">
-            Your investment committee is standing by.
+    <Card className="glass-interactive border-0 shadow-2xl text-center">
+      <CardContent className="pt-8 pb-8 space-y-4">
+        <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto text-green-500">
+          <Sparkles size={40} />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold">You're All Set!</h2>
+          <p className="text-zinc-500 mt-2">
+            Kai is ready to analyze the market for you.
           </p>
-          <Button variant="gradient" size="lg" onClick={onComplete} showRipple>
-            <Sparkles className="mr-2 h-5 w-5" />
-            Start Analyzing
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+      <CardFooter className="justify-center pb-8">
+        <Button
+          onClick={onComplete}
+          size="lg"
+          className="w-full max-w-xs bg-green-600 hover:bg-green-700"
+        >
+          Start Analysis
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
