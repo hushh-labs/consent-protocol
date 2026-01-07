@@ -18,7 +18,6 @@ import { useVault } from "@/lib/vault/vault-context";
 import { HushhVault } from "@/lib/capacitor";
 import {
   analyzeTicker,
-  storeDecision,
   getPreferences,
   type AnalyzeResponse,
 } from "@/lib/services/kai-service";
@@ -36,9 +35,12 @@ export default function KaiAnalysis() {
 
   // Check consent on mount
   useEffect(() => {
-    if (!user) return;
-    const hasTokens = hasValidConsent("agent.kai.analyze");
-    setHasConsent(hasTokens);
+    const checkConsent = async () => {
+      if (!user) return;
+      const hasTokens = await hasValidConsent("agent.kai.analyze");
+      setHasConsent(hasTokens);
+    };
+    checkConsent();
   }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +52,7 @@ export default function KaiAnalysis() {
       return;
     }
 
-    const consentToken = getConsentToken("agent.kai.analyze");
+    const consentToken = await getConsentToken("agent.kai.analyze");
     if (!consentToken) {
       toast.error("Missing consent. Please re-onboard.");
       router.push("/dashboard/kai");
@@ -61,50 +63,43 @@ export default function KaiAnalysis() {
     setResult(null);
 
     try {
-      // 1. Get Preferences (Stateless Session OR Persistent DB)
-      let riskProfile = sessionStorage.getItem("kai_risk_profile") as any;
-      let processingMode = sessionStorage.getItem("kai_processing_mode") as any;
+      // 1. Get Preferences (Source of Truth) directly from DB
+      // We start with defaults, then override from DB
+      let riskProfile = "balanced";
+      let processingMode = "hybrid";
 
-      // If missing from session (fresh load), fetch from DB and decrypt
-      if (!riskProfile || !processingMode) {
-        console.log(
-          "[Kai] Preferences missing from session, fetching from DB..."
-        );
-        try {
-          const { preferences } = await getPreferences(user.uid);
+      try {
+        console.log("[Kai] Fetching fresh preferences from DB...");
+        const { preferences } = await getPreferences(user.uid);
 
-          for (const pref of preferences) {
-            const decryptedRes = await HushhVault.decryptData({
-              keyHex: vaultKey,
-              payload: {
-                ciphertext: pref.ciphertext,
-                iv: pref.iv,
-                tag: pref.tag,
-                encoding: "base64", // Default from encryptData
-                algorithm: "aes-256-gcm",
-              },
-            });
+        // Decrypt them on the fly
+        for (const pref of preferences) {
+          const decryptedResult = await HushhVault.decryptData({
+            keyHex: vaultKey,
+            payload: {
+              ciphertext: pref.ciphertext,
+              iv: pref.iv,
+              tag: pref.tag || "",
+              encoding: "base64",
+              algorithm: "aes-256-gcm",
+            },
+          });
 
-            const decrypted = decryptedRes.plaintext; // decryptData returns { plaintext }
-
-            if (pref.field_name === "kai_risk_profile") riskProfile = decrypted;
-            if (pref.field_name === "kai_processing_mode")
-              processingMode = decrypted;
+          if (pref.field_name === "kai_risk_profile") {
+            riskProfile = decryptedResult.plaintext;
+          } else if (pref.field_name === "kai_processing_mode") {
+            processingMode = decryptedResult.plaintext;
           }
-
-          // Cache restored prefs
-          if (riskProfile)
-            sessionStorage.setItem("kai_risk_profile", riskProfile);
-          if (processingMode)
-            sessionStorage.setItem("kai_processing_mode", processingMode);
-        } catch (prefError) {
-          console.error("[Kai] Failed to restore preferences:", prefError);
         }
+        console.log(
+          `[Kai] Loaded preferences - Risk: ${riskProfile}, Mode: ${processingMode}`
+        );
+      } catch (err) {
+        console.warn(
+          "[Kai] Failed to load fresh prefs, falling back to defaults",
+          err
+        );
       }
-
-      // Default to balanced/hybrid if still missing
-      riskProfile = riskProfile || "balanced";
-      processingMode = processingMode || "hybrid";
 
       console.log(
         `[Kai] Analyzing with Profile: ${riskProfile}, Mode: ${processingMode}`
@@ -116,8 +111,8 @@ export default function KaiAnalysis() {
         user_id: user.uid,
         ticker: ticker.toUpperCase(),
         consent_token: consentToken,
-        risk_profile: riskProfile,
-        processing_mode: processingMode,
+        risk_profile: riskProfile as any,
+        processing_mode: processingMode as any,
       });
 
       console.log(`[Kai] Analysis received in ${Date.now() - analysisMs}ms`);
@@ -174,21 +169,24 @@ export default function KaiAnalysis() {
 
         {/* Search Form */}
         <form onSubmit={handleSubmit} className="relative">
-          <div className="relative bg-white/5 border border-white/10 rounded-2xl p-1">
-            <div className="flex items-center gap-3 px-4 py-2">
-              <Search className="h-5 w-5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Ask Kai about any stock... (e.g., AAPL, TSLA)"
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
-                className="flex-1 bg-transparent border-0 outline-none text-white placeholder:text-white/40 text-lg"
-                disabled={isAnalyzing || !hasConsent || !isVaultUnlocked}
-              />
+          <div className="relative bg-white/5 border border-white/10 rounded-2xl p-1.5 focus-within:bg-white/10 transition-colors">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+              <div className="flex items-center gap-3 flex-1 px-3 py-2">
+                <Search className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Ask Kai about any stock... (e.g., AAPL)"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value)}
+                  className="flex-1 bg-transparent border-0 outline-none text-white placeholder:text-white/40 text-lg min-w-0"
+                  disabled={isAnalyzing || !hasConsent || !isVaultUnlocked}
+                />
+              </div>
               <Button
                 variant="gradient"
                 size="lg"
                 type="submit"
+                className="w-full md:w-auto rounded-xl shadow-lg"
                 disabled={
                   !ticker.trim() ||
                   isAnalyzing ||
@@ -198,7 +196,7 @@ export default function KaiAnalysis() {
                 showRipple
               >
                 {isAnalyzing ? (
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                     Analyzing...
                   </span>

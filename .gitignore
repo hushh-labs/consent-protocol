@@ -17,3 +17,4 @@ firebase-service-account.json
 consent-protocol/.DS_Store
 .DS_Store
 docs/vision/kai/index.html
+.vscode/chrome-debug

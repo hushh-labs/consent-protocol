@@ -37,9 +37,12 @@ import {
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhVault } from "@/lib/capacitor";
-import { grantKaiConsent, hasValidConsent } from "./actions";
-import { type ProcessingMode, type RiskProfile } from "./actions";
-import { storePreferences, getPreferences } from "@/lib/services/kai-service";
+import {
+  storePreferences,
+  getPreferences,
+  grantKaiConsent,
+} from "@/lib/services/kai-service";
+import { hasValidConsent, ProcessingMode, RiskProfile } from "./actions";
 
 // ============================================================================
 // TYPES & STATE
@@ -70,15 +73,79 @@ export default function KaiOnboarding() {
   // Check for existing preferences on mount (SKIP onboarding if found)
   useEffect(() => {
     async function checkExistingUser() {
-      if (!user?.uid) return;
+      if (!user?.uid || !vaultKey) {
+        // If user or vaultKey is not available yet, wait for next render
+        // This can happen if auth or vault context is still loading
+        return;
+      }
 
       try {
+        // Fetch saved preferences from backend
         const { preferences } = await getPreferences(user.uid);
+
         if (preferences && preferences.length > 0) {
-          console.log("[Kai] Found existing preferences, skipping onboarding.");
+          console.log("[Kai] Found existing preferences, auto-completing.");
+
+          // Decrypt and save to sessionStorage
+          for (const pref of preferences) {
+            const decryptedResult = await HushhVault.decryptData({
+              keyHex: vaultKey,
+              payload: {
+                ciphertext: pref.ciphertext,
+                iv: pref.iv,
+                tag: pref.tag || "",
+                encoding: "base64",
+                algorithm: "aes-256-gcm",
+              },
+            });
+
+            if (pref.field_name === "kai_risk_profile") {
+              sessionStorage.setItem(
+                "kai_risk_profile",
+                decryptedResult.plaintext
+              );
+            } else if (pref.field_name === "kai_processing_mode") {
+              sessionStorage.setItem(
+                "kai_processing_mode",
+                decryptedResult.plaintext
+              );
+            }
+          }
+
+          // ✅ Auto-grant consent if not already granted
+          const hasConsent = await hasValidConsent("agent.kai.analyze");
+          if (!hasConsent) {
+            console.log("[Kai] Auto-granting consent for existing user...");
+            const consentResponse = await grantKaiConsent(user.uid, [
+              "vault.read.risk_profile",
+              "vault.write.decision",
+              "agent.kai.analyze",
+            ]);
+
+            // SAVE the token!
+            const storageData = {
+              tokens: {
+                "agent.kai.analyze":
+                  consentResponse.token ||
+                  (consentResponse as any).tokens?.["agent.kai.analyze"],
+              },
+              expires_at: consentResponse.expires_at,
+            };
+
+            const { Preferences } = await import("@capacitor/preferences");
+            await Preferences.set({
+              key: "kai_consent_tokens",
+              value: JSON.stringify(storageData),
+            });
+          }
+
+          // Navigate to analysis page since user already onboarded
           router.push("/dashboard/kai/analysis");
+        } else {
+          console.log("[Kai] No preferences found. Showing onboarding.");
         }
       } catch (error) {
+        console.error("[Kai] Error checking existing preferences:", error);
         // If 404 or empty, just proceed with onboarding
         console.log(
           "[Kai] New user or no prefs found. Proceeding with onboarding."
@@ -88,14 +155,8 @@ export default function KaiOnboarding() {
       }
     }
 
-    // Also check if we already have consent in session
-    const hasConsent = hasValidConsent("agent.kai.analyze");
-    if (hasConsent) {
-      // We might have consent but checking DB is safer source of truth for "completed" state
-    }
-
     checkExistingUser();
-  }, [user, router]);
+  }, [user, router, vaultKey]); // Added vaultKey to dependencies
 
   if (checkingDb) {
     return (
@@ -139,17 +200,31 @@ export default function KaiOnboarding() {
 
     setLoading(true);
     try {
-      // 1. Grant Consent (Get Tokens)
-      const consentGranted = await grantKaiConsent(user.uid, [
+      // 1. Grant Consent (Get Token) - using native plugin
+      const consentResponse = await grantKaiConsent(user.uid, [
         "vault.read.risk_profile",
         "vault.write.decision",
-        "agent.kai.analyze", // The crucial permission
+        "agent.kai.analyze",
       ]);
 
-      if (!consentGranted) throw new Error("Failed to grant consent");
+      console.log("[Kai] Consent granted:", consentResponse);
+
+      // Store in Preferences (mobile-compatible) instead of sessionStorage
+      const storageData = {
+        tokens: {
+          "agent.kai.analyze": consentResponse.token,
+        },
+        expires_at: consentResponse.expires_at,
+      };
+
+      // Use Capacitor Preferences for mobile compatibility
+      const { Preferences } = await import("@capacitor/preferences");
+      await Preferences.set({
+        key: "kai_consent_tokens",
+        value: JSON.stringify(storageData),
+      });
 
       // 2. Encrypt Preferences
-      // We store them in the DB so next time checkingDb finds them
       const encRisk = await HushhVault.encryptData({
         keyHex: vaultKey,
         plaintext: state.riskProfile,
@@ -160,24 +235,24 @@ export default function KaiOnboarding() {
         plaintext: state.processingMode,
       });
 
+      // Combine both encrypted preferences into a single JSON string
+      const preferencesJson = JSON.stringify([
+        {
+          field_name: "kai_risk_profile",
+          ciphertext: encRisk.ciphertext,
+          iv: encRisk.iv,
+          tag: encRisk.tag,
+        },
+        {
+          field_name: "kai_processing_mode",
+          ciphertext: encMode.ciphertext,
+          iv: encMode.iv,
+          tag: encMode.tag,
+        },
+      ]);
+
       // 3. Store in DB
-      await storePreferences({
-        user_id: user.uid,
-        preferences: [
-          {
-            field_name: "kai_risk_profile",
-            ciphertext: encRisk.ciphertext,
-            iv: encRisk.iv,
-            tag: encRisk.tag,
-          },
-          {
-            field_name: "kai_processing_mode",
-            ciphertext: encMode.ciphertext,
-            iv: encMode.iv,
-            tag: encMode.tag,
-          },
-        ],
-      });
+      await storePreferences(user.uid, preferencesJson);
 
       // 4. Update Session Storage (for immediate use)
       sessionStorage.setItem("kai_risk_profile", state.riskProfile);
