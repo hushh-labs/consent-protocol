@@ -14,6 +14,12 @@
       }
     },
     {
+      "name": "Next.js: Client",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000"
+    },
+    {
       "name": "Capacitor: Attach to Android WebView",
       "type": "chrome",
       "request": "attach",
@@ -36,6 +42,10 @@
     }
   ],
   "compounds": [
+    {
+      "name": "Next.js: Full Stack",
+      "configurations": ["Next.js: Dev Server", "Next.js: Client"]
+    },
     {
       "name": "Full Stack: Next.js + Android Debug",
       "configurations": ["Next.js: Dev Server"]

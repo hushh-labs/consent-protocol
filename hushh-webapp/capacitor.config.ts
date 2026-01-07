@@ -48,6 +48,12 @@ const config: CapacitorConfig = {
     HushhConsent: {
       backendUrl: BACKEND_URL,
     },
+    Kai: {
+      backendUrl: BACKEND_URL,
+    },
+    CapacitorHttp: {
+      enabled: true,
+    },
     StatusBar: {
       overlaysWebView: true,
       style: "DARK",

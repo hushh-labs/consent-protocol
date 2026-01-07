@@ -1,96 +1,76 @@
 /**
- * Kai Service — API Integration
+ * Kai Service — Direct Plugin Integration
  *
- * Calls backend /api/kai/* endpoints.
- * Stateless Zero-Knowledge Architecture:
- * - No Sessions.
- * - Client manages Risk Profile & Preferences.
- * - Client Handles Encryption.
+ * Calls Kai plugin directly for platform-aware backend communication.
+ * - Web: Kai plugin uses Next.js API proxy
+ * - Mobile: Kai plugin makes native HTTP calls to backend
  */
 
 import { Capacitor } from "@capacitor/core";
-
-const getApiBase = () => {
-  if (Capacitor.isNativePlatform()) {
-    return process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-  }
-  // Web: Use relative path for proxy
-  return "";
-};
-
-const API_BASE = getApiBase();
+import { Kai } from "@/lib/capacitor/kai";
+import { HushhAuth } from "@/lib/capacitor";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-export interface GrantConsentRequest {
-  user_id: string;
-  scopes?: string[];
-}
-
 export interface GrantConsentResponse {
-  consent_id: string;
-  tokens: Record<string, string>;
+  token: string;
   expires_at: string;
 }
 
 export interface AnalyzeResponse {
-  decision_id: string;
   ticker: string;
   decision: "buy" | "hold" | "reduce";
   confidence: number;
   headline: string;
   processing_mode: string;
-  created_at: string;
-  raw_card: Record<string, any>; // Full data for encryption
-}
-
-export interface EncryptedDecision {
-  id: number;
-  decision_ciphertext: string;
-  iv: string;
-  tag: string;
-  created_at: string;
-  user_id: string;
-  ticker: string;
+  created_at?: string; // Optional - may not be in response
+  raw_card: Record<string, any>;
 }
 
 // ============================================================================
-// API CALLS
+// HELPER
+// ============================================================================
+
+async function getAuthToken(): Promise<string | undefined> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { idToken } = await HushhAuth.getIdToken();
+      return idToken || undefined;
+    } catch (e) {
+      console.warn("[Kai Service] Failed to get auth token:", e);
+    }
+  }
+  return undefined;
+}
+
+// ============================================================================
+// API CALLS (Via Kai Plugin)
 // ============================================================================
 
 /**
- * Grant consent for Kai data access
- * Stateless.
+ * Grant Kai Consent
  */
 export async function grantKaiConsent(
   userId: string,
-  scopes: string[] = [
-    "vault.read.risk_profile",
-    "vault.write.decision",
-    "agent.kai.analyze",
-  ]
+  scopes?: string[]
 ): Promise<GrantConsentResponse> {
-  const response = await fetch(`${API_BASE}/api/kai/consent/grant`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, scopes }),
+  const authToken = await getAuthToken();
+
+  return Kai.grantConsent({
+    userId,
+    scopes: scopes || [
+      "vault.read.risk_profile",
+      "vault.write.decision",
+      "agent.kai.analyze",
+    ],
+    authToken,
   });
-
-  if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail || "Failed to grant consent");
-  }
-
-  return response.json();
 }
 
 /**
- * Step 1: Analyze Ticker (Returns Plaintext)
- * Stateless: Pass risk profile and mode explicitly.
+ * Analyze Ticker
  */
 export async function analyzeTicker(params: {
   user_id: string;
@@ -99,116 +79,47 @@ export async function analyzeTicker(params: {
   risk_profile: "conservative" | "balanced" | "aggressive";
   processing_mode: "on_device" | "hybrid";
 }): Promise<AnalyzeResponse> {
-  const response = await fetch(`${API_BASE}/api/kai/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+  const authToken = await getAuthToken();
+
+  const result = await Kai.analyze({
+    userId: params.user_id,
+    ticker: params.ticker,
+    consentToken: params.consent_token,
+    riskProfile: params.risk_profile,
+    processingMode: params.processing_mode,
+    authToken,
   });
 
-  if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail || "Analysis failed");
-  }
-
-  return response.json();
+  // Plugin returns the full response, just return it
+  return result as AnalyzeResponse;
 }
 
 /**
- * Step 2: Store Encrypted Decision
- * Call this after encrypting the `raw_card` from Step 1.
+ * Store Encrypted Preferences
  */
-export async function storeDecision(params: {
-  user_id: string;
-  ticker: string;
-  decision_type: string;
-  confidence_score: number;
-  decision_ciphertext: string; // Encrypted JSON
-  iv: string;
-  tag: string;
-}): Promise<{ success: boolean }> {
-  const response = await fetch(`${API_BASE}/api/kai/decision/store`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+export async function storePreferences(
+  userId: string,
+  preferencesEncrypted: string
+): Promise<{ success: boolean }> {
+  const authToken = await getAuthToken();
+
+  return Kai.storePreferences({
+    userId,
+    preferencesEncrypted,
+    authToken,
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to store decision");
-  }
-
-  return response.json();
-}
-
-/**
- * Get Encrypted Decision (for local decryption)
- */
-export async function getDecision(
-  decisionId: number
-): Promise<EncryptedDecision> {
-  const response = await fetch(`${API_BASE}/api/kai/decision/${decisionId}`);
-
-  if (!response.ok) {
-    throw new Error("Decision not found");
-  }
-
-  return response.json();
-}
-
-/**
- * Check Kai API health
- */
-export async function checkKaiHealth(): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE}/api/kai/health`);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Store Encrypted Preferences (Risk Profile, Mode)
- */
-export async function storePreferences(params: {
-  user_id: string;
-  preferences: Array<{
-    field_name: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-  }>;
-}): Promise<{ success: boolean }> {
-  const response = await fetch(`${API_BASE}/api/kai/preferences/store`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to store preferences");
-  }
-
-  return response.json();
 }
 
 /**
  * Get Encrypted Preferences
  */
-export async function getPreferences(userId: string): Promise<{
-  preferences: Array<{
-    field_name: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-  }>;
-}> {
-  const response = await fetch(`${API_BASE}/api/kai/preferences/${userId}`);
+export async function getPreferences(
+  userId: string
+): Promise<{ preferences: any[] }> {
+  const authToken = await getAuthToken();
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch preferences");
-  }
-
-  return response.json();
+  return Kai.getPreferences({
+    userId,
+    authToken,
+  });
 }
