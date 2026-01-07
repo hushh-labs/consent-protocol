@@ -9,6 +9,7 @@ import com.hushh.pda.plugins.HushhVault.HushhVaultPlugin
 import com.hushh.pda.plugins.HushhKeystore.HushhKeystorePlugin
 import com.hushh.pda.plugins.HushhSettings.HushhSettingsPlugin
 import com.hushh.pda.plugins.HushhSync.HushhSyncPlugin
+import com.hushh.pda.plugins.Kai.KaiPlugin
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,13 +17,14 @@ class MainActivity : BridgeActivity() {
         
         // Register all Hushh native plugins
         registerPlugin(HushhAuthPlugin::class.java)
-        registerPlugin(HushhConsentPlugin::class.java)
-        registerPlugin(HushhVaultPlugin::class.java)
-        registerPlugin(HushhKeystorePlugin::class.java)
-        registerPlugin(HushhSettingsPlugin::class.java)
-        registerPlugin(HushhSyncPlugin::class.java)
+        registerPlugin(HushhVaultPlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhConsentPlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhSyncPlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhSettingsPlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhKeystorePlugin::class.java) // Reordered as per instruction
+        registerPlugin(KaiPlugin::class.java) // Agent Kai plugin
         
-        Log.d("MainActivity", "✅ [MainActivity] All 6 plugins registered successfully")
+        Log.d("MainActivity", "✅ [MainActivity] All 7 plugins registered successfully") // Updated count
         
         super.onCreate(savedInstanceState)
     }

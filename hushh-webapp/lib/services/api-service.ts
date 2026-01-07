@@ -69,6 +69,17 @@ async function apiFetch(
  * API Service for platform-aware API calls
  */
 export class ApiService {
+  /**
+   * Platform-aware fetch wrapper (exposed for other services)
+   * Automatically adds base URL and common headers
+   */
+  static async apiFetch(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<Response> {
+    return apiFetch(path, options);
+  }
+
   // ==================== Auth ====================
 
   /**
@@ -655,6 +666,160 @@ export class ApiService {
       }
     }
     return undefined;
+  }
+
+  // ==================== Kai Agent Methods ====================
+
+  /**
+   * Grant Kai Consent
+   */
+  static async kaiGrantConsent(data: {
+    userId: string;
+    scopes?: string[];
+  }): Promise<Response> {
+    const scopes = data.scopes || [
+      "vault.read.risk_profile",
+      "vault.write.decision",
+      "agent.kai.analyze",
+    ];
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.kaiGrantConsent({
+          userId: data.userId,
+          scopes,
+          authToken,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error: any) {
+        console.error("[ApiService] Native kaiGrantConsent error:", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/consent/grant", {
+      method: "POST",
+      body: JSON.stringify({ user_id: data.userId, scopes }),
+    });
+  }
+
+  /**
+   * Analyze stock ticker
+   */
+  static async kaiAnalyze(data: {
+    userId: string;
+    ticker: string;
+    consentToken: string;
+    riskProfile: string;
+    processingMode: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.kaiAnalyze({
+          userId: data.userId,
+          ticker: data.ticker,
+          consentToken: data.consentToken,
+          riskProfile: data.riskProfile,
+          processingMode: data.processingMode,
+          authToken,
+        });
+
+        return new Response(JSON.stringify(result.decision), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error: any) {
+        console.error("[ApiService] Native kaiAnalyze error:", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/analyze", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: data.userId,
+        ticker: data.ticker,
+        consent_token: data.consentToken,
+        risk_profile: data.riskProfile,
+        processing_mode: data.processingMode,
+      }),
+    });
+  }
+
+  /**
+   * Store Kai preferences
+   */
+  static async kaiStorePreferences(data: {
+    userId: string;
+    preferencesEncrypted: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.kaiStorePreferences({
+          userId: data.userId,
+          preferencesEncrypted: data.preferencesEncrypted,
+          authToken,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error: any) {
+        console.error("[ApiService] Native kaiStorePreferences error:", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/preferences/store", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: data.userId,
+        preferences_encrypted: data.preferencesEncrypted,
+      }),
+    });
+  }
+
+  /**
+   * Get Kai preferences
+   */
+  static async kaiGetPreferences(data: { userId: string }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await HushhVault.kaiGetPreferences({
+          userId: data.userId,
+          authToken,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error: any) {
+        console.error("[ApiService] Native kaiGetPreferences error:", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch(`/api/kai/preferences/${data.userId}`, {
+      method: "GET",
+    });
   }
 }
 

@@ -62,65 +62,24 @@ export interface ConsentTokens {
   [scope: string]: string;
 }
 
-export interface TokensResponse {
-  tokens: ConsentTokens;
-  expires_at?: number;
-}
-
 /**
- * Grant Kai consent using Firebase UID (no session needed).
- * ✅ Simplified: Agents use Firebase + MCP only
+ * NOTE: grantKaiConsent has been moved to kai-service.ts
+ * to use the native Kai plugin instead of direct fetch.
+ * This ensures mobile compatibility.
  */
-export async function grantKaiConsent(
-  userId: string, // ✅ Firebase UID, not session_id
-  scopes: string[]
-): Promise<TokensResponse> {
-  const backendUrl = getBackendUrl();
-
-  try {
-    const response = await fetch(
-      `${backendUrl}/api/kai/consent/grant`, // ✅ Updated endpoint
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId, // ✅ Direct user_id
-          scopes,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-    }
-
-    const data = await response.json();
-
-    // ✅ Store tokens in sessionStorage
-    const storageData = {
-      tokens: data.tokens,
-      expires_at: data.expires_at,
-    };
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(storageData));
-
-    console.log(`[Kai] Stored consent tokens for scopes:`, scopes);
-
-    return { tokens: data.tokens, expires_at: data.expires_at };
-  } catch (error) {
-    console.error("[Kai] Failed to grant consent:", error);
-    throw error;
-  }
-}
 
 /**
  * Get consent token for specific scope.
+ * Uses Capacitor Preferences for mobile compatibility.
  */
-export function getConsentToken(scope: string): string | null {
-  const storageJson = sessionStorage.getItem(TOKEN_STORAGE_KEY);
-  if (!storageJson) return null;
-
+export async function getConsentToken(scope: string): Promise<string | null> {
   try {
-    const storageData = JSON.parse(storageJson);
+    const { Preferences } = await import("@capacitor/preferences");
+    const { value } = await Preferences.get({ key: TOKEN_STORAGE_KEY });
+
+    if (!value) return null;
+
+    const storageData = JSON.parse(value);
     return storageData.tokens?.[scope] || null;
   } catch {
     return null;
@@ -129,17 +88,19 @@ export function getConsentToken(scope: string): string | null {
 
 /**
  * Check if valid consent exists for scope.
+ * Uses Capacitor Preferences for mobile compatibility.
  */
-export function hasValidConsent(scope: string): boolean {
-  const token = getConsentToken(scope);
+export async function hasValidConsent(scope: string): Promise<boolean> {
+  const token = await getConsentToken(scope);
   if (!token) return false;
 
-  // Check expiry
-  const storageJson = sessionStorage.getItem(TOKEN_STORAGE_KEY);
-  if (!storageJson) return false;
-
   try {
-    const storageData = JSON.parse(storageJson);
+    const { Preferences } = await import("@capacitor/preferences");
+    const { value } = await Preferences.get({ key: TOKEN_STORAGE_KEY });
+
+    if (!value) return false;
+
+    const storageData = JSON.parse(value);
     if (storageData.expires_at && Date.now() > storageData.expires_at) {
       return false;
     }
@@ -153,8 +114,9 @@ export function hasValidConsent(scope: string): boolean {
 /**
  * Clear all consent tokens (on logout/re-onboard).
  */
-export function clearConsentTokens(): void {
-  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+export async function clearConsentTokens(): Promise<void> {
+  const { Preferences } = await import("@capacitor/preferences");
+  await Preferences.remove({ key: TOKEN_STORAGE_KEY });
 }
 
 // =============================================================================
