@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/lib/morphy-ux/morphy";
@@ -15,10 +15,19 @@ type ThemeOption = "light" | "dark" | "system";
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   const themeOptions: {
     value: ThemeOption;
-    icon: React.ElementType;
+    icon: any;
     label: string;
   }[] = [
     { value: "light", icon: Sun, label: "Light" },

@@ -19,9 +19,11 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useEffect,
   ReactNode,
 } from "react";
 import { setSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
+import { useAuth } from "@/lib/firebase/auth-context";
 
 // ============================================================================
 // Types
@@ -59,9 +61,27 @@ interface VaultProviderProps {
 }
 
 export function VaultProvider({ children }: VaultProviderProps) {
+  // Access Auth Context to listen for logout
+  const { user } = useAuth();
+
   // SECURITY: Vault key stored in React state = memory only
   // This is NOT accessible via sessionStorage.getItem() - XSS protection
   const [vaultKey, setVaultKey] = useState<string | null>(null);
+
+  const lockVault = useCallback(() => {
+    console.log("🔒 Vault locked (key cleared from memory)");
+    setVaultKey(null);
+    removeSessionItem("vault_unlocked");
+  }, []);
+
+  // Auto-Lock on Sign Out
+  // If AuthContext reports no user, we MUST clear the decrypted key from memory immediately.
+  useEffect(() => {
+    if (!user && vaultKey) {
+      console.log("🔒 [VaultProvider] User signed out - Formatting memory...");
+      lockVault();
+    }
+  }, [user, vaultKey, lockVault]);
 
   const unlockVault = useCallback((key: string) => {
     console.log("🔓 Vault unlocked (key stored in memory only)");
@@ -71,12 +91,6 @@ export function VaultProvider({ children }: VaultProviderProps) {
     // (But NOT the actual key - just the state)
     // Uses localStorage on iOS, sessionStorage on web
     setSessionItem("vault_unlocked", "true");
-  }, []);
-
-  const lockVault = useCallback(() => {
-    console.log("🔒 Vault locked (key cleared from memory)");
-    setVaultKey(null);
-    removeSessionItem("vault_unlocked");
   }, []);
 
   const getVaultKey = useCallback(() => {

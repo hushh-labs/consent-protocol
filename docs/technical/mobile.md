@@ -832,4 +832,57 @@ output: isCapacitorBuild ? "export" : undefined;
 
 ---
 
-_Last verified: January 2, 2026 | Capacitor 8 | On-Device AI Edition_
+## 📱 Mobile UX & Interface Standards
+
+### Navigation Architecture
+
+The app follows a strict **Layered Navigation** model to handle the differences between Web (Browser History) and Native (Hardware Back Button) paradigms.
+
+| Level  | Description | Examples                      | Back Button Behavior           |
+| ------ | ----------- | ----------------------------- | ------------------------------ |
+| **1**  | Root Pages  | `/dashboard`, `/profile`      | **Exit App** (Native Dialog)   |
+| **2+** | Sub Pages   | `/dashboard/kai`, `/settings` | **Go Up** (Navigate to Parent) |
+
+#### Implementation (`NavigationProvider`)
+
+- **State Management**: Uses `useRef` to maintain stable access to navigation state inside the permanent native listener.
+- **Native Listener**: `App.addListener('backButton')` intercepts the hardware button.
+- **Exit Logic**: On Level 1 pages, triggers a custom `<ExitDialog />` instead of a toast or immediate exit.
+
+### Layout & Safe Area
+
+To prevent content overlap with the Status Bar (notch) and Fixed Headers, we use a robust spacing strategy:
+
+#### Component: `<TopAppBarSpacer />`
+
+Instead of complex conditional padding on the `body` or `layout`, we use a dedicated spacer component that strictly reserves height:
+
+- **Root Pages**: `h-[max(env(safe-area-inset-top), 32px)]` (Status Bar only)
+- **Sub Pages**: `h-[calc(max(env(safe-area-inset-top), 32px) + 48px)]` (Status Bar + Header)
+
+> [!TIP]
+> Always use `max(env(...), 32px)` to ensure a minimum safe area on devices that report 0px (like some emulators) or mobile web views.
+
+### Toast Notifications (`Sonner`)
+
+Toasts are positioned to avoid the Status Bar and Top App Bar:
+
+```tsx
+<Toaster
+  position="top-center"
+  style={{ marginTop: "max(env(safe-area-inset-top), 4rem)" }} // Low enough to clear headers
+  className="!z-[9999]" // Layer above Modals/Sheet
+/>
+```
+
+### Security: Vault Auto-Lock
+
+To enforce "Memory-Only" security:
+
+1. **State**: Vault Key is stored in `React.useState` (RAM).
+2. **Auto-Lock**: A `useEffect` in `VaultProvider` listens for `auth.user` logout events.
+3. **Action**: If `user` becomes `null`, the `vaultKey` is immediately set to `null`, clearing it from memory.
+
+---
+
+_Last verified: January 2026 | Capacitor 8 | Mobile UX & AI Edition_
