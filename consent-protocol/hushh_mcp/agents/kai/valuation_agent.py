@@ -69,9 +69,7 @@ class ValuationAgent:
             peer_data = await fetch_peer_data(ticker, user_id, consent_token)
         except PermissionError as e:
             logger.error(f"[Valuation] Market data access denied: {e}")
-            # Fallback to mock data
-            market_data = await self._mock_market_data(ticker)
-            peer_data = []
+            raise
         
         # Operon 2: Analyze valuation (with consent check)
         from hushh_mcp.operons.kai.analysis import analyze_valuation
@@ -98,15 +96,7 @@ class ValuationAgent:
             sources=[market_data.get("source", "Unknown")],
         )
     
-    async def _mock_market_data(self, ticker: str):
-        """Fallback mock market data for on-device mode."""
-        return {
-            "ticker": ticker,
-            "price": 180.0,
-            "pe_ratio": 28.0,
-            "market_cap": 2_800_000_000_000,
-            "source": "Mock Data",
-        }
+
     
     async def _mock_analysis(self, ticker: str) -> ValuationInsight:
         """Mock valuation analysis (temporary)."""
