@@ -18,3 +18,5 @@ consent-protocol/.DS_Store
 .DS_Store
 docs/vision/kai/index.html
 .vscode/chrome-debug
+sec_payload_aapl.json
+sec_payload_nvda.json

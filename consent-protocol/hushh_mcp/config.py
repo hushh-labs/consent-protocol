@@ -30,6 +30,7 @@ DEFAULT_TRUST_LINK_EXPIRY_MS = int(os.getenv("DEFAULT_TRUST_LINK_EXPIRY_MS", 100
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 AGENT_ID = os.getenv("AGENT_ID", "agent_hushh_default")
 HUSHH_HACKATHON = os.getenv("HUSHH_HACKATHON", "disabled").lower() == "enabled"
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # ==================== Defaults Export ====================
 
@@ -40,5 +41,6 @@ __all__ = [
     "DEFAULT_TRUST_LINK_EXPIRY_MS",
     "ENVIRONMENT",
     "AGENT_ID",
-    "HUSHH_HACKATHON"
+    "HUSHH_HACKATHON",
+    "GOOGLE_API_KEY"
 ]

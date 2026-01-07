@@ -25,8 +25,12 @@ class FundamentalInsight:
     """Fundamental analysis insight with sources and confidence."""
     summary: str
     key_metrics: Dict[str, Any]
-    strengths: List[str]
-    weaknesses: List[str]
+    quant_metrics: Dict[str, Any]
+    business_moat: str
+    financial_resilience: str
+    growth_efficiency: str
+    bull_case: str
+    bear_case: str
     sources: List[str]
     confidence: float
     recommendation: str  # "buy", "hold", "reduce"
@@ -73,10 +77,16 @@ class FundamentalAgent:
         logger.info(f"[Fundamental] Orchestrating analysis for {ticker}")
         
         # Step 1: Fetch SEC filings (operon validates consent internally)
-        from hushh_mcp.operons.kai.fetchers import fetch_sec_filings
+        from hushh_mcp.operons.kai.fetchers import fetch_sec_filings, fetch_market_data
         
         try:
             sec_filings = await fetch_sec_filings(
+                ticker=ticker,
+                user_id=user_id,
+                consent_token=consent_token
+            )
+            # We also need market data for context
+            market_data = await fetch_market_data(
                 ticker=ticker,
                 user_id=user_id,
                 consent_token=consent_token
@@ -85,7 +95,28 @@ class FundamentalAgent:
             logger.error(f"[Fundamental] External data access denied: {e}")
             raise
         
-        # Step 2: Analyze fundamentals (operon validates consent internally)
+        # Step 2: Gemini Deep Analysis (HYBRID v2)
+        from hushh_mcp.config import GOOGLE_API_KEY
+        from hushh_mcp.operons.kai.llm import analyze_stock_with_gemini
+        from hushh_mcp.operons.kai.calculators import calculate_quant_metrics
+        
+        quant_metrics = calculate_quant_metrics(sec_filings)
+        
+        gemini_analysis = None
+        if GOOGLE_API_KEY and self.processing_mode == "hybrid":
+            try:
+                gemini_analysis = await analyze_stock_with_gemini(
+                    ticker=ticker,
+                    user_id=user_id,
+                    consent_token=consent_token,
+                    sec_data=sec_filings,
+                    market_data=market_data,
+                    quant_metrics=quant_metrics
+                )
+            except Exception as e:
+                logger.warning(f"[Fundamental] Gemini analysis failed: {e}. Falling back to deterministic.")
+
+        # Step 3: Traditional Analysis (Fallback or baseline metrics)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
         
         analysis = analyze_fundamentals(
@@ -95,12 +126,33 @@ class FundamentalAgent:
             consent_token=consent_token,
         )
         
-        # Step 3: Format as FundamentalInsight
+        # Step 4: Merge results (Prefer Deep Gemini Report)
+        if gemini_analysis and "error" not in gemini_analysis:
+            logger.info(f"[Fundamental] Integrating Deep Gemini Report for {ticker}")
+            return FundamentalInsight(
+                summary=gemini_analysis.get("summary", analysis["summary"]),
+                key_metrics=analysis["key_metrics"],
+                quant_metrics=quant_metrics,
+                business_moat=gemini_analysis.get("business_moat", "No moat analysis available."),
+                financial_resilience=gemini_analysis.get("financial_resilience", "No resilience analysis available."),
+                growth_efficiency=gemini_analysis.get("growth_efficiency", "No efficiency analysis available."),
+                bull_case=gemini_analysis.get("bull_case", "No bull case provided."),
+                bear_case=gemini_analysis.get("bear_case", "No bear case provided."),
+                confidence=gemini_analysis.get("confidence", analysis["confidence"]),
+                recommendation=gemini_analysis.get("recommendation", analysis["recommendation"]),
+                sources=self._format_sources(sec_filings) + ["Gemini Senior Analyst Report"],
+            )
+
+        # Step 5: Format as FundamentalInsight (Fallback)
         return FundamentalInsight(
             summary=analysis["summary"],
             key_metrics=analysis["key_metrics"],
-            strengths=analysis["strengths"],
-            weaknesses=analysis["weaknesses"],
+            quant_metrics=quant_metrics,
+            business_moat="N/A (Deterministic Mode)",
+            financial_resilience="N/A (Deterministic Mode)",
+            growth_efficiency="N/A (Deterministic Mode)",
+            bull_case="N/A",
+            bear_case="N/A",
             confidence=analysis["confidence"],
             recommendation=analysis["recommendation"],
             sources=self._format_sources(sec_filings),
