@@ -79,8 +79,8 @@ export default function RootLayout({
           <AuthProvider>
             <VaultProvider>
               <Navbar />
-              {/* Main Content Area - Uses safe-area-inset-top but ensures minimum padding for Status Bar */}
-              <div className="pt-[max(env(safe-area-inset-top),1.5rem)] flex-1 flex flex-col relative z-10">
+              {/* Main Content Area - Padding handled by Smart TopAppBarSpacer */}
+              <div className="pt-0 pb-24 flex-1 flex flex-col relative z-10">
                 {children}
               </div>
               {/* Sonner Toast Notifications - high z-index to appear above everything */}

@@ -27,6 +27,7 @@ import {
   Dumbbell,
   Shield,
   Lock,
+  CheckCircle,
   ChevronRight,
 } from "lucide-react";
 
@@ -214,6 +215,7 @@ export default function DashboardPage() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { getVaultKey } = useVault();
   const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
+  const [activeConsentsCount, setActiveConsentsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
 
@@ -249,9 +251,10 @@ export default function DashboardPage() {
       }
 
       try {
-        const [foodRes, profRes] = await Promise.all([
+        const [foodRes, profRes, activeRes] = await Promise.all([
           ApiService.getFoodPreferences(user.uid),
           ApiService.getProfessionalProfile(user.uid),
+          ApiService.getActiveConsents(user.uid),
         ]);
 
         const counts: Record<string, number> = {};
@@ -268,6 +271,11 @@ export default function DashboardPage() {
           counts.professional = Object.keys(prefs).filter(
             (k) => prefs[k]
           ).length;
+        }
+
+        if (activeRes.ok) {
+          const data = await activeRes.json();
+          setActiveConsentsCount((data.active || []).length);
         }
 
         setDataCounts(counts);
@@ -319,12 +327,15 @@ export default function DashboardPage() {
           </div>
           <p className="text-xs text-muted-foreground">Domains</p>
         </div>
-        <div className="flex-1 bg-card rounded-xl p-3 border border-border/50">
+        <div
+          className="flex-1 bg-card rounded-xl p-3 border border-border/50 cursor-pointer hover:border-blue-500/50 transition-colors"
+          onClick={() => router.push("/consents?tab=session")}
+        >
           <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-blue-500" />
-            <span className="text-lg font-bold">{totalDataPoints}</span>
+            <CheckCircle className="h-4 w-4 text-blue-500" />
+            <span className="text-lg font-bold">{activeConsentsCount}</span>
           </div>
-          <p className="text-xs text-muted-foreground">Data Points</p>
+          <p className="text-xs text-muted-foreground">Active Consents</p>
         </div>
       </div>
 
