@@ -91,6 +91,10 @@ class ValuationAgent:
             peer_comparison=analysis["peer_comparison"],
             confidence=analysis["confidence"],
             recommendation=analysis["recommendation"],
+            price_targets={
+                "current_price": market_data.get("price", 0.0),
+                "consensus_target": 0.0, # Placeholder
+            },
             sources=[market_data.get("source", "Unknown")],
         )
     
