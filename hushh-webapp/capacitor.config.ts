@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 import type { CapacitorConfig } from "@capacitor/cli";
 
 // For development: set to true to use localhost:3000 hot reload
