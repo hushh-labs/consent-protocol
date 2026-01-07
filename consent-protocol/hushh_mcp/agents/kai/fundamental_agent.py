@@ -82,9 +82,8 @@ class FundamentalAgent:
                 consent_token=consent_token
             )
         except PermissionError as e:
-            logger.warning(f"[Fundamental] External data access denied: {e}")
-            # Fallback to mock data (on-device mode)
-            sec_filings = await self._mock_sec_data(ticker)
+            logger.error(f"[Fundamental] External data access denied: {e}")
+            raise
         
         # Step 2: Analyze fundamentals (operon validates consent internally)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
@@ -118,25 +117,7 @@ class FundamentalAgent:
             "Financial statement analysis",
         ]
     
-    async def _mock_sec_data(self, ticker: str) -> Dict[str, Any]:
-        """
-        Fallback mock data for on-device mode.
-        Used when external data consent is denied.
-        """
-        logger.info(f"[Fundamental] Using mock SEC data for {ticker}")
-        
-        return {
-            "ticker": ticker,
-            "cik": "0000000000",
-            "latest_10k": {
-                "revenue": 400_000_000_000,
-                "net_income": 100_000_000_000,
-                "total_assets": 350_000_000_000,
-                "total_liabilities": 300_000_000_000,
-            },
-            "filing_date": "2024-11-01",
-            "source": "On-Device Mock (No External Consent)",
-        }
+
     
     # =========================================================================
     # FUTURE: Attention Marketplace Integration
