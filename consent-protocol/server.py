@@ -6,10 +6,15 @@ Modular architecture with routes organized in api/routes/ directory.
 Run with: uvicorn server:app --reload --port 8000
 """
 
+from dotenv import load_dotenv
+import os
+
+# Load .env file before any other imports that might depend on it
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'), override=True)
+
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
-import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

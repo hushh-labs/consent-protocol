@@ -21,7 +21,7 @@ def calculate_financial_ratios(sec_filings: Dict[str, Any]) -> Dict[str, float]:
     Calculate key financial ratios from SEC filings.
     
     Args:
-        sec_filings: Parsed SEC filing data with income statement, balance sheet
+        sec_filings: Parsed SEC filing data with expanded deep metrics
         
     Returns:
         Dict of financial metrics
@@ -31,33 +31,76 @@ def calculate_financial_ratios(sec_filings: Dict[str, Any]) -> Dict[str, float]:
     
     revenue = latest_10k.get("revenue", 0)
     net_income = latest_10k.get("net_income", 0)
-    total_assets = latest_10k.get("total_assets", 1)  # Avoid division by zero
+    total_assets = latest_10k.get("total_assets", 1)
     total_liabilities = latest_10k.get("total_liabilities", 0)
     
-    # Calculate actual ratios
-    equity = max(total_assets - total_liabilities, 1)  # Avoid division by zero
+    # Use expanded deep metrics if available
+    fcf = latest_10k.get("free_cash_flow", 0)
+    long_term_debt = latest_10k.get("long_term_debt", 0)
+    equity = latest_10k.get("equity") or max(total_assets - total_liabilities, 1)
+    rnd = latest_10k.get("research_and_development", 0)
+    ocf = latest_10k.get("operating_cash_flow", 0)
     
+    # Calculate actual ratios
     profit_margin = (net_income / revenue) if revenue > 0 else 0
     return_on_equity = (net_income / equity) if equity > 0 else 0
-    debt_to_equity = (total_liabilities / equity) if equity > 0 else 0
+    debt_to_equity = (long_term_debt / equity) if equity > 0 else (total_liabilities / equity)
     
-    # Current ratio would need current assets/liabilities (not in our data yet)
-    # Using a reasonable estimate based on total balance sheet health
-    current_ratio = 1.5 if total_assets > total_liabilities else 0.8
+    # Quant analyst ratios
+    fcf_margin = (fcf / revenue) if revenue > 0 else 0
+    rnd_intensity = (rnd / revenue) if revenue > 0 else 0
+    earnings_quality = (ocf / net_income) if net_income > 0 else 0
     
     revenue_billions = revenue / 1_000_000_000 if revenue > 0 else 0
-    
-    # Revenue growth would need historical data (future enhancement)
-    # For now, use a reasonable estimate based on company size
-    revenue_growth_yoy = 0.10 if revenue > 100_000_000_000 else 0.15
+    fcf_billions = fcf / 1_000_000_000 if fcf != 0 else 0
     
     return {
-        "revenue_growth_yoy": revenue_growth_yoy,
-        "profit_margin": profit_margin,
-        "debt_to_equity": debt_to_equity,
-        "current_ratio": current_ratio,
-        "return_on_equity": return_on_equity,
+        "ticker": sec_filings.get("ticker"),
+        "cik": sec_filings.get("cik"),
+        "entity_name": sec_filings.get("entity_name"),
         "revenue_billions": revenue_billions,
+        "fcf_billions": fcf_billions,
+        "profit_margin": profit_margin,
+        "fcf_margin": fcf_margin,
+        "debt_to_equity": debt_to_equity,
+        "return_on_equity": return_on_equity,
+        "rnd_intensity": rnd_intensity,
+        "earnings_quality": earnings_quality,
+        "total_assets_billions": total_assets / 1_000_000_000,
+        "long_term_debt_billions": long_term_debt / 1_000_000_000,
+        "research_and_development_billions": rnd / 1_000_000_000 if rnd > 0 else 0,
+    }
+
+
+def calculate_quant_metrics(sec_filings: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process historical trends to generate quant signals and growth rates.
+    """
+    latest_10k = sec_filings.get("latest_10k", {})
+    
+    def get_growth_rate(trend: List[Dict[str, Any]]) -> float:
+        if len(trend) < 2:
+            return 0.0
+        latest = trend[-1]["value"]
+        previous = trend[-2]["value"]
+        if previous == 0:
+            return 0.0
+        return (latest - previous) / previous
+
+    revenue_trend = latest_10k.get("revenue_trend", [])
+    net_income_trend = latest_10k.get("net_income_trend", [])
+    ocf_trend = latest_10k.get("ocf_trend", [])
+    rnd_trend = latest_10k.get("rnd_trend", [])
+
+    return {
+        "revenue_growth_yoy": get_growth_rate(revenue_trend),
+        "net_income_growth_yoy": get_growth_rate(net_income_trend),
+        "ocf_growth_yoy": get_growth_rate(ocf_trend),
+        "revenue_cagr_3y": ( (revenue_trend[-1]["value"] / revenue_trend[0]["value"])**(1/3) - 1 ) if len(revenue_trend) >= 3 and revenue_trend[0]["value"] > 0 else 0,
+        "revenue_trend_data": [{"year": d["year"], "value": round(d["value"]/1e9, 2)} for d in revenue_trend],
+        "net_income_trend_data": [{"year": d["year"], "value": round(d["value"]/1e9, 2)} for d in net_income_trend],
+        "ocf_trend_data": [{"year": d["year"], "value": round(d["value"]/1e9, 2)} for d in ocf_trend],
+        "rnd_trend_data": [{"year": d["year"], "value": round(d["value"]/1e9, 2)} for d in rnd_trend],
     }
 
 
