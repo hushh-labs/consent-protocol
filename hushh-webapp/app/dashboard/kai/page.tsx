@@ -208,7 +208,7 @@ export default function KaiOnboarding() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen morphy-app-bg p-6 flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-screen p-6 flex items-center justify-center relative overflow-hidden">
       {/* 
           Standard Design System Background is 'morphy-app-bg' 
           No extra blob divs required.

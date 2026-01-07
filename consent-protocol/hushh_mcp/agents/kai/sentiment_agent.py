@@ -88,6 +88,14 @@ class SentimentAgent:
             key_catalysts=analysis["key_catalysts"],
             confidence=analysis["confidence"],
             recommendation=analysis["recommendation"],
+            news_highlights=[
+                {
+                    "title": a.get("title", ""),
+                    "source": a.get("source", {}).get("name", "Unknown"),
+                    "date": a.get("publishedAt", "")[:10]
+                }
+                for a in news_articles[:3]
+            ],
             sources=[article.get("source", {}).get("name", "Unknown") for article in news_articles[:5]],
         )
     

@@ -33,9 +33,6 @@ export default function KaiAnalysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
-  const [saveStatus, setSaveStatus] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
 
   // Check consent on mount
   useEffect(() => {
@@ -62,7 +59,6 @@ export default function KaiAnalysis() {
 
     setIsAnalyzing(true);
     setResult(null);
-    setSaveStatus("idle");
 
     try {
       // 1. Get Preferences (Stateless Session OR Persistent DB)
@@ -127,30 +123,7 @@ export default function KaiAnalysis() {
       console.log(`[Kai] Analysis received in ${Date.now() - analysisMs}ms`);
       setResult(analysis);
 
-      // 3. Encrypt & Store (Auto-Save)
-      setSaveStatus("saving");
-      try {
-        const encrypted = await HushhVault.encryptData({
-          keyHex: vaultKey,
-          plaintext: JSON.stringify(analysis.raw_card),
-        });
-
-        await storeDecision({
-          user_id: user.uid,
-          ticker: analysis.ticker,
-          decision_type: analysis.decision,
-          confidence_score: analysis.confidence,
-          decision_ciphertext: encrypted.ciphertext,
-          iv: encrypted.iv,
-          tag: encrypted.tag,
-        });
-
-        console.log("[Kai] Decision encrypted and stored securely.");
-        setSaveStatus("saved");
-      } catch (saveError) {
-        console.error("Failed to encrypt/save:", saveError);
-        setSaveStatus("error");
-      }
+      // Note: Auto-save removed. User can manually save if needed.
     } catch (error) {
       console.error("[Kai] Analysis error:", error);
       toast.error("Analysis failed. Please try again.");
@@ -277,28 +250,6 @@ export default function KaiAnalysis() {
                   <p className="text-caption text-muted-foreground">Mode</p>
                   <p className="text-xl capitalize">{result.processing_mode}</p>
                 </div>
-              </div>
-
-              {/* Encryption Status */}
-              <div className="flex items-center gap-2 text-small text-muted-foreground border-t border-white/10 pt-4">
-                {saveStatus === "saving" && (
-                  <>
-                    <div className="w-3 h-3 border border-white/20 border-t-white rounded-full animate-spin" />
-                    Encrypting & Saving to Vault...
-                  </>
-                )}
-                {saveStatus === "saved" && (
-                  <div className="flex items-center gap-2 text-green-400">
-                    <Lock className="w-3 h-3" />
-                    <span>Encrypted & Stored in Vault</span>
-                  </div>
-                )}
-                {saveStatus === "error" && (
-                  <div className="flex items-center gap-2 text-red-400">
-                    <AlertCircle className="w-3 h-3" />
-                    <span>Failed to Save</span>
-                  </div>
-                )}
               </div>
             </div>
           </div>
