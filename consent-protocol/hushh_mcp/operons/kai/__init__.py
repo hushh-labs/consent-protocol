@@ -14,6 +14,7 @@ from .analysis import (
     analyze_sentiment,
     analyze_valuation,
 )
+from .llm import analyze_stock_with_gemini
 
 from .calculators import (
     calculate_financial_ratios,
@@ -32,6 +33,7 @@ __all__ = [
     "analyze_fundamentals",
     "analyze_sentiment",
     "analyze_valuation",
+    "analyze_stock_with_gemini",
     
     # Calculator operons
     "calculate_financial_ratios",

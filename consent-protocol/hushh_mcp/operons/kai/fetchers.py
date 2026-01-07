@@ -152,41 +152,94 @@ async def fetch_sec_filings(
             # Extract financial metrics from US-GAAP taxonomy
             us_gaap = facts_data.get("facts", {}).get("us-gaap", {})
             
-            def get_latest_annual_value(metric_name: str) -> int:
-                """Extract the most recent annual (10-K) value for a metric."""
-                if metric_name not in us_gaap:
-                    return 0
-                
-                metric_data = us_gaap[metric_name]
-                usd_data = metric_data.get("units", {}).get("USD", [])
-                
-                # Filter for 10-K filings only
-                annual_data = [d for d in usd_data if d.get("form") == "10-K"]
-                
-                if not annual_data:
-                    return 0
-                
-                # Get most recent by end date
-                latest = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)[0]
-                return int(latest.get("val", 0))
+            def get_latest_annual_value(metric_names: List[str]) -> int:
+                """Extract the most recent annual (10-K) value from a prioritized list of tags."""
+                for metric_name in metric_names:
+                    if metric_name not in us_gaap:
+                        continue
+                    
+                    metric_data = us_gaap[metric_name]
+                    usd_data = metric_data.get("units", {}).get("USD", [])
+                    
+                    # Filter for 10-K filings only
+                    annual_data = [d for d in usd_data if d.get("form") == "10-K"]
+                    
+                    if not annual_data:
+                        continue
+                    
+                    # Get most recent by end date
+                    latest = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)[0]
+                    return int(latest.get("val", 0))
+                return 0
+
+            def get_historical_annual_values(metric_names: List[str], years: int = 4) -> List[Dict[str, Any]]:
+                """Extract historical annual values for a prioritized list of tags."""
+                for metric_name in metric_names:
+                    if metric_name not in us_gaap:
+                        continue
+                    
+                    metric_data = us_gaap[metric_name]
+                    usd_data = metric_data.get("units", {}).get("USD", [])
+                    
+                    # Filter for 10-K filings only
+                    annual_data = [d for d in usd_data if d.get("form") == "10-K"]
+                    
+                    if not annual_data:
+                        continue
+                    
+                    # Get most recent years by end date
+                    sorted_data = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)
+                    
+                    # Dedup by year (sometimes multiple entries for same year)
+                    seen_years = set()
+                    historical = []
+                    for d in sorted_data:
+                        year = d.get("fy") or d.get("end", "")[:4]
+                        if year not in seen_years:
+                            historical.append({
+                                "year": year,
+                                "value": int(d.get("val", 0)),
+                                "end": d.get("end")
+                            })
+                            seen_years.add(year)
+                        if len(historical) >= years:
+                            break
+                    return historical[::-1] # Chronological order
+                return []
             
-            # Extract key financial metrics
-            revenue = get_latest_annual_value("Revenues") or get_latest_annual_value("RevenueFromContractWithCustomerExcludingAssessedTax")
-            net_income = get_latest_annual_value("NetIncomeLoss")
-            total_assets = get_latest_annual_value("Assets")
-            total_liabilities = get_latest_annual_value("Liabilities")
+            # Extract key financial metrics using prioritized US-GAAP tags
+            revenue = get_latest_annual_value(["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"])
+            net_income = get_latest_annual_value(["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"])
+            total_assets = get_latest_annual_value(["Assets"])
+            total_liabilities = get_latest_annual_value(["Liabilities"])
             
-            logger.info(f"[SEC Fetcher] Extracted metrics - Revenue: ${revenue:,}, Net Income: ${net_income:,}")
+            # --- NEW: Expanded Fundamental Metrics ---
+            # Cash Flow tags
+            ocf = get_latest_annual_value(["NetCashProvidedByUsedInOperatingActivities"])
+            capex = get_latest_annual_value(["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"])
+            fcf = ocf - capex if ocf else 0
+            
+            # Balance Sheet & Efficiency tags
+            long_term_debt = get_latest_annual_value(["LongTermDebtNoncurrent", "LongTermDebt"])
+            equity = get_latest_annual_value(["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
+            op_income = get_latest_annual_value(["OperatingIncomeLoss"])
+            rnd = get_latest_annual_value(["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"])
+
+            # --- NEW: Historical Trends for Quant Analysis ---
+            revenue_trend = get_historical_annual_values(["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"])
+            net_income_trend = get_historical_annual_values(["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"])
+            ocf_trend = get_historical_annual_values(["NetCashProvidedByUsedInOperatingActivities"])
+            rnd_trend = get_historical_annual_values(["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"])
+            
+            logger.info(f"[SEC Fetcher] Extracted Deep Metrics for {ticker} - Trends for Revenue, Net Income, OCF, R&D available.")
             
         except Exception as facts_error:
             logger.warning(f"[SEC Fetcher] Could not fetch company facts: {facts_error}")
-            # Use zeros if facts unavailable
-            revenue = 0
-            net_income = 0
-            total_assets = 0
-            total_liabilities = 0
+            revenue = net_income = total_assets = total_liabilities = 0
+            ocf = fcf = long_term_debt = equity = op_income = rnd = 0
+            revenue_trend = net_income_trend = ocf_trend = rnd_trend = []
         
-        # Return structured filing data with REAL financial metrics
+        # Return structured filing data with EXPANDED financial metrics
         return {
             "ticker": ticker,
             "cik": cik,
@@ -194,14 +247,25 @@ async def fetch_sec_filings(
             "latest_10k": {
                 "accession_number": accession_numbers[latest_10k_idx],
                 "filing_date": filing_dates[latest_10k_idx],
-                # REAL financial data from Company Facts API
                 "revenue": revenue,
                 "net_income": net_income,
                 "total_assets": total_assets,
                 "total_liabilities": total_liabilities,
+                # Deep Metrics
+                "operating_cash_flow": ocf,
+                "free_cash_flow": fcf,
+                "long_term_debt": long_term_debt,
+                "equity": equity,
+                "operating_income": op_income,
+                "research_and_development": rnd,
+                # Trends
+                "revenue_trend": revenue_trend,
+                "net_income_trend": net_income_trend,
+                "ocf_trend": ocf_trend,
+                "rnd_trend": rnd_trend,
             },
             "filing_date": filing_dates[latest_10k_idx],
-            "source": "SEC EDGAR (Real API + Company Facts)",
+            "source": "SEC EDGAR (Institutional Trend Extract)",
             "fetched_at": datetime.utcnow().isoformat(),
         }
 
@@ -352,6 +416,7 @@ async def fetch_market_data(
             "source": "yfinance (Real-time)",
             "fetched_at": datetime.utcnow().isoformat(),
         }
+        # raise ImportError("Temporarily disabled yfinance")
         
     except ImportError:
         logger.warning("[Market Data Fetcher] yfinance not installed, using minimal data")
