@@ -68,8 +68,7 @@ class SentimentAgent:
             news_articles = await fetch_market_news(ticker, user_id, consent_token)
         except PermissionError as e:
             logger.error(f"[Sentiment] News access denied: {e}")
-            # Fallback to mock data
-            news_articles = await self._mock_news_data(ticker)
+            raise
         
         # Operon 2: Analyze sentiment (with consent check)
         from hushh_mcp.operons.kai.analysis import analyze_sentiment
@@ -99,17 +98,7 @@ class SentimentAgent:
             sources=[article.get("source", {}).get("name", "Unknown") for article in news_articles[:5]],
         )
     
-    async def _mock_news_data(self, ticker: str):
-        """Fallback mock news for on-device mode."""
-        from datetime import datetime, timedelta
-        return [
-            {
-                "title": f"{ticker} reports strong earnings",
-                "description": "Company exceeds expectations",
-                "source": {"name": "Mock News"},
-                "publishedAt": (datetime.utcnow() - timedelta(days=1)).isoformat(),
-            }
-        ]
+
     
     async def _mock_analysis(self, ticker: str) -> SentimentInsight:
         """Mock sentiment analysis (temporary)."""
