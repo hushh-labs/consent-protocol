@@ -1,24 +1,27 @@
 /**
  * Platform-Aware Session Storage
- * 
+ *
  * On iOS (Capacitor), sessionStorage doesn't work reliably in WKWebView.
  * This utility uses localStorage with a session prefix on native platforms.
- * 
+ *
  * SECURITY NOTE: On native, we use localStorage which persists.
  * This is acceptable because native apps have better app-level isolation.
  */
 
-const isNativePlatform = typeof window !== 'undefined' && 
-  (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+const isNativePlatform =
+  typeof window !== "undefined" &&
+  (
+    window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }
+  ).Capacitor?.isNativePlatform?.();
 
-const SESSION_PREFIX = '_session_';
+const SESSION_PREFIX = "_session_";
 
 /**
  * Set a session value (uses localStorage on iOS, sessionStorage on web)
  */
 export function setSessionItem(key: string, value: string): void {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof window === "undefined") return;
+
   try {
     if (isNativePlatform) {
       // On native, use localStorage with session prefix
@@ -28,24 +31,28 @@ export function setSessionItem(key: string, value: string): void {
       sessionStorage.setItem(key, value);
     }
   } catch (e) {
-    console.warn('[SessionStorage] Failed to set item:', e);
+    console.warn("[SessionStorage] Failed to set item:", e);
   }
 }
 
 /**
  * Get a session value
+ * On native: checks prefixed key first, then raw key as fallback (backward compatibility)
  */
 export function getSessionItem(key: string): string | null {
-  if (typeof window === 'undefined') return null;
-  
+  if (typeof window === "undefined") return null;
+
   try {
     if (isNativePlatform) {
-      return localStorage.getItem(SESSION_PREFIX + key);
+      // Check prefixed key first, then raw key as fallback
+      return (
+        localStorage.getItem(SESSION_PREFIX + key) || localStorage.getItem(key)
+      );
     } else {
       return sessionStorage.getItem(key);
     }
   } catch (e) {
-    console.warn('[SessionStorage] Failed to get item:', e);
+    console.warn("[SessionStorage] Failed to get item:", e);
     return null;
   }
 }
@@ -54,8 +61,8 @@ export function getSessionItem(key: string): string | null {
  * Remove a session value
  */
 export function removeSessionItem(key: string): void {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof window === "undefined") return;
+
   try {
     if (isNativePlatform) {
       localStorage.removeItem(SESSION_PREFIX + key);
@@ -63,7 +70,7 @@ export function removeSessionItem(key: string): void {
       sessionStorage.removeItem(key);
     }
   } catch (e) {
-    console.warn('[SessionStorage] Failed to remove item:', e);
+    console.warn("[SessionStorage] Failed to remove item:", e);
   }
 }
 
@@ -71,8 +78,8 @@ export function removeSessionItem(key: string): void {
  * Clear all session values
  */
 export function clearSessionStorage(): void {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof window === "undefined") return;
+
   try {
     if (isNativePlatform) {
       // Only clear session-prefixed items
@@ -83,12 +90,12 @@ export function clearSessionStorage(): void {
           keysToRemove.push(key);
         }
       }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
     } else {
       sessionStorage.clear();
     }
   } catch (e) {
-    console.warn('[SessionStorage] Failed to clear:', e);
+    console.warn("[SessionStorage] Failed to clear:", e);
   }
 }
 

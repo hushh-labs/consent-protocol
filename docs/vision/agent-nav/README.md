@@ -4,6 +4,20 @@
 
 ---
 
+## 👩 Nav Persona
+
+**Nav (♀)** is the in-app navigation assistant — an organized, insightful guide who helps users:
+
+- 🔍 Discover available agents
+- 📍 Navigate features and data
+- 💬 Get answers about the Hushh ecosystem
+
+**Personality Traits:** Organized • Insightful • Helpful • Intuitive • Thoughtful • Proactive • Reliable
+
+**Interface:** Chat-like experience (similar to ChatGPT/Claude) — _Coming Soon_
+
+---
+
 ## 🎯 Purpose
 
 Agent Nav provides the base class that ALL Hushh agents extend:

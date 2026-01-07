@@ -22,11 +22,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Background decorations */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[100px]" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[100px]" />
-      </div>
+      {/* Standard App Background inherited from layout */}
 
       <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         {/* Header / Logo */}

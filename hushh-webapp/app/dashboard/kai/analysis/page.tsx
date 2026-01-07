@@ -130,7 +130,7 @@ export default function KaiAnalysis() {
 
   return (
     <div className="min-h-dvh morphy-app-bg p-6">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto px-4 space-y-8">
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold">Agent Kai</h1>
@@ -150,7 +150,7 @@ export default function KaiAnalysis() {
         {/* Consent Warning */}
         {!hasConsent && (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-small text-yellow-200 font-medium">
                 Consent Required
@@ -169,7 +169,7 @@ export default function KaiAnalysis() {
 
         {/* Search Form */}
         <form onSubmit={handleSubmit} className="relative">
-          <div className="relative bg-white/5 border border-white/10 rounded-2xl p-1.5 focus-within:bg-white/10 transition-colors">
+          <div className="relative bg-card border border-border rounded-2xl p-1.5 focus-within:ring-1 focus-within:ring-primary/20 transition-all shadow-sm">
             <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
               <div className="flex items-center gap-3 flex-1 px-3 py-2">
                 <Search className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -178,7 +178,7 @@ export default function KaiAnalysis() {
                   placeholder="Ask Kai about any stock... (e.g., AAPL)"
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value)}
-                  className="flex-1 bg-transparent border-0 outline-none text-white placeholder:text-white/40 text-lg min-w-0"
+                  className="flex-1 bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground text-lg min-w-0"
                   disabled={isAnalyzing || !hasConsent || !isVaultUnlocked}
                 />
               </div>
@@ -214,19 +214,21 @@ export default function KaiAnalysis() {
         {/* Results Area */}
         {result && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-            <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-lg">
+            <div className="p-6 rounded-2xl bg-card border border-border backdrop-blur-lg shadow-sm">
               <div className="flex items-start justify-between mb-6">
                 <div>
-                  <h2 className="text-3xl font-bold mb-1">{result.ticker}</h2>
+                  <h2 className="text-3xl font-bold mb-1 text-foreground">
+                    {result.ticker}
+                  </h2>
                   <p className="text-muted-foreground">{result.headline}</p>
                 </div>
                 <div
                   className={`px-4 py-2 rounded-full border ${
                     result.decision === "buy"
-                      ? "bg-green-500/20 border-green-500/50 text-green-400"
+                      ? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400"
                       : result.decision === "reduce"
-                      ? "bg-red-500/20 border-red-500/50 text-red-400"
-                      : "bg-blue-500/20 border-blue-500/50 text-blue-400"
+                      ? "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
+                      : "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
                   }`}
                 >
                   <span className="font-bold uppercase tracking-wider">
@@ -237,37 +239,39 @@ export default function KaiAnalysis() {
 
               {/* Metrics Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="p-4 rounded-xl bg-muted/30 border border-border">
                   <p className="text-caption text-muted-foreground mb-1">
                     Confidence
                   </p>
-                  <p className="text-xl font-mono font-bold">
+                  <p className="text-xl font-mono font-bold text-foreground">
                     {(result.confidence * 100).toFixed(0)}%
                   </p>
                 </div>
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="p-4 rounded-xl bg-muted/30 border border-border">
                   <p className="text-caption text-muted-foreground mb-1">
                     Mode
                   </p>
-                  <p className="text-xl capitalize">{result.processing_mode}</p>
+                  <p className="text-xl capitalize text-foreground">
+                    {result.processing_mode}
+                  </p>
                 </div>
                 {result.raw_card?.key_metrics?.revenue_billions && (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border">
                     <p className="text-caption text-muted-foreground mb-1">
                       Revenue
                     </p>
-                    <p className="text-xl font-mono">
+                    <p className="text-xl font-mono text-foreground">
                       ${result.raw_card.key_metrics.revenue_billions.toFixed(1)}
                       B
                     </p>
                   </div>
                 )}
                 {result.raw_card?.key_metrics?.profit_margin && (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border">
                     <p className="text-caption text-muted-foreground mb-1">
                       Profit Margin
                     </p>
-                    <p className="text-xl font-mono">
+                    <p className="text-xl font-mono text-foreground">
                       {(
                         result.raw_card.key_metrics.profit_margin * 100
                       ).toFixed(1)}
@@ -280,11 +284,11 @@ export default function KaiAnalysis() {
               {/* Agent Insights */}
               {result.raw_card?.fundamental_insight && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-foreground">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                     Fundamental Analysis
                   </h3>
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-3">
                     {result.raw_card.fundamental_insight.summary && (
                       <p className="text-sm text-muted-foreground">
                         {result.raw_card.fundamental_insight.summary}
@@ -293,15 +297,17 @@ export default function KaiAnalysis() {
                     {result.raw_card.fundamental_insight.strengths?.length >
                       0 && (
                       <div>
-                        <p className="text-xs font-semibold text-green-400 mb-1">
+                        <p className="text-xs font-semibold text-green-600 dark:text-green-400 mb-1">
                           Strengths:
                         </p>
                         <ul className="text-sm space-y-1">
                           {result.raw_card.fundamental_insight.strengths.map(
                             (s: string, i: number) => (
                               <li key={i} className="flex items-start gap-2">
-                                <span className="text-green-400 mt-1">•</span>
-                                <span>{s}</span>
+                                <span className="text-green-600 dark:text-green-400 mt-1">
+                                  •
+                                </span>
+                                <span className="text-foreground">{s}</span>
                               </li>
                             )
                           )}
@@ -311,15 +317,17 @@ export default function KaiAnalysis() {
                     {result.raw_card.fundamental_insight.weaknesses?.length >
                       0 && (
                       <div>
-                        <p className="text-xs font-semibold text-red-400 mb-1">
+                        <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1">
                           Weaknesses:
                         </p>
                         <ul className="text-sm space-y-1">
                           {result.raw_card.fundamental_insight.weaknesses.map(
                             (w: string, i: number) => (
                               <li key={i} className="flex items-start gap-2">
-                                <span className="text-red-400 mt-1">•</span>
-                                <span>{w}</span>
+                                <span className="text-red-600 dark:text-red-400 mt-1">
+                                  •
+                                </span>
+                                <span className="text-foreground">{w}</span>
                               </li>
                             )
                           )}
@@ -333,9 +341,9 @@ export default function KaiAnalysis() {
               {/* Sentiment & Valuation */}
               <div className="grid md:grid-cols-2 gap-4 mb-6">
                 {result.raw_card?.sentiment_insight && (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                       Sentiment Analysis
                     </h4>
                     <p className="text-sm text-muted-foreground mb-2">
@@ -347,13 +355,13 @@ export default function KaiAnalysis() {
                         <span className="text-xs text-muted-foreground">
                           Score:
                         </span>
-                        <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div className="flex-1 h-2 bg-muted/50 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${
                               result.raw_card.sentiment_insight
                                 .sentiment_score > 0
-                                ? "bg-green-400"
-                                : "bg-red-400"
+                                ? "bg-green-500"
+                                : "bg-red-500"
                             }`}
                             style={{
                               width: `${
@@ -365,7 +373,7 @@ export default function KaiAnalysis() {
                             }}
                           ></div>
                         </div>
-                        <span className="text-xs font-mono">
+                        <span className="text-xs font-mono text-foreground">
                           {result.raw_card.sentiment_insight.sentiment_score.toFixed(
                             2
                           )}
@@ -375,16 +383,16 @@ export default function KaiAnalysis() {
                   </div>
                 )}
                 {result.raw_card?.valuation_insight && (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                       Valuation Analysis
                     </h4>
                     <p className="text-sm text-muted-foreground">
                       {result.raw_card.valuation_insight.summary}
                     </p>
                     {result.raw_card.valuation_insight.valuation_verdict && (
-                      <p className="text-xs mt-2 font-semibold text-amber-400">
+                      <p className="text-xs mt-2 font-semibold text-amber-600 dark:text-amber-400">
                         {result.raw_card.valuation_insight.valuation_verdict}
                       </p>
                     )}
@@ -394,8 +402,8 @@ export default function KaiAnalysis() {
 
               {/* Debate Summary */}
               {result.raw_card?.debate_digest && (
-                <div className="p-4 rounded-xl bg-white/5 border border-white/10 mb-6">
-                  <h4 className="text-sm font-semibold mb-2">
+                <div className="p-4 rounded-xl bg-muted/30 border border-border mb-6">
+                  <h4 className="text-sm font-semibold mb-2 text-foreground">
                     Investment Committee Debate
                   </h4>
                   <p className="text-sm text-muted-foreground whitespace-pre-line">
@@ -407,7 +415,7 @@ export default function KaiAnalysis() {
               {/* Sources */}
               {result.raw_card?.all_sources &&
                 result.raw_card.all_sources.length > 0 && (
-                  <div className="pt-4 border-t border-white/10">
+                  <div className="pt-4 border-t border-border">
                     <p className="text-xs text-muted-foreground mb-2">
                       Data Sources:
                     </p>
@@ -416,7 +424,7 @@ export default function KaiAnalysis() {
                         (source: string, i: number) => (
                           <span
                             key={i}
-                            className="px-2 py-1 rounded text-xs bg-white/5 border border-white/10"
+                            className="px-2 py-1 rounded text-xs bg-muted/50 border border-border text-foreground"
                           >
                             {source}
                           </span>

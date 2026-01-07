@@ -1,17 +1,14 @@
 "use client";
 
 import { ReactNode } from "react";
+import { useStatusBar } from "@/lib/hooks/use-status-bar";
+import { NavigationProvider } from "@/lib/navigation/navigation-context";
+import { TopAppBar, TopAppBarSpacer } from "@/components/ui/top-app-bar";
 
 interface RootLayoutClientProps {
   children: ReactNode;
   fontClasses: string;
 }
-
-/**
- * Client-side wrapper for body element
- * Enables client-side features in root layout
- */
-import { useStatusBar } from "@/lib/hooks/use-status-bar";
 
 /**
  * Client-side wrapper for body element
@@ -35,7 +32,13 @@ export function RootLayoutClient({
       <div className="fixed top-[-10vh] left-0 w-full h-[120vh] -z-20 morphy-app-bg pointer-events-none" />
       {/* Subtle radial glow overlay */}
       <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-1" />
-      {children}
+
+      <NavigationProvider>
+        {/* Top App Bar - Shows back button on sub-pages only */}
+        <TopAppBar />
+        <TopAppBarSpacer />
+        {children}
+      </NavigationProvider>
     </body>
   );
 }

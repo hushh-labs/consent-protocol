@@ -13,7 +13,8 @@ export function Toaster({ ...props }: ToasterProps) {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       position="top-center"
-      className="toaster group"
+      className="toaster group !z-[9999]"
+      style={{ marginTop: "max(env(safe-area-inset-top), 4rem)" }}
       toastOptions={{
         classNames: {
           toast:

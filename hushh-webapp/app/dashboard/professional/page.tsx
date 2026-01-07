@@ -48,54 +48,50 @@ export default function ProfessionalProfilePage() {
   useEffect(() => {
     // Redirect if vault not unlocked
     if (!isVaultUnlocked) {
-      router.push("/?redirect=/dashboard/professional");
+      router.push("/dashboard");
       return;
     }
     loadProfile();
   }, [isVaultUnlocked]);
 
   async function loadProfile() {
+    setLoading(true);
+    setError("");
+
     try {
-      // Use platform-aware session storage
+      const vaultKey = getVaultKey();
+      if (!vaultKey) {
+        setError("Vault not unlocked");
+        return;
+      }
+
       const userId =
         localStorage.getItem("user_id") || getSessionItem("user_id");
-      const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
-
-      if (!userId || !vaultKey) {
-        console.warn("Redirecting from Professional: Missing auth", {
-          userId: !!userId,
-          vaultKey: !!vaultKey,
-        });
-        router.push("/");
+      if (!userId) {
+        setError("No user ID found");
         return;
       }
 
       // Get session token from platform-aware storage
-      const sessionToken = getSessionItem("session_token");
+      // const sessionToken = getSessionItem("session_token"); // Removed as per diff
       if (process.env.NODE_ENV === "development") {
-        console.log(
-          `🔍 [ProfDashboard] Loading profile. UserId: ${userId}, SessionToken: ${
-            sessionToken ? "Present" : "Missing"
-          }`
-        );
+        console.log(`🔍 [ProfDashboard] Loading profile. UserId: ${userId}`);
       }
 
       // Use ApiService for platform-aware API calls
-      const response = await ApiService.getProfessionalProfile(
-        userId,
-        sessionToken || undefined
-      );
+      const response = await ApiService.getProfessionalProfile(userId);
       if (!response.ok) {
         if (response.status === 404) {
           // No profile yet, show empty state
+          setProfile(null);
           setLoading(false);
           return;
         }
-        throw new Error("Failed to load profile");
+        throw new Error(`Failed to fetch: ${response.status}`);
       }
 
-      const jsonResponse = await response.json();
-      const encryptedPrefs = jsonResponse.preferences || {};
+      const data = await response.json();
+      const encryptedPrefs = data.preferences || {};
 
       // Decrypt client-side
       if (process.env.NODE_ENV === "development") {
@@ -113,7 +109,7 @@ export default function ProfessionalProfilePage() {
       if (encryptedPrefs.professional_title) {
         try {
           const titleDecrypted = await decryptData(
-            encryptedPrefs.professional_title,
+            encryptedPrefs.professional_title as EncryptedPayload,
             vaultKey
           );
           profileData.professional_title = JSON.parse(titleDecrypted);
@@ -125,7 +121,7 @@ export default function ProfessionalProfilePage() {
       if (encryptedPrefs.skills) {
         try {
           const skillsDecrypted = await decryptData(
-            encryptedPrefs.skills,
+            encryptedPrefs.skills as EncryptedPayload,
             vaultKey
           );
           profileData.skills = JSON.parse(skillsDecrypted);
@@ -137,7 +133,7 @@ export default function ProfessionalProfilePage() {
       if (encryptedPrefs.experience_level) {
         try {
           const expDecrypted = await decryptData(
-            encryptedPrefs.experience_level,
+            encryptedPrefs.experience_level as EncryptedPayload,
             vaultKey
           );
           profileData.experience_level = JSON.parse(expDecrypted);
@@ -149,7 +145,7 @@ export default function ProfessionalProfilePage() {
       if (encryptedPrefs.job_preferences) {
         try {
           const jobDecrypted = await decryptData(
-            encryptedPrefs.job_preferences,
+            encryptedPrefs.job_preferences as EncryptedPayload,
             vaultKey
           );
           profileData.job_preferences = JSON.parse(jobDecrypted);
@@ -172,7 +168,7 @@ export default function ProfessionalProfilePage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="space-y-4 text-center">
           <div className="relative">
-            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
+            <div className="h-16 w-16 rounded-full bg-linear-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
               <Briefcase className="h-8 w-8 text-white" />
             </div>
             <RefreshCw className="h-5 w-5 animate-spin absolute -bottom-1 -right-1 text-blue-600 bg-white rounded-full p-0.5" />
@@ -183,30 +179,42 @@ export default function ProfessionalProfilePage() {
     );
   }
 
-  if (!profile || !profile.professional_title) {
+  if (error) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-lg" variant="none" effect="glass">
-          <CardContent className="p-10 text-center space-y-6">
-            <div className="h-24 w-24 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center shadow-lg">
-              <Briefcase className="h-12 w-12 text-white" />
+        <Card className="max-w-md" variant="none" effect="glass">
+          <CardContent className="p-8 text-center space-y-4">
+            <div className="h-16 w-16 rounded-full bg-linear-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
+              <Briefcase className="h-8 w-8 text-white" />
             </div>
-            <div className="space-y-2">
-              <h1 className="text-2xl font-bold">
-                No Professional Profile Yet
-              </h1>
-              <p className="text-muted-foreground">
-                Set up your professional profile including title, skills, and
-                job preferences to help us match you with opportunities.
-              </p>
+            <p className="text-destructive font-medium">{error}</p>
+            <Button onClick={() => router.push("/")} variant="gradient">
+              Back to Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md" variant="none" effect="glass">
+          <CardContent className="p-8 text-center space-y-4">
+            <div className="h-16 w-16 rounded-full bg-linear-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
+              <User className="h-8 w-8 text-white" />
             </div>
+            <h2 className="text-xl font-semibold">No Profile Yet</h2>
+            <p className="text-muted-foreground">
+              Set up your professional profile to share your skills, title, and
+              job preferences to help us match you with opportunities.
+            </p>
             <Button
               onClick={() => router.push("/dashboard")}
               variant="gradient"
               effect="fill"
               size="lg"
-              showRipple
-              className="text-white"
             >
               <User className="h-4 w-4 mr-2" />
               Set Up Profile
@@ -218,7 +226,7 @@ export default function ProfessionalProfilePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto px-4 pt-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">

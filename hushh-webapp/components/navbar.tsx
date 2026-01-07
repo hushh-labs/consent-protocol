@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bell, User } from "lucide-react";
+import { LayoutDashboard, Bell, User, Search } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface NavItem {
@@ -89,6 +89,11 @@ export const Navbar = () => {
       label: "Profile",
       href: "/profile",
       icon: User,
+    },
+    {
+      label: "Agent Nav",
+      href: "/agent-nav",
+      icon: Search,
     },
   ];
 
