@@ -228,8 +228,8 @@ async def analyze_ticker(request: AnalyzeRequest):
         logger.error(f"[Kai] Analysis failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"[Kai] Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Analysis failed")
+        logger.exception(f"[Kai] Unexpected error during analysis")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
 @router.post("/decision/store")
