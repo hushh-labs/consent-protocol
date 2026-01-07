@@ -722,12 +722,17 @@ xcrun simctl launch booted com.hushh.pda
 
 ### Android (Fresh Build)
 
+> [!IMPORTANT]
+> Ensure `.env.local` contains the **Production** backend URL (`NEXT_PUBLIC_BACKEND_URL=https://...run.app`).
+> `capacitor.config.ts` is configured to load this file.
+
 ```bash
 # 1. Clean Gradle cache
 cd android && ./gradlew clean && cd ..
 
-# 2. Build web assets and sync
-npm run cap:build
+# 2. Build web assets and sync (Force Production Mode)
+# This bakes the environment variables into the static export
+cross-env CAPACITOR_BUILD=true npm run build
 npx cap sync android
 
 # 3. Build and install

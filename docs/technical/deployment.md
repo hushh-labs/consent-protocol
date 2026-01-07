@@ -33,100 +33,38 @@
 
 ---
 
-## Deployment Files
+## Deployment Commands (Unified)
 
-All deployment configuration files are in the `/deploy` directory:
+**Recommended:** Use the PowerShell orchestration script. This handles Docker builds (via Cloud Build), secrets, and deployment in one step.
 
-| File                     | Purpose                                       |
-| ------------------------ | --------------------------------------------- |
-| `cloudbuild-webapp.yaml` | Cloud Build config for frontend (Next.js)     |
-| `cloudbuild-ci.yaml`     | CI/CD pipeline for automated deployments      |
-| `cloudrun-webapp.yaml`   | Cloud Run service definition (Knative format) |
+```powershell
+# From repo root
+.\deploy\deploy.ps1
+```
 
----
+### Manual Steps (Reference)
 
-## Environment Variables
-
-### Next.js (hushh-webapp)
-
-| Variable                  | Type       | Source               |
-| ------------------------- | ---------- | -------------------- |
-| `NEXT_PUBLIC_FIREBASE_*`  | Build-time | Docker `--build-arg` |
-| `NEXT_PUBLIC_BACKEND_URL` | Build-time | Docker `--build-arg` |
-| `DATABASE_URL`            | Runtime    | Secret Manager       |
-
-> **Why build-time?** `NEXT_PUBLIC_*` vars are embedded into the JavaScript bundle at build time. They run in the browser, so they can't be injected at runtime. Firebase keys are designed to be public (security via Firebase Rules).
-
-### Python (consent-protocol)
-
-| Variable               | Type    | Source           |
-| ---------------------- | ------- | ---------------- |
-| `FRONTEND_URL`         | Runtime | `--set-env-vars` |
-| `SECRET_KEY`           | Runtime | Secret Manager   |
-| `VAULT_ENCRYPTION_KEY` | Runtime | Secret Manager   |
-
----
-
-## Deployment Commands
-
-### 1. Deploy Backend (consent-protocol)
-
-**Option A: Using Cloud Build (Recommended - no local Docker needed)**
+#### 1. Deploy Backend (consent-protocol)
 
 ```powershell
 cd consent-protocol
-
-# Build and push via Cloud Build
 gcloud builds submit --tag us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
 
-# Deploy to Cloud Run
 gcloud run deploy consent-protocol `
   --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest `
   --region us-central1 --allow-unauthenticated `
-  --set-env-vars "FRONTEND_URL=https://hushh-webapp-rpphvsc3tq-uc.a.run.app" `
   --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" `
   --port 8000
 ```
 
-**Option B: Using Local Docker**
+#### 2. Deploy Frontend (hushh-webapp)
 
-```powershell
-cd consent-protocol
-docker build -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
-docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest
-# Then run the gcloud run deploy command from Option A
-```
-
-### 2. Deploy Frontend (hushh-webapp)
-
-**Option A: Using Cloud Build (Recommended)**
+The `deploy.ps1` script automatically handles the `webapp.Dockerfile` context. Manual build requires carefully setting build args:
 
 ```powershell
 cd hushh-webapp
-
-# Build via Cloud Build config (includes NEXT_PUBLIC build args)
-gcloud builds submit --config cloudbuild-webapp.yaml .
-
-# Deploy to Cloud Run
-gcloud run deploy hushh-webapp `
-  --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest `
-  --region us-central1 --allow-unauthenticated `
-  --set-secrets DATABASE_URL=DATABASE_URL:latest `
-  --port 8080 --add-cloudsql-instances hushh-pda:us-central1:hushh-vault-db
-```
-
-**Option B: Using Local Docker**
-
-```powershell
-cd hushh-webapp
-docker build `
-  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="GCP_API_KEY_PLACEHOLDER_PRIMARY" `
-  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="hushh-pda.firebaseapp.com" `
-  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="hushh-pda" `
-  --build-arg NEXT_PUBLIC_BACKEND_URL="https://consent-protocol-rpphvsc3tq-uc.a.run.app" `
-  -t us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest .
-docker push us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/hushh-webapp:latest
-# Then run the gcloud run deploy command from Option A
+# Note: deploy.ps1 copies deploy/webapp.Dockerfile here temporarily
+gcloud builds submit --config ../deploy/cloudbuild.yaml .
 ```
 
 ---
