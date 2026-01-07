@@ -30,15 +30,19 @@ export interface KaiSession {
 // =============================================================================
 
 function getBackendUrl(): string {
-  // Use environment variable
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-
-  if (!backendUrl) {
-    console.warn("[Kai] NEXT_PUBLIC_BACKEND_URL not set, using localhost");
-    return "http://localhost:8000";
+  // If running on native mobile device, we MUST use absolute URL
+  if (Capacitor.isNativePlatform()) {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (!backendUrl) {
+      console.warn("[Kai] NEXT_PUBLIC_BACKEND_URL not set, using localhost");
+      return "http://localhost:8000";
+    }
+    return backendUrl;
   }
 
-  return backendUrl;
+  // If running on Web, use relative path to leverage Next.js Proxy (rewrites)
+  // This bypasses CORS issues by hitting same-origin /api
+  return "";
 }
 
 // =============================================================================
@@ -75,7 +79,7 @@ export async function grantKaiConsent(
 
   try {
     const response = await fetch(
-      `${backendUrl}/api/kai/consent`, // ✅ No session_id in path
+      `${backendUrl}/api/kai/consent/grant`, // ✅ Updated endpoint
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -106,13 +106,16 @@ Development: http://localhost:8000
 
 ## 🔐 Consent Scopes
 
-| Scope                      | Description                | Data Fields               |
-| -------------------------- | -------------------------- | ------------------------- |
-| `vault_read_food`          | Read food preferences      | dietary, cuisines, budget |
-| `vault_read_professional`  | Read professional profile  | title, skills, experience |
-| `vault_write_food`         | Write food preferences     | dietary, cuisines, budget |
-| `vault_write_professional` | Write professional profile | title, skills, experience |
-| `vault_read_finance`       | Read financial data        | budget, transactions      |
+| Scope                      | Description                 | Data Fields               |
+| -------------------------- | --------------------------- | ------------------------- |
+| `vault_read_food`          | Read food preferences       | dietary, cuisines, budget |
+| `vault_read_professional`  | Read professional profile   | title, skills, experience |
+| `vault_write_food`         | Write food preferences      | dietary, cuisines, budget |
+| `vault_write_professional` | Write professional profile  | title, skills, experience |
+| `vault_read_finance`       | Read financial data         | budget, transactions      |
+| `vault.read.risk_profile`  | Read investment risk        | risk_profile, mode        |
+| `vault.write.decision`     | Write investment decision   | decision_card (encrypted) |
+| `agent.kai.analyze`        | Perform investment analysis | N/A (Functional scope)    |
 
 ---
 
