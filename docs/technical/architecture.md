@@ -140,8 +140,9 @@ Hushh is a **Consent-First Personal Data Agent System** that gives users complet
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                         │
 └────────────────────────────────────┼─────────────────────────────────────────┘
-                                     │ POST /api/chat
+                                     │ POST /api/chat (via Proxy)
                                      │ (userId + message + sessionState)
+                                     ▼
                                      ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                            PROTOCOL LAYER                                     │
@@ -524,7 +525,8 @@ consent-protocol/
 ```bash
 POST /api/agents/food-dining/chat
 POST /api/agents/professional-profile/chat
-POST /api/agents/kai/analyze           # Agent Kai (NEW)
+POST /api/agents/professional-profile/chat
+POST /api/kai/analyze                 # Agent Kai (via Proxy)
 ```
 
 ### Developer API (v1)

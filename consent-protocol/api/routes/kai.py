@@ -2,11 +2,14 @@
 """
 Agent Kai API Routes
 
-Endpoints for Kai investor onboarding and analysis sessions.
-Uses existing MCP consent infrastructure.
+Endpoints for Kai investor analysis.
+Stateless Zero-Knowledge Architecture:
+- Authorization: Standard Bearer Token / Consent Token.
+- Preferences (Risk Profile): Passed by Client in request (Ephemeral).
+- Encryption: Client handles all encryption/decryption.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Literal
 from datetime import datetime
@@ -26,36 +29,8 @@ router = APIRouter(prefix="/api/kai", tags=["kai"])
 # MODELS
 # ============================================================================
 
-class CreateSessionRequest(BaseModel):
-    user_id: str
-
-
-class CreateSessionResponse(BaseModel):
-    session_id: str
-    user_id: str
-    created_at: str
-
-
-class UpdateSessionRequest(BaseModel):
-    processing_mode: Optional[Literal["on_device", "hybrid"]] = None
-    risk_profile: Optional[Literal["conservative", "balanced", "aggressive"]] = None
-    legal_acknowledged: Optional[bool] = None
-    onboarding_complete: Optional[bool] = None
-
-
-class SessionResponse(BaseModel):
-    session_id: str
-    user_id: str
-    processing_mode: Optional[str]
-    risk_profile: Optional[str]
-    legal_acknowledged: bool
-    onboarding_complete: bool
-    created_at: str
-    updated_at: str
-
-
 class GrantConsentRequest(BaseModel):
-    session_id: str
+    user_id: str
     scopes: List[str] = [
         "vault.read.risk_profile",
         "vault.write.decision",
@@ -65,262 +40,68 @@ class GrantConsentRequest(BaseModel):
 
 class GrantConsentResponse(BaseModel):
     consent_id: str
-    token: str
-    scopes: List[str]
-    issued_at: str
+    tokens: Dict[str, str]
     expires_at: str
 
 
-# ============================================================================
-# ENDPOINTS
-# ============================================================================
+# --- Analysis Models ---
 
-@router.post("/session/start", response_model=CreateSessionResponse)
-async def start_session(request: CreateSessionRequest):
-    """
-    Start a new Kai onboarding session.
-    
-    Creates entry in kai_sessions table and returns session_id.
-    """
-    pool = await get_pool()
-    session_id = f"kai_session_{uuid.uuid4().hex[:16]}"
-    now = datetime.utcnow()
-    
-    try:
-        await pool.execute(
-            """
-            INSERT INTO kai_sessions (session_id, user_id, created_at, updated_at)
-            VALUES ($1, $2, $3, $4)
-            """,
-            session_id, request.user_id, now, now
-        )
-        
-        logger.info(f"[Kai] Created session: {session_id} for user: {request.user_id}")
-        
-        return CreateSessionResponse(
-            session_id=session_id,
-            user_id=request.user_id,
-            created_at=now.isoformat(),
-        )
-    except Exception as e:
-        logger.error(f"[Kai] Failed to create session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+class AnalyzeRequest(BaseModel):
+    user_id: str
+    ticker: str
+    consent_token: str
+    # Client provides context explicitly (Stateless)
+    risk_profile: Literal["conservative", "balanced", "aggressive"] = "balanced"
+    processing_mode: Literal["on_device", "hybrid"] = "hybrid"
 
 
-@router.get("/session/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str):
+class AnalyzeResponse(BaseModel):
     """
-    Get current state of a Kai session.
+    Plaintext decision returned to Client.
+    Client MUST encrypt this before storing.
     """
-    pool = await get_pool()
-    
-    row = await pool.fetchrow(
-        "SELECT * FROM kai_sessions WHERE session_id = $1",
-        session_id
-    )
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    return SessionResponse(
-        session_id=row["session_id"],
-        user_id=row["user_id"],
-        processing_mode=row["processing_mode"],
-        risk_profile=row["risk_profile"],
-        legal_acknowledged=row["legal_acknowledged"],
-        onboarding_complete=row["onboarding_complete"],
-        created_at=row["created_at"].isoformat(),
-        updated_at=row["updated_at"].isoformat(),
-    )
+    decision_id: str
+    ticker: str
+    decision: Literal["buy", "hold", "reduce"]
+    confidence: float
+    headline: str
+    processing_mode: str
+    created_at: str
+    # Full data for client to encrypt
+    raw_card: Dict 
 
 
-@router.patch("/session/{session_id}", response_model=SessionResponse)
-async def update_session(session_id: str, request: UpdateSessionRequest):
+class StoreDecisionRequest(BaseModel):
     """
-    Update a Kai session (processing mode, risk profile, etc.).
+    Request to store an already-encrypted decision.
     """
-    pool = await get_pool()
+    user_id: str
+    ticker: str
+    decision_type: str # 'buy', 'hold', 'reduce' (Plaintext metadata)
+    confidence_score: float
     
-    # Build update query dynamically
-    updates = []
-    values = []
-    param_idx = 1
-    
-    if request.processing_mode is not None:
-        updates.append(f"processing_mode = ${param_idx}")
-        values.append(request.processing_mode)
-        param_idx += 1
-    
-    if request.risk_profile is not None:
-        updates.append(f"risk_profile = ${param_idx}")
-        values.append(request.risk_profile)
-        param_idx += 1
-    
-    if request.legal_acknowledged is not None:
-        updates.append(f"legal_acknowledged = ${param_idx}")
-        values.append(request.legal_acknowledged)
-        param_idx += 1
-    
-    if request.onboarding_complete is not None:
-        updates.append(f"onboarding_complete = ${param_idx}")
-        values.append(request.onboarding_complete)
-        param_idx += 1
-    
-    if not updates:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    
-    updates.append(f"updated_at = ${param_idx}")
-    values.append(datetime.utcnow())
-    param_idx += 1
-    
-    values.append(session_id)
-    
-    query = f"""
-        UPDATE kai_sessions 
-        SET {', '.join(updates)}
-        WHERE session_id = ${param_idx}
-        RETURNING *
-    """
-    
-    row = await pool.fetchrow(query, *values)
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    logger.info(f"[Kai] Updated session: {session_id}")
-    
-    return SessionResponse(
-        session_id=row["session_id"],
-        user_id=row["user_id"],
-        processing_mode=row["processing_mode"],
-        risk_profile=row["risk_profile"],
-        legal_acknowledged=row["legal_acknowledged"],
-        onboarding_complete=row["onboarding_complete"],
-        created_at=row["created_at"].isoformat(),
-        updated_at=row["updated_at"].isoformat(),
-    )
+    # Encrypted Payload
+    decision_ciphertext: str
+    iv: str
+    tag: Optional[str] = ""
 
 
-@router.post("/session/{session_id}/consent")
-async def grant_consent(session_id: str, request: GrantConsentRequest):
-    """
-    Grant consent for Kai data access.
-    
-    Uses existing MCP consent infrastructure:
-    - Issues consent token via issue_token()
-    - Logs to consent_audit table
-    
-    ✅ UPDATED: Now returns tokens to frontend
-    """
-    pool = await get_pool()
-    
-    # Verify session exists
-    session = await pool.fetchrow(
-        "SELECT user_id FROM kai_sessions WHERE session_id = $1",
-        session_id
-    )
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    user_id = session["user_id"]
-    
-    # Issue consent tokens for each scope using existing MCP infrastructure
-    tokens = {}
-    consent_id = f"kai_consent_{uuid.uuid4().hex[:16]}"
-    
-    last_token_issued = None # To capture the expires_at from the last token
-    
-    for scope_str in request.scopes:
-        try:
-            scope = ConsentScope(scope_str)
-            token = issue_token(
-                user_id=user_id,
-                agent_id="agent_kai",
-                scope=scope
-            )
-            tokens[scope_str] = token.token  # ✅ Store token string
-            last_token_issued = token
-            
-            # Log to consent_audit
-            await pool.execute(
-                """
-                INSERT INTO consent_audit (
-                    token_id, user_id, agent_id, scope, action, issued_at, expires_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """,
-                token.token[:32],  # Use first 32 chars as token_id
-                user_id,
-                "agent_kai",
-                scope_str,
-                "granted",
-                token.issued_at,
-                token.expires_at,
-            )
-            
-            logger.info(f"✅ Issued consent token for {user_id}: {scope_str}")
-            
-        except Exception as e:
-            logger.error(f"Failed to issue token for scope {scope_str}: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid scope: {scope_str}"
-            )
-    
-    if not tokens:
-        raise HTTPException(status_code=400, detail="No valid scopes provided")
-    
-    # Update session
-    await pool.execute(
-        "UPDATE kai_sessions SET onboarding_complete = TRUE, updated_at = $1 WHERE session_id = $2",
-        datetime.utcnow(),
-        session_id,
-    )
-    
-    logger.info(f"[Kai] Consent granted for session: {session_id}, scopes: {request.scopes}")
-    
-    # ✅ Return tokens to frontend
-    return {
-        "success": True,
-        "tokens": tokens,  # Dict of scope -> token string
-        "consent_id": consent_id,
-        "scopes": request.scopes,
-        "expires_at": last_token_issued.expires_at if last_token_issued else None
-    }
+class DecisionHistoryResponse(BaseModel):
+    decisions: List[Dict]
+    total: int
 
 
-@router.get("/session/user/{user_id}", response_model=Optional[SessionResponse])
-async def get_user_session(user_id: str):
+class EncryptedDecisionResponse(BaseModel):
     """
-    Get the most recent Kai session for a user.
-    
-    Useful for resuming onboarding.
+    Encrypted decision returned to Client for local decryption.
     """
-    pool = await get_pool()
-    
-    row = await pool.fetchrow(
-        """
-        SELECT * FROM kai_sessions 
-        WHERE user_id = $1 
-        ORDER BY created_at DESC 
-        LIMIT 1
-        """,
-        user_id
-    )
-    
-    if not row:
-        return None
-    
-    return SessionResponse(
-        session_id=row["session_id"],
-        user_id=row["user_id"],
-        processing_mode=row["processing_mode"],
-        risk_profile=row["risk_profile"],
-        legal_acknowledged=row["legal_acknowledged"],
-        onboarding_complete=row["onboarding_complete"],
-        created_at=row["created_at"].isoformat(),
-        updated_at=row["updated_at"].isoformat(),
-    )
+    id: int
+    decision_ciphertext: str
+    iv: str
+    tag: str
+    created_at: str
+    user_id: str
+    ticker: str
 
 
 # ============================================================================
@@ -334,104 +115,103 @@ async def kai_health():
 
 
 # ============================================================================
-# ANALYSIS ENDPOINTS
+# CONSENT ENDPOINT (Stateless)
 # ============================================================================
 
-class AnalyzeRequest(BaseModel):
-    user_id: str
-    ticker: str
-    session_id: str
-    consent_token: str
-    vault_key_hex: str  # Client-provided vault key (from Keychain/Keystore)
+@router.post("/consent/grant", response_model=GrantConsentResponse)
+async def grant_consent(request: GrantConsentRequest):
+    """
+    Grant consent for Kai data access.
+    
+    Stateless: Issues tokens for the requested user_id and scopes.
+    Does not rely on a pre-existing session.
+    """
+    pool = await get_pool()
+    
+    tokens = {}
+    consent_id = f"kai_consent_{uuid.uuid4().hex[:16]}"
+    last_token_issued = None
+    
+    for scope_str in request.scopes:
+        try:
+            scope = ConsentScope(scope_str)
+            token = issue_token(
+                user_id=request.user_id,
+                agent_id="agent_kai",
+                scope=scope
+            )
+            tokens[scope_str] = token.token
+            last_token_issued = token
+            
+            # Log to consent_audit
+            await pool.execute(
+                """
+                INSERT INTO consent_audit (
+                    token_id, user_id, agent_id, scope, action, issued_at, expires_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """,
+                token.token[:32],
+                request.user_id,
+                "agent_kai",
+                scope_str,
+                "granted",
+                token.issued_at,
+                token.expires_at,
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to issue token for scope {scope_str}: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid scope: {scope_str}"
+            )
+    
+    if not tokens:
+        raise HTTPException(status_code=400, detail="No valid scopes provided")
+    
+    logger.info(f"[Kai] Consent granted for user: {request.user_id}")
+    
+    return GrantConsentResponse(
+        consent_id=consent_id,
+        tokens=tokens,
+        expires_at=str(last_token_issued.expires_at) if last_token_issued else ""
+    )
 
 
-class AnalyzeResponse(BaseModel):
-    decision_id: str
-    ticker: str
-    decision: Literal["buy", "hold", "reduce"]
-    confidence: float
-    headline: str
-    processing_mode: str
-    created_at: str
-
+# ============================================================================
+# ANALYSIS ENDPOINTS (Zero-Knowledge & Stateless)
+# ============================================================================
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_ticker(request: AnalyzeRequest):
     """
-    Perform 3-agent investment analysis on a ticker.
+    Step 1: Perform 3-agent investment analysis.
     
-    This is the core Kai endpoint that:
-    1. Validates consent token
-    2. Runs 3 agents (Fundamental, Sentiment, Valuation)
-    3. Orchestrates debate
-    4. Generates decision card
-    5. Encrypts and stores result
-    
-    Args:
-        request: AnalyzeRequest with user_id, ticker, session_id, consent_token, vault_key_hex
-        
-    Returns:
-        AnalyzeResponse with decision summary
-        
-    Note:
-        vault_key_hex is provided by the client after unlocking the vault locally.
-        This follows the existing pattern from food_dining agent.
+    Return PLAINTEXT result.
+    Client provides `risk_profile` directly (Stateless).
     """
     from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator
-    from hushh_mcp.vault.encrypt import encrypt_data
-    
-    pool = await get_pool()
-    
-    # Get session details
-    session = await pool.fetchrow(
-        "SELECT * FROM kai_sessions WHERE session_id = $1",
-        request.session_id
-    )
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
     
     try:
-        # Initialize orchestrator
+        # Initialize orchestrator with Client-provided context
         orchestrator = KaiOrchestrator(
             user_id=request.user_id,
-            risk_profile=session["risk_profile"] or "balanced",
-            processing_mode=session["processing_mode"] or "hybrid",
+            risk_profile=request.risk_profile,
+            processing_mode=request.processing_mode,
         )
         
-        # Run analysis
+        # Run analysis (Generates Plaintext)
         decision_card = await orchestrator.analyze(
             ticker=request.ticker,
             consent_token=request.consent_token,
         )
         
-        # Encrypt decision card for storage using client-provided vault key
-        decision_json = orchestrator.decision_generator.to_json(decision_card)
-        encrypted = encrypt_data(decision_json, request.vault_key_hex)
+        # Convert to dictionary for response
+        raw_card = orchestrator.decision_generator.to_json(decision_card)
+        import json
+        raw_dict = json.loads(raw_card)
         
-        # Store in kai_decisions table
-        await pool.execute(
-            """
-            INSERT INTO kai_decisions (
-                user_id, session_id, ticker, decision_type,
-                decision_ciphertext, debate_ciphertext,
-                iv, tag, algorithm, confidence_score, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            """,
-            request.user_id,
-            request.session_id,
-            request.ticker,
-            decision_card.decision,
-            encrypted["ciphertext"],
-            "",  # Debate stored in main ciphertext
-            encrypted["iv"],
-            encrypted["tag"],
-            "aes-256-gcm",
-            decision_card.confidence,
-            datetime.utcnow(),
-        )
-        
-        logger.info(f"[Kai] Stored decision for {request.ticker}: {decision_card.decision}")
+        logger.info(f"[Kai] Generated analysis for {request.ticker} ({request.risk_profile})")
         
         return AnalyzeResponse(
             decision_id=decision_card.decision_id,
@@ -441,47 +221,7 @@ async def analyze_ticker(request: AnalyzeRequest):
             headline=decision_card.headline,
             processing_mode=decision_card.processing_mode,
             created_at=decision_card.timestamp.isoformat(),
-        )
-        
-    except ValueError as e:
-        logger.error(f"[Kai] Analysis failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"[Kai] Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Analysis failed")
-        
-        # Store in kai_decisions table
-        await pool.execute(
-            """
-            INSERT INTO kai_decisions (
-                user_id, session_id, ticker, decision_type,
-                decision_ciphertext, debate_ciphertext,
-                iv, tag, algorithm, confidence_score, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            """,
-            request.user_id,
-            request.session_id,
-            request.ticker,
-            decision_card.decision,
-            encrypted["ciphertext"],
-            "",  # TODO: Store debate separately
-            encrypted["iv"],
-            encrypted["tag"],
-            "aes-256-gcm",
-            decision_card.confidence,
-            datetime.utcnow(),
-        )
-        
-        logger.info(f"[Kai] Stored decision for {request.ticker}: {decision_card.decision}")
-        
-        return AnalyzeResponse(
-            decision_id=decision_card.decision_id,
-            ticker=decision_card.ticker,
-            decision=decision_card.decision,
-            confidence=decision_card.confidence,
-            headline=decision_card.headline,
-            processing_mode=decision_card.processing_mode,
-            created_at=decision_card.timestamp.isoformat(),
+            raw_card=raw_dict # Plaintext
         )
         
     except ValueError as e:
@@ -492,13 +232,39 @@ async def analyze_ticker(request: AnalyzeRequest):
         raise HTTPException(status_code=500, detail="Analysis failed")
 
 
-# ============================================================================
-# DECISION HISTORY ENDPOINTS
-# ============================================================================
-
-class DecisionHistoryResponse(BaseModel):
-    decisions: List[Dict]
-    total: int
+@router.post("/decision/store")
+async def store_decision(request: StoreDecisionRequest):
+    """
+    Step 2: Store Encrypted Decision.
+    Stateless (No session_id).
+    """
+    pool = await get_pool()
+    
+    try:
+        await pool.execute(
+            """
+            INSERT INTO vault_kai (
+                user_id, ticker, decision_type,
+                decision_ciphertext, iv, tag, 
+                confidence_score, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            request.user_id,
+            request.ticker,
+            request.decision_type,
+            request.decision_ciphertext,
+            request.iv,
+            request.tag,
+            request.confidence_score,
+            datetime.utcnow(),
+        )
+        
+        logger.info(f"[Kai] Desicion stored encrypted for {request.ticker}")
+        return {"success": True, "ticker": request.ticker}
+        
+    except Exception as e:
+        logger.error(f"[Kai] Failed to store decision: {e}")
+        raise HTTPException(status_code=500, detail="Failed to store decision")
 
 
 @router.get("/decisions/{user_id}", response_model=DecisionHistoryResponse)
@@ -508,24 +274,21 @@ async def get_decision_history(
     offset: int = Query(default=0, ge=0),
 ):
     """
-    Get decision history for a user.
-    
-    Returns list of past decisions with metadata.
+    Get decision history (metadata only).
     """
     pool = await get_pool()
     
     # Get total count
     count_row = await pool.fetchrow(
-        "SELECT COUNT(*) as total FROM kai_decisions WHERE user_id = $1",
+        "SELECT COUNT(*) as total FROM vault_kai WHERE user_id = $1",
         user_id
     )
     total = count_row["total"]
     
-    # Get decisions (metadata only, not full encrypted payload)
     rows = await pool.fetch(
         """
         SELECT id, ticker, decision_type, confidence_score, created_at
-        FROM kai_decisions
+        FROM vault_kai
         WHERE user_id = $1
         ORDER BY created_at DESC
         LIMIT $2 OFFSET $3
@@ -546,71 +309,134 @@ async def get_decision_history(
     return DecisionHistoryResponse(decisions=decisions, total=total)
 
 
-@router.get("/decision/{decision_id}")
-async def get_decision_detail(decision_id: int, vault_key_hex: str = Query(...)):
+@router.get("/decision/{decision_id}", response_model=EncryptedDecisionResponse)
+async def get_decision_detail(decision_id: int):
     """
-    Get full decision card details (decrypted).
+    Get FULL Encrypted Decision Blob.
     
-    Returns complete decision card with debate transcript.
-    
-    Args:
-        decision_id: ID of the decision to retrieve
-        vault_key_hex: Client-provided vault key for decryption
-        
-    Note:
-        vault_key_hex should be provided by the client after unlocking the vault.
-        This follows the zero-knowledge architecture - server never sees raw vault key.
+    Client must download this and decrypt locally using Vault Key.
     """
-    from hushh_mcp.vault.encrypt import decrypt_data
-    
     pool = await get_pool()
     
     row = await pool.fetchrow(
-        "SELECT * FROM kai_decisions WHERE id = $1",
+        "SELECT * FROM vault_kai WHERE id = $1",
         decision_id
     )
     
     if not row:
         raise HTTPException(status_code=404, detail="Decision not found")
     
-    # Decrypt decision card using client-provided vault key
-    try:
-        decrypted = decrypt_data(
-            row["decision_ciphertext"],
-            row["iv"],
-            row["tag"],
-            vault_key_hex
-        )
-        
-        # Parse JSON
-        import json
-        decision_card = json.loads(decrypted)
-        
-        return decision_card
-        
-    except Exception as e:
-        logger.error(f"[Kai] Decryption failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to decrypt decision")
+    return EncryptedDecisionResponse(
+        id=row["id"],
+        decision_ciphertext=row["decision_ciphertext"],
+        iv=row["iv"],
+        tag=row["tag"] or "",
+        created_at=row["created_at"].isoformat(),
+        user_id=row["user_id"],
+        ticker=row["ticker"]
+    )
 
 
 @router.delete("/decision/{decision_id}")
 async def delete_decision(decision_id: int, user_id: str = Query(...)):
     """
-    Delete a decision from history.
-    
-    User must own the decision to delete it.
+    Delete a decision.
     """
     pool = await get_pool()
     
     result = await pool.execute(
-        "DELETE FROM kai_decisions WHERE id = $1 AND user_id = $2",
+        "DELETE FROM vault_kai WHERE id = $1 AND user_id = $2",
         decision_id, user_id
     )
     
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Decision not found or not authorized")
     
-    logger.info(f"[Kai] Deleted decision {decision_id} for user {user_id}")
-    
     return {"success": True, "deleted_id": decision_id}
 
+
+# ============================================================================
+# PREFERENCES ENDPOINTS (Encrypted Settings)
+# ============================================================================
+
+class EncryptedPreference(BaseModel):
+    field_name: str
+    ciphertext: str
+    iv: str
+    tag: Optional[str] = ""
+
+class StorePreferencesRequest(BaseModel):
+    user_id: str
+    preferences: List[EncryptedPreference]
+
+class PreferencesResponse(BaseModel):
+    preferences: List[EncryptedPreference]
+
+
+@router.post("/preferences/store")
+async def store_preferences(request: StorePreferencesRequest):
+    """
+    Store encrypted user preferences (Risk Profile, Processing Mode).
+    Upserts by (user_id, field_name).
+    """
+    pool = await get_pool()
+    
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for pref in request.preferences:
+                    await conn.execute(
+                        """
+                        INSERT INTO vault_kai_preferences (
+                            user_id, field_name, ciphertext, iv, tag, updated_at, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        ON CONFLICT (user_id, field_name) 
+                        DO UPDATE SET 
+                            ciphertext = EXCLUDED.ciphertext,
+                            iv = EXCLUDED.iv,
+                            tag = EXCLUDED.tag,
+                            updated_at = EXCLUDED.updated_at
+                        """,
+                        request.user_id,
+                        pref.field_name,
+                        pref.ciphertext,
+                        pref.iv,
+                        pref.tag,
+                        int(datetime.now().timestamp()), # updated_at
+                        int(datetime.now().timestamp())  # created_at (ignored on update)
+                    )
+        
+        logger.info(f"[Kai] Stored {len(request.preferences)} encrypted preferences for {request.user_id}")
+        return {"success": True}
+        
+    except Exception as e:
+        logger.error(f"[Kai] Failed to store preferences: {e}")
+        raise HTTPException(status_code=500, detail="Failed to store settings")
+
+
+@router.get("/preferences/{user_id}", response_model=PreferencesResponse)
+async def get_preferences(user_id: str):
+    """
+    Retrieve all encrypted preferences for a user.
+    """
+    pool = await get_pool()
+    
+    rows = await pool.fetch(
+        """
+        SELECT field_name, ciphertext, iv, tag
+        FROM vault_kai_preferences
+        WHERE user_id = $1
+        """,
+        user_id
+    )
+    
+    prefs = []
+    for row in rows:
+        prefs.append(EncryptedPreference(
+            field_name=row["field_name"],
+            ciphertext=row["ciphertext"],
+            iv=row["iv"],
+            tag=row["tag"] or ""
+        ))
+    
+    return PreferencesResponse(preferences=prefs)
