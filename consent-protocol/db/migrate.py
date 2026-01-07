@@ -23,7 +23,10 @@ import os
 import sys
 
 import asyncpg
+from dotenv import load_dotenv
 
+# Load env from .env file (if present)
+load_dotenv()
 
 # Database URL from environment (REQUIRED - no hardcoded fallback for security)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -135,62 +138,22 @@ async def create_consent_audit(pool: asyncpg.Pool):
     print("✅ consent_audit ready!")
 
 
-async def create_session_tokens(pool: asyncpg.Pool):
-    """Create session_tokens table."""
-    print("🔐 Creating session_tokens table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS session_tokens (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            token_hash VARCHAR(64) NOT NULL,
-            scope TEXT DEFAULT 'session',
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            expires_at TIMESTAMPTZ,
-            is_active BOOLEAN DEFAULT TRUE,
-            ip_address VARCHAR(45),
-            user_agent TEXT
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_user ON session_tokens(user_id)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_session_tokens_active ON session_tokens(user_id, is_active)")
-    print("✅ session_tokens ready!")
-
 
 # Note: Revocation is tracked in consent_audit table with action='REVOKED'
 # No separate revoked_tokens table needed.
 
 
-async def create_kai_sessions(pool: asyncpg.Pool):
-    """Create kai_sessions table (Kai onboarding & analysis state)."""
-    print("🤖 Creating kai_sessions table...")
+async def create_vault_kai(pool: asyncpg.Pool):
+    """Create vault_kai table (encrypted investment decision history)."""
+    print("📊 Creating vault_kai table...")
     await pool.execute("""
-        CREATE TABLE IF NOT EXISTS kai_sessions (
-            session_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-            processing_mode TEXT CHECK (processing_mode IN ('on_device', 'hybrid')),
-            risk_profile TEXT CHECK (risk_profile IN ('conservative', 'balanced', 'aggressive')),
-            legal_acknowledged BOOLEAN DEFAULT FALSE,
-            onboarding_complete BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_kai_sessions_user ON kai_sessions(user_id)")
-    print("✅ kai_sessions ready!")
-
-
-async def create_kai_decisions(pool: asyncpg.Pool):
-    """Create kai_decisions table (encrypted investment decision history)."""
-    print("📊 Creating kai_decisions table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS kai_decisions (
+        CREATE TABLE IF NOT EXISTS vault_kai (
             id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
             session_id TEXT REFERENCES kai_sessions(session_id),
             ticker TEXT NOT NULL,
             decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
             decision_ciphertext TEXT NOT NULL,
-            debate_ciphertext TEXT,
             iv TEXT NOT NULL,
             tag TEXT NOT NULL,
             algorithm TEXT DEFAULT 'aes-256-gcm',
@@ -198,21 +161,45 @@ async def create_kai_decisions(pool: asyncpg.Pool):
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_kai_decisions_user ON kai_decisions(user_id)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_kai_decisions_ticker ON kai_decisions(ticker)")
-    print("✅ kai_decisions ready!")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_user ON vault_kai(user_id)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_ticker ON vault_kai(ticker)")
+    print("✅ vault_kai ready!")
 
 
+async def create_vault_kai_preferences(pool: asyncpg.Pool):
+    """Create vault_kai_preferences table (encrypted user settings)."""
+    print("⚙️ Creating vault_kai_preferences table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS vault_kai_preferences (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+            field_name TEXT NOT NULL,
+            ciphertext TEXT NOT NULL,
+            iv TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            algorithm TEXT DEFAULT 'aes-256-gcm',
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT,
+            UNIQUE(user_id, field_name)
+        )
+    """)
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_prefs_user ON vault_kai_preferences(user_id)")
+    print("✅ vault_kai_preferences ready!")
+
+
+
+# Table registry for modular access
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
     "vault_food": create_vault_food,
     "vault_professional": create_vault_professional,
     "consent_audit": create_consent_audit,
-    "session_tokens": create_session_tokens,
-    "kai_sessions": create_kai_sessions,
-    "kai_decisions": create_kai_decisions,
+    "vault_kai": create_vault_kai,
+    "vault_kai_preferences": create_vault_kai_preferences,
 }
+
+
 
 
 # ============================================================================
@@ -224,7 +211,7 @@ async def run_full_migration(pool: asyncpg.Pool):
     print("⚠️  FULL MIGRATION - This will DROP all tables!")
     print("🗑️  Dropping existing tables...")
     
-    for table in ["session_tokens", "vault_data", "vault_food", "vault_professional", 
+    for table in ["vault_data", "vault_food", "vault_professional", 
                   "vault_passkeys", "consent_audit", "vault_keys"]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     
@@ -233,7 +220,6 @@ async def run_full_migration(pool: asyncpg.Pool):
     await create_vault_food(pool)
     await create_vault_professional(pool)
     await create_consent_audit(pool)
-    await create_session_tokens(pool)
     
     print("✅ Full migration complete!")
 
@@ -242,7 +228,6 @@ async def run_consent_migration(pool: asyncpg.Pool):
     """Create all consent-related tables."""
     print("🔐 Running consent protocol migration...")
     await create_consent_audit(pool)
-    await create_session_tokens(pool)
     print("✅ Consent protocol tables ready!")
 
 
