@@ -61,7 +61,7 @@ export class AuthService {
     console.log(
       "🍎 [AuthService] Starting native Google Sign-In via HushhAuth Plugin"
     );
-    toast.info("1. Starting Native Hushh Authorization...");
+    const toastId = toast.loading("Signing in with Google...");
 
     try {
       // Step 1: Native sign-in using Custom HushhAuth plugin
@@ -70,11 +70,10 @@ export class AuthService {
       const result = await HushhAuth.signIn();
 
       console.log("✅ [AuthService] Native sign-in returned result");
-      toast.info("2. Native Sign-In Success.");
 
       if (!result.user || !result.idToken) {
         console.error("❌ [AuthService] Invalid response from native sign-in");
-        toast.error("Invalid native auth response");
+        toast.error("Invalid native auth response", { id: toastId });
         throw new Error("Invalid response from native sign-in");
       }
 
@@ -88,7 +87,6 @@ export class AuthService {
         "✅ [AuthService] Got ID token:",
         idToken ? "YES (len: " + idToken.length + ")" : "NO"
       );
-      toast.info(`3. ID Token received`);
 
       // Step 3: Sync with Firebase JS SDK if needed
       // The native plugin already signed in to Firebase on the native layer.
@@ -97,7 +95,6 @@ export class AuthService {
 
       if (!firebaseUser) {
         console.log("🔄 [AuthService] Syncing with Firebase JS SDK...");
-        toast.info("4. Syncing with JS SDK...");
 
         // We need a credential to sign in the JS SDK.
         // We have the Google ID Token and Access Token from the native result.
@@ -119,7 +116,6 @@ export class AuthService {
             "✅ [AuthService] Firebase JS SDK synced, UID:",
             firebaseUser?.uid
           );
-          toast.success("5. JS SDK Synced!");
         } catch (syncError) {
           console.warn(
             "⚠️ [AuthService] JS SDK Sync Failed/Timed Out:",
@@ -129,14 +125,14 @@ export class AuthService {
           // toast.error("JS SDK Sync Failed (proceeding with native user)");
           console.log("⚠️ Proceeding with Native User anyway.");
         }
-      } else {
-        toast.info("4. JS SDK already has user");
       }
 
       // Construct final User object
       // If JS SDK failed, we wrap the native user data into a Firebase-like User object
       const user =
         firebaseUser || this.createUserFromNative(nativeAuthUser, idToken);
+
+      toast.success("Signed in successfully", { id: toastId });
 
       return {
         user,
@@ -146,7 +142,7 @@ export class AuthService {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      toast.error("Auth Fail: " + errorMessage);
+
       console.error("❌ [AuthService] nativeGoogleSignIn error:", errorMessage);
 
       // If native plugin not implemented, fall back to web auth
@@ -157,9 +153,11 @@ export class AuthService {
         console.warn(
           "⚠️ [AuthService] Native plugin not available, falling back to web auth"
         );
+        toast.dismiss(toastId); // Dismiss loading before switching
         return this.webGoogleSignIn();
       }
 
+      toast.error("Sign in failed: " + errorMessage, { id: toastId });
       console.error("❌ [AuthService] Native sign-in failed:", error);
       throw error;
     }
@@ -256,16 +254,13 @@ export class AuthService {
    */
   static async signOut(): Promise<void> {
     console.log("🚪 [AuthService] Signing out...");
-    toast.info("Signing out from Native...");
 
     try {
       // Sign out using Custom HushhAuth plugin
       await HushhAuth.signOut();
-      toast.success("Native SignOut Done");
 
       // Also sign out from Firebase JS SDK for web consistency
       await firebaseSignOut(auth);
-      toast.success("Web SignOut Done");
 
       console.log("✅ [AuthService] Sign-out complete");
     } catch (error) {

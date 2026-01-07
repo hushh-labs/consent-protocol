@@ -209,15 +209,21 @@ import { Shield, Lock } from "lucide-react";
 ## 9. Mobile-First Layout Rules
 
 1. **Viewport Height**: use `100dvh` for full-screen containers to handle mobile browser bars.
-2. **Safe Areas**: Respect `env(safe-area-inset-bottom)` and top.
-3. **Overscroll**: Disable body overscroll to prevent "rubber banding" on iOS.
+2. **Safe Areas (Hardware Notch)**:
+   - **Formula**: `max(env(safe-area-inset-top), 32px)`
+   - _Why 32px?_ Ensures functional padding on emulators or web views that report 0px.
+   - **Header Spacing**: `calc(Safe Area + 48px)` for fixed Top App Bars.
+3. **Toast Positioning**:
+   - Place toasts at `margin-top: max(env(safe-area-inset-top), 4rem)` to avoid blocking the header or status bar.
+   - Use `z-index: 9999` to float above all sheets/modals.
+4. **Overscroll**: Disable body overscroll to prevent "rubber banding" on iOS.
    ```css
    html,
    body {
      overscroll-behavior: none;
    }
    ```
-4. **Backgrounds**: Use fixed, oversized backgrounds (`h-[120vh]`) to prevent white gaps during scroll bounces.
+5. **Backgrounds**: Use fixed, oversized backgrounds (`h-[120vh]`) to prevent white gaps during scroll bounces.
 
 ---
 
