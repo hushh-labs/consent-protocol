@@ -2,101 +2,161 @@
 
 /**
  * Kai Analysis Dashboard - Production Ready
- * Requires consent token for analysis
+ * Zero-Knowledge Architecture:
+ * 1. Request Analysis (Server -> Plaintext)
+ * 2. Encrypt locally (Client + Vault Key)
+ * 3. Store Decision (Client -> Server)
  */
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/lib/morphy-ux/morphy";
-import { Search, Sparkles, AlertCircle } from "lucide-react";
-import { getConsentToken, hasValidConsent } from "../actions";
+import { Search, Sparkles, AlertCircle, Lock } from "lucide-react";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { useVault } from "@/lib/vault/vault-context";
+import { HushhVault } from "@/lib/capacitor";
+import {
+  analyzeTicker,
+  storeDecision,
+  getPreferences,
+  type AnalyzeResponse,
+} from "@/lib/services/kai-service";
+import { hasValidConsent, getConsentToken } from "../actions";
 
-function KaiAnalysis() {
+export default function KaiAnalysis() {
   const router = useRouter();
   const { user } = useAuth();
+  const { vaultKey, isVaultUnlocked } = useVault();
+
   const [ticker, setTicker] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
 
-  // ✅ Check consent on mount (simplified - no backend check)
+  // Check consent on mount
   useEffect(() => {
-    const checkConsent = () => {
-      if (!user) {
-        setCheckingSession(false);
-        return;
-      }
-
-      // Check sessionStorage for tokens
-      const hasTokens = hasValidConsent("agent.kai.analyze");
-
-      if (hasTokens) {
-        console.log("[Kai Analysis] ✅ Valid tokens found");
-        setHasConsent(true);
-      } else {
-        console.log("[Kai Analysis] ❌ No valid consent tokens");
-        setHasConsent(false);
-      }
-
-      setCheckingSession(false);
-    };
-
-    checkConsent();
+    if (!user) return;
+    const hasTokens = hasValidConsent("agent.kai.analyze");
+    setHasConsent(hasTokens);
   }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker.trim()) return;
+    if (!ticker.trim() || !user?.uid) return;
 
-    // ✅ Get consent token
-    const analyzeToken = getConsentToken("agent.kai.analyze");
+    if (!isVaultUnlocked || !vaultKey) {
+      toast.error("Please unlock your vault to perform analysis.");
+      return;
+    }
 
-    if (!analyzeToken) {
-      alert("Please complete onboarding to use Kai");
+    const consentToken = getConsentToken("agent.kai.analyze");
+    if (!consentToken) {
+      toast.error("Missing consent. Please re-onboard.");
       router.push("/dashboard/kai");
       return;
     }
 
     setIsAnalyzing(true);
+    setResult(null);
+    setSaveStatus("idle");
 
     try {
-      // TODO: Get real session ID from state/storage
-      const sessionId = "session_temp";
+      // 1. Get Preferences (Stateless Session OR Persistent DB)
+      let riskProfile = sessionStorage.getItem("kai_risk_profile") as any;
+      let processingMode = sessionStorage.getItem("kai_processing_mode") as any;
 
-      // ✅ Call backend with consent token
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/kai/analyze/${sessionId}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Consent-Token": analyzeToken, // ✅ Required header
-          },
-          body: JSON.stringify({ ticker: ticker.toUpperCase() }),
+      // If missing from session (fresh load), fetch from DB and decrypt
+      if (!riskProfile || !processingMode) {
+        console.log(
+          "[Kai] Preferences missing from session, fetching from DB..."
+        );
+        try {
+          const { preferences } = await getPreferences(user.uid);
+
+          for (const pref of preferences) {
+            const decryptedRes = await HushhVault.decryptData({
+              keyHex: vaultKey,
+              payload: {
+                ciphertext: pref.ciphertext,
+                iv: pref.iv,
+                tag: pref.tag,
+                encoding: "base64", // Default from encryptData
+                algorithm: "aes-256-gcm",
+              },
+            });
+
+            const decrypted = decryptedRes.plaintext; // decryptData returns { plaintext }
+
+            if (pref.field_name === "kai_risk_profile") riskProfile = decrypted;
+            if (pref.field_name === "kai_processing_mode")
+              processingMode = decrypted;
+          }
+
+          // Cache restored prefs
+          if (riskProfile)
+            sessionStorage.setItem("kai_risk_profile", riskProfile);
+          if (processingMode)
+            sessionStorage.setItem("kai_processing_mode", processingMode);
+        } catch (prefError) {
+          console.error("[Kai] Failed to restore preferences:", prefError);
         }
+      }
+
+      // Default to balanced/hybrid if still missing
+      riskProfile = riskProfile || "balanced";
+      processingMode = processingMode || "hybrid";
+
+      console.log(
+        `[Kai] Analyzing with Profile: ${riskProfile}, Mode: ${processingMode}`
       );
 
-      if (response.status === 403) {
-        alert("Consent denied or expired. Please re-onboard.");
-        router.push("/dashboard/kai");
-        return;
+      // 2. Perform Analysis (Returns Plaintext)
+      const analysisMs = Date.now();
+      const analysis = await analyzeTicker({
+        user_id: user.uid,
+        ticker: ticker.toUpperCase(),
+        consent_token: consentToken,
+        risk_profile: riskProfile,
+        processing_mode: processingMode,
+      });
+
+      console.log(`[Kai] Analysis received in ${Date.now() - analysisMs}ms`);
+      setResult(analysis);
+
+      // 3. Encrypt & Store (Auto-Save)
+      setSaveStatus("saving");
+      try {
+        const encrypted = await HushhVault.encryptData({
+          keyHex: vaultKey,
+          plaintext: JSON.stringify(analysis.raw_card),
+        });
+
+        await storeDecision({
+          user_id: user.uid,
+          ticker: analysis.ticker,
+          decision_type: analysis.decision,
+          confidence_score: analysis.confidence,
+          decision_ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          tag: encrypted.tag,
+        });
+
+        console.log("[Kai] Decision encrypted and stored securely.");
+        setSaveStatus("saved");
+      } catch (saveError) {
+        console.error("Failed to encrypt/save:", saveError);
+        setSaveStatus("error");
       }
-
-      if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log("[Kai] Analysis result:", data);
-
-      // TODO: Display results
-      setTicker("");
     } catch (error) {
       console.error("[Kai] Analysis error:", error);
-      alert("Analysis failed. Please try again.");
+      toast.error("Analysis failed. Please try again.");
     } finally {
       setIsAnalyzing(false);
+      setTicker("");
     }
   };
 
@@ -106,8 +166,18 @@ function KaiAnalysis() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold">Agent Kai</h1>
-          <p className="text-muted-foreground">Your Investment Committee</p>
+          <p className="text-muted-foreground">Fundamental Analysis Agent</p>
         </div>
+
+        {/* Locked Vault Warning */}
+        {!isVaultUnlocked && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
+            <Lock className="h-5 w-5 text-red-400" />
+            <p className="text-red-200">
+              Vault is locked. Unlock to encrypt your data.
+            </p>
+          </div>
+        )}
 
         {/* Consent Warning */}
         {!hasConsent && (
@@ -116,9 +186,6 @@ function KaiAnalysis() {
             <div className="flex-1">
               <p className="text-small text-yellow-200 font-medium">
                 Consent Required
-              </p>
-              <p className="text-caption text-yellow-300/80 mt-1">
-                Please complete onboarding to grant analysis consent
               </p>
               <Button
                 variant="none"
@@ -139,17 +206,22 @@ function KaiAnalysis() {
               <Search className="h-5 w-5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Ask Kai about any stock... (e.g., AAPL, TSLA, NVDA)"
+                placeholder="Ask Kai about any stock... (e.g., AAPL, TSLA)"
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value)}
                 className="flex-1 bg-transparent border-0 outline-none text-white placeholder:text-white/40 text-lg"
-                disabled={isAnalyzing || !hasConsent}
+                disabled={isAnalyzing || !hasConsent || !isVaultUnlocked}
               />
               <Button
                 variant="gradient"
                 size="lg"
                 type="submit"
-                disabled={!ticker.trim() || isAnalyzing || !hasConsent}
+                disabled={
+                  !ticker.trim() ||
+                  isAnalyzing ||
+                  !hasConsent ||
+                  !isVaultUnlocked
+                }
                 showRipple
               >
                 {isAnalyzing ? (
@@ -168,18 +240,70 @@ function KaiAnalysis() {
           </div>
         </form>
 
-        {/* Placeholder for Results */}
-        <div className="text-center py-12 text-muted-foreground">
-          <p>
-            {hasConsent
-              ? "Enter a ticker symbol to start analysis"
-              : "Complete onboarding first to analyze stocks"}
-          </p>
-        </div>
+        {/* Results Area */}
+        {result && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+            <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-lg">
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold mb-1">{result.ticker}</h2>
+                  <p className="text-muted-foreground">{result.headline}</p>
+                </div>
+                <div
+                  className={`px-4 py-2 rounded-full border ${
+                    result.decision === "buy"
+                      ? "bg-green-500/20 border-green-500/50 text-green-400"
+                      : result.decision === "reduce"
+                      ? "bg-red-500/20 border-red-500/50 text-red-400"
+                      : "bg-blue-500/20 border-blue-500/50 text-blue-400"
+                  }`}
+                >
+                  <span className="font-bold uppercase tracking-wider">
+                    {result.decision}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="p-4 rounded-xl bg-white/5">
+                  <p className="text-caption text-muted-foreground">
+                    Confidence
+                  </p>
+                  <p className="text-xl font-mono">
+                    {result.confidence.toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl bg-white/5">
+                  <p className="text-caption text-muted-foreground">Mode</p>
+                  <p className="text-xl capitalize">{result.processing_mode}</p>
+                </div>
+              </div>
+
+              {/* Encryption Status */}
+              <div className="flex items-center gap-2 text-small text-muted-foreground border-t border-white/10 pt-4">
+                {saveStatus === "saving" && (
+                  <>
+                    <div className="w-3 h-3 border border-white/20 border-t-white rounded-full animate-spin" />
+                    Encrypting & Saving to Vault...
+                  </>
+                )}
+                {saveStatus === "saved" && (
+                  <div className="flex items-center gap-2 text-green-400">
+                    <Lock className="w-3 h-3" />
+                    <span>Encrypted & Stored in Vault</span>
+                  </div>
+                )}
+                {saveStatus === "error" && (
+                  <div className="flex items-center gap-2 text-red-400">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>Failed to Save</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-// ✅ Proper default export
-export default KaiAnalysis;
