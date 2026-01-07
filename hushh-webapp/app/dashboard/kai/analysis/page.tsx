@@ -237,20 +237,196 @@ export default function KaiAnalysis() {
                 </div>
               </div>
 
+              {/* Metrics Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 rounded-xl bg-white/5">
-                  <p className="text-caption text-muted-foreground">
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <p className="text-caption text-muted-foreground mb-1">
                     Confidence
                   </p>
-                  <p className="text-xl font-mono">
-                    {result.confidence.toFixed(2)}
+                  <p className="text-xl font-mono font-bold">
+                    {(result.confidence * 100).toFixed(0)}%
                   </p>
                 </div>
-                <div className="p-4 rounded-xl bg-white/5">
-                  <p className="text-caption text-muted-foreground">Mode</p>
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <p className="text-caption text-muted-foreground mb-1">
+                    Mode
+                  </p>
                   <p className="text-xl capitalize">{result.processing_mode}</p>
                 </div>
+                {result.raw_card?.key_metrics?.revenue_billions && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <p className="text-caption text-muted-foreground mb-1">
+                      Revenue
+                    </p>
+                    <p className="text-xl font-mono">
+                      ${result.raw_card.key_metrics.revenue_billions.toFixed(1)}
+                      B
+                    </p>
+                  </div>
+                )}
+                {result.raw_card?.key_metrics?.profit_margin && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <p className="text-caption text-muted-foreground mb-1">
+                      Profit Margin
+                    </p>
+                    <p className="text-xl font-mono">
+                      {(
+                        result.raw_card.key_metrics.profit_margin * 100
+                      ).toFixed(1)}
+                      %
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Agent Insights */}
+              {result.raw_card?.fundamental_insight && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                    Fundamental Analysis
+                  </h3>
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                    {result.raw_card.fundamental_insight.summary && (
+                      <p className="text-sm text-muted-foreground">
+                        {result.raw_card.fundamental_insight.summary}
+                      </p>
+                    )}
+                    {result.raw_card.fundamental_insight.strengths?.length >
+                      0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-green-400 mb-1">
+                          Strengths:
+                        </p>
+                        <ul className="text-sm space-y-1">
+                          {result.raw_card.fundamental_insight.strengths.map(
+                            (s: string, i: number) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <span className="text-green-400 mt-1">•</span>
+                                <span>{s}</span>
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                    {result.raw_card.fundamental_insight.weaknesses?.length >
+                      0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-red-400 mb-1">
+                          Weaknesses:
+                        </p>
+                        <ul className="text-sm space-y-1">
+                          {result.raw_card.fundamental_insight.weaknesses.map(
+                            (w: string, i: number) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <span className="text-red-400 mt-1">•</span>
+                                <span>{w}</span>
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Sentiment & Valuation */}
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
+                {result.raw_card?.sentiment_insight && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                      Sentiment Analysis
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      {result.raw_card.sentiment_insight.summary}
+                    </p>
+                    {result.raw_card.sentiment_insight.sentiment_score !==
+                      undefined && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-muted-foreground">
+                          Score:
+                        </span>
+                        <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${
+                              result.raw_card.sentiment_insight
+                                .sentiment_score > 0
+                                ? "bg-green-400"
+                                : "bg-red-400"
+                            }`}
+                            style={{
+                              width: `${
+                                Math.abs(
+                                  result.raw_card.sentiment_insight
+                                    .sentiment_score
+                                ) * 100
+                              }%`,
+                            }}
+                          ></div>
+                        </div>
+                        <span className="text-xs font-mono">
+                          {result.raw_card.sentiment_insight.sentiment_score.toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {result.raw_card?.valuation_insight && (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                      Valuation Analysis
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      {result.raw_card.valuation_insight.summary}
+                    </p>
+                    {result.raw_card.valuation_insight.valuation_verdict && (
+                      <p className="text-xs mt-2 font-semibold text-amber-400">
+                        {result.raw_card.valuation_insight.valuation_verdict}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Debate Summary */}
+              {result.raw_card?.debate_digest && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10 mb-6">
+                  <h4 className="text-sm font-semibold mb-2">
+                    Investment Committee Debate
+                  </h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">
+                    {result.raw_card.debate_digest}
+                  </p>
+                </div>
+              )}
+
+              {/* Sources */}
+              {result.raw_card?.all_sources &&
+                result.raw_card.all_sources.length > 0 && (
+                  <div className="pt-4 border-t border-white/10">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Data Sources:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {result.raw_card.all_sources.map(
+                        (source: string, i: number) => (
+                          <span
+                            key={i}
+                            className="px-2 py-1 rounded text-xs bg-white/5 border border-white/10"
+                          >
+                            {source}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
             </div>
           </div>
         )}
