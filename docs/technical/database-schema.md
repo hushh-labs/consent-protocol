@@ -157,7 +157,7 @@ COMMENT ON TABLE vault_food IS
 
 Professional profile data (all fields encrypted).
 
-```sql
+````sql
 CREATE TABLE vault_professional (
     user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
 
@@ -170,7 +170,55 @@ CREATE TABLE vault_professional (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+---
+
+### vault_kai
+
+Encrypted investment decision history.
+
+```sql
+CREATE TABLE vault_kai (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    ticker TEXT NOT NULL,
+    decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
+
+    -- Encrypted Decision Card (JSON)
+    decision_ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+
+    confidence_score DECIMAL(3,2),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    algorithm TEXT DEFAULT 'aes-256-gcm'
+);
+````
+
+---
+
+### vault_kai_preferences
+
+Encrypted user settings for Kai (Risk Profile, Processing Mode).
+
+```sql
+CREATE TABLE vault_kai_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    field_name TEXT NOT NULL, -- e.g., 'risk_profile', 'processing_mode'
+
+    -- Encrypted Value
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    UNIQUE(user_id, field_name)
+);
 ```
+
+````
 
 ---
 
@@ -199,7 +247,7 @@ CREATE TABLE consent_audit (
 CREATE INDEX idx_consent_user ON consent_audit(user_id);
 CREATE INDEX idx_consent_token ON consent_audit(token_id);
 CREATE INDEX idx_consent_audit_created ON consent_audit(issued_at DESC);
-```
+````
 
 ---
 
