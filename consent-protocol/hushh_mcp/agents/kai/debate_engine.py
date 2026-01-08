@@ -245,9 +245,10 @@ class DebateEngine:
     
     def _recommendation_to_decision(self, recommendation: str) -> DecisionType:
         """Convert agent recommendation to decision type."""
-        if recommendation in ["bullish", "undervalued"]:
+        rec = recommendation.lower()
+        if rec in ["buy", "bullish", "undervalued"]:
             return "buy"
-        elif recommendation in ["bearish", "overvalued"]:
+        elif rec in ["reduce", "bearish", "overvalued"]:
             return "reduce"
         else:
             return "hold"
@@ -294,9 +295,10 @@ class DebateEngine:
     
     def _rec_to_score(self, recommendation: str) -> float:
         """Convert recommendation to numeric score."""
-        if recommendation in ["bullish", "undervalued"]:
+        rec = recommendation.lower()
+        if rec in ["buy", "bullish", "undervalued"]:
             return 1.0
-        elif recommendation in ["bearish", "overvalued"]:
+        elif rec in ["reduce", "bearish", "overvalued"]:
             return -1.0
         else:
             return 0.0

@@ -59,6 +59,7 @@ class DecisionCard:
     # Supporting data
     all_sources: List[str]
     key_metrics: Dict[str, Any]
+    quant_metrics: Dict[str, Any]
     risk_persona_alignment: str
     
     # Compliance
@@ -164,6 +165,7 @@ By using Kai, you acknowledge that you understand these limitations.
             dissenting_opinions=debate.dissenting_opinions,
             all_sources=all_sources,
             key_metrics=key_metrics,
+            quant_metrics=fundamental.quant_metrics,
             risk_persona_alignment=risk_alignment,
             legal_disclaimer=self.LEGAL_DISCLAIMER,
             reliability_badge=reliability_badge,
