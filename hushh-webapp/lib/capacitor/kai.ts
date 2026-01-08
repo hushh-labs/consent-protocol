@@ -25,7 +25,7 @@ export interface KaiPlugin {
   analyze(options: {
     userId: string;
     ticker: string;
-    consentToken: string;
+    consentToken?: string;
     riskProfile: string;
     processingMode: string;
     authToken?: string;

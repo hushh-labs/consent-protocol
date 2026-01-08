@@ -75,7 +75,7 @@ export async function grantKaiConsent(
 export async function analyzeTicker(params: {
   user_id: string;
   ticker: string;
-  consent_token: string;
+  consent_token?: string;
   risk_profile: "conservative" | "balanced" | "aggressive";
   processing_mode: "on_device" | "hybrid";
 }): Promise<AnalyzeResponse> {
