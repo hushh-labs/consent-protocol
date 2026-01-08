@@ -41,14 +41,22 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
   async analyze(options: {
     userId: string;
     ticker: string;
-    consentToken: string;
+    consentToken?: string;
     riskProfile: string;
     processingMode: string;
     authToken?: string;
   }): Promise<any> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch("/api/kai/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         user_id: options.userId,
         ticker: options.ticker,
