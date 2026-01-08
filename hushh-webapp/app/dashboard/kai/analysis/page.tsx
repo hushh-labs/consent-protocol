@@ -143,10 +143,12 @@ export default function KaiAnalysis() {
     }
 
     const consentToken = await getConsentToken("agent.kai.analyze");
+
+    // Implicit Auth: If no token, we proceed relying on Session Cookie/Header
     if (!consentToken) {
-      toast.error("Missing consent. Please re-onboard.");
-      router.push("/dashboard/kai");
-      return;
+      console.log(
+        "[Kai] No explicit consent token. Attempting implicit session auth."
+      );
     }
 
     setIsAnalyzing(true);
@@ -186,7 +188,7 @@ export default function KaiAnalysis() {
       const analysis = await analyzeTicker({
         user_id: user.uid,
         ticker: targetTicker.toUpperCase(),
-        consent_token: consentToken,
+        consent_token: consentToken || undefined,
         risk_profile: riskProfile as any,
         processing_mode: processingMode as any,
       });

@@ -63,7 +63,7 @@ steps:
         echo "Building Webapp with Backend URL: $$NEXT_PUBLIC_BACKEND_URL"
 
         docker build \
-          -f deploy/webapp.Dockerfile \
+          -f hushh-webapp/Dockerfile \
           -t gcr.io/$PROJECT_ID/hushh-webapp:latest \
           --build-arg NEXT_PUBLIC_API_URL=$$NEXT_PUBLIC_BACKEND_URL \
           --build-arg NEXT_PUBLIC_BACKEND_URL=$$NEXT_PUBLIC_BACKEND_URL \
