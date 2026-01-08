@@ -9,7 +9,7 @@ Stateless Zero-Knowledge Architecture:
 - Encryption: Client handles all encryption/decryption.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Literal
 from datetime import datetime
@@ -49,7 +49,7 @@ class GrantConsentResponse(BaseModel):
 class AnalyzeRequest(BaseModel):
     user_id: str
     ticker: str
-    consent_token: str
+    consent_token: Optional[str] = None
     # Client provides context explicitly (Stateless)
     risk_profile: Literal["conservative", "balanced", "aggressive"] = "balanced"
     processing_mode: Literal["on_device", "hybrid"] = "hybrid"
@@ -183,7 +183,10 @@ async def grant_consent(request: GrantConsentRequest):
 # ============================================================================
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_ticker(request: AnalyzeRequest):
+async def analyze_ticker(
+    request: AnalyzeRequest,
+    authorization: Optional[str] = Header(None)
+):
     """
     Step 1: Perform 3-agent investment analysis.
     
@@ -200,10 +203,39 @@ async def analyze_ticker(request: AnalyzeRequest):
             processing_mode=request.processing_mode,
         )
         
+        # Validate Consent (Explicit or Implicit)
+        token_to_use = request.consent_token
+        
+        if not token_to_use:
+            # Try Implicit Consent (Same-User Session)
+            if not authorization or not authorization.startswith("Bearer "):
+                 raise HTTPException(status_code=401, detail="Missing consent token or valid session")
+            
+            try:
+                import firebase_admin
+                from firebase_admin import auth, credentials
+                try:
+                    firebase_admin.get_app()
+                except ValueError:
+                    firebase_admin.initialize_app(credentials.ApplicationDefault())
+                
+                id_token = authorization.split("Bearer ")[1]
+                decoded = auth.verify_id_token(id_token)
+                
+                if decoded["uid"] != request.user_id:
+                    raise HTTPException(status_code=403, detail="Session user mismatch")
+                
+                logger.info(f"[Kai] Implicit consent granted for owner: {request.user_id}")
+                token_to_use = "IMPLICIT_SAMESESSION_AUTH"
+                
+            except Exception as e:
+                logger.warning(f"[Kai] Implicit auth failed: {e}")
+                raise HTTPException(status_code=401, detail="Invalid session credentials")
+
         # Run analysis (Generates Plaintext)
         decision_card = await orchestrator.analyze(
             ticker=request.ticker,
-            consent_token=request.consent_token,
+            consent_token=token_to_use,
         )
         
         # Convert to dictionary for response
