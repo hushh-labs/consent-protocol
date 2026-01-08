@@ -22,6 +22,7 @@
 
 import { Capacitor } from "@capacitor/core";
 import { HushhVault, HushhAuth } from "@/lib/capacitor";
+import { Kai } from "@/lib/capacitor/kai";
 
 // API Base URL configuration
 const getApiBaseUrl = (): string => {
@@ -686,7 +687,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        const result = await HushhVault.kaiGrantConsent({
+        const result = await Kai.grantConsent({
           userId: data.userId,
           scopes,
           authToken,
@@ -723,7 +724,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        const result = await HushhVault.kaiAnalyze({
+        const result = await Kai.analyze({
           userId: data.userId,
           ticker: data.ticker,
           consentToken: data.consentToken,
@@ -766,7 +767,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        const result = await HushhVault.kaiStorePreferences({
+        const result = await Kai.storePreferences({
           userId: data.userId,
           preferencesEncrypted: data.preferencesEncrypted,
           authToken,
@@ -800,7 +801,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        const result = await HushhVault.kaiGetPreferences({
+        const result = await Kai.getPreferences({
           userId: data.userId,
           authToken,
         });

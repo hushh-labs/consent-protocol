@@ -333,50 +333,6 @@ export interface HushhVaultPlugin {
     limit?: number;
   }): Promise<{ items: any[] }>;
 
-  // ==================== Kai Methods ====================
-  // Agent Kai stock analysis - following same pattern as Food/Professional
-
-  /**
-   * Grant Kai consent
-   * Replaces: /api/kai/consent/grant on mobile
-   */
-  kaiGrantConsent(options: {
-    userId: string;
-    scopes: string[];
-    authToken?: string;
-  }): Promise<{ token: string; expires_at: string }>;
-
-  /**
-   * Analyze stock ticker
-   * Replaces: /api/kai/analyze on mobile
-   */
-  kaiAnalyze(options: {
-    userId: string;
-    ticker: string;
-    consentToken: string;
-    riskProfile: string;
-    processingMode: string;
-    authToken?: string;
-  }): Promise<{ decision: any }>;
-
-  /**
-   * Store encrypted Kai preferences
-   * Replaces: /api/kai/preferences/store on mobile
-   */
-  kaiStorePreferences(options: {
-    userId: string;
-    preferencesEncrypted: string;
-    authToken?: string;
-  }): Promise<{ success: boolean }>;
-
-  /**
-   * Get encrypted Kai preferences
-   * Replaces: /api/kai/preferences/:userId on mobile
-   */
-  kaiGetPreferences(options: {
-    userId: string;
-    authToken?: string;
-  }): Promise<{ preferences: any[] }>;
 }
 
 export const HushhVault = registerPlugin<HushhVaultPlugin>("HushhVault", {
