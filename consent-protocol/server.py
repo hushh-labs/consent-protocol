@@ -43,6 +43,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 cors_origins = [
     "http://localhost:3000", 
     "http://127.0.0.1:3000",
+    "http://10.0.0.177:3000",
 ]
 
 # Add production frontend URL if set
