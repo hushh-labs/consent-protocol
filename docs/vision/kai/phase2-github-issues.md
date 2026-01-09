@@ -399,7 +399,7 @@ Design the complete 17-step onboarding flow based on hushhtech.com investor guid
 
 ---
 
-## Issue #8: Portfolio Import Selection Modal
+## Issue #8: Portfolio Import Selection
 
 ### Metadata
 
@@ -520,27 +520,27 @@ Design the user preferences dashboard showing what Kai has learned about them.
 
 ### @kusha (Backend/AI) - 66 points
 
-| Issue                         | Points | Week       |
-| ----------------------------- | ------ | ---------- |
-| #1 Top 1024 Investor Personas | 8      | 1-3        |
-| #2 VIP Identity Resolution    | 8      | 2-4        |
-| #5 Debate Engine (Cloud)      | 13     | 4-6        |
-| #3 Screenshot Import          | 8      | 5-7        |
-| #4 Plaid Integration          | 8      | 7-8        |
-| #9 Learning Pipeline          | 8      | 8-10       |
-| Buffer/bugs                   | 13     | Throughout |
-| **Total**                     | **66** |            |
+| Issue                         | Points       | Week       |
+| ----------------------------- | ------------ | ---------- |
+| #1 Top 1024 Investor Personas | 8            | 1-3        |
+| #2 VIP Identity Resolution    | 8            | 2-4        |
+| #5 Debate Engine (Cloud)      | 13           | 4-6        |
+| #3 Screenshot Import          | 8            | 5-7        |
+| #4 Plaid Integration          | 8            | 7-8        |
+| #9 Learning Pipeline          | 8            | 8-10       |
+| Buffer/bugs                   | 13           | Throughout |
+| **Total**               | **66** |            |
 
 ### @ankit (UI/UX) - 32 points
 
-| Issue                     | Points | Week       |
-| ------------------------- | ------ | ---------- |
-| #6 Decision Card UI       | 8      | 1-3        |
-| #7 17-Step Onboarding     | 8      | 2-5        |
-| #8 Import Modal           | 3      | 4-5        |
-| #10 Preferences Dashboard | 5      | 6-8        |
-| Review & iteration        | 8      | Throughout |
-| **Total**                 | **32** |            |
+| Issue                     | Points       | Week       |
+| ------------------------- | ------------ | ---------- |
+| #6 Decision Card UI       | 8            | 1-3        |
+| #7 17-Step Onboarding     | 8            | 2-5        |
+| #8 Import Modal           | 3            | 4-5        |
+| #10 Preferences Dashboard | 5            | 6-8        |
+| Review & iteration        | 8            | Throughout |
+| **Total**           | **32** |            |
 
 ---
 
