@@ -8,8 +8,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from api.models import ChatRequest, ChatResponse, ValidateTokenRequest
-from hushh_mcp.agents.food_dining.agent import food_dining_agent
-from hushh_mcp.agents.professional_profile.agent import professional_agent
+from hushh_mcp.agents.food_dining.agent import get_food_dining_agent
+from hushh_mcp.agents.professional_profile.agent import get_professional_agent
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ async def food_dining_chat(request: ChatRequest):
     logger.info(f"🍽️ Food Agent: user={request.userId}, msg='{request.message[:50]}...'")
     
     try:
-        result = food_dining_agent.handle_message(
+        result = get_food_dining_agent().handle_message(
             message=request.message,
             user_id=request.userId,
             session_state=request.sessionState
@@ -114,7 +114,7 @@ async def professional_profile_chat(request: ChatRequest):
     logger.info(f"💼 Professional Agent: user={request.userId}, msg='{request.message[:50]}...'")
     
     try:
-        result = professional_agent.handle_message(
+        result = get_professional_agent().handle_message(
             message=request.message,
             user_id=request.userId,
             session_state=request.sessionState
@@ -147,10 +147,10 @@ async def professional_profile_chat(request: ChatRequest):
 @router.get("/agents/food-dining/info")
 async def food_dining_info():
     """Get Food & Dining agent manifest info."""
-    return food_dining_agent.get_agent_info()
+    return get_food_dining_agent().get_agent_info()
 
 
 @router.get("/agents/professional-profile/info")
 async def professional_profile_info():
     """Get Professional Profile agent manifest info."""
-    return professional_agent.get_agent_info()
+    return get_professional_agent().get_agent_info()

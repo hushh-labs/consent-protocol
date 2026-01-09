@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session, db_proxy, sse, kai
+from api.routes import health, agents, consent, developer, session, db_proxy, sse, kai, food, professional
 
 # Import rate limiting
 from slowapi import _rate_limit_exceeded_handler
@@ -33,7 +33,7 @@ from api.middlewares.rate_limit import limiter
 root_path = os.environ.get("ROOT_PATH", "")
 
 app = FastAPI(
-    title="Hushh Consent Protocol API",
+    title="Hushh Consent Protocol API - DIAGNOSTICS",
     description="Agent endpoints for the Hushh Personal Data Agent system",
     version="1.0.0",
     root_path=root_path,
@@ -60,6 +60,7 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex="https://.*\.run\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -94,12 +95,27 @@ app.include_router(sse.router)
 # Kai investor onboarding routes (/api/kai/...)
 app.include_router(kai.router)
 
-logger.info("🚀 Hushh Consent Protocol server initialized with modular routes")
+# Food agent routes (/api/food/...)
+app.include_router(food.router)
+
+# Professional agent routes (/api/professional/...)
+app.include_router(professional.router)
+
+logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 ENABLED")
 
 
 # ============================================================================
 # RUN
 # ============================================================================
+
+@app.get("/debug/diagnostics", tags=["Debug"])
+async def diagnostics():
+    """List all registered routes and file structure for debugging 404s."""
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "info": "Diagnostics simplified"
+    }
 
 if __name__ == "__main__":
     import uvicorn
