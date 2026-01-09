@@ -16,7 +16,7 @@ import { storeUserData } from "@/lib/db";
 const BACKEND_URL =
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://127.0.0.1:8000";
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 /**
  * Validate consent token with Python backend

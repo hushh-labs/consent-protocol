@@ -12,7 +12,7 @@ Features:
 - Spending analysis (analyze_spending)
 """
 
-from .agent import HushhFoodDiningAgent, food_dining_agent
+from .agent import HushhFoodDiningAgent, get_food_dining_agent
 from .manifest import AGENT_MANIFEST
 
-__all__ = ["HushhFoodDiningAgent", "food_dining_agent", "AGENT_MANIFEST"]
+__all__ = ["HushhFoodDiningAgent", "get_food_dining_agent", "AGENT_MANIFEST"]

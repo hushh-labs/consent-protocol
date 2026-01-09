@@ -33,17 +33,26 @@ interface VaultContextType {
   /** The decrypted vault key (hex string) - ONLY IN MEMORY */
   vaultKey: string | null;
 
+  /** VAULT_OWNER consent token - ONLY IN MEMORY */
+  vaultOwnerToken: string | null;
+
+  /** Token expiry timestamp (ms) */
+  tokenExpiresAt: number | null;
+
   /** Whether the vault is currently unlocked */
   isVaultUnlocked: boolean;
 
-  /** Set the vault key after successful passphrase verification */
-  unlockVault: (key: string) => void;
+  /** Set the vault key and VAULT_OWNER token after successful authentication */
+  unlockVault: (key: string, token: string, expiresAt: number) => void;
 
-  /** Clear the vault key (on logout or timeout) */
+  /** Clear the vault key and token (on logout or timeout) */
   lockVault: () => void;
 
   /** Get the vault key for encryption operations */
   getVaultKey: () => string | null;
+
+  /** Get the VAULT_OWNER token for agent requests */
+  getVaultOwnerToken: () => string | null;
 }
 
 // ============================================================================
@@ -68,9 +77,15 @@ export function VaultProvider({ children }: VaultProviderProps) {
   // This is NOT accessible via sessionStorage.getItem() - XSS protection
   const [vaultKey, setVaultKey] = useState<string | null>(null);
 
+  // VAULT_OWNER consent token (also memory-only for security)
+  const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
+
   const lockVault = useCallback(() => {
-    console.log("🔒 Vault locked (key cleared from memory)");
+    console.log("🔒 Vault locked (key + token cleared from memory)");
     setVaultKey(null);
+    setVaultOwnerToken(null);
+    setTokenExpiresAt(null);
     removeSessionItem("vault_unlocked");
   }, []);
 
@@ -83,26 +98,45 @@ export function VaultProvider({ children }: VaultProviderProps) {
     }
   }, [user, vaultKey, lockVault]);
 
-  const unlockVault = useCallback((key: string) => {
-    console.log("🔓 Vault unlocked (key stored in memory only)");
-    setVaultKey(key);
+  const unlockVault = useCallback(
+    (key: string, token: string, expiresAt: number) => {
+      console.log(
+        "🔓 Vault unlocked (key + VAULT_OWNER token stored in memory only)"
+      );
+      setVaultKey(key);
+      setVaultOwnerToken(token);
+      setTokenExpiresAt(expiresAt);
 
-    // Store a flag to indicate vault is unlocked
-    // (But NOT the actual key - just the state)
-    // Uses localStorage on iOS, sessionStorage on web
-    setSessionItem("vault_unlocked", "true");
-  }, []);
+      // Store a flag to indicate vault is unlocked
+      // (But NOT the actual key - just the state)
+      // Uses localStorage on iOS, sessionStorage on web
+      setSessionItem("vault_unlocked", "true");
+    },
+    []
+  );
 
   const getVaultKey = useCallback(() => {
     return vaultKey;
   }, [vaultKey]);
 
+  const getVaultOwnerToken = useCallback(() => {
+    // Check expiry
+    if (tokenExpiresAt && Date.now() > tokenExpiresAt) {
+      console.warn("⚠️ VAULT_OWNER token expired");
+      return null;
+    }
+    return vaultOwnerToken;
+  }, [vaultOwnerToken, tokenExpiresAt]);
+
   const value: VaultContextType = {
     vaultKey,
-    isVaultUnlocked: !!vaultKey,
+    vaultOwnerToken,
+    tokenExpiresAt,
+    isVaultUnlocked: !!vaultKey && !!vaultOwnerToken,
     unlockVault,
     lockVault,
     getVaultKey,
+    getVaultOwnerToken,
   };
 
   return (
