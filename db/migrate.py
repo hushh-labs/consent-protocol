@@ -187,8 +187,141 @@ async def create_vault_kai_preferences(pool: asyncpg.Pool):
     print("✅ vault_kai_preferences ready!")
 
 
+async def create_investor_profiles(pool: asyncpg.Pool):
+    """
+    Create investor_profiles table (PUBLIC DISCOVERY LAYER).
+    
+    This stores publicly available investor information for identity resolution.
+    NOT encrypted - server can read this (it's all public data from SEC filings).
+    
+    Used during onboarding to show: "Is this you?"
+    """
+    print("📈 Creating investor_profiles table...")
+    
+    # Enable pg_trgm extension for fuzzy text search
+    await pool.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+    
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS investor_profiles (
+            id SERIAL PRIMARY KEY,
+            
+            -- Identity (for name-based matching)
+            name TEXT NOT NULL,
+            name_normalized TEXT,
+            cik TEXT UNIQUE,
+            
+            -- Profile
+            firm TEXT,
+            title TEXT,
+            investor_type TEXT,
+            photo_url TEXT,
+            
+            -- Holdings Summary (from 13F/Form4)
+            aum_billions NUMERIC,
+            top_holdings JSONB,
+            sector_exposure JSONB,
+            
+            -- Inferred Profile
+            investment_style TEXT[],
+            risk_tolerance TEXT,
+            time_horizon TEXT,
+            portfolio_turnover TEXT,
+            
+            -- Activity Signals
+            recent_buys TEXT[],
+            recent_sells TEXT[],
+            
+            -- Enrichment
+            public_quotes JSONB,
+            biography TEXT,
+            education TEXT[],
+            board_memberships TEXT[],
+            
+            -- Peer Network
+            peer_investors TEXT[],
+            
+            -- Insider-specific (Form 4)
+            is_insider BOOLEAN DEFAULT FALSE,
+            insider_company_ticker TEXT,
+            
+            -- Data Source Tracking
+            data_sources TEXT[],
+            last_13f_date DATE,
+            last_form4_date DATE,
+            
+            -- Timestamps
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    
+    # Indexes for efficient searching
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_name ON investor_profiles(name)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_firm ON investor_profiles(firm)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_type ON investor_profiles(investor_type)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_style ON investor_profiles USING GIN (investment_style)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL")
+    
+    print("✅ investor_profiles ready!")
 
-# Table registry for modular access
+
+async def create_user_investor_profiles(pool: asyncpg.Pool):
+    """
+    Create user_investor_profiles table (PRIVATE VAULT LAYER).
+    
+    This stores user-confirmed investor profile data (encrypted copy).
+    E2E encrypted - server CANNOT read this.
+    
+    Created when user confirms: "Yes, this is me"
+    Agents ONLY access this table, never investor_profiles directly.
+    """
+    print("🔐 Creating user_investor_profiles table...")
+    
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS user_investor_profiles (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+            
+            -- Link to public profile (optional, for reference only)
+            confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
+            
+            -- Encrypted profile data (E2E encrypted copy from public)
+            profile_data_ciphertext TEXT,
+            profile_data_iv TEXT,
+            profile_data_tag TEXT,
+            
+            -- Encrypted holdings (user's actual holdings, not public)
+            custom_holdings_ciphertext TEXT,
+            custom_holdings_iv TEXT,
+            custom_holdings_tag TEXT,
+            
+            -- Encrypted preferences (user's adjusted preferences)
+            preferences_ciphertext TEXT,
+            preferences_iv TEXT,
+            preferences_tag TEXT,
+            
+            -- Consent tracking
+            confirmed_at TIMESTAMPTZ,
+            consent_scope TEXT,
+            
+            -- Algorithm
+            algorithm TEXT DEFAULT 'aes-256-gcm',
+            
+            -- Timestamps
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            
+            -- One profile per user
+            UNIQUE(user_id)
+        )
+    """)
+    
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_user_investor_user ON user_investor_profiles(user_id)")
+    
+    print("✅ user_investor_profiles ready!")
+
+
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
@@ -197,6 +330,8 @@ TABLE_CREATORS = {
     "consent_audit": create_consent_audit,
     "vault_kai": create_vault_kai,
     "vault_kai_preferences": create_vault_kai_preferences,
+    "investor_profiles": create_investor_profiles,
+    "user_investor_profiles": create_user_investor_profiles,
 }
 
 
