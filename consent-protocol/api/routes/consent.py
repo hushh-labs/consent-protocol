@@ -265,11 +265,27 @@ async def issue_vault_owner_token(request: Request):
             logger.error(f"Firebase token verification failed: {e}")
             raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
         
+        # Check for existing active VAULT_OWNER token in DB
+        now_ms = int(time.time() * 1000)
+        active_tokens = await consent_db.get_active_tokens(user_id)
         
-        # Issue VAULT_OWNER token (stateless - no database storage needed)
-        # Token itself encodes user_id, agent_id, scope, and expiry
-        # Same pattern as MCP consent tokens - reusable until expiry
-        logger.info(f"🔑 Issuing VAULT_OWNER token for {user_id} (24h expiry)")
+        for t in active_tokens:
+            # Match scope = vault.owner and agent = self
+            if t.get("scope") == ConsentScope.VAULT_OWNER.value and t.get("agent_id") == "self":
+                # Check if token has > 1 hour left
+                expires_at = t.get("expires_at", 0)
+                if expires_at > now_ms + (60 * 60 * 1000):  # 1 hour buffer
+                    # REUSE existing token
+                    existing_token = t.get("token_id")
+                    logger.info(f"♻️ Reusing active VAULT_OWNER token for {user_id} (expires: {expires_at})")
+                    return {
+                        "token": existing_token,
+                        "expiresAt": expires_at,
+                        "scope": ConsentScope.VAULT_OWNER.value
+                    }
+        
+        # No valid token found - issue new one
+        logger.info(f"🔑 Issuing NEW VAULT_OWNER token for {user_id} (24h expiry)")
         
         # Issue new token (24-hour expiry)
         token_obj = issue_token(
@@ -279,17 +295,17 @@ async def issue_vault_owner_token(request: Request):
             expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
         )
         
-        # Log to consent_audit
+        # Store in consent_audit (CONSENT_GRANTED for get_active_tokens() compatibility)
         await consent_db.insert_event(
             user_id=user_id,
             agent_id="self",
             scope="vault.owner",
-            action="VAULT_OWNER_TOKEN_ISSUED",
-            token_id=token_obj.token[:32],  # Truncate for storage
+            action="CONSENT_GRANTED",  # Use CONSENT_GRANTED for active token queries
+            token_id=token_obj.token,  # Store FULL token (not truncated)
             expires_at=token_obj.expires_at
         )
         
-        logger.info(f"✅ VAULT_OWNER token issued for {user_id}")
+        logger.info(f"✅ VAULT_OWNER token issued and stored for {user_id}")
         
         return {
             "token": token_obj.token,
