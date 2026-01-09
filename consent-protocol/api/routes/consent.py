@@ -9,7 +9,9 @@ from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
 import consent_db
+from db.connection import get_pool
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 
