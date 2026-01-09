@@ -101,7 +101,15 @@ app.include_router(food.router)
 # Professional agent routes (/api/professional/...)
 app.include_router(professional.router)
 
-logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 ENABLED")
+# Phase 2: Investor Profiles (Public Discovery Layer)
+from api.routes import investors
+app.include_router(investors.router)
+
+# Phase 2: Identity Resolution (Consent-then-encrypt flow)
+from api.routes import identity
+app.include_router(identity.router)
+
+logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 ENABLED")
 
 
 # ============================================================================
