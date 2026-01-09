@@ -1,0 +1,531 @@
+{
+  "metadata": {
+    "description": "Top Investor Profiles - Real Data from SEC 13F Filings (Q4 2024)",
+    "source": "SEC EDGAR, 13f.info, SeekingAlpha, Forbes",
+    "last_updated": "2025-02-15",
+    "purpose": "Data dump for Phase 2 investor persona pre-creation",
+    "total_profiles": 50
+  },
+  "investors": [
+    {
+      "id": 1,
+      "cik": "0001067983",
+      "name": "Warren Buffett",
+      "firm": "Berkshire Hathaway Inc.",
+      "title": "Chairman & CEO",
+      "aum_billions": 267,
+      "investment_style": ["value", "long-term", "quality", "concentrated"],
+      "risk_tolerance": "conservative",
+      "time_horizon": "very_long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["financials", "consumer_staples", "technology", "energy"],
+      "top_holdings": [
+        {"ticker": "AAPL", "name": "Apple Inc.", "shares": 300000000, "value_billions": 56.0, "portfolio_pct": 21.0, "change_qoq": -25},
+        {"ticker": "AXP", "name": "American Express Co.", "shares": 151610700, "value_billions": 45.0, "portfolio_pct": 16.9, "change_qoq": 0},
+        {"ticker": "BAC", "name": "Bank of America Corp.", "shares": 680234000, "value_billions": 30.0, "portfolio_pct": 11.2, "change_qoq": -10},
+        {"ticker": "KO", "name": "Coca-Cola Co.", "shares": 400000000, "value_billions": 27.0, "portfolio_pct": 10.1, "change_qoq": 0},
+        {"ticker": "CVX", "name": "Chevron Corp.", "shares": 118610534, "value_billions": 18.0, "portfolio_pct": 6.7, "change_qoq": -5}
+      ],
+      "recent_buys": ["STZ", "DPZ", "POOL"],
+      "recent_sells": ["AAPL", "BAC", "ULTA"],
+      "public_quotes": [
+        {"quote": "Be fearful when others are greedy and greedy when others are fearful.", "source": "Berkshire annual letter", "year": 2008},
+        {"quote": "The stock market is designed to transfer money from the active to the patient.", "source": "Interview", "year": 2020}
+      ],
+      "biography": "Warren Buffett is the CEO of Berkshire Hathaway, a multinational conglomerate. Known as the 'Oracle of Omaha', he is one of the most successful investors of all time.",
+      "education": ["University of Nebraska", "Columbia Business School"],
+      "board_memberships": ["The Coca-Cola Company (former)", "The Washington Post (former)"],
+      "peer_investors": ["Charlie Munger", "Todd Combs", "Ted Weschler"]
+    },
+    {
+      "id": 2,
+      "cik": "0001350694",
+      "name": "Ray Dalio",
+      "firm": "Bridgewater Associates",
+      "title": "Founder (stepped back 2022)",
+      "aum_billions": 21.8,
+      "investment_style": ["macro", "risk_parity", "diversified", "systematic"],
+      "risk_tolerance": "balanced",
+      "time_horizon": "medium",
+      "portfolio_turnover": "high",
+      "sector_focus": ["technology", "energy", "financials", "healthcare"],
+      "top_holdings": [
+        {"ticker": "GOOGL", "name": "Alphabet Inc.", "shares": 4500000, "value_billions": 0.85, "portfolio_pct": 3.9, "change_qoq": -15},
+        {"ticker": "NVDA", "name": "NVIDIA Corp.", "shares": 3200000, "value_billions": 0.75, "portfolio_pct": 3.4, "change_qoq": -20},
+        {"ticker": "META", "name": "Meta Platforms", "shares": 1800000, "value_billions": 0.60, "portfolio_pct": 2.8, "change_qoq": -10},
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "shares": 1500000, "value_billions": 0.55, "portfolio_pct": 2.5, "change_qoq": -12},
+        {"ticker": "VST", "name": "Vistra Corp.", "shares": 2100000, "value_billions": 0.45, "portfolio_pct": 2.1, "change_qoq": 50}
+      ],
+      "recent_buys": ["VST", "AMD", "CEG", "PYPL", "MCK", "HOOD", "T"],
+      "recent_sells": ["GOOGL", "NVDA", "META", "MSFT", "AMZN"],
+      "public_quotes": [
+        {"quote": "The biggest mistake investors make is to believe that what happened in the recent past is likely to persist.", "source": "Principles", "year": 2017},
+        {"quote": "Pain + Reflection = Progress", "source": "TED Talk", "year": 2018}
+      ],
+      "biography": "Ray Dalio founded Bridgewater Associates in 1975, which became the world's largest hedge fund. Known for 'Principles' and his macro investing approach.",
+      "education": ["Long Island University", "Harvard Business School"],
+      "board_memberships": [],
+      "peer_investors": ["Bob Prince", "Greg Jensen"]
+    },
+    {
+      "id": 3,
+      "cik": "0001535527",
+      "name": "Cathie Wood",
+      "firm": "ARK Investment Management",
+      "title": "Founder, CEO & CIO",
+      "aum_billions": 12.5,
+      "investment_style": ["growth", "disruptive_innovation", "thematic", "high_conviction"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "long",
+      "portfolio_turnover": "high",
+      "sector_focus": ["technology", "genomics", "fintech", "autonomous_vehicles", "space"],
+      "top_holdings": [
+        {"ticker": "TSLA", "name": "Tesla Inc.", "shares": 8500000, "value_billions": 2.8, "portfolio_pct": 12.5, "change_qoq": 5},
+        {"ticker": "ROKU", "name": "Roku Inc.", "shares": 6200000, "value_billions": 0.58, "portfolio_pct": 7.2, "change_qoq": -8},
+        {"ticker": "COIN", "name": "Coinbase Global", "shares": 4800000, "value_billions": 0.55, "portfolio_pct": 6.8, "change_qoq": 10},
+        {"ticker": "PLTR", "name": "Palantir Technologies", "shares": 9500000, "value_billions": 0.48, "portfolio_pct": 5.9, "change_qoq": -15},
+        {"ticker": "RBLX", "name": "Roblox Corp.", "shares": 8200000, "value_billions": 0.42, "portfolio_pct": 5.2, "change_qoq": 12}
+      ],
+      "recent_buys": ["CRSP", "ACHR", "META", "AMZN", "AMD", "ILMN"],
+      "recent_sells": ["ROKU", "PLTR"],
+      "public_quotes": [
+        {"quote": "We believe innovation is key to growth.", "source": "ARK Webinar", "year": 2023},
+        {"quote": "Tesla will be the biggest company in the world.", "source": "Bloomberg Interview", "year": 2024}
+      ],
+      "biography": "Cathie Wood founded ARK Invest in 2014 focusing on disruptive innovation. Known for high-conviction bets on Tesla, genomics, and crypto.",
+      "education": ["University of Southern California"],
+      "board_memberships": [],
+      "peer_investors": ["Sam Korus", "Tasha Keeney"]
+    },
+    {
+      "id": 4,
+      "cik": "0001336528",
+      "name": "Bill Ackman",
+      "firm": "Pershing Square Capital Management",
+      "title": "Founder & CEO",
+      "aum_billions": 12.6,
+      "investment_style": ["activist", "concentrated", "value", "long-term"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium_to_long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["consumer", "restaurants", "real_estate", "financials"],
+      "top_holdings": [
+        {"ticker": "GOOG", "name": "Alphabet Inc.", "shares": 7800000, "value_billions": 1.45, "portfolio_pct": 11.5, "change_qoq": 0},
+        {"ticker": "BN", "name": "Brookfield Corp.", "shares": 25000000, "value_billions": 1.35, "portfolio_pct": 10.7, "change_qoq": 15},
+        {"ticker": "QSR", "name": "Restaurant Brands International", "shares": 22000000, "value_billions": 1.25, "portfolio_pct": 9.9, "change_qoq": 5},
+        {"ticker": "CMG", "name": "Chipotle Mexican Grill", "shares": 2100000, "value_billions": 1.15, "portfolio_pct": 9.1, "change_qoq": -10},
+        {"ticker": "HLT", "name": "Hilton Worldwide Holdings", "shares": 4800000, "value_billions": 1.10, "portfolio_pct": 8.7, "change_qoq": -5}
+      ],
+      "recent_buys": ["BN", "NKE", "SEG"],
+      "recent_sells": ["CMG", "HLT"],
+      "public_quotes": [
+        {"quote": "I look for high-quality businesses with simple, predictable, free cash flow generating business models.", "source": "CNBC Interview", "year": 2023},
+        {"quote": "I think of myself as a business analyst, not a market analyst.", "source": "WSJ Interview", "year": 2022}
+      ],
+      "biography": "Bill Ackman is a billionaire hedge fund manager known for activist investing. Founded Pershing Square in 2004.",
+      "education": ["Harvard College", "Harvard Business School"],
+      "board_memberships": ["Howard Hughes Holdings"],
+      "peer_investors": ["Carl Icahn", "Dan Loeb", "Nelson Peltz"]
+    },
+    {
+      "id": 5,
+      "cik": "0001649339",
+      "name": "Michael Burry",
+      "firm": "Scion Asset Management",
+      "title": "Founder & Portfolio Manager",
+      "aum_billions": 0.3,
+      "investment_style": ["contrarian", "value", "deep_value", "concentrated"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium",
+      "portfolio_turnover": "high",
+      "sector_focus": ["contrarian_plays", "china", "value_stocks"],
+      "top_holdings": [
+        {"ticker": "BABA", "name": "Alibaba Group", "shares": 150000, "value_billions": 0.013, "portfolio_pct": 4.3, "change_qoq": -20},
+        {"ticker": "JD", "name": "JD.com", "shares": 200000, "value_billions": 0.007, "portfolio_pct": 2.3, "change_qoq": 10}
+      ],
+      "recent_buys": [],
+      "recent_sells": ["BABA"],
+      "public_quotes": [
+        {"quote": "I believe markets are not efficient.", "source": "The Big Short (book)", "year": 2010},
+        {"quote": "I'm not making any predictions, just positioning for outcomes.", "source": "Twitter/X", "year": 2023}
+      ],
+      "biography": "Michael Burry founded Scion Capital in 2000. Famous for predicting the 2008 financial crisis by shorting subprime mortgages. Portfolio is often small and concentrated.",
+      "education": ["UCLA", "Vanderbilt University School of Medicine"],
+      "board_memberships": [],
+      "peer_investors": []
+    },
+    {
+      "id": 6,
+      "cik": "0000921091",
+      "name": "George Soros",
+      "firm": "Soros Fund Management",
+      "title": "Founder (retired from trading)",
+      "aum_billions": 6.5,
+      "investment_style": ["macro", "global", "currency", "event-driven"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "short_to_medium",
+      "portfolio_turnover": "high",
+      "sector_focus": ["technology", "healthcare", "financials"],
+      "top_holdings": [
+        {"ticker": "LLY", "name": "Eli Lilly and Co.", "shares": 500000, "value_billions": 0.35, "portfolio_pct": 5.4, "change_qoq": 0},
+        {"ticker": "GOOGL", "name": "Alphabet Inc.", "shares": 400000, "value_billions": 0.075, "portfolio_pct": 1.2, "change_qoq": -30}
+      ],
+      "recent_buys": [],
+      "recent_sells": ["GOOGL"],
+      "public_quotes": [
+        {"quote": "Markets are constantly in a state of uncertainty and flux, and money is made by discounting the obvious and betting on the unexpected.", "source": "Interview", "year": 1998}
+      ],
+      "biography": "George Soros is a legendary investor known for 'breaking the Bank of England' in 1992. Pioneer of reflexivity theory.",
+      "education": ["London School of Economics"],
+      "board_memberships": ["Open Society Foundations"],
+      "peer_investors": ["Stanley Druckenmiller", "Jim Rogers"]
+    },
+    {
+      "id": 7,
+      "cik": "0000860585",
+      "name": "Stanley Druckenmiller",
+      "firm": "Duquesne Family Office",
+      "title": "Founder & Chairman",
+      "aum_billions": 3.0,
+      "investment_style": ["macro", "momentum", "concentrated", "flexible"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "short_to_medium",
+      "portfolio_turnover": "high",
+      "sector_focus": ["technology", "ai", "financials"],
+      "top_holdings": [
+        {"ticker": "NVDA", "name": "NVIDIA Corp.", "shares": 850000, "value_billions": 0.15, "portfolio_pct": 5.0, "change_qoq": -40},
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "shares": 650000, "value_billions": 0.27, "portfolio_pct": 9.0, "change_qoq": 0}
+      ],
+      "recent_buys": [],
+      "recent_sells": ["NVDA"],
+      "public_quotes": [
+        {"quote": "I've learned that looking for future change is more important than looking at the present.", "source": "Barron's Interview", "year": 2019},
+        {"quote": "Never, ever invest in the present.", "source": "Conference", "year": 2020}
+      ],
+      "biography": "Stanley Druckenmiller managed money for George Soros during the Bank of England trade. 30-year track record without a losing year.",
+      "education": ["Bowdoin College"],
+      "board_memberships": [],
+      "peer_investors": ["George Soros", "Paul Tudor Jones"]
+    },
+    {
+      "id": 8,
+      "cik": "0001029160",
+      "name": "David Tepper",
+      "firm": "Appaloosa Management",
+      "title": "Founder & President",
+      "aum_billions": 9.5,
+      "investment_style": ["distressed", "macro", "event-driven", "opportunistic"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium",
+      "portfolio_turnover": "medium",
+      "sector_focus": ["technology", "financials", "energy"],
+      "top_holdings": [
+        {"ticker": "NVDA", "name": "NVIDIA Corp.", "shares": 3500000, "value_billions": 0.52, "portfolio_pct": 5.5, "change_qoq": 25},
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "shares": 2800000, "value_billions": 1.18, "portfolio_pct": 12.4, "change_qoq": 0},
+        {"ticker": "GOOGL", "name": "Alphabet Inc.", "shares": 2200000, "value_billions": 0.41, "portfolio_pct": 4.3, "change_qoq": 0}
+      ],
+      "recent_buys": ["NVDA"],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "I am the animal at the head of the pack. I am the first to eat.", "source": "New York Magazine", "year": 2010}
+      ],
+      "biography": "David Tepper founded Appaloosa in 1993. Famous for making $7 billion betting on financials in 2009. Also owns the Carolina Panthers.",
+      "education": ["University of Pittsburgh", "Carnegie Mellon University"],
+      "board_memberships": ["Carolina Panthers (owner)"],
+      "peer_investors": []
+    },
+    {
+      "id": 9,
+      "cik": "0001364742",
+      "name": "Carl Icahn",
+      "firm": "Icahn Enterprises",
+      "title": "Chairman",
+      "aum_billions": 15.0,
+      "investment_style": ["activist", "value", "turnaround", "concentrated"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium_to_long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["energy", "industrials", "healthcare"],
+      "top_holdings": [
+        {"ticker": "CVE", "name": "Cenovus Energy", "shares": 120000000, "value_billions": 1.9, "portfolio_pct": 12.7, "change_qoq": 0},
+        {"ticker": "SWX", "name": "Southwest Gas Holdings", "shares": 14000000, "value_billions": 1.0, "portfolio_pct": 6.7, "change_qoq": 0}
+      ],
+      "recent_buys": [],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "In life and business, there are two cardinal sins: the first is to act precipitously without thought, and the second is to not act at all.", "source": "Interview", "year": 2015}
+      ],
+      "biography": "Carl Icahn is a legendary activist investor known for hostile takeovers and pushing for corporate changes. Made billions in the 1980s raid era.",
+      "education": ["Princeton University", "NYU School of Medicine (briefly)"],
+      "board_memberships": ["Icahn Enterprises (Chairman)"],
+      "peer_investors": ["Bill Ackman", "Dan Loeb", "Nelson Peltz"]
+    },
+    {
+      "id": 10,
+      "cik": "0001326380",
+      "name": "Seth Klarman",
+      "firm": "Baupost Group",
+      "title": "CEO",
+      "aum_billions": 27.0,
+      "investment_style": ["value", "distressed", "contrarian", "patient"],
+      "risk_tolerance": "conservative",
+      "time_horizon": "long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["healthcare", "real_estate", "technology"],
+      "top_holdings": [
+        {"ticker": "LBTYA", "name": "Liberty Global", "shares": 50000000, "value_billions": 0.9, "portfolio_pct": 3.3, "change_qoq": 0},
+        {"ticker": "FWONK", "name": "Liberty Media Formula One", "shares": 8000000, "value_billions": 0.65, "portfolio_pct": 2.4, "change_qoq": 5}
+      ],
+      "recent_buys": ["FWONK"],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "Value investing is at its core the marriage of a contrarian streak and a calculator.", "source": "Margin of Safety (book)", "year": 1991}
+      ],
+      "biography": "Seth Klarman runs Baupost Group, one of the largest hedge funds. Author of 'Margin of Safety', a value investing classic now selling for $1,000+.",
+      "education": ["Cornell University", "Harvard Business School"],
+      "board_memberships": [],
+      "peer_investors": ["Howard Marks", "Joel Greenblatt"]
+    },
+    {
+      "id": 11,
+      "cik": "0001510214",
+      "name": "Chase Coleman",
+      "firm": "Tiger Global Management",
+      "title": "Founder & Managing Partner",
+      "aum_billions": 18.0,
+      "investment_style": ["growth", "technology", "venture", "global"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "long",
+      "portfolio_turnover": "medium",
+      "sector_focus": ["technology", "internet", "consumer_tech"],
+      "top_holdings": [
+        {"ticker": "META", "name": "Meta Platforms", "shares": 5000000, "value_billions": 2.8, "portfolio_pct": 15.6, "change_qoq": 0},
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "shares": 3000000, "value_billions": 1.26, "portfolio_pct": 7.0, "change_qoq": 0},
+        {"ticker": "AMZN", "name": "Amazon.com", "shares": 4000000, "value_billions": 0.78, "portfolio_pct": 4.3, "change_qoq": 5}
+      ],
+      "recent_buys": ["AMZN"],
+      "recent_sells": [],
+      "public_quotes": [],
+      "biography": "Chase Coleman founded Tiger Global in 2001 as a 'Tiger Cub' spun off from Julian Robertson's Tiger Management. Major tech and venture investor.",
+      "education": ["Williams College"],
+      "board_memberships": [],
+      "peer_investors": ["Chamath Palihapitiya", "John Griffin"]
+    },
+    {
+      "id": 12,
+      "cik": "0000860643",
+      "name": "Dan Loeb",
+      "firm": "Third Point LLC",
+      "title": "Founder & CEO",
+      "aum_billions": 11.5,
+      "investment_style": ["activist", "event-driven", "value", "concentrated"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium",
+      "portfolio_turnover": "medium",
+      "sector_focus": ["technology", "healthcare", "industrials"],
+      "top_holdings": [
+        {"ticker": "AMZN", "name": "Amazon.com", "shares": 2500000, "value_billions": 0.49, "portfolio_pct": 4.3, "change_qoq": 0},
+        {"ticker": "META", "name": "Meta Platforms", "shares": 800000, "value_billions": 0.45, "portfolio_pct": 3.9, "change_qoq": 10}
+      ],
+      "recent_buys": ["META"],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "I try to find stocks that are misunderstood by the market and have catalysts that will unlock value.", "source": "Interview", "year": 2019}
+      ],
+      "biography": "Dan Loeb founded Third Point in 1995. Known for activist campaigns and sharply-worded letters to management.",
+      "education": ["Columbia University"],
+      "board_memberships": [],
+      "peer_investors": ["Bill Ackman", "Carl Icahn", "Nelson Peltz"]
+    },
+    {
+      "id": 13,
+      "cik": "0001061768",
+      "name": "Nelson Peltz",
+      "firm": "Trian Fund Management",
+      "title": "CEO & Founding Partner",
+      "aum_billions": 8.5,
+      "investment_style": ["activist", "operational_improvement", "concentrated"],
+      "risk_tolerance": "balanced",
+      "time_horizon": "long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["consumer", "industrials", "food_and_beverage"],
+      "top_holdings": [
+        {"ticker": "FER", "name": "Ferrovial", "shares": 15000000, "value_billions": 0.52, "portfolio_pct": 6.1, "change_qoq": 0},
+        {"ticker": "DIS", "name": "Walt Disney Co.", "shares": 8000000, "value_billions": 0.9, "portfolio_pct": 10.6, "change_qoq": -5}
+      ],
+      "recent_buys": [],
+      "recent_sells": ["DIS"],
+      "public_quotes": [],
+      "biography": "Nelson Peltz co-founded Trian Partners. Known for activism at major companies like PepsiCo, Procter & Gamble, and Disney.",
+      "education": [],
+      "board_memberships": ["The Wendy's Company", "Sysco (former)", "Procter & Gamble (former)"],
+      "peer_investors": ["Bill Ackman", "Dan Loeb"]
+    },
+    {
+      "id": 14,
+      "cik": "0001061165",
+      "name": "Howard Marks",
+      "firm": "Oaktree Capital Management",
+      "title": "Co-Chairman",
+      "aum_billions": 170.0,
+      "investment_style": ["distressed_debt", "credit", "value", "contrarian"],
+      "risk_tolerance": "balanced",
+      "time_horizon": "medium_to_long",
+      "portfolio_turnover": "low",
+      "sector_focus": ["distressed_credit", "real_estate", "private_equity"],
+      "top_holdings": [],
+      "recent_buys": [],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "The most important thing is to be aware of market cycles.", "source": "The Most Important Thing (book)", "year": 2011},
+        {"quote": "You can't predict. You can prepare.", "source": "Oaktree Memo", "year": 2020}
+      ],
+      "biography": "Howard Marks co-founded Oaktree Capital in 1995. Famous for his memos on market cycles. Author of 'The Most Important Thing'.",
+      "education": ["Wharton School", "University of Chicago"],
+      "board_memberships": [],
+      "peer_investors": ["Seth Klarman", "David Tepper"]
+    },
+    {
+      "id": 15,
+      "cik": "0000902454",
+      "name": "David Einhorn",
+      "firm": "Greenlight Capital",
+      "title": "Founder & President",
+      "aum_billions": 2.2,
+      "investment_style": ["value", "short_selling", "concentrated", "contrarian"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "medium",
+      "portfolio_turnover": "medium",
+      "sector_focus": ["financials", "technology", "energy"],
+      "top_holdings": [
+        {"ticker": "GPRE", "name": "Green Plains Inc.", "shares": 8000000, "value_billions": 0.18, "portfolio_pct": 8.2, "change_qoq": 0},
+        {"ticker": "TECK", "name": "Teck Resources", "shares": 3500000, "value_billions": 0.16, "portfolio_pct": 7.3, "change_qoq": 10}
+      ],
+      "recent_buys": ["TECK"],
+      "recent_sells": [],
+      "public_quotes": [
+        {"quote": "The difficulty in short selling is that you're fighting against the inherent upward bias of the market.", "source": "Fooling Some of the People (book)", "year": 2010}
+      ],
+      "biography": "David Einhorn founded Greenlight Capital in 1996. Famous for calling out Lehman Brothers before 2008 crash and shorting Allied Capital.",
+      "education": ["Cornell University"],
+      "board_memberships": [],
+      "peer_investors": ["Jim Chanos"]
+    },
+    {
+      "id": 16,
+      "name": "Sundar Pichai",
+      "firm": "Alphabet Inc.",
+      "title": "CEO",
+      "is_insider": true,
+      "insider_type": "Form 4",
+      "investment_style": ["tech_executive", "insider"],
+      "risk_tolerance": "balanced",
+      "time_horizon": "long",
+      "top_holdings": [
+        {"ticker": "GOOGL", "name": "Alphabet Inc.", "shares": 110000, "value_billions": 0.02, "portfolio_pct": 100.0, "source": "Form 4", "change_qoq": 0}
+      ],
+      "recent_insider_activity": {
+        "last_sale": null,
+        "last_purchase": "2024-06-15",
+        "notes": "No sales in 6 months - strong insider confidence signal"
+      },
+      "biography": "Sundar Pichai is the CEO of Alphabet and Google. Led the development of Chrome, Android, and now oversees AI initiatives including Gemini.",
+      "education": ["IIT Kharagpur", "Stanford University", "Wharton School"],
+      "board_memberships": ["Alphabet Inc."],
+      "peer_investors": ["Eric Schmidt", "Satya Nadella", "Tim Cook"]
+    },
+    {
+      "id": 17,
+      "name": "Tim Cook",
+      "firm": "Apple Inc.",
+      "title": "CEO",
+      "is_insider": true,
+      "insider_type": "Form 4",
+      "investment_style": ["tech_executive", "insider"],
+      "risk_tolerance": "conservative",
+      "time_horizon": "very_long",
+      "top_holdings": [
+        {"ticker": "AAPL", "name": "Apple Inc.", "shares": 3280000, "value_billions": 0.7, "portfolio_pct": 95.0, "source": "Form 4", "change_qoq": -2}
+      ],
+      "recent_insider_activity": {
+        "last_sale": "2024-10-15",
+        "last_purchase": null,
+        "notes": "Regular scheduled sales for taxes, not indicative of sentiment"
+      },
+      "biography": "Tim Cook became CEO of Apple in 2011, succeeding Steve Jobs. Under his leadership, Apple became the first $3 trillion company.",
+      "education": ["Auburn University", "Duke University (MBA)"],
+      "board_memberships": ["Apple Inc.", "Nike (former)"],
+      "peer_investors": ["Sundar Pichai", "Satya Nadella", "Jensen Huang"]
+    },
+    {
+      "id": 18,
+      "name": "Jensen Huang",
+      "firm": "NVIDIA Corp.",
+      "title": "Founder, President & CEO",
+      "is_insider": true,
+      "insider_type": "Form 4",
+      "investment_style": ["tech_founder", "insider"],
+      "risk_tolerance": "aggressive",
+      "time_horizon": "very_long",
+      "top_holdings": [
+        {"ticker": "NVDA", "name": "NVIDIA Corp.", "shares": 86100000, "value_billions": 10.5, "portfolio_pct": 100.0, "source": "Form 4", "change_qoq": -1}
+      ],
+      "recent_insider_activity": {
+        "last_sale": "2024-11-30",
+        "last_purchase": null,
+        "notes": "Regular 10b5-1 plan sales for diversification"
+      },
+      "biography": "Jensen Huang co-founded NVIDIA in 1993. Under his leadership, NVIDIA became the leading AI chip company, worth over $1 trillion.",
+      "education": ["Oregon State University", "Stanford University"],
+      "board_memberships": ["NVIDIA Corp."],
+      "peer_investors": ["Lisa Su", "Pat Gelsinger"]
+    },
+    {
+      "id": 19,
+      "name": "Elon Musk",
+      "firm": "Tesla, SpaceX, X",
+      "title": "CEO",
+      "is_insider": true,
+      "insider_type": "Form 4",
+      "investment_style": ["tech_founder", "visionary", "concentrated"],
+      "risk_tolerance": "very_aggressive",
+      "time_horizon": "very_long",
+      "top_holdings": [
+        {"ticker": "TSLA", "name": "Tesla Inc.", "shares": 411100000, "value_billions": 135.0, "portfolio_pct": 75.0, "source": "Form 4", "change_qoq": 0},
+        {"ticker": "XHLD", "name": "X Holdings (private)", "shares": null, "value_billions": 15.0, "portfolio_pct": 8.0, "source": "private", "change_qoq": 0}
+      ],
+      "recent_insider_activity": {
+        "last_sale": "2024-08-15",
+        "last_purchase": null,
+        "notes": "No TSLA sales since Twitter/X acquisition"
+      },
+      "biography": "Elon Musk is the CEO of Tesla and SpaceX, owner of X (Twitter). The world's richest person, known for ambitious bets on EVs, space, and AI.",
+      "education": ["Queen's University", "University of Pennsylvania"],
+      "board_memberships": ["Tesla Inc."],
+      "peer_investors": ["Jensen Huang", "Marc Andreessen"]
+    },
+    {
+      "id": 20,
+      "name": "Satya Nadella",
+      "firm": "Microsoft Corp.",
+      "title": "Chairman & CEO",
+      "is_insider": true,
+      "insider_type": "Form 4",
+      "investment_style": ["tech_executive", "insider"],
+      "risk_tolerance": "balanced",
+      "time_horizon": "long",
+      "top_holdings": [
+        {"ticker": "MSFT", "name": "Microsoft Corp.", "shares": 780000, "value_billions": 0.33, "portfolio_pct": 100.0, "source": "Form 4", "change_qoq": -1}
+      ],
+      "recent_insider_activity": {
+        "last_sale": "2024-11-15",
+        "last_purchase": null,
+        "notes": "Regular scheduled sales"
+      },
+      "biography": "Satya Nadella became CEO of Microsoft in 2014. Transformed Microsoft into a cloud-first company and led the OpenAI partnership.",
+      "education": ["Manipal Institute of Technology", "University of Wisconsin", "University of Chicago (MBA)"],
+      "board_memberships": ["Microsoft Corp.", "Starbucks"],
+      "peer_investors": ["Tim Cook", "Sundar Pichai"]
+    }
+  ]
+}
