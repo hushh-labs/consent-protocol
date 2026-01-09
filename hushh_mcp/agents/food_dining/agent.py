@@ -114,14 +114,26 @@ class HushhFoodDiningAgent:
         print(f"🔍 Validating consent for user {user_id}...")
         
         # We need finance scope for budget
-        valid, reason, token = validate_token(
-            consent_token,
-            expected_scope=self.required_scopes["budget"]
-        )
+        # OR valid VAULT_OWNER scope (Self-Access)
         
-        if not valid:
+        permitted_scopes = [
+            self.required_scopes["budget"],
+            ConsentScope.VAULT_OWNER
+        ]
+        
+        is_valid = False
+        last_reason = "No token"
+        
+        for scope in permitted_scopes:
+            valid, reason, token = validate_token(consent_token, expected_scope=scope)
+            if valid:
+                is_valid = True
+                break
+            last_reason = reason
+        
+        if not is_valid:
             raise PermissionError(
-                f"❌ Consent validation failed: {reason}"
+                f"❌ Consent validation failed: {last_reason}"
             )
         
         # Verify token belongs to this user
@@ -781,5 +793,13 @@ class HushhFoodDiningAgent:
             }
 
 
-# Create default instance
-food_dining_agent = HushhFoodDiningAgent()
+# Lazy loading to avoid heavy instantiation at import time
+# (Critical for Cloud Run container startup)
+_food_dining_agent = None
+
+def get_food_dining_agent():
+    """Get or create the singleton food dining agent instance."""
+    global _food_dining_agent
+    if _food_dining_agent is None:
+        _food_dining_agent = HushhFoodDiningAgent()
+    return _food_dining_agent

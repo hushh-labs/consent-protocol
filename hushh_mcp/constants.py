@@ -12,7 +12,10 @@ class ConsentScope(str, Enum):
     VAULT_READ_CONTACTS = "vault.read.contacts"
     VAULT_READ_FOOD = "vault.read.food"
     VAULT_READ_PROFESSIONAL = "vault.read.professional"
-    VAULT_READ_ALL = "vault.read.all"  # Session scope - all vault access
+    
+    # "Master Scope" granted ONLY via BYOK login. 
+    # Never granted to external agents.
+    VAULT_OWNER = "vault.owner"
 
     # Vault WRITE scopes (domain-specific per Bible)
     VAULT_WRITE_FOOD = "vault.write.food"

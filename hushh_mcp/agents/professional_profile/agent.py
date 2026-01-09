@@ -612,12 +612,21 @@ class ProfessionalProfileAgent:
 
 
 # Create singleton instance
-professional_agent = ProfessionalProfileAgent()
+
+# Lazy loading to avoid heavy instantiation at import time
+_professional_agent = None
+
+def get_professional_agent():
+    """Get or create the singleton professional profile agent instance."""
+    global _professional_agent
+    if _professional_agent is None:
+        _professional_agent = ProfessionalProfileAgent()
+    return _professional_agent
 
 # Export for API
 def handle_message(message: str, user_id: str, session_state: Optional[Dict] = None) -> Dict:
     """Wrapper for API compatibility."""
-    return professional_agent.handle_message(message, user_id, session_state)
+    return get_professional_agent().handle_message(message, user_id, session_state)
 
 logger.info("💼 Professional Profile Agent ready!")
 

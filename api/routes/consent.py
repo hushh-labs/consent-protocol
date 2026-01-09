@@ -5,10 +5,10 @@ Consent management endpoints (pending, approve, deny, revoke, history, active).
 
 import logging
 import time
-from typing import Dict
+from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-
+from pydantic import BaseModel
 import consent_db
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
@@ -89,7 +89,49 @@ async def approve_consent(request: Request):
     developer_token = metadata.get("developer_token", pending_request["developer"])
     expiry_hours = metadata.get("expiry_hours", 24)
     
-    # Issue token with export key embedded
+    # MODULAR COMPLIANCE CHECK: Idempotency
+    # Before issuing a NEW token, check if a valid token for this scope/agent already exists.
+    # This prevents duplication and ensures a clean audit log.
+    
+    active_tokens = await consent_db.get_active_tokens(userId)
+    existing_token = None
+    
+    # 1. Filter active tokens for the requested scope and agent
+    for t in active_tokens:
+        # Check Scope Match
+        if t.get("scope") != consent_scope.value:
+            continue
+            
+        # Check Agent Match (Normalize developer token format)
+        t_agent = t.get("agent_id") or t.get("developer")
+        req_agent = f"developer:{developer_token}"
+        
+        # Simple match or exact match
+        if t_agent == req_agent or t_agent == developer_token:
+            # Check Expiry (ensure it has reasonable life left, e.g., > 1 hour)
+            expires_at = t.get("expires_at", 0)
+            if expires_at > (time.time() * 1000) + (60 * 60 * 1000):
+                existing_token = t
+                break
+    
+    if existing_token:
+        # IDEMPOTENT RETURN: Reuse existing token
+        logger.info(f"♻️ Idempotent: Reusing existing active token for {consent_scope.value}")
+        
+        # Log REUSE event for audit trail (optional, but good for tracking)
+        # await consent_db.insert_event(..., action="TOKEN_REUSED", ...) 
+        
+        return {
+            "status": "approved",
+            "message": f"Consent granted to {pending_request['developer']} (Existing)",
+            "consent_token": existing_token.get("id") or existing_token.get("token"), # access db model field
+            "export_key": exportKey, # Reuse provided key for this session or potentially re-encrypt (Scope limitation: Reusing token implies reusing access)
+            # Note: Export Key is ephemeral for the SESSION. If we reuse token, the Client might need the key.
+            # But in ZK flow, Client HAS the key. We just need to authorize.
+            "expires_at": existing_token.get("expires_at")
+        }
+
+    # Issue token with export key embedded (If no existing found)
     token = issue_token(
         user_id=userId,
         agent_id=f"developer:{developer_token}",
@@ -155,6 +197,141 @@ async def deny_consent(userId: str, requestId: str):
     logger.info("❌ CONSENT_DENIED event saved to DB")
     
     return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
+
+
+@router.post("/vault-owner-token")
+async def issue_vault_owner_token(request: Request):
+    """
+    Issue VAULT_OWNER consent token for authenticated user.
+    
+    This is the master token that grants vault owners full access
+    to their own encrypted data. Issued after passphrase verification.
+    
+    Security:
+    - Requires Firebase ID token verification
+    - Only issued to the user for their own vault
+    - 24-hour expiry (renewable)
+    - Logged to consent_audit
+    
+    CONSENT-FIRST ARCHITECTURE:
+    - Vault owners use this token instead of bypassing authentication
+    - Maintains protocol integrity (no auth bypasses)
+    - All access logged for compliance
+    """
+    try:
+        import firebase_admin
+        from firebase_admin import auth as firebase_auth
+        
+        # Initialize Firebase if needed
+        try:
+            firebase_admin.get_app()
+        except ValueError:
+            from firebase_admin import credentials
+            firebase_admin.initialize_app(credentials.ApplicationDefault())
+        
+        # Verify Firebase ID token
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Missing Authorization header with Firebase ID token"
+            )
+        # Verify request body
+        body = await request.json()
+        user_id = body.get("userId")
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail="userId is required")
+        
+        # Verify Firebase ID token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+        
+        id_token = auth_header.removeprefix("Bearer ")
+        
+        try:
+            decoded_token = firebase_auth.verify_id_token(id_token)
+            firebase_uid = decoded_token.get("uid")
+            
+            # Ensure user is requesting token for their own vault
+            if firebase_uid != user_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot issue VAULT_OWNER token for another user"
+                )
+        except Exception as e:
+            logger.error(f"Firebase token verification failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
+        
+        # ===== TOKEN REUSE: Check for existing valid token =====
+        pool = await get_pool()
+        now_ms = int(time.time() * 1000)
+        
+        async with pool.acquire() as conn:
+            # Query for active VAULT_OWNER token for this user
+            existing_token_row = await conn.fetchrow(
+                """
+                SELECT token_string, expires_at 
+                FROM consent_tokens 
+                WHERE user_id = $1 
+                  AND agent_id = 'self'
+                  AND scope = $2
+                  AND expires_at > $3
+                  AND revoked = FALSE
+                ORDER BY expires_at DESC
+                LIMIT 1
+                """,
+                user_id,
+                ConsentScope.VAULT_OWNER.value,
+                now_ms
+            )
+        
+        # If valid token exists, return it (TOKEN REUSE)
+        if existing_token_row:
+            logger.info(f"♻️ Reusing existing VAULT_OWNER token for {user_id} (expires: {existing_token_row['expires_at']})")
+            return {
+                "token": existing_token_row["token_string"],
+                "expiresAt": existing_token_row["expires_at"],
+                "scope": ConsentScope.VAULT_OWNER.value
+            }
+        
+        # No valid token exists - issue new one
+        logger.info(f"🔑 Issuing NEW VAULT_OWNER token for {user_id}")
+        
+        # Issue new token (24-hour expiry)
+        token_obj = issue_token(
+            user_id=user_id,
+            agent_id="self",  # Vault owner accessing their own data
+            scope=ConsentScope.VAULT_OWNER,
+            expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+        )
+        
+        # Log to consent_audit
+        await consent_db.insert_event(
+            user_id=user_id,
+            agent_id="self",
+            scope="vault.owner",
+            action="VAULT_OWNER_TOKEN_ISSUED",
+            token_id=token_obj.token[:32],  # Truncate for storage
+            expires_at=token_obj.expires_at
+        )
+        
+        logger.info(f"✅ VAULT_OWNER token issued for {user_id}")
+        
+        return {
+            "token": token_obj.token,
+            "expiresAt": token_obj.expires_at,
+            "scope": "vault.owner"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ VAULT_OWNER token issuance failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/revoke")
