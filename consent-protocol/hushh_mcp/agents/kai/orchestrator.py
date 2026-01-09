@@ -130,18 +130,30 @@ class KaiOrchestrator:
     
     async def _validate_consent(self, consent_token: str):
         """Validate consent token for analysis."""
-        # Bypass for authenticated user session (implicit consent)
-        if consent_token == "IMPLICIT_SAMESESSION_AUTH":
-            logger.info("[Kai] Implicit consent validated via User Session")
-            return
-
-        required_scope = ConsentScope("agent.kai.analyze")
         
-        valid, reason, _ = validate_token(consent_token, required_scope)
+        # Check if the token grants EITHER:
+        # 1. agent.kai.analyze (Delegated permission)
+        # 2. vault.owner (Self-Access / Master Scope)
         
-        if not valid:
-            logger.error(f"[Kai] Consent validation failed: {reason}")
-            raise ValueError(f"Invalid consent token: {reason}")
+        required_scopes = [
+            ConsentScope("agent.kai.analyze"),
+            ConsentScope("vault.owner")
+        ]
+        
+        # Valid if ANY of the required scopes are present
+        is_valid = False
+        last_reason = "No token provided"
+        
+        for scope in required_scopes:
+            valid, reason, _ = validate_token(consent_token, scope)
+            if valid:
+                is_valid = True
+                break
+            last_reason = reason
+        
+        if not is_valid:
+            logger.error(f"[Kai] Consent validation failed: {last_reason}")
+            raise ValueError(f"Invalid consent token: {last_reason}")
         
         logger.info("[Kai] Consent validated")
     

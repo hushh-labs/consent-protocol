@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { HushhVault, HushhAuth } from "@/lib/capacitor";
+import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
 import {
   createVaultWithPassphrase as webCreateVault,
   unlockVaultWithPassphrase as webUnlockVault,
@@ -20,6 +20,51 @@ export interface VaultData {
 }
 
 export class VaultService {
+  /**
+   * Issue VAULT_OWNER consent token for authenticated user.
+   *
+   * Called after successful vault unlock (passphrase verification).
+   *
+   * Platform routing:
+   * - Web: → /api/consent/vault-owner-token → backend
+   * - iOS/Android: → HushhConsent plugin → backend
+   */
+  static async issueVaultOwnerToken(
+    userId: string,
+    firebaseIdToken: string
+  ): Promise<{
+    token: string;
+    expiresAt: number;
+    scope: string;
+  }> {
+    if (Capacitor.isNativePlatform()) {
+      // iOS/Android: Use native plugin
+      console.log("[VaultService] Using native plugin for VAULT_OWNER token");
+      return HushhConsent.issueVaultOwnerToken({
+        userId,
+        authToken: firebaseIdToken,
+      });
+    } else {
+      // Web: Call Next.js API route
+      console.log("[VaultService] Using web API for VAULT_OWNER token");
+      const response = await fetch("/api/consent/vault-owner-token", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${firebaseIdToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to issue VAULT_OWNER token");
+      }
+
+      return response.json();
+    }
+  }
+
   /**
    * Check if a vault exists for the given user
    * iOS: Uses HushhVault native plugin

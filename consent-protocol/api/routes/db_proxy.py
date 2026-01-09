@@ -1,12 +1,27 @@
 # api/routes/db_proxy.py
 """
-Minimal SQL Proxy for iOS Native App.
+⚠️ DEPRECATED ⚠️ - Minimal SQL Proxy for iOS Native App.
 
+🔒 SECURITY WARNING 🔒
+This module has CRITICAL SECURITY VULNERABILITIES:
+- /db/food/get and /db/professional/get endpoints LACK AUTHENTICATION
+- Any client with a userId can retrieve encrypted vault data
+- This bypasses the consent-first architecture
+
+🚀 MIGRATION PATH:
+Please use the new modular agents instead:
+- Food: /api/food/preferences (requires VAULT_OWNER token)
+- Professional: /api/professional/preferences (requires VAULT_OWNER token)
+
+These routes are maintained for backward compatibility ONLY.
+They will be removed in a future version.
+
+Legacy Description:
 This module provides a thin database access layer for the iOS native app.
 All consent protocol logic runs locally on iOS - this only executes SQL operations.
 
-Security:
-- Requires Firebase ID token authentication
+Security (BROKEN - DO NOT USE):
+- Should require Firebase ID token authentication (NOT ENFORCED)
 - Only pre-defined operations allowed (no raw SQL)
 - All connections use Cloud SQL Auth Proxy (SSL)
 """

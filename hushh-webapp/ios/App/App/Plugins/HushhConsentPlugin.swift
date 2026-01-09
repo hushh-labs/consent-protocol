@@ -22,6 +22,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isTokenRevoked", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "createTrustLink", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "verifyTrustLink", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "issueVaultOwnerToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPending", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getHistory", returnType: CAPPluginReturnPromise),
@@ -223,6 +224,51 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     // MARK: - Backend API Methods
+    
+    /**
+     * Issue VAULT_OWNER consent token.
+     * 
+     * Called after vault unlock. Sends Firebase ID token to backend
+     * which verifies it and issues the master VAULT_OWNER scope token.
+     */
+    @objc func issueVaultOwnerToken(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId"),
+              let authToken = call.getString("authToken") else {
+            call.reject("Missing required parameters: userId and authToken")
+            return
+        }
+        
+        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let body: [String: Any] = ["userId": userId]
+        
+        print("[\(TAG)] Requesting VAULT_OWNER token for user: \(userId)")
+        
+        performRequest(url: "\(backendUrl)/api/consent/vault-owner-token", body: body, authToken: authToken) { result, error in
+            if let error = error {
+                print("❌ [\(self.TAG)] VAULT_OWNER token request failed: \(error)")
+                call.reject("Failed to issue VAULT_OWNER token: \(error)")
+                return
+            }
+            
+            guard let json = result as? [String: Any],
+                  let token = json["token"] as? String,
+                  let expiresAt = json["expiresAt"] as? NSNumber,
+                  let scope = json["scope"] as? String else {
+                print("❌ [\(self.TAG)] Invalid response from backend")
+                call.reject("Invalid response from backend")
+                return
+            }
+            
+            print("✅ [\(self.TAG)] VAULT_OWNER token issued successfully")
+            
+            call.resolve([
+                "token": token,
+                "expiresAt": expiresAt.int64Value,
+                "scope": scope
+            ])
+        }
+    }
+    
     @objc func getPending(_ call: CAPPluginCall) {
         performConsentRequest(call: call, endpoint: "pending")
     }
