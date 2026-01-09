@@ -1,4 +1,4 @@
-manifest = {
+AGENT_MANIFEST = {
     "id": "agent_professional_profile",
     "name": "Professional Profile Domain",
     "description": "Domain expert for career, education, and professional history.",

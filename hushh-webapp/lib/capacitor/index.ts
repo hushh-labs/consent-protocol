@@ -138,6 +138,25 @@ export interface HushhConsentPlugin {
 
   // ==================== Backend API Methods ====================
 
+  /**
+   * Issue VAULT_OWNER consent token for authenticated user.
+   *
+   * Called after vault unlock. Verifies Firebase ID token and issues
+   * the master VAULT_OWNER scope token for accessing own vault data.
+   *
+   * Platform routing:
+   * - iOS/Android: Native HTTP call to /api/consent/vault-owner-token
+   * - Web: Proxies through Next.js API route (not typically called directly)
+   */
+  issueVaultOwnerToken(options: {
+    userId: string;
+    authToken: string; // Firebase ID token
+  }): Promise<{
+    token: string;
+    expiresAt: number;
+    scope: string;
+  }>;
+
   getPending(options: {
     userId: string;
     authToken?: string;
@@ -332,7 +351,6 @@ export interface HushhVaultPlugin {
     page?: number;
     limit?: number;
   }): Promise<{ items: any[] }>;
-
 }
 
 export const HushhVault = registerPlugin<HushhVaultPlugin>("HushhVault", {

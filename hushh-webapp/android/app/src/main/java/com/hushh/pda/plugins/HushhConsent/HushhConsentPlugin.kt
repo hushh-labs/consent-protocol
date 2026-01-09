@@ -314,8 +314,76 @@ class HushhConsentPlugin : Plugin() {
         call.resolve(JSObject().put("valid", true))
     }
 
-    // ==================== Backend API Methods ====================
+    // ====================Backend API Methods ====================
     // These call the Cloud Run backend directly for consent operations
+
+    /**
+     * Issue VAULT_OWNER consent token.
+     * 
+     * Called after vault unlock. Sends Firebase ID token to backend
+     * which verifies it and issues the master VAULT_OWNER scope token.
+     */
+    @PluginMethod
+    fun issueVaultOwnerToken(call: PluginCall) {
+        val userId = call.getString("userId")
+        val authToken = call.getString("authToken")
+        
+        if (userId == null || authToken == null) {
+            call.reject("Missing required parameters: userId and authToken")
+            return
+        }
+
+        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val url = "$backendUrl/api/consent/vault-owner-token"
+
+        Log.d(TAG, "🔑 [issueVaultOwnerToken] Requesting VAULT_OWNER token for user: $userId")
+
+        Thread {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("userId", userId)
+                }
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                
+                val requestBuilder = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Authorization", "Bearer $authToken")
+
+                val response = httpClient.newCall(requestBuilder.build()).execute()
+                val body = response.body?.string() ?: "{}"
+                
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "❌ [issueVaultOwnerToken] Backend error: $body")
+                    activity.runOnUiThread {
+                        call.reject("Failed to issue VAULT_OWNER token: HTTP ${response.code}")
+                    }
+                    return@Thread
+                }
+                
+                val json = JSONObject(body)
+                val token = json.getString("token")
+                val expiresAt = json.getLong("expiresAt")
+                val scope = json.getString("scope")
+                
+                Log.d(TAG, "✅ [issueVaultOwnerToken] VAULT_OWNER token issued successfully")
+                
+                activity.runOnUiThread {
+                    call.resolve(JSObject().apply {
+                        put("token", token)
+                        put("expiresAt", expiresAt)
+                        put("scope", scope)
+                    })
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [issueVaultOwnerToken] Error: ${e.message}")
+                activity.runOnUiThread {
+                    call.reject("Failed to issue VAULT_OWNER token: ${e.message}")
+                }
+            }
+        }.start()
+    }
 
     @PluginMethod
     fun getPending(call: PluginCall) {

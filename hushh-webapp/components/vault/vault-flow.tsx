@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { User } from "firebase/auth";
+import { auth } from "@/lib/firebase/config";
 
 import { useVault } from "@/lib/vault/vault-context";
 
@@ -109,12 +110,32 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        unlockVault(decryptedKey);
-        // Persist user_id for downstream pages (Food, Professional, Consents)
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
-        setStep("success");
-        setTimeout(onSuccess, 1000);
+        // Request VAULT_OWNER consent token
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (!idToken) {
+            throw new Error("No Firebase ID token available");
+          }
+
+          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
+            user.uid,
+            idToken
+          );
+
+          // Unlock vault with key + token
+          unlockVault(decryptedKey, token, expiresAt);
+
+          // Persist user_id for downstream pages (Food, Professional, Consents)
+          localStorage.setItem("user_id", user.uid);
+          sessionStorage.setItem("user_id", user.uid);
+          setStep("success");
+          setTimeout(onSuccess, 1000);
+        } catch (tokenError: any) {
+          console.error("Failed to issue VAULT_OWNER token:", tokenError);
+          toast.error(
+            "Vault unlocked but failed to issue access token. Please try again."
+          );
+        }
       } else {
         toast.error("Invalid passphrase");
       }
@@ -136,12 +157,32 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        unlockVault(decryptedKey);
-        // Persist user_id for downstream pages
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
-        setStep("success");
-        setTimeout(onSuccess, 1000);
+        // Request VAULT_OWNER consent token
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (!idToken) {
+            throw new Error("No Firebase ID token available");
+          }
+
+          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
+            user.uid,
+            idToken
+          );
+
+          // Unlock vault with key + token
+          unlockVault(decryptedKey, token, expiresAt);
+
+          // Persist user_id for downstream pages
+          localStorage.setItem("user_id", user.uid);
+          sessionStorage.setItem("user_id", user.uid);
+          setStep("success");
+          setTimeout(onSuccess, 1000);
+        } catch (tokenError: any) {
+          console.error("Failed to issue VAULT_OWNER token:", tokenError);
+          toast.error(
+            "Vault unlocked but failed to issue access token. Please try again."
+          );
+        }
       } else {
         toast.error("Invalid recovery key");
       }
@@ -170,10 +211,28 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        unlockVault(decryptedKey);
-        // Persist user_id for downstream pages
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
+        // Request VAULT_OWNER consent token
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (!idToken) {
+            throw new Error("No Firebase ID token available");
+          }
+
+          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
+            user.uid,
+            idToken
+          );
+
+          // Unlock vault with key + token
+          unlockVault(decryptedKey, token, expiresAt);
+
+          // Persist user_id for downstream pages
+          localStorage.setItem("user_id", user.uid);
+          sessionStorage.setItem("user_id", user.uid);
+        } catch (tokenError: any) {
+          console.error("Failed to issue VAULT_OWNER token:", tokenError);
+          // Fall through to success anyway, user can retry unlock if needed
+        }
       }
     } catch (err) {
       console.error("Auto-unlock after creation failed", err);
