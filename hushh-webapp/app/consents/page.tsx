@@ -390,7 +390,7 @@ export default function ConsentsPage() {
           isActive: Date.now() < expiryTime,
           expiresAt: expiryTime,
           token,
-          scope: "vault.read.all",
+          scope: "vault.owner",
         });
       }
     }
@@ -644,10 +644,10 @@ export default function ConsentsPage() {
         label: "Save Professional Profile",
         description: "Store your career data",
       },
-      vault_read_all: {
-        emoji: "🔓",
-        label: "All Data Access",
-        description: "Full vault access (admin)",
+      "vault.owner": {
+        emoji: "👑",
+        label: "Owner Access",
+        description: "Full control (You)",
       },
       // Dot format (from MCP)
       "vault.read.food": {
@@ -828,8 +828,58 @@ export default function ConsentsPage() {
 
         {/* Active Session Tab */}
         <TabsContent value="session" className="space-y-4 mt-4">
+          {/* 1. Owner Session Card */}
+          {session && (
+            <Card className="border-l-4 border-l-purple-500 bg-purple-500/5">
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Key className="h-5 w-5 text-purple-600" />
+                      Owner Session
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Authenticated via verified request
+                    </p>
+                  </div>
+                  <Badge className={getScopeColor(session.scope)}>
+                    {formatScope(session.scope).emoji}{" "}
+                    {formatScope(session.scope).label}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-background/50">
+                    <p className="text-xs text-muted-foreground">
+                      Time Remaining
+                    </p>
+                    <p className="text-lg font-semibold flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      {session.expiresAt
+                        ? getTimeRemaining(session.expiresAt)
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-background/50">
+                    <p className="text-xs text-muted-foreground">Expires At</p>
+                    <p className="text-sm font-medium">
+                      {session.expiresAt
+                        ? new Date(session.expiresAt).toLocaleTimeString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 2. Active External Consents */}
           {activeConsents.length > 0 ? (
             <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground px-1">
+                External Access
+              </h3>
               {activeConsents.map((consent, index) => {
                 const scopeInfo = formatScope(consent.scope);
                 const timeRemaining = consent.expires_at
@@ -910,58 +960,18 @@ export default function ConsentsPage() {
                 );
               })}
             </div>
-          ) : session ? (
-            <Card className="border-l-4 border-l-green-500">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      Session Active
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Authenticated via passphrase
-                    </p>
-                  </div>
-                  <Badge className={getScopeColor(session.scope)}>
-                    {session.scope}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="text-xs text-muted-foreground">
-                      Time Remaining
-                    </p>
-                    <p className="text-lg font-semibold flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      {session.expiresAt
-                        ? getTimeRemaining(session.expiresAt)
-                        : "N/A"}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="text-xs text-muted-foreground">Expires At</p>
-                    <p className="text-sm font-medium">
-                      {session.expiresAt
-                        ? new Date(session.expiresAt).toLocaleTimeString()
-                        : "N/A"}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-semibold">No Active Consents</h3>
-                <p className="text-muted-foreground mt-2">
-                  Active consent tokens will appear here when granted.
-                </p>
-              </CardContent>
-            </Card>
+            !session && (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Key className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold">No Active Sessions</h3>
+                  <p className="text-muted-foreground mt-2">
+                    Unlock your vault to start a session.
+                  </p>
+                </CardContent>
+              </Card>
+            )
           )}
         </TabsContent>
 
