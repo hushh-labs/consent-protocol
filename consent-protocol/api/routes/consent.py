@@ -11,7 +11,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 import consent_db
-from db.connection import get_pool
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -266,40 +265,11 @@ async def issue_vault_owner_token(request: Request):
             logger.error(f"Firebase token verification failed: {e}")
             raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
         
-        # ===== TOKEN REUSE: Check for existing valid token =====
-        pool = await get_pool()
-        now_ms = int(time.time() * 1000)
         
-        async with pool.acquire() as conn:
-            # Query for active VAULT_OWNER token for this user
-            existing_token_row = await conn.fetchrow(
-                """
-                SELECT token_string, expires_at 
-                FROM consent_tokens 
-                WHERE user_id = $1 
-                  AND agent_id = 'self'
-                  AND scope = $2
-                  AND expires_at > $3
-                  AND revoked = FALSE
-                ORDER BY expires_at DESC
-                LIMIT 1
-                """,
-                user_id,
-                ConsentScope.VAULT_OWNER.value,
-                now_ms
-            )
-        
-        # If valid token exists, return it (TOKEN REUSE)
-        if existing_token_row:
-            logger.info(f"♻️ Reusing existing VAULT_OWNER token for {user_id} (expires: {existing_token_row['expires_at']})")
-            return {
-                "token": existing_token_row["token_string"],
-                "expiresAt": existing_token_row["expires_at"],
-                "scope": ConsentScope.VAULT_OWNER.value
-            }
-        
-        # No valid token exists - issue new one
-        logger.info(f"🔑 Issuing NEW VAULT_OWNER token for {user_id}")
+        # Issue VAULT_OWNER token (stateless - no database storage needed)
+        # Token itself encodes user_id, agent_id, scope, and expiry
+        # Same pattern as MCP consent tokens - reusable until expiry
+        logger.info(f"🔑 Issuing VAULT_OWNER token for {user_id} (24h expiry)")
         
         # Issue new token (24-hour expiry)
         token_obj = issue_token(
