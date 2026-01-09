@@ -1,0 +1,77 @@
+# Cloud Build configuration for Next.js frontend
+# Trigger: Push to main branch or manual trigger
+# Deploy to: Cloud Run (hushh-webapp service)
+
+steps:
+  # Step 1: Build Docker image with production environment variables
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/hushh-webapp:manual"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/hushh-webapp:latest"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_API_KEY=GCP_API_KEY_PLACEHOLDER"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=hushh-pda.firebaseapp.com"
+      - "--build-arg"
+      - "NEXT_PUBLIC_FIREBASE_PROJECT_ID=hushh-pda"
+      - "--build-arg"
+      - "NEXT_PUBLIC_BACKEND_URL=${_BACKEND_URL}"
+      - "--build-arg"
+      - "NEXT_PUBLIC_API_URL=${_FRONTEND_URL}"
+      - "-f"
+      - "hushh-webapp/Dockerfile"
+      - "hushh-webapp"
+    id: "build-frontend-image"
+
+  # Step 2: Push Docker image to Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/hushh-webapp:manual"
+    id: "push-frontend-image"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/hushh-webapp:latest"
+    id: "push-frontend-latest"
+
+  # Step 3: Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "hushh-webapp"
+      - "--image=gcr.io/$PROJECT_ID/hushh-webapp:latest"
+      - "--region=us-central1"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=8080"
+      - "--memory=512Mi"
+      - "--cpu=1"
+      - "--timeout=60"
+      - "--max-instances=10"
+      - "--min-instances=1"
+    id: "deploy-frontend"
+
+# Images to store in Container Registry
+images:
+  - "gcr.io/$PROJECT_ID/hushh-webapp:manual"
+  - "gcr.io/$PROJECT_ID/hushh-webapp:latest"
+
+# Build timeout
+timeout: "1200s"
+
+# Substitutions (override these when triggering)
+substitutions:
+  _BACKEND_URL: "https://consent-protocol-1006304528804.us-central1.run.app"
+  _FRONTEND_URL: "https://hushh-webapp-PLACEHOLDER.run.app"
+
+# Options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_HIGHCPU_8"

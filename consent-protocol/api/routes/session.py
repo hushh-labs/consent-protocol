@@ -73,10 +73,14 @@ async def issue_session_token(
     
     try:
         # Issue token with session scope
+        # Issue token with session scope
+        # If request asks for "session", grant VAULT_OWNER (Master Scope)
+        scope_to_grant = ConsentScope.VAULT_OWNER if request.scope == "session" else ConsentScope(request.scope)
+        
         token_obj = issue_token(
             user_id=request.userId,
             agent_id="orchestrator",
-            scope=ConsentScope.VAULT_READ_ALL if request.scope == "session" else ConsentScope(request.scope),
+            scope=scope_to_grant,
             expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
         )
         

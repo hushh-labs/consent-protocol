@@ -11,7 +11,8 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 export async function GET(request: NextRequest) {
   try {

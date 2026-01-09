@@ -6,7 +6,17 @@
 
 ## 🎯 Overview
 
-The consent protocol ensures that **every action on user data requires explicit, cryptographic permission**. This is implemented through a multi-layer security model.
+The consent protocol ensures that **every action on user data requires explicit, cryptographic permission**. This is implemented through a multi-layer security model with **NO authentication bypasses** - even vault owners use consent tokens.
+
+### Consent-First Architecture
+
+```
+CORE PRINCIPLE: All data access requires a consent token.
+                Vault owners are NOT special - they use VAULT_OWNER tokens.
+
+Traditional     ❌  if (userOwnsVault) { allow(); }
+Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
+```
 
 ---
 
@@ -19,391 +29,519 @@ The consent protocol ensures that **every action on user data requires explicit,
 │ Layer 1: Firebase Auth     → Identity verification (who you are)│
 │ Layer 2: Passphrase        → Knowledge verification (zero-know) │
 │ Layer 3: Firebase ID Token → Backend validates identity         │
-│ Layer 4: Session Token     → Signed proof of consent            │
+│ Layer 4: VAULT_OWNER Token → Master consent token (NEW!)        │
+│ Layer 5: Agent Tokens      → Scoped consent tokens              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Session Token Flow
+## 🆕 VAULT_OWNER Token Architecture
+
+### What is a VAULT_OWNER Token?
+
+The **VAULT_OWNER token** is a special consent token with the `vault.owner` scope that grants vault owners full access to their own encrypted data.
+
+**Key Properties:**
+
+- **Scope**: `ConsentScope.VAULT_OWNER` (`"vault.owner"`)
+- **Agent ID**: `"self"` (user is accessing their own data)
+- **Expiry**: 24 hours (renewable)
+- **Reuse**: Tokens are reused while valid (not recreated on every unlock)
+- **Audit**: All issuance logged to `consent_audit` table
+
+### Why VAULT_OWNER Tokens?
+
+**Before** (❌ Insecure):
+
+```python
+# Old approach - bypassed consent protocol
+if user_id == vault_owner:
+    return encrypted_data  # No token validation!
+```
+
+**After** (✅ Secure):
+
+```python
+# New approach - uniform consent architecture
+validate_vault_owner_token(token, user_id)
+# Checks: signature, expiry, scope, userId match
+return encrypted_data
+```
+
+**Benefits:**
+
+1. ✅ **No Bypasses**: Vault owners follow same protocol as external agents
+2. ✅ **Auditable**: All access logged, even by owner
+3. ✅ **Consistent**: Same validation logic everywhere
+4. ✅ **Compliance**: Clear audit trail for regulations
+5. ✅ **Secure**: Token-based access prevents auth vulnerabilities
+
+---
+
+## 📋 Complete Authentication Flow
 
 ### 1. User Login (Firebase)
 
 User authenticates via Google OAuth. Firebase issues an ID token.
 
 ```typescript
-// Firebase handles OAuth
+// Frontend
 const result = await signInWithPopup(auth, googleProvider);
 const idToken = await result.user.getIdToken();
 ```
 
-### 2. Passphrase Verification (Frontend)
+### 2. Passphrase Verification (Frontend - Zero Knowledge)
 
-User enters passphrase to unlock vault. This is **zero-knowledge** - passphrase never sent to server.
+User enters passphrase to unlock vault. **Passphrase never sent to server.**
 
 ```typescript
-// app/login/page.tsx - handleUnlockPassphrase()
-import { useVault } from "@/lib/vault/vault-context";
-
-const { unlockVault } = useVault();
-const vaultKeyHex = await unlockVaultWithPassphrase(
+// components/vault/vault-flow.tsx
+const vaultKeyHex = await VaultService.unlockVault(
   passphrase,
   vaultData.encryptedVaultKey,
   vaultData.salt,
   vaultData.iv
 );
-// Store in memory only (not sessionStorage) - XSS protection
-unlockVault(vaultKeyHex);
 ```
 
-### 3. Session Token Issuance (Backend)
+### 3. VAULT_OWNER Token Issuance (NEW!)
 
-After passphrase succeeds, frontend requests session token with Firebase ID token:
+After successful passphrase verification, frontend requests VAULT_OWNER token:
 
 ```typescript
-// Frontend sends both userId AND Firebase ID token
-const idToken = await auth.currentUser.getIdToken();
-const response = await fetch("/api/consent/session-token", {
+// components/vault/vault-flow.tsx - handleUnlockPassphrase()
+if (decryptedKey) {
+  // Get Firebase ID token
+  const idToken = await auth.currentUser?.getIdToken();
+
+  // Request VAULT_OWNER token from backend
+  const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
+    userId,
+    idToken
+  );
+
+  // Store in memory-only context
+  unlockVault(decryptedKey, token, expiresAt);
+}
+```
+
+### 4. Backend Verification & Token Issuance
+
+Backend verifies Firebase ID token, checks for existing tokens, and issues new one if needed:
+
+```python
+# consent-protocol/api/routes/consent.py
+@router.post("/vault-owner-token")
+async def issue_vault_owner_token(request: Request):
+    # 1. Verify Firebase ID token
+    decoded_token = firebase_auth.verify_id_token(id_token)
+    firebase_uid = decoded_token.get("uid")
+
+    # 2. Ensure user requests token for their own vault
+    if firebase_uid != user_id:
+        raise HTTPException(403, "Cannot issue token for another user")
+
+    # 3. Check for existing valid token (TOKEN REUSE)
+    existing_token = await conn.fetchrow("""
+        SELECT token_string, expires_at
+        FROM consent_tokens
+        WHERE user_id = $1 AND scope = 'vault.owner'
+          AND expires_at > $2 AND revoked = FALSE
+        LIMIT 1
+    """, user_id, now_ms)
+
+    if existing_token:
+        # Reuse existing token ♻️
+        return {
+            "token": existing_token["token_string"],
+            "expiresAt": existing_token["expires_at"],
+            "scope": "vault.owner"
+        }
+
+    # 4. No valid token - issue new one 🔑
+    token_obj = issue_token(
+        user_id=user_id,
+        agent_id="self",
+        scope=ConsentScope.VAULT_OWNER,
+        expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+    )
+
+    # 5. Log to audit table
+    await insert_event(
+        user_id=user_id,
+        agent_id="self",
+        scope="vault.owner",
+        action="VAULT_OWNER_TOKEN_ISSUED",
+        expires_at=token_obj.expires_at
+    )
+
+    return {
+        "token": token_obj.token,
+        "expiresAt": token_obj.expires_at,
+        "scope": "vault.owner"
+    }
+```
+
+### 5. Token Storage (Frontend)
+
+Tokens stored in React Context (memory-only, not `sessionStorage` or `localStorage`):
+
+```typescript
+// lib/vault/vault-context.tsx
+interface VaultContextType {
+  vaultKey: string | null;
+  vaultOwnerToken: string | null; // NEW!
+  tokenExpiresAt: number | null; // NEW!
+  unlockVault: (key: string, token: string, expiresAt: number) => void;
+  getVaultOwnerToken: () => string | null; // Auto-validates expiry
+}
+```
+
+**Security Benefits:**
+
+- ✅ Memory-only = XSS protection
+- ✅ Lost on page refresh = Session security
+- ✅ Never persisted = No lingering access
+
+### 6. Using VAULT_OWNER Token
+
+When accessing vault data, frontend passes token to backend:
+
+```typescript
+// Frontend - accessing food preferences
+const token = getVaultOwnerToken(); // Auto-checks expiry
+const response = await fetch("/api/food/preferences", {
   method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${idToken}`,
-  },
-  body: JSON.stringify({ userId }),
+  body: JSON.stringify({
+    userId,
+    consentToken: token, // Required!
+  }),
 });
 ```
 
-### 4. Backend Verification
-
-Python backend verifies Firebase ID token before issuing session token:
+Backend validates token before returning data:
 
 ```python
-# consent-protocol/server.py
-from firebase_admin import auth
+# consent-protocol/api/routes/food.py
+@router.post("/preferences")
+async def get_food_preferences(request: Request):
+    body = await request.json()
+    user_id = body.get("userId")
+    consent_token = body.get("consentToken")
 
-# Verify Firebase ID token
-decoded_token = auth.verify_id_token(id_token)
-verified_uid = decoded_token["uid"]
+    # Validate VAULT_OWNER token
+    validate_vault_owner_token(consent_token, user_id)
+    # Checks: signature, expiry, scope=vault.owner, userId match
 
-# Ensure request userId matches verified token
-if request.userId != verified_uid:
-    raise HTTPException(status_code=403, detail="userId mismatch")
-
-# Issue session token
-token_obj = issue_token(
-    user_id=request.userId,
-    agent_id="orchestrator",
-    scope=ConsentScope.VAULT_READ_ALL,
-    expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
-)
+    # Fetch encrypted preferences
+    return {"preferences": encrypted_data}
 ```
 
-### 5. Session Storage
-
-Frontend stores session token for dashboard use:
-
-```typescript
-// Vault key stored in memory via VaultContext (not sessionStorage)
-// Session token stored in sessionStorage for dashboard use
-sessionStorage.setItem("session_token", tokenData.sessionToken);
-sessionStorage.setItem("session_token_expires", String(tokenData.expiresAt));
-```
-
-> **⚠️ Important Security Distinction:**
->
-> - **Vault Key** → Memory only (React Context) - XSS protected, lost on refresh
-> - **Session Token** → sessionStorage - Used for API auth, cannot decrypt data
-
-### 6. Logout
+### 7. Logout
 
 On logout, tokens are destroyed:
 
 ```typescript
-// components/navbar.tsx - handleLogout()
-await fetch("/api/consent/logout", {
-  method: "POST",
-  body: JSON.stringify({ userId }),
-});
-sessionStorage.clear();
+// components/navigation.tsx - handleLogout()
+lockVault(); // Clears vaultKey + vaultOwnerToken from memory
 await signOut(auth);
+```
+
+---
+
+## 🏗️ Token Validation Helper
+
+Modular agents (Food, Professional) use a shared validation helper:
+
+```python
+# api/routes/food.py & api/routes/professional.py
+def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
+    """
+    Validate VAULT_OWNER consent token.
+    Raises HTTPException if validation fails.
+    """
+    if not consent_token:
+        raise HTTPException(401, "Missing consent token")
+
+    # 1. Validate token (signature, expiry)
+    valid, reason, token_obj = validate_token(consent_token)
+    if not valid:
+        raise HTTPException(401, f"Invalid token: {reason}")
+
+    # 2. Check scope is VAULT_OWNER
+    if token_obj.scope != ConsentScope.VAULT_OWNER.value:
+        raise HTTPException(403, "Insufficient scope")
+
+    # 3. Check userId matches
+    if token_obj.user_id != user_id:
+        raise HTTPException(403, "Token userId mismatch")
+
+    logger.info(f"✅ VAULT_OWNER token validated for {user_id}")
 ```
 
 ---
 
 ## 🗄️ Database Tables
 
-### session_tokens
+### consent_tokens (NEW!)
 
-Tracks active session tokens:
+Stores all consent tokens including VAULT_OWNER tokens:
 
 ```sql
-CREATE TABLE session_tokens (
+CREATE TABLE consent_tokens (
   id SERIAL PRIMARY KEY,
   user_id TEXT NOT NULL,
-  token_hash VARCHAR(64) NOT NULL,
-  scope TEXT DEFAULT 'session',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ,
-  is_active BOOLEAN DEFAULT TRUE,
+  agent_id TEXT NOT NULL,  -- 'self' for VAULT_OWNER
+  scope TEXT NOT NULL,      -- 'vault.owner' for VAULT_OWNER
+  token_string TEXT NOT NULL,
+  issued_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  revoked BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_consent_tokens_lookup
+  ON consent_tokens(user_id, agent_id, scope, expires_at);
+```
+
+### consent_audit
+
+Logs all consent actions including VAULT_OWNER token issuance:
+
+```sql
+CREATE TABLE consent_audit (
+  id SERIAL PRIMARY KEY,
+  token_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,  -- 'self' for vault owner
+  scope TEXT NOT NULL,      -- 'vault.owner' for VAULT_OWNER
+  action TEXT NOT NULL,     -- 'VAULT_OWNER_TOKEN_ISSUED'
+  issued_at BIGINT NOT NULL,
+  expires_at BIGINT,
+  revoked_at BIGINT,
+  metadata JSONB,
   ip_address VARCHAR(45),
   user_agent TEXT
 );
 ```
 
-### consent_audit
+**Example audit entry**:
 
-Logs all consent actions:
-
-```sql
-CREATE TABLE consent_audit (
-  id SERIAL PRIMARY KEY,
-  token_id TEXT NOT NULL UNIQUE,
-  user_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  action TEXT NOT NULL,
-  issued_at BIGINT NOT NULL,
-  expires_at BIGINT,
-  revoked_at BIGINT,
-  metadata JSONB,
-  token_type VARCHAR(20) DEFAULT 'consent',
-  ip_address VARCHAR(45),
-  user_agent TEXT
-);
+```json
+{
+  "user_id": "user123",
+  "agent_id": "self",
+  "scope": "vault.owner",
+  "action": "VAULT_OWNER_TOKEN_ISSUED",
+  "issued_at": 1735968000000,
+  "expires_at": 1736054400000
+}
 ```
 
 ---
 
 ## 🔗 API Endpoints
 
-| Endpoint                     | Method | Purpose                                          |
-| ---------------------------- | ------ | ------------------------------------------------ |
-| `/api/consent/session-token` | POST   | Issue session token (requires Firebase ID token) |
-| `/api/consent/logout`        | POST   | Destroy all session tokens for user              |
-| `/api/consent/history`       | GET    | Get paginated consent audit history              |
+### VAULT_OWNER Token Endpoints
 
----
+| Endpoint                         | Method | Purpose                                                    |
+| -------------------------------- | ------ | ---------------------------------------------------------- |
+| `/api/consent/vault-owner-token` | POST   | Issue/reuse VAULT_OWNER token (requires Firebase ID token) |
 
-## 🎛️ UI Components
+### Modular Agent Endpoints (NEW!)
 
-### ConsentStatusBar
+| Endpoint                              | Method | Purpose                           | Requires Token |
+| ------------------------------------- | ------ | --------------------------------- | -------------- |
+| `/api/food/preferences`               | POST   | Get encrypted food data           | VAULT_OWNER    |
+| `/api/food/preferences/store`         | POST   | Store encrypted food data         | VAULT_OWNER    |
+| `/api/professional/preferences`       | POST   | Get encrypted professional data   | VAULT_OWNER    |
+| `/api/professional/preferences/store` | POST   | Store encrypted professional data | VAULT_OWNER    |
 
-Shows active session status in dashboard:
+### Legacy Endpoints (Deprecated)
 
-```tsx
-// components/consent/status-bar.tsx
-<Badge variant="default">
-  <Shield className="h-3 w-3" />
-  Session Active
-</Badge>
-<Badge variant="outline">
-  <Clock className="h-3 w-3" />
-  23h 45m remaining
-</Badge>
-```
+| Endpoint               | Status        | Migration Path                      |
+| ---------------------- | ------------- | ----------------------------------- |
+| `/db/food/get`         | ⚠️ DEPRECATED | Use `/api/food/preferences`         |
+| `/db/professional/get` | ⚠️ DEPRECATED | Use `/api/professional/preferences` |
 
----
-
-## 🤖 MCP External Consent (Third-Party Agents)
-
-When external AI agents (Claude Desktop, Cursor, etc.) request access to user data, a special **zero-knowledge export** flow is used.
-
-### Architecture: Token-Embedded Export Key
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    MCP CONSENT FLOW (ZERO-KNOWLEDGE)                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   MCP Agent                Dashboard                     Server              │
-│   (Claude)                 (Browser)                   (FastAPI)             │
-│      │                        │                           │                  │
-│      │ 1. request_consent     │                           │                  │
-│      │───────────────────────►│ Pending Request Stored    │                  │
-│      │                        │                           │                  │
-│      │                        │ 2. Toast: "Approve?"      │                  │
-│      │                        │    ┌─────────────────┐    │                  │
-│      │                        │    │ User Clicks     │    │                  │
-│      │                        │    │  ✅ Approve     │    │                  │
-│      │                        │    └─────────────────┘    │                  │
-│      │                        │                           │                  │
-│      │                        │ 3. Browser decrypts       │                  │
-│      │                        │    with vault key         │                  │
-│      │                        │                           │                  │
-│      │                        │ 4. Generate export key    │                  │
-│      │                        │    (random AES-256)       │                  │
-│      │                        │                           │                  │
-│      │                        │ 5. Re-encrypt with        │                  │
-│      │                        │    export key             │                  │
-│      │                        │                           │                  │
-│      │                        │ 6. Send encrypted ───────►│ Store in        │
-│      │                        │    + export key           │ _consent_exports │
-│      │                        │                           │                  │
-│      │ 7. Polling returns token                           │                  │
-│      │◄──────────────────────────────────────────────────│                  │
-│      │                                                    │                  │
-│      │ 8. get_food_preferences(token)                     │                  │
-│      │──────────────────────────────────────────────────►│ Return encrypted │
-│      │                                                    │ export           │
-│      │                                                    │                  │
-│      │ 9. MCP decrypts with export key                    │                  │
-│      │                                                    │                  │
-│      │ 10. Return plaintext to user ✅                    │                  │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Security Properties
-
-| Property                  | Implementation                                            |
-| ------------------------- | --------------------------------------------------------- |
-| **Server Zero-Knowledge** | Server stores only encrypted export, never sees plaintext |
-| **Export Key Isolation**  | Random per-consent, embedded in token for MCP decryption  |
-| **Time-Limited**          | Export expires with consent token (24h default)           |
-| **Scope-Limited**         | Only consented data domain is exported                    |
-| **Audit Trail**           | All exports logged with access count                      |
-
-### Code: Frontend Export Encryption
-
-```typescript
-// lib/vault/export-encrypt.ts
-export async function encryptForExport(
-  plaintext: string,
-  exportKeyHex: string
-): Promise<{ ciphertext: string; iv: string; tag: string }> {
-  const keyBytes = new Uint8Array(
-    exportKeyHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
-  );
-  const key = await crypto.subtle.importKey(
-    "raw",
-    keyBytes,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"]
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    encoder.encode(plaintext)
-  );
-  // Split ciphertext and tag...
-}
-```
-
-### Code: MCP Decryption
-
-```python
-# mcp_server.py - handle_get_food()
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-# Fetch encrypted export from FastAPI
-export_response = await client.get(f"{FASTAPI_URL}/api/consent/data", params={"consent_token": consent_token})
-
-# Decrypt with export key
-key_bytes = bytes.fromhex(export_key_hex)
-aesgcm = AESGCM(key_bytes)
-plaintext = aesgcm.decrypt(iv_bytes, combined, None)
-food_data = json.loads(plaintext.decode('utf-8'))
-```
+See deprecation warnings in `api/routes/db_proxy.py`.
 
 ---
 
 ## 🛡️ Security Guarantees
 
+### VAULT_OWNER Token Security
+
+1. ✅ **Firebase Verification**: Backend validates Firebase ID token before issuing
+2. ✅ **Token Reuse**: Existing valid tokens returned instead of creating duplicates
+3. ✅ **Scope Enforcement**: All agents validate `scope = "vault.owner"`
+4. ✅ **User ID Binding**: Token userId must match request userId
+5. ✅ **Signature Validation**: HMAC-SHA256 signature checked on every request
+6. ✅ **Expiry Check**: Tokens expire after 24 hours
+7. ✅ **Memory-Only Storage**: Frontend stores in React Context (XSS protected)
+8. ✅ **Audit Trail**: All token issuance logged to `consent_audit`
+
+### Traditional Security Features (Unchanged)
+
 1. **No passphrase on server** - Zero-knowledge design
-2. **Firebase ID token verification** - Backend validates identity
-3. **Token binding** - userId in request must match verified token UID
-4. **Session expiry** - Tokens expire after 24 hours
-5. **Logout destroys tokens** - No lingering access
-6. **Audit trail** - All actions logged to consent_audit table
-7. **Export zero-knowledge** - MCP access never exposes plaintext to server
+2. **Logout destroys tokens** - No lingering access
+3. **Export zero-knowledge** - MCP access never exposes plaintext to server
 
 ---
 
-## 📡 Real-Time Consent Events (SSE)
-
-### Architecture
-
-The system uses **Server-Sent Events (SSE)** for real-time consent notifications. A unified SSE connection serves all dashboard components.
+## 🔄 Token Lifecyle
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     SSE Architecture                             │
+│                    VAULT_OWNER TOKEN LIFECYCLE                   │
 ├─────────────────────────────────────────────────────────────────┤
-│ Backend: /api/consent/events/{user_id}                          │
-│   - Polls consent_audit every 500ms                             │
-│   - Sends events when issued_at > connection_start_ms           │
-│   - 30s heartbeat to keep connection alive                      │
-├─────────────────────────────────────────────────────────────────┤
-│ Frontend: Single EventSource (ConsentSSEProvider)               │
-│   - One connection per user session                             │
-│   - Auto-reconnect with exponential backoff (2s → 30s max)      │
-│   - Components subscribe via useConsentSSE() hook               │
+│                                                                  │
+│ 1. ISSUANCE                                                      │
+│    User unlocks vault → Backend issues token → Stored in DB     │
+│                                                                  │
+│ 2. REUSE                                                         │
+│    User unlocks again → Backend finds existing → Returns same   │
+│                         (while valid)                            │
+│                                                                  │
+│ 3. VALIDATION                                                    │
+│    Every API call → validate_vault_owner_token() → Allow/Deny   │
+│                                                                  │
+│ 4. EXPIRY                                                        │
+│    After 24h → Token invalid → User must unlock again           │
+│                                                                  │
+│ 5. LOGOUT                                                        │
+│    User logs out → Token cleared from memory → Session ended    │
+│                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Event Types (ConsentAction)
+---
 
-| Action            | Description                  | Triggers Refresh Of    |
-| ----------------- | ---------------------------- | ---------------------- |
-| `REQUESTED`       | New consent request from MCP | Pending, Audit Log     |
-| `CONSENT_GRANTED` | User approved the request    | Pending, Active, Audit |
-| `CONSENT_DENIED`  | User denied the request      | Pending, Audit Log     |
-| `TIMEOUT`         | MCP polling timed out        | Pending, Audit Log     |
-| `REVOKED`         | User revoked active consent  | Active, Audit Log      |
+## 🎛️ Platform-Aware Routing
 
-### Frontend Components
-
-**`lib/consent/sse-context.tsx`** - Unified SSE provider:
-
-```typescript
-export function ConsentSSEProvider({ children }) {
-  // Single EventSource connection with auto-reconnect
-  // Provides: lastEvent, connectionState, isConnected, eventCount
-}
-
-export function useConsentSSE(): ConsentSSEContextType;
-```
-
-**`lib/consent/use-consent-actions.ts`** - Centralized action handlers:
-
-```typescript
-export function useConsentActions(options) {
-  return {
-    handleApprove, // Zero-knowledge export + approve
-    handleDeny, // Deny request
-    handleRevoke, // Revoke active consent
-    shouldShowToast, // Deduplication logic
-    // ... status management
-  };
-}
-```
-
-**`components/consent/notification-provider.tsx`** - Toast notifications:
-
-- Shows interactive toasts for pending requests
-- Uses `useConsentSSE()` for events
-- Uses `useConsentActions()` for approve/deny buttons
-
-### Event Flow
+VAULT_OWNER token issuance works across all platforms:
 
 ```
-MCP Request → Backend inserts REQUESTED → SSE sends event
-          ↓
-Frontend receives → Shows toast + refreshes pending table
-          ↓
-User clicks Approve/Deny → API call → Backend inserts GRANTED/DENIED
-          ↓
-Custom event dispatched → All tables refresh automatically
+┌──────────────────────────────────────────────────────────────┐
+│              VAULT_OWNER TOKEN - PLATFORM ROUTING             │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│ WEB                                                           │
+│  Frontend → /api/consent/vault-owner-token (Next.js proxy)   │
+│          → Backend /api/consent/vault-owner-token            │
+│                                                               │
+│ iOS                                                           │
+│  Frontend → HushhConsent.issueVaultOwnerToken() (Swift)      │
+│          → Backend /api/consent/vault-owner-token            │
+│                                                               │
+│ ANDROID                                                       │
+│  Frontend → HushhConsent.issueVaultOwnerToken() (Kotlin)     │
+│          → Backend /api/consent/vault-owner-token            │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Key Files
+**Native Plugin Implementation**:
 
-| File                                                        | Purpose                          |
-| ----------------------------------------------------------- | -------------------------------- |
-| `consent-protocol/api/routes/sse.py`                        | SSE endpoint with heartbeat      |
-| `hushh-webapp/lib/consent/sse-context.tsx`                  | Unified SSE provider             |
-| `hushh-webapp/lib/consent/use-consent-actions.ts`           | Action handlers                  |
-| `hushh-webapp/components/consent/notification-provider.tsx` | Toast UI                         |
-| `hushh-webapp/app/dashboard/consents/page.tsx`              | Consents table with SSE listener |
+- **iOS**: `ios/App/App/Plugins/HushhConsentPlugin.swift`
+- **Android**: `android/.../HushhConsentPlugin.kt`
+- **Interface**: `lib/capacitor/index.ts`
+
+---
+
+## 📡 MCP External Consent (Third-Party Agents)
+
+_[Previous MCP consent flow documentation remains unchanged]_
+
+When external AI agents (Claude Desktop, Cursor, etc.) request access to user data, a special **zero-knowledge export** flow is used with agent-specific tokens (not VAULT_OWNER tokens).
+
+---
+
+## 🧪 Testing & Verification
+
+### Testing Token Reuse
+
+```bash
+# 1. First unlock - creates new token
+curl -X POST https://backend.example.com/api/consent/vault-owner-token \
+  -H "Authorization: Bearer $FIREBASE_TOKEN" \
+  -d '{"userId": "user123"}'
+# Backend logs: "🔑 Issuing NEW VAULT_OWNER token"
+
+# 2. Lock and unlock again (within 24h) - reuses token
+curl -X POST https://backend.example.com/api/consent/vault-owner-token \
+  -H "Authorization: Bearer $FIREBASE_TOKEN" \
+  -d '{"userId": "user123"}'
+# Backend logs: "♻️ Reusing existing VAULT_OWNER token"
+```
+
+### Testing Token Validation
+
+```bash
+# Valid VAULT_OWNER token
+curl -X POST https://backend.example.com/api/food/preferences \
+  -d '{"userId": "user123", "consentToken": "HCT:..."}'
+# Returns: {"preferences": {...}}
+
+# Missing token
+curl -X POST https://backend.example.com/api/food/preferences \
+  -d '{"userId": "user123"}'
+# Returns: 401 "Missing consent token"
+
+# Wrong scope token
+curl -X POST https://backend.example.com/api/food/preferences \
+  -d '{"userId": "user123", "consentToken": "HCT:...food.read..."}'
+# Returns: 403 "Insufficient scope"
+```
+
+---
+
+## 📊 Migration from Legacy Architecture
+
+### Old Approach (Insecure)
+
+```python
+# ❌ OLD: db_proxy.py - CRITICAL SECURITY VULNERABILITY
+@router.post("/db/food/get")
+async def get_food_data(request: Request):
+    body = await request.json()
+    user_id = body.get("userId")
+
+    # NO AUTHENTICATION! Anyone with userId can access data
+    return encrypted_data
+```
+
+### New Approach (Secure)
+
+```python
+# ✅ NEW: api/routes/food.py - Consent-First Architecture
+@router.post("/api/food/preferences")
+async def get_food_preferences(request: Request):
+    body = await request.json()
+    user_id = body.get("userId")
+    consent_token = body.get("consentToken")
+
+    # VAULT_OWNER token required!
+    validate_vault_owner_token(consent_token, user_id)
+
+    return encrypted_data
+```
+
+### Migration Checklist
+
+- [x] Backend `/api/consent/vault-owner-token` endpoint created
+- [x] Modular Food agent (`/api/food/preferences`) created
+- [x] Modular Professional agent (`/api/professional/preferences`) created
+- [x] VaultContext updated to store VAULT_OWNER token
+- [x] Vault unlock flow integrated with token request
+- [x] iOS Swift plugin implemented
+- [x] Android Kotlin plugin implemented
+- [x] Token reuse logic implemented
+- [x] Legacy routes deprecated with warnings
+- [ ] Frontend API calls updated to pass tokens
+- [ ] End-to-end testing across all platforms
+
+---
+
+_Version: 5.0 | Updated: January 2026 | VAULT_OWNER Token Architecture Release_
