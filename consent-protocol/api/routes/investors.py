@@ -66,7 +66,7 @@ class InvestorProfile(BaseModel):
     education: Optional[List[str]]
     board_memberships: Optional[List[str]]
     peer_investors: Optional[List[str]]
-    is_insider: bool
+    is_insider: Optional[bool] = False
     insider_company_ticker: Optional[str]
 
 
@@ -163,37 +163,45 @@ async def get_investor(investor_id: int):
         SELECT * FROM investor_profiles WHERE id = $1
     """
     
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(query, investor_id)
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="Investor not found")
-        
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "cik": row["cik"],
-            "firm": row["firm"],
-            "title": row["title"],
-            "investor_type": row["investor_type"],
-            "photo_url": row["photo_url"],
-            "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
-            "top_holdings": row["top_holdings"],
-            "sector_exposure": row["sector_exposure"],
-            "investment_style": row["investment_style"],
-            "risk_tolerance": row["risk_tolerance"],
-            "time_horizon": row["time_horizon"],
-            "portfolio_turnover": row["portfolio_turnover"],
-            "recent_buys": row["recent_buys"],
-            "recent_sells": row["recent_sells"],
-            "public_quotes": row["public_quotes"],
-            "biography": row["biography"],
-            "education": row["education"],
-            "board_memberships": row["board_memberships"],
-            "peer_investors": row["peer_investors"],
-            "is_insider": row["is_insider"],
-            "insider_company_ticker": row["insider_company_ticker"]
-        }
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, investor_id)
+            
+            if not row:
+                raise HTTPException(status_code=404, detail="Investor not found")
+            
+            logger.info(f"📥 Retrieved investor {investor_id}: {row['name']}")
+            
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "cik": row.get("cik"),
+                "firm": row.get("firm"),
+                "title": row.get("title"),
+                "investor_type": row.get("investor_type"),
+                "photo_url": row.get("photo_url"),
+                "aum_billions": float(row["aum_billions"]) if row.get("aum_billions") else None,
+                "top_holdings": json.loads(row["top_holdings"]) if row.get("top_holdings") and isinstance(row["top_holdings"], str) else row.get("top_holdings"),
+                "sector_exposure": json.loads(row["sector_exposure"]) if row.get("sector_exposure") and isinstance(row["sector_exposure"], str) else row.get("sector_exposure"),
+                "investment_style": row.get("investment_style"),
+                "risk_tolerance": row.get("risk_tolerance"),
+                "time_horizon": row.get("time_horizon"),
+                "portfolio_turnover": row.get("portfolio_turnover"),
+                "recent_buys": row.get("recent_buys"),
+                "recent_sells": row.get("recent_sells"),
+                "public_quotes": json.loads(row["public_quotes"]) if row.get("public_quotes") and isinstance(row["public_quotes"], str) else row.get("public_quotes"),
+                "biography": row.get("biography"),
+                "education": row.get("education"),
+                "board_memberships": row.get("board_memberships"),
+                "peer_investors": row.get("peer_investors"),
+                "is_insider": row.get("is_insider") if row.get("is_insider") is not None else False,
+                "insider_company_ticker": row.get("insider_company_ticker")
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error fetching investor {investor_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/cik/{cik}", response_model=InvestorProfile)
@@ -217,20 +225,20 @@ async def get_investor_by_cik(cik: str):
             "investor_type": row["investor_type"],
             "photo_url": row["photo_url"],
             "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
-            "top_holdings": row["top_holdings"],
-            "sector_exposure": row["sector_exposure"],
+            "top_holdings": json.loads(row["top_holdings"]) if row["top_holdings"] and isinstance(row["top_holdings"], str) else row.get("top_holdings"),
+            "sector_exposure": json.loads(row["sector_exposure"]) if row["sector_exposure"] and isinstance(row["sector_exposure"], str) else row.get("sector_exposure"),
             "investment_style": row["investment_style"],
             "risk_tolerance": row["risk_tolerance"],
             "time_horizon": row["time_horizon"],
             "portfolio_turnover": row["portfolio_turnover"],
             "recent_buys": row["recent_buys"],
             "recent_sells": row["recent_sells"],
-            "public_quotes": row["public_quotes"],
+            "public_quotes": json.loads(row["public_quotes"]) if row["public_quotes"] and isinstance(row["public_quotes"], str) else row.get("public_quotes"),
             "biography": row["biography"],
             "education": row["education"],
             "board_memberships": row["board_memberships"],
             "peer_investors": row["peer_investors"],
-            "is_insider": row["is_insider"],
+            "is_insider": row["is_insider"] if row["is_insider"] is not None else False,
             "insider_company_ticker": row["insider_company_ticker"]
         }
 
