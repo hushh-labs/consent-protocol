@@ -109,6 +109,10 @@ app.include_router(investors.router)
 from api.routes import identity
 app.include_router(identity.router)
 
+# Phase 6: Fundamental Analysis Agent
+from api.routes import analysis
+app.include_router(analysis.router)
+
 logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 ENABLED")
 
 
