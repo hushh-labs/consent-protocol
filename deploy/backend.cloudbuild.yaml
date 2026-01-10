@@ -11,6 +11,8 @@ steps:
       - "gcr.io/$PROJECT_ID/consent-protocol:manual"
       - "-t"
       - "gcr.io/$PROJECT_ID/consent-protocol:latest"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/consent-protocol:v2.1.0"
       - "-f"
       - "consent-protocol/Dockerfile"
       - "consent-protocol"
@@ -29,6 +31,12 @@ steps:
       - "gcr.io/$PROJECT_ID/consent-protocol:latest"
     id: "push-backend-latest"
 
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/consent-protocol:v2.1.0"
+    id: "push-backend-version"
+
   # Step 3: Deploy to Cloud Run
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: gcloud
@@ -36,7 +44,7 @@ steps:
       - "run"
       - "deploy"
       - "consent-protocol"
-      - "--image=gcr.io/$PROJECT_ID/consent-protocol:latest"
+      - "--image=gcr.io/$PROJECT_ID/consent-protocol:v2.1.0"
       - "--region=us-central1"
       - "--platform=managed"
       - "--allow-unauthenticated"
