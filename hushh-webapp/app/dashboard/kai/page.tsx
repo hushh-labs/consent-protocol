@@ -43,17 +43,30 @@ import {
   grantKaiConsent,
 } from "@/lib/services/kai-service";
 import { hasValidConsent, ProcessingMode, RiskProfile } from "./actions";
+import { InvestorDetectStep } from "@/components/kai/investor-detect-step";
+import {
+  IdentityService,
+  InvestorProfile,
+} from "@/lib/services/identity-service";
+import { VaultService } from "@/lib/services/vault-service";
 
 // ============================================================================
 // TYPES & STATE
 // ============================================================================
 
-type Step = "welcome" | "mode" | "risk" | "consent" | "ready";
+type Step =
+  | "investor_detect"
+  | "welcome"
+  | "mode"
+  | "risk"
+  | "consent"
+  | "ready";
 
 interface OnboardingState {
   step: Step;
   processingMode: ProcessingMode;
   riskProfile: RiskProfile;
+  confirmedInvestor?: InvestorProfile;
 }
 
 export default function KaiOnboarding() {
@@ -62,10 +75,12 @@ export default function KaiOnboarding() {
   const { isVaultUnlocked, vaultKey } = useVault();
 
   const [state, setState] = useState<OnboardingState>({
-    step: "welcome",
+    step: "investor_detect", // Start with investor detection
     processingMode: "hybrid",
     riskProfile: "balanced",
   });
+
+  const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [checkingDb, setCheckingDb] = useState(true);
@@ -158,6 +173,31 @@ export default function KaiOnboarding() {
     checkExistingUser();
   }, [user, router, vaultKey]); // Added vaultKey to dependencies
 
+  // Get VAULT_OWNER token for investor detection
+  // IMPORTANT: This must be before any early returns to maintain hooks order
+  useEffect(() => {
+    async function getVaultOwnerToken() {
+      if (!user?.uid || !isVaultUnlocked) return;
+
+      try {
+        // Get Firebase token directly from auth
+        const { auth } = await import("@/lib/firebase/config");
+        const firebaseToken = await auth.currentUser?.getIdToken(true);
+        if (firebaseToken) {
+          const result = await VaultService.issueVaultOwnerToken(
+            user.uid,
+            firebaseToken
+          );
+          setVaultOwnerToken(result.token);
+        }
+      } catch (error) {
+        console.error("[Kai] Failed to get VAULT_OWNER token:", error);
+      }
+    }
+
+    getVaultOwnerToken();
+  }, [user, isVaultUnlocked]);
+
   if (checkingDb) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
@@ -175,6 +215,27 @@ export default function KaiOnboarding() {
 
   const nextStep = (step: Step) => {
     setState((prev) => ({ ...prev, step }));
+  };
+
+  // Handler for investor detection confirmation
+  const handleInvestorConfirm = async (investor: InvestorProfile) => {
+    setState((prev) => ({ ...prev, confirmedInvestor: investor }));
+
+    // Pre-populate risk profile from investor data if available
+    if (investor.risk_tolerance) {
+      const mappedRisk = investor.risk_tolerance as RiskProfile;
+      if (["conservative", "balanced", "aggressive"].includes(mappedRisk)) {
+        setState((prev) => ({ ...prev, riskProfile: mappedRisk }));
+      }
+    }
+
+    toast.success("Investor profile loaded!");
+    nextStep("welcome");
+  };
+
+  // Handler for skipping investor detection
+  const handleInvestorSkip = () => {
+    nextStep("welcome");
   };
 
   const handleStart = () => nextStep("mode");
@@ -293,6 +354,22 @@ export default function KaiOnboarding() {
         <StepIndicator currentStep={state.step} />
 
         <div className="mt-8 transition-all duration-500 ease-in-out">
+          {state.step === "investor_detect" && vaultKey && vaultOwnerToken && (
+            <InvestorDetectStep
+              onConfirm={handleInvestorConfirm}
+              onSkip={handleInvestorSkip}
+              vaultKey={vaultKey}
+              vaultOwnerToken={vaultOwnerToken}
+            />
+          )}
+          {state.step === "investor_detect" &&
+            (!vaultKey || !vaultOwnerToken) && (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">
+                  Please unlock your vault first...
+                </p>
+              </div>
+            )}
           {state.step === "welcome" && (
             <WelcomeStep onStart={handleStart} loading={loading} />
           )}
@@ -321,7 +398,14 @@ export default function KaiOnboarding() {
 // ============================================================================
 
 function StepIndicator({ currentStep }: { currentStep: Step }) {
-  const steps: Step[] = ["welcome", "mode", "risk", "consent", "ready"];
+  const steps: Step[] = [
+    "investor_detect",
+    "welcome",
+    "mode",
+    "risk",
+    "consent",
+    "ready",
+  ];
   const current = steps.indexOf(currentStep);
 
   return (

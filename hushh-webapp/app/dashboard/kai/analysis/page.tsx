@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   AreaChart,
   Area,
@@ -233,6 +234,17 @@ export default function KaiAnalysis() {
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">
               Institutional Grade Fundamental Engine
             </p>
+          </div>
+
+          {/* Preferences Button - Use Link for client-side nav to preserve vault state */}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/kai/preferences"
+              className="glass-interactive px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium hover:bg-primary/10 transition-colors"
+            >
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Preferences
+            </Link>
           </div>
 
           <form
