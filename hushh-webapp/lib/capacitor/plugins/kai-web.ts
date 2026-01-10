@@ -13,9 +13,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     scopes: string[];
     authToken?: string;
   }): Promise<{ token: string; expires_at: string }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch("/api/kai/consent/grant", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ user_id: options.userId, scopes: options.scopes }),
     });
 
@@ -79,9 +86,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     preferencesEncrypted: string;
     authToken?: string;
   }): Promise<{ success: boolean }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch("/api/kai/preferences/store", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         user_id: options.userId,
         preferences_encrypted: options.preferencesEncrypted,
@@ -99,9 +113,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     userId: string;
     authToken?: string;
   }): Promise<{ preferences: any[] }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch(`/api/kai/preferences/${options.userId}`, {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers,
     });
 
     if (!response.ok) {
