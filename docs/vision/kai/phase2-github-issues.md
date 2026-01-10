@@ -8,7 +8,7 @@
 
 **Epic**: Kai Phase 2 - Investor Intelligence
 **Sprint Duration**: 10 weeks
-**Team**: @kusha (Backend/AI), @ankit (UI/UX)
+**Team**: @kusha (Backend/AI), @ankit (Cloud Builds & UX)
 **Architecture**: Cloud-based (Gemini API, Cloud Vision)
 
 ---
@@ -531,7 +531,7 @@ Design the user preferences dashboard showing what Kai has learned about them.
 | Buffer/bugs                   | 13     | Throughout |
 | **Total**                     | **66** |            |
 
-### @ankit (UI/UX) - 32 points
+### @ankit (Cloud Builds & UX) - 32 points
 
 | Issue                     | Points | Week       |
 | ------------------------- | ------ | ---------- |
