@@ -80,7 +80,7 @@ export default function AgentNavPage() {
   );
 
   return (
-    <div className="min-h-dvh morphy-app-bg p-6">
+    <div className="min-h-dvh p-6">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Header */}
         <div className="text-center space-y-3 pt-8">

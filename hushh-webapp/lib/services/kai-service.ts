@@ -136,22 +136,28 @@ export async function getEncryptedProfile(token: string): Promise<any> {
   return res.json();
 }
 
-/**
- * Fundamental Analysis (New Engine)
- * Calls POST /api/analysis/analyze
- */
-export async function analyzeFundamental(
-  ticker: string,
-  context: any,
-  token: string
-): Promise<any> {
-  const res = await fetch("/api/analysis/analyze", {
+export async function analyzeFundamental(params: {
+  user_id: string;
+  ticker: string;
+  risk_profile: "conservative" | "balanced" | "aggressive";
+  processing_mode: "on_device" | "hybrid";
+  context: any;
+  token: string;
+}): Promise<any> {
+  const res = await fetch("/api/kai/analyze", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${params.token}`,
     },
-    body: JSON.stringify({ ticker, context }),
+    body: JSON.stringify({
+      user_id: params.user_id,
+      ticker: params.ticker,
+      risk_profile: params.risk_profile,
+      processing_mode: params.processing_mode,
+      context: params.context,
+      consent_token: params.token,
+    }),
   });
   if (!res.ok) throw new Error("Analysis failed");
   return res.json();
