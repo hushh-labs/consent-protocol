@@ -252,7 +252,7 @@ await signOut(auth);
 
 ## 🏗️ Token Validation Helper
 
-Modular agents (Food, Professional) use a shared validation helper:
+Modular agents (Food, Professional) use a shared validation helper that supports **Hierarchical Scope Validation**:
 
 ```python
 # api/routes/food.py & api/routes/professional.py
@@ -265,19 +265,35 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
         raise HTTPException(401, "Missing consent token")
 
     # 1. Validate token (signature, expiry)
-    valid, reason, token_obj = validate_token(consent_token)
+    valid, reason, token_obj = validate_token(consent_token, ConsentScope.VAULT_OWNER)
     if not valid:
+        # HIERARCHICAL FALLBACK:
+        # If VAULT_OWNER fails, we do NOT automatically fail if the token
+        # has a more specific scope. However, for "Owner" routes,
+        # strictly vault.owner is often preferred.
         raise HTTPException(401, f"Invalid token: {reason}")
 
-    # 2. Check scope is VAULT_OWNER
-    if token_obj.scope != ConsentScope.VAULT_OWNER.value:
-        raise HTTPException(403, "Insufficient scope")
+    # ...
+```
 
-    # 3. Check userId matches
-    if token_obj.user_id != user_id:
-        raise HTTPException(403, "Token userId mismatch")
+### Hierarchical Scope Validation (NEW)
 
-    logger.info(f"✅ VAULT_OWNER token validated for {user_id}")
+The `validate_token` function in `hushh_mcp/consent/token.py` has been upgraded to support **Master Scopes**.
+
+- **Master Scope**: `vault.owner`
+- **Logic**: If a token has the `vault.owner` scope, it is treated as a master key that satisfies **any** `expected_scope` requirement (e.g., `agent.kai.analyze`).
+
+This allows the system to remain compliant with the **Principle of Least Privilege** for third-party agents, while giving the user (via the Vault Owner token) universal access to their own analysis tools without needing multiple distinct tokens.
+
+```python
+# hushh_mcp/consent/token.py
+if expected_scope and scope_str != expected_scope.value:
+    # HIERARCHICAL VALIDATION:
+    # vault.owner satisfies ANY specific agent scope
+    if scope_str == ConsentScope.VAULT_OWNER.value:
+        logger.info(f"Master Scope 'vault.owner' satisfying requirement for {expected_scope.value}")
+    else:
+        return False, "Scope mismatch", None
 ```
 
 ---
