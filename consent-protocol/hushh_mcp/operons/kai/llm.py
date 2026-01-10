@@ -31,6 +31,7 @@ async def analyze_stock_with_gemini(
     market_data: Optional[Dict[str, Any]] = None,
     sentiment_data: Optional[List[Dict[str, Any]]] = None,
     quant_metrics: Optional[Dict[str, Any]] = None,
+    user_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Operon: Deep financial analysis using Gemini-2.0-flash.
@@ -59,9 +60,27 @@ async def analyze_stock_with_gemini(
     # 2. Build Rich Context (Trends + Fundamentals)
     latest_10k = sec_data.get('latest_10k', {})
     
+    # Extract User Context (Personalization)
+    user_context = user_context or {}
+    style = user_context.get('investment_style', [])
+    risk = user_context.get('risk_tolerance', 'Balanced')
+    holdings = user_context.get('top_holdings', [])
+    
+    personalization = f"""
+    --- INVESTOR PROFILE (AUDIENCE) ---
+    Risk Tolerance: {risk}
+    Investment Style: {style}
+    Current Holdings: {[h.get('ticker') for h in holdings] if holdings else 'None'}
+    
+    INSTRUCTION: Tailor your "Bull Case" and "Bear Case" specifically for this profile.
+    - If Conservative: Heavily penalize high beta/volatility and debt. Focus on capital preservation.
+    - If Aggressive/Growth: Forgive high PE if growth is real. Focus on upside capture.
+    """
+
     context = f"""
     --- SENIOR ANALYST TERMINAL ({ticker}) ---
     Company: {sec_data.get('entity_name', ticker)}
+    {personalization}
     
     [Current Fundamentals]
     Revenue: ${latest_10k.get('revenue', 0):,}
