@@ -65,7 +65,7 @@ export default function KaiPreferences() {
     useState<IdentityStatusResult | null>(null);
   const [riskProfile, setRiskProfile] = useState<string | null>(null);
   const [processingMode, setProcessingMode] = useState<string | null>(null);
-  const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
+  const { vaultOwnerToken } = useVault();
   const [resetting, setResetting] = useState(false);
 
   // Profile selection modal state
@@ -77,31 +77,6 @@ export default function KaiPreferences() {
     useState<InvestorProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [confirming, setConfirming] = useState(false);
-
-  // Get VAULT_OWNER token on mount
-  useEffect(() => {
-    async function getToken() {
-      if (!user?.uid || !isVaultUnlocked) return;
-
-      try {
-        const { auth } = await import("@/lib/firebase/config");
-        const firebaseToken = await auth.currentUser?.getIdToken(true);
-        if (firebaseToken) {
-          const result = await VaultService.issueVaultOwnerToken(
-            user.uid,
-            firebaseToken
-          );
-          setVaultOwnerToken(result.token);
-        }
-      } catch (error) {
-        console.error("[Preferences] Failed to get token:", error);
-        setLoading(false);
-        toast.error("Failed to initialize secure session");
-      }
-    }
-
-    getToken();
-  }, [user, isVaultUnlocked]);
 
   // Load preferences
   useEffect(() => {

@@ -63,8 +63,12 @@ def validate_token(
         if not hmac.compare_digest(signature, expected_sig):
             return False, "Invalid signature", None
 
-        if expected_scope and scope_str != expected_scope.value:
-            return False, "Scope mismatch", None
+        # HIERARCHICAL CHECK: VAULT_OWNER satisfies ALL scopes
+        # This is the "Master Key" logic requested by the architecture.
+        is_owner = scope_str == "vault.owner" or scope_str == ConsentScope.VAULT_OWNER.value
+        
+        if expected_scope and not is_owner and scope_str != expected_scope.value:
+            return False, f"Scope mismatch: expected {expected_scope.value}, got {scope_str}", None
 
         if int(time.time() * 1000) > int(expires_at_str):
             return False, "Token expired", None
