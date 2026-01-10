@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get("Authorization");
+/**
+ * Proxy for /api/identity/profile
+ * Refactored to POST for robust Body-based auth (matches Food/Finance agents)
+ */
+export const dynamic = "force-dynamic";
 
-  if (!authHeader) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const backendUrl =
-    process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
-
+export async function POST(request: NextRequest) {
   try {
+    // 1. Parse body (expect consentToken)
+    const body = await request.json();
+    const { consent_token } = body;
+
+    if (!consent_token) {
+      return NextResponse.json(
+        { error: "Missing consent_token in body" },
+        { status: 400 }
+      );
+    }
+
+    const backendUrl =
+      process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
+    // 2. Call Backend with POST + Body
     const res = await fetch(`${backendUrl}/api/identity/profile`, {
-      method: "GET",
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: authHeader,
       },
+      body: JSON.stringify({ consent_token }),
       cache: "no-store",
     });
 

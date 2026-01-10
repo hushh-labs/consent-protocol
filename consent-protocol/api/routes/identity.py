@@ -350,21 +350,22 @@ async def get_identity_status(
             }
 
 
-@router.get("/profile")
+class GetProfileRequest(BaseModel):
+    consent_token: str
+
+@router.post("/profile")
 async def get_encrypted_profile(
-    authorization: str = Header(..., description="Bearer VAULT_OWNER token")
+    request: GetProfileRequest
 ):
     """
     Get user's encrypted investor profile.
     
     Returns encrypted ciphertext for client-side decryption.
     This is what agents use for personalization.
-    """
-    # Validate VAULT_OWNER token
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
     
-    token = authorization.replace("Bearer ", "")
+    NOTE: Uses POST + Body for robust token transmission (avoids header stripping).
+    """
+    token = request.consent_token
     
     try:
         is_valid, error_msg, payload = validate_token(token)
