@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
 
     const response = await fetch(`${BACKEND_URL}/api/identity/status`, {
       method: "GET",
+      cache: "no-store",
       headers: {
         Authorization: authorization,
         "Content-Type": "application/json",

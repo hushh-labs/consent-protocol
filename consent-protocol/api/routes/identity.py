@@ -213,10 +213,15 @@ async def confirm_identity(
     token = authorization.replace("Bearer ", "")
     
     try:
-        payload = validate_token(token)
+        is_valid, error_msg, payload = validate_token(token)
+        if not is_valid or not payload:
+             raise HTTPException(status_code=401, detail=error_msg or "Invalid token")
+
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
         user_id = payload.user_id
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
@@ -307,10 +312,15 @@ async def get_identity_status(
     token = authorization.replace("Bearer ", "")
     
     try:
-        payload = validate_token(token)
+        is_valid, error_msg, payload = validate_token(token)
+        if not is_valid or not payload:
+             raise HTTPException(status_code=401, detail=error_msg or "Invalid token")
+
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
         user_id = payload.user_id
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
@@ -357,10 +367,15 @@ async def get_encrypted_profile(
     token = authorization.replace("Bearer ", "")
     
     try:
-        payload = validate_token(token)
+        is_valid, error_msg, payload = validate_token(token)
+        if not is_valid or not payload:
+             raise HTTPException(status_code=401, detail=error_msg or "Invalid token")
+
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
         user_id = payload.user_id
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
@@ -411,10 +426,15 @@ async def delete_identity(
     token = authorization.replace("Bearer ", "")
     
     try:
-        payload = validate_token(token)
+        is_valid, error_msg, payload = validate_token(token)
+        if not is_valid or not payload:
+             raise HTTPException(status_code=401, detail=error_msg or "Invalid token")
+
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
         user_id = payload.user_id
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
