@@ -38,8 +38,8 @@ import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
-import { hasValidConsent, getConsentToken } from "../actions";
-import { getPreferences, analyzeTicker } from "@/lib/services/kai-service";
+import { hasValidConsent } from "../actions";
+import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
 import { getGsap, animateOnce } from "@/lib/morphy-ux/gsap";
 
@@ -95,7 +95,7 @@ const QUICK_TICKERS = ["NVDA", "AAPL", "MSFT", "TSLA"];
 export default function KaiAnalysis() {
   const router = useRouter();
   const { user } = useAuth();
-  const { vaultKey, isVaultUnlocked } = useVault();
+  const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
 
   const [ticker, setTicker] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -143,15 +143,9 @@ export default function KaiAnalysis() {
       return;
     }
 
-    // 1. Get Consent Token (Vault Owner is sufficient, or agent.kai.analyze)
-    let consentToken = await getConsentToken("agent.kai.analyze");
-
-    // Auto-issue if missing (for dashboard owner flow)
-    if (!consentToken) {
-      // Simple prompt logic or auto-issue for owner
-      // For MVP Dashboard: Assume we can get one or fail
-      toast.error("Consent required. Please authorize Kai.");
-      // Trigger consent flow here ideally
+    // 1. Get VAULT OWNER Token from Context (Managed by VaultLockGuard)
+    if (!vaultOwnerToken) {
+      toast.error("Session expired. Please unlock vault again.");
       return;
     }
 
@@ -161,9 +155,9 @@ export default function KaiAnalysis() {
 
     try {
       // 2. Fetch Encrypted Profile (Ciphertext)
-      // We use the token to authorized the fetch
+      // Requires VAULT_OWNER token
       const encryptedProfile = await import("@/lib/services/kai-service").then(
-        (m) => m.getEncryptedProfile(consentToken!)
+        (m) => m.getEncryptedProfile(vaultOwnerToken)
       );
 
       // 3. Decrypt Profile Context (Client Side)
@@ -186,28 +180,28 @@ export default function KaiAnalysis() {
         Object.assign(decryptedContext, profileObj);
       }
 
-      // 4. Call Fundamental Agent with Decrypted Context
-      const analysisReport = await import("@/lib/services/kai-service").then(
-        (m) =>
-          m.analyzeFundamental(targetTicker, decryptedContext, consentToken!)
-      );
+      // 4. Call Fundamental Agent with Decrypted Context (Rich Engine)
+      const analysisResponse = await analyzeFundamental({
+        user_id: user.uid,
+        ticker: targetTicker,
+        risk_profile: "balanced", // TODO: Derive from context or preferences
+        processing_mode: "hybrid",
+        context: decryptedContext,
+        token: vaultOwnerToken,
+      });
 
       // Map to UI Model (Adapter)
+      // The Rich Engine returns { decision, headline, raw_card: { fundamental_insight, ... } }
       setResult({
-        ticker: analysisReport.ticker,
-        decision:
-          analysisReport.signal === "STRONG_BUY" ||
-          analysisReport.signal === "BUY"
-            ? "buy"
-            : analysisReport.signal === "STRONG_SELL" ||
-              analysisReport.signal === "SELL"
-            ? "reduce"
-            : "hold",
-        headline: `${analysisReport.signal} Signal generated`,
-        summary: analysisReport.summary,
-        confidence: analysisReport.fit_score / 100,
-        processing_mode: "secure_enclave",
-        raw_card: analysisReport, // Pass full report for details
+        ticker: analysisResponse.ticker,
+        decision: analysisResponse.decision,
+        headline: analysisResponse.headline,
+        summary:
+          analysisResponse.raw_card.fundamental_insight?.summary ||
+          analysisResponse.raw_card.debate_digest,
+        confidence: analysisResponse.confidence,
+        processing_mode: analysisResponse.processing_mode,
+        raw_card: analysisResponse.raw_card,
       } as any);
 
       toast.success(`Analysis complete for ${targetTicker}`);
@@ -223,13 +217,13 @@ export default function KaiAnalysis() {
 
   return (
     <div
-      className="min-h-dvh morphy-app-bg text-foreground selection:bg-primary/30 selection:text-foreground"
+      className="min-h-dvh text-foreground selection:bg-primary/30 selection:text-foreground"
       ref={containerRef}
     >
       {/* Background Glow */}
-      <div className="fixed inset-0 morphy-app-bg-radial opacity-30 pointer-events-none" />
+      <div className="fixed inset-0 opacity-30 pointer-events-none" />
 
-      <div className="relative max-w-6xl mx-auto px-6 py-12 lg:py-20 space-y-12">
+      <div className="relative max-w-6xl mx-auto px-6">
         {/* Terminal Header */}
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-4 border-b border-border/40 backdrop-blur-xs">
           <div className="space-y-1 text-center md:text-left">
