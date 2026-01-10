@@ -1,13 +1,12 @@
 "use client";
 
 /**
- * Kai Preferences Page
+ * Kai Preferences Page - Compact & Elegant
  *
- * Shows user's stored preferences from vault_kai:
- * - Confirmed investor profile (if any)
- * - Risk profile
- * - Processing mode
- * - Simulate VIP onboarding by selecting investor profile
+ * Shows user's investment profile and key KPIs in a streamlined layout:
+ * - Investor profile with key metrics (AUM, style, risk, holdings)
+ * - Risk profile & processing mode inline
+ * - VIP profile search modal
  *
  * All data is E2E encrypted - decrypted client-side with vault key.
  * Uses morphy-ux components per frontend-design-system.md.
@@ -24,12 +23,15 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
-  ChevronRight,
   TrendingUp,
   Scale,
   Search,
   Check,
   Sparkles,
+  Briefcase,
+  PieChart,
+  Clock,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/lib/morphy-ux/button";
 import {
@@ -38,7 +40,6 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
-  CardFooter,
 } from "@/lib/morphy-ux/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -67,7 +68,7 @@ export default function KaiPreferences() {
   const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
 
-  // Profile selection state
+  // Profile selection modal state
   const [showProfileSearch, setShowProfileSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<InvestorMatch[]>([]);
@@ -94,6 +95,8 @@ export default function KaiPreferences() {
         }
       } catch (error) {
         console.error("[Preferences] Failed to get token:", error);
+        setLoading(false);
+        toast.error("Failed to initialize secure session");
       }
     }
 
@@ -107,16 +110,35 @@ export default function KaiPreferences() {
 
       setLoading(true);
       try {
-        // Get identity status
-        const identity = await IdentityService.getIdentityStatus(
-          vaultOwnerToken
+        const { getEncryptedProfile } = await import(
+          "@/lib/services/kai-service"
         );
-        setIdentityStatus(identity);
+        const encryptedProfile = await getEncryptedProfile(vaultOwnerToken);
 
-        // Get Kai preferences (encrypted)
+        if (encryptedProfile && encryptedProfile.profile_data) {
+          const decryptedData = await HushhVault.decryptData({
+            keyHex: vaultKey,
+            payload: {
+              ciphertext: encryptedProfile.profile_data.ciphertext,
+              iv: encryptedProfile.profile_data.iv,
+              tag: encryptedProfile.profile_data.tag || "",
+              encoding: "base64",
+              algorithm: "aes-256-gcm",
+            },
+          });
+          const profile: InvestorProfile = JSON.parse(decryptedData.plaintext);
+
+          setIdentityStatus({
+            has_confirmed_identity: true,
+            confirmed_at: encryptedProfile.confirmed_at,
+            investor_name: profile.name,
+            investor_firm: profile.firm,
+          });
+          setSelectedProfile(profile); // Reuse state to store full profile
+        }
+
         const { preferences } = await getPreferences(user.uid);
 
-        // Decrypt each preference
         for (const pref of preferences) {
           const decrypted = await HushhVault.decryptData({
             keyHex: vaultKey,
@@ -145,10 +167,8 @@ export default function KaiPreferences() {
     loadPreferences();
   }, [user, vaultKey, vaultOwnerToken]);
 
-  // Search handler
   const handleSearch = useCallback(async () => {
     if (searchQuery.length < 2) return;
-
     setSearching(true);
     try {
       const results = await IdentityService.searchInvestors(searchQuery);
@@ -160,7 +180,6 @@ export default function KaiPreferences() {
     }
   }, [searchQuery]);
 
-  // Select profile
   const handleSelectProfile = async (match: InvestorMatch) => {
     setLoadingProfile(true);
     try {
@@ -176,7 +195,6 @@ export default function KaiPreferences() {
     }
   };
 
-  // Confirm profile
   const handleConfirmProfile = async () => {
     if (!selectedProfile || !vaultKey || !vaultOwnerToken) {
       toast.error("Missing required data");
@@ -185,28 +203,12 @@ export default function KaiPreferences() {
 
     setConfirming(true);
     try {
-      // Encrypt the profile data
-      const profileJson = JSON.stringify({
-        id: selectedProfile.id,
-        name: selectedProfile.name,
-        firm: selectedProfile.firm,
-        title: selectedProfile.title,
-        aum_billions: selectedProfile.aum_billions,
-        investment_style: selectedProfile.investment_style,
-        risk_tolerance: selectedProfile.risk_tolerance,
-        time_horizon: selectedProfile.time_horizon,
-        top_holdings: selectedProfile.top_holdings,
-        sector_exposure: selectedProfile.sector_exposure,
-        public_quotes: selectedProfile.public_quotes,
-        biography: selectedProfile.biography,
-      });
-
+      const profileJson = JSON.stringify(selectedProfile);
       const encrypted = await HushhVault.encryptData({
         keyHex: vaultKey,
         plaintext: profileJson,
       });
 
-      // Send to backend
       const result = await IdentityService.confirmIdentity(
         selectedProfile.id,
         {
@@ -240,10 +242,8 @@ export default function KaiPreferences() {
     }
   };
 
-  // Reset identity handler
   const handleResetIdentity = async () => {
     if (!vaultOwnerToken) return;
-
     setResetting(true);
     try {
       const result = await IdentityService.resetIdentity(vaultOwnerToken);
@@ -264,29 +264,35 @@ export default function KaiPreferences() {
     }
   };
 
-  // Risk profile icon mapping
-  const getRiskIcon = (profile: string) => {
-    switch (profile) {
-      case "conservative":
-        return <Shield className="w-5 h-5 text-blue-500" />;
-      case "balanced":
-        return <Scale className="w-5 h-5 text-purple-500" />;
-      case "aggressive":
-        return <TrendingUp className="w-5 h-5 text-green-500" />;
-      default:
-        return null;
-    }
-  };
+  // KPI badges for investor profiles
+  const KPIBadge = ({
+    icon: Icon,
+    label,
+    value,
+    color,
+  }: {
+    icon: typeof TrendingUp;
+    label: string;
+    value: string;
+    color: string;
+  }) => (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${color}`}>
+      <Icon className="w-4 h-4" />
+      <div className="text-xs">
+        <div className="opacity-70">{label}</div>
+        <div className="font-semibold">{value}</div>
+      </div>
+    </div>
+  );
 
   if (!isVaultUnlocked) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <Card variant="none" effect="glass" className="border-0 shadow-xl">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Shield className="w-12 h-12 text-amber-500 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Vault Locked</h2>
-            <p className="text-muted-foreground text-center">
-              Please unlock your vault to view preferences
+      <div className="p-6 max-w-lg mx-auto">
+        <Card variant="none" effect="glass" className="border-0">
+          <CardContent className="flex flex-col items-center justify-center py-8">
+            <Shield className="w-10 h-10 text-amber-500 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              Unlock vault to view preferences
             </p>
           </CardContent>
         </Card>
@@ -295,88 +301,199 @@ export default function KaiPreferences() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4 max-w-lg mx-auto space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-3">
         <Button
           variant="none"
           effect="glass"
           size="icon-sm"
           onClick={() => router.back()}
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Kai Preferences</h1>
-          <p className="text-muted-foreground text-sm">
-            Your encrypted investment profile
-          </p>
-        </div>
+        <h1 className="text-xl font-bold">Preferences</h1>
       </div>
 
       {loading ? (
-        <Card variant="none" effect="glass" className="border-0 shadow-xl">
-          <CardContent className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        <Card variant="none" effect="glass" className="border-0">
+          <CardContent className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {/* Investor Profile Card */}
-          <Card variant="none" effect="glass" className="border-0 shadow-xl">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <User className="w-5 h-5" />
-                Investor Profile
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+        <>
+          {/* Investor Profile - Compact KPI Display */}
+          <Card
+            variant="none"
+            effect="glass"
+            className="border-0 overflow-hidden"
+          >
+            <CardContent className="p-4">
               {identityStatus?.has_confirmed_identity ? (
                 <div className="space-y-3">
-                  <div className="p-4 rounded-xl bg-linear-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-                    <h3 className="font-bold text-lg">
-                      {identityStatus.investor_name}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {identityStatus.investor_firm}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Confirmed:{" "}
-                      {new Date(
-                        identityStatus.confirmed_at!
-                      ).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
+                  {/* Header Row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+                        <User className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold">
+                          {identityStatus.investor_name}
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          {identityStatus.investor_firm}
+                        </p>
+                      </div>
+                    </div>
                     <Button
                       variant="none"
                       effect="glass"
-                      size="sm"
-                      onClick={() => setShowProfileSearch(true)}
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Change
-                    </Button>
-                    <Button
-                      variant="none"
-                      effect="glass"
-                      size="sm"
+                      size="icon-sm"
                       onClick={handleResetIdentity}
                       disabled={resetting}
-                      className="text-red-500 hover:text-red-600"
+                      className="text-red-500"
                     >
                       {resetting ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <Trash2 className="w-4 h-4 mr-2" />
+                        <Trash2 className="w-4 h-4" />
                       )}
-                      Reset
                     </Button>
                   </div>
+
+                  {/* KPI Grid - 2x2 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <KPIBadge
+                      icon={Scale}
+                      label="Risk"
+                      value={riskProfile || "Balanced"}
+                      color="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    />
+                    <KPIBadge
+                      icon={TrendingUp}
+                      label="Style"
+                      value={selectedProfile?.investment_style?.[0] || "Value"}
+                      color="bg-green-500/10 text-green-600 dark:text-green-400"
+                    />
+                    <KPIBadge
+                      icon={Clock}
+                      label="Horizon"
+                      value={selectedProfile?.time_horizon || "Long-term"}
+                      color="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    />
+                    <KPIBadge
+                      icon={Cpu}
+                      label="Mode"
+                      value={
+                        processingMode === "hybrid" ? "Hybrid" : "On-Device"
+                      }
+                      color="bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                    />
+                  </div>
+
+                  {/* DETAILS VAULT VIEW */}
+                  {selectedProfile && (
+                    <div className="mt-4 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Briefcase className="w-4 h-4 text-primary" />
+                        <h4 className="text-sm font-semibold">
+                          Captured Metrics (Decrypted)
+                        </h4>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+                            AUM
+                          </p>
+                          <p className="font-mono">
+                            ${selectedProfile.aum_billions}B
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+                            Public Quotes
+                          </p>
+                          <p className="font-mono">
+                            {selectedProfile.public_quotes?.length || 0} Quotes
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-muted-foreground uppercase text-[10px] tracking-wider">
+                          Investment Style
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedProfile.investment_style?.map((s) => (
+                            <span
+                              key={s}
+                              className="px-2 py-1 bg-zinc-200 dark:bg-zinc-800 rounded text-[10px]"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-muted-foreground uppercase text-[10px] tracking-wider">
+                          Sector Exposure
+                        </p>
+                        <div className="space-y-1">
+                          {selectedProfile.sector_exposure &&
+                            Object.entries(selectedProfile.sector_exposure)
+                              .slice(0, 3)
+                              .map(([sector, pct]) => (
+                                <div
+                                  key={sector}
+                                  className="flex items-center justify-between text-[10px]"
+                                >
+                                  <span>{sector}</span>
+                                  <span className="font-mono text-primary">
+                                    {(Number(pct) * 100).toFixed(1)}%
+                                  </span>
+                                </div>
+                              ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-muted-foreground uppercase text-[10px] tracking-wider">
+                          Top Holdings
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedProfile.top_holdings
+                            ?.slice(0, 5)
+                            .map((h: any) => (
+                              <span
+                                key={h.ticker}
+                                className="px-2 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-[10px] font-mono border border-blue-500/20"
+                              >
+                                {h.ticker}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Change Profile Link */}
+                  <button
+                    onClick={() => setShowProfileSearch(true)}
+                    className="w-full text-xs text-primary hover:underline text-center py-2"
+                  >
+                    Change investor profile
+                  </button>
                 </div>
               ) : (
-                <div className="text-center py-4">
-                  <p className="text-muted-foreground mb-4">
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
+                    <User className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
                     No investor profile linked
                   </p>
                   <Button
@@ -386,73 +503,71 @@ export default function KaiPreferences() {
                     onClick={() => setShowProfileSearch(true)}
                     showRipple
                   >
-                    <Search className="w-4 h-4 mr-2" />
-                    Select Profile
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Load VIP Profile
                   </Button>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Simulate VIP Onboarding Section */}
+          {/* Profile Search Modal */}
           {showProfileSearch && (
-            <Card variant="none" effect="glass" className="border-0 shadow-xl">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-purple-500" />
-                  Simulate VIP Onboarding
+            <Card variant="none" effect="glass" className="border-0">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-500" />
+                  Select Investor Profile
                 </CardTitle>
-                <CardDescription>
-                  Select an investor profile to pre-load preferences
-                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Profile Preview */}
+              <CardContent className="space-y-3">
                 {selectedProfile ? (
                   <div className="space-y-3">
-                    <div className="p-4 rounded-xl bg-linear-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
-                      <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center">
-                          <User className="w-6 h-6 text-purple-500" />
+                    {/* Selected Profile Preview */}
+                    <div className="p-3 rounded-lg bg-linear-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                          <User className="w-5 h-5 text-purple-500" />
                         </div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-lg">
-                            {selectedProfile.name}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {selectedProfile.title} @ {selectedProfile.firm}
+                        <div>
+                          <h4 className="font-bold">{selectedProfile.name}</h4>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedProfile.title} • {selectedProfile.firm}
                           </p>
-                          {selectedProfile.aum_billions && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              AUM: ${selectedProfile.aum_billions}B
-                            </p>
-                          )}
                         </div>
                       </div>
 
-                      {selectedProfile.investment_style && (
-                        <div className="mt-4">
-                          <p className="text-xs font-semibold text-muted-foreground mb-2">
-                            INVESTMENT STYLE
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {selectedProfile.investment_style.map((style) => (
-                              <span
-                                key={style}
-                                className="px-2 py-1 text-xs rounded-full bg-purple-500/20 text-purple-600 dark:text-purple-400"
-                              >
-                                {style}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      {/* Key Metrics Row */}
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {selectedProfile.aum_billions && (
+                          <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-600 dark:text-green-400">
+                            ${selectedProfile.aum_billions}B AUM
+                          </span>
+                        )}
+                        {selectedProfile.risk_tolerance && (
+                          <span className="px-2 py-1 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                            {selectedProfile.risk_tolerance}
+                          </span>
+                        )}
+                        {selectedProfile.investment_style
+                          ?.slice(0, 2)
+                          .map((style) => (
+                            <span
+                              key={style}
+                              className="px-2 py-1 rounded-full bg-purple-500/20 text-purple-600 dark:text-purple-400"
+                            >
+                              {style}
+                            </span>
+                          ))}
+                      </div>
                     </div>
 
+                    {/* Actions */}
                     <div className="flex gap-2">
                       <Button
                         variant="none"
                         effect="glass"
+                        size="sm"
                         className="flex-1"
                         onClick={() => setSelectedProfile(null)}
                         disabled={confirming}
@@ -462,6 +577,7 @@ export default function KaiPreferences() {
                       <Button
                         variant="gradient"
                         effect="glass"
+                        size="sm"
                         className="flex-1"
                         onClick={handleConfirmProfile}
                         disabled={confirming}
@@ -472,27 +588,27 @@ export default function KaiPreferences() {
                         ) : (
                           <Check className="w-4 h-4 mr-2" />
                         )}
-                        {confirming ? "Loading..." : "Load Profile"}
+                        Confirm
                       </Button>
                     </div>
                   </div>
                 ) : (
                   <>
-                    {/* Search */}
+                    {/* Search Input */}
                     <div className="flex gap-2">
                       <Input
-                        placeholder="Search investor name..."
+                        placeholder="Search Warren Buffett..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                        className="glass-interactive"
+                        className="h-9 text-sm"
                       />
                       <Button
                         variant="gradient"
                         effect="glass"
+                        size="sm"
                         onClick={handleSearch}
                         disabled={searching}
-                        showRipple
                       >
                         {searching ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -502,27 +618,26 @@ export default function KaiPreferences() {
                       </Button>
                     </div>
 
-                    {/* Results */}
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {/* Results List */}
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
                       {searchResults.map((match) => (
                         <button
                           key={match.id}
                           onClick={() => handleSelectProfile(match)}
                           disabled={loadingProfile}
-                          className="w-full p-3 rounded-lg glass-interactive flex items-center gap-3 text-left transition-all hover:bg-primary/5"
+                          className="w-full p-2 rounded-lg glass-interactive flex items-center gap-2 text-left text-sm hover:bg-primary/5"
                         >
-                          <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                            <User className="w-4 h-4 text-blue-500" />
+                          <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center">
+                            <User className="w-3.5 h-3.5 text-blue-500" />
                           </div>
-                          <div className="flex-1">
-                            <h4 className="font-medium text-sm">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">
                               {match.name}
-                            </h4>
-                            <p className="text-xs text-muted-foreground">
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
                               {match.firm}
-                            </p>
+                            </div>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
                         </button>
                       ))}
                     </div>
@@ -531,8 +646,13 @@ export default function KaiPreferences() {
                     <Button
                       variant="none"
                       effect="glass"
+                      size="sm"
                       className="w-full"
-                      onClick={() => setShowProfileSearch(false)}
+                      onClick={() => {
+                        setShowProfileSearch(false);
+                        setSearchResults([]);
+                        setSearchQuery("");
+                      }}
                     >
                       Cancel
                     </Button>
@@ -542,56 +662,14 @@ export default function KaiPreferences() {
             </Card>
           )}
 
-          {/* Risk Profile Card */}
-          <Card variant="none" effect="glass" className="border-0 shadow-xl">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                {riskProfile && getRiskIcon(riskProfile)}
-                Risk Profile
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {riskProfile ? (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <span className="capitalize font-medium">{riskProfile}</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </div>
-              ) : (
-                <p className="text-muted-foreground">Not set</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Processing Mode Card */}
-          <Card variant="none" effect="glass" className="border-0 shadow-xl">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Cpu className="w-5 h-5" />
-                Processing Mode
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {processingMode ? (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <span className="capitalize font-medium">
-                    {processingMode === "hybrid" ? "Hybrid Cloud" : "On-Device"}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </div>
-              ) : (
-                <p className="text-muted-foreground">Not set</p>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Back to Analysis */}
           <Link href="/dashboard/kai/analysis">
-            <Button variant="none" effect="glass" className="w-full" showRipple>
+            <Button variant="none" effect="glass" size="sm" className="w-full">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Analysis
             </Button>
           </Link>
-        </div>
+        </>
       )}
     </div>
   );

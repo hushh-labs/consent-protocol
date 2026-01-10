@@ -347,7 +347,9 @@ async def run_full_migration(pool: asyncpg.Pool):
     print("🗑️  Dropping existing tables...")
     
     for table in ["vault_data", "vault_food", "vault_professional", 
-                  "vault_passkeys", "consent_audit", "vault_keys"]:
+                  "vault_passkeys", "consent_audit", "vault_keys",
+                  "vault_kai", "vault_kai_preferences", 
+                  "user_investor_profiles", "investor_profiles"]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     
     # Create in dependency order
@@ -355,6 +357,12 @@ async def run_full_migration(pool: asyncpg.Pool):
     await create_vault_food(pool)
     await create_vault_professional(pool)
     await create_consent_audit(pool)
+    
+    # Kai & Investor Layer
+    await create_investor_profiles(pool)
+    await create_user_investor_profiles(pool)
+    await create_vault_kai(pool)
+    await create_vault_kai_preferences(pool)
     
     print("✅ Full migration complete!")
 
