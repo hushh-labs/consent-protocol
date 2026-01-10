@@ -123,3 +123,36 @@ export async function getPreferences(
     authToken,
   });
 }
+
+/**
+ * Get User's Encrypted Investor Profile (Ciphertext)
+ * Calls GET /api/identity/profile
+ */
+export async function getEncryptedProfile(token: string): Promise<any> {
+  const res = await fetch("/api/identity/profile", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Failed to fetch profile");
+  return res.json();
+}
+
+/**
+ * Fundamental Analysis (New Engine)
+ * Calls POST /api/analysis/analyze
+ */
+export async function analyzeFundamental(
+  ticker: string,
+  context: any,
+  token: string
+): Promise<any> {
+  const res = await fetch("/api/analysis/analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ ticker, context }),
+  });
+  if (!res.ok) throw new Error("Analysis failed");
+  return res.json();
+}
