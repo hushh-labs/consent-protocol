@@ -59,6 +59,7 @@ class FundamentalAgent:
         ticker: str,
         user_id: str,
         consent_token: str,
+        context: Optional[Dict[str, Any]] = None,
     ) -> FundamentalInsight:
         """
         Perform fundamental analysis using operons.
@@ -111,7 +112,8 @@ class FundamentalAgent:
                     consent_token=consent_token,
                     sec_data=sec_filings,
                     market_data=market_data,
-                    quant_metrics=quant_metrics
+                    quant_metrics=quant_metrics,
+                    user_context=context
                 )
             except Exception as e:
                 logger.warning(f"[Fundamental] Gemini analysis failed: {e}. Falling back to deterministic.")
