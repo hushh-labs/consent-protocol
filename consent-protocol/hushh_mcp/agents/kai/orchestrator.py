@@ -72,6 +72,7 @@ class KaiOrchestrator:
         self,
         ticker: str,
         consent_token: str,
+        context: Optional[Dict[str, Any]] = None,
     ) -> DecisionCard:
         """
         Perform complete investment analysis on a ticker.
@@ -96,7 +97,7 @@ class KaiOrchestrator:
         try:
             # Step 2: Run parallel agent analysis
             fundamental, sentiment, valuation = await asyncio.wait_for(
-                self._run_agent_analysis(ticker, consent_token),
+                self._run_agent_analysis(ticker, consent_token, context),
                 timeout=ANALYSIS_TIMEOUT
             )
             
@@ -157,13 +158,18 @@ class KaiOrchestrator:
         
         logger.info("[Kai] Consent validated")
     
-    async def _run_agent_analysis(self, ticker: str, consent_token: str):
+    async def _run_agent_analysis(
+        self,
+        ticker: str,
+        consent_token: str,
+        context: Optional[Dict[str, Any]] = None
+    ):
         """Run all 3 agents in parallel."""
         logger.info(f"[Kai] Running 3-agent analysis for {ticker}")
         
         # Run agents concurrently
         fundamental_task = self.fundamental_agent.analyze(
-            ticker, self.user_id, consent_token
+            ticker, self.user_id, consent_token, context
         )
         sentiment_task = self.sentiment_agent.analyze(
             ticker, self.user_id, consent_token

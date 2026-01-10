@@ -11,7 +11,7 @@ Stateless Zero-Knowledge Architecture:
 
 from fastapi import APIRouter, HTTPException, Query, Body, Header
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Literal
+from typing import Optional, List, Dict, Literal, Any
 from datetime import datetime
 import uuid
 import logging
@@ -53,6 +53,7 @@ class AnalyzeRequest(BaseModel):
     # Client provides context explicitly (Stateless)
     risk_profile: Literal["conservative", "balanced", "aggressive"] = "balanced"
     processing_mode: Literal["on_device", "hybrid"] = "hybrid"
+    context: Optional[Dict[str, Any]] = None # Decrypted user profile context
 
 
 class AnalyzeResponse(BaseModel):
@@ -226,7 +227,18 @@ async def analyze_ticker(
                     raise HTTPException(status_code=403, detail="Session user mismatch")
                 
                 logger.info(f"[Kai] Implicit consent granted for owner: {request.user_id}")
-                token_to_use = "IMPLICIT_SAMESESSION_AUTH"
+                
+                # ISSUE REAL EPHEMERAL TOKEN (30s)
+                # This ensures downstream agents/operons validate it successfully.
+                # 'vault.owner' grants UNIVERSIAL ACCESS (checked hierarchically in token.py)
+                scope = ConsentScope("vault.owner")
+                token_obj = issue_token(
+                    user_id=request.user_id,
+                    agent_id="implicit_session",
+                    scope=scope,
+                    expires_in_ms=30000 
+                )
+                token_to_use = token_obj.token
                 
             except Exception as e:
                 logger.warning(f"[Kai] Implicit auth failed: {e}")
@@ -236,6 +248,7 @@ async def analyze_ticker(
         decision_card = await orchestrator.analyze(
             ticker=request.ticker,
             consent_token=token_to_use,
+            context=request.context
         )
         
         # Convert to dictionary for response
