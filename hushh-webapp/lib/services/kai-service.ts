@@ -130,7 +130,9 @@ export async function getPreferences(
  */
 export async function getEncryptedProfile(token: string): Promise<any> {
   const res = await fetch("/api/identity/profile", {
-    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ consent_token: token }),
   });
   if (!res.ok) throw new Error("Failed to fetch profile");
   return res.json();
