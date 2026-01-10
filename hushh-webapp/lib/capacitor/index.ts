@@ -590,6 +590,120 @@ export const HushhSync = registerPlugin<HushhSyncPlugin>("HushhSync", {
   web: () => import("./plugins/sync-web").then((m) => new m.HushhSyncWeb()),
 });
 
+// ==================== HushhIdentityPlugin ====================
+// Investor identity detection and confirmation for Kai onboarding
+// Separate modular plugin for identity resolution
+
+export interface InvestorMatch {
+  id: number;
+  name: string;
+  firm: string | null;
+  title: string | null;
+  aum_billions: number | null;
+  investment_style: string[] | null;
+  top_holdings: any[] | null;
+  confidence: number;
+}
+
+export interface InvestorProfile {
+  id: number;
+  name: string;
+  cik: string | null;
+  firm: string | null;
+  title: string | null;
+  investor_type: string | null;
+  photo_url: string | null;
+  aum_billions: number | null;
+  top_holdings: any[] | null;
+  sector_exposure: Record<string, number> | null;
+  investment_style: string[] | null;
+  risk_tolerance: string | null;
+  time_horizon: string | null;
+  portfolio_turnover: string | null;
+  recent_buys: string[] | null;
+  recent_sells: string[] | null;
+  public_quotes: any[] | null;
+  biography: string | null;
+  education: string[] | null;
+  board_memberships: string[] | null;
+  peer_investors: string[] | null;
+  is_insider: boolean;
+  insider_company_ticker: string | null;
+}
+
+export interface IdentityStatusResult {
+  has_confirmed_identity: boolean;
+  confirmed_at: string | null;
+  investor_name: string | null;
+  investor_firm: string | null;
+}
+
+export interface HushhIdentityPlugin {
+  /**
+   * Auto-detect investor from Firebase displayName.
+   * Calls /api/identity/auto-detect on backend.
+   */
+  autoDetect(options: { authToken: string }): Promise<{
+    detected: boolean;
+    display_name: string | null;
+    matches: InvestorMatch[];
+  }>;
+
+  /**
+   * Search investor profiles by name (public endpoint).
+   * Calls /api/investors/search on backend.
+   */
+  searchInvestors(options: {
+    name: string;
+    limit?: number;
+  }): Promise<{ investors: InvestorMatch[] }>;
+
+  /**
+   * Get full investor profile by ID (public endpoint).
+   * Calls /api/investors/{id} on backend.
+   */
+  getInvestor(options: { id: number }): Promise<InvestorProfile>;
+
+  /**
+   * Confirm identity and save encrypted profile to vault.
+   * Requires VAULT_OWNER token.
+   * Calls /api/identity/confirm on backend.
+   */
+  confirmIdentity(options: {
+    investorId: number;
+    profileDataCiphertext: string;
+    profileDataIv: string;
+    profileDataTag: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean; message: string }>;
+
+  /**
+   * Get identity status (has user confirmed identity?).
+   * Requires VAULT_OWNER token.
+   * Calls /api/identity/status on backend.
+   */
+  getIdentityStatus(options: {
+    vaultOwnerToken: string;
+  }): Promise<IdentityStatusResult>;
+
+  /**
+   * Reset/delete confirmed identity.
+   * Requires VAULT_OWNER token.
+   * Calls DELETE /api/identity/profile on backend.
+   */
+  resetIdentity(options: {
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
+}
+
+export const HushhIdentity = registerPlugin<HushhIdentityPlugin>(
+  "HushhIdentity",
+  {
+    web: () =>
+      import("./plugins/identity-web").then((m) => new m.HushhIdentityWeb()),
+  }
+);
+
 // ==================== Export all ====================
 
 export * from "./types";
