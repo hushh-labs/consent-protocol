@@ -72,9 +72,119 @@ class IdentityStatus(BaseModel):
     investor_firm: Optional[str] = None
 
 
+class AutoDetectMatch(BaseModel):
+    """Investor match from auto-detection."""
+    id: int
+    name: str
+    firm: Optional[str] = None
+    title: Optional[str] = None
+    aum_billions: Optional[float] = None
+    investment_style: Optional[list] = None
+    top_holdings: Optional[list] = None
+    confidence: float
+
+
+class AutoDetectResponse(BaseModel):
+    """Response from auto-detection."""
+    detected: bool
+    display_name: Optional[str] = None
+    matches: list[AutoDetectMatch] = []
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
+
+@router.get("/auto-detect", response_model=AutoDetectResponse)
+async def auto_detect_investor(
+    authorization: str = Header(..., description="Bearer Firebase ID token")
+):
+    """
+    Auto-detect investor from Firebase displayName.
+    
+    Used during onboarding to suggest identity match.
+    
+    Flow:
+    1. Validate Firebase ID token
+    2. Extract displayName from token
+    3. Search investor_profiles by displayName
+    4. Return best matches with confidence scores
+    
+    If no displayName or no matches found, returns {"detected": False}
+    """
+    import re
+    from firebase_admin import auth as firebase_auth
+    
+    # Validate Firebase token
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    try:
+        # Verify Firebase ID token
+        decoded_token = firebase_auth.verify_id_token(token)
+        user_name = decoded_token.get("name", "")
+        user_email = decoded_token.get("email", "")
+        
+        # Try display name first, fallback to email prefix
+        display_name = user_name or (user_email.split("@")[0] if user_email else "")
+        
+        if not display_name or len(display_name) < 2:
+            return {"detected": False, "display_name": None, "matches": []}
+        
+        logger.info(f"🔍 Auto-detecting investor for displayName: {display_name}")
+        
+    except Exception as e:
+        logger.error(f"Firebase token validation failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+    
+    pool = await get_pool()
+    
+    # Normalize search term
+    name_normalized = re.sub(r'\s+', '', display_name.lower())
+    
+    async with pool.acquire() as conn:
+        # Search for matches using fuzzy matching
+        query = """
+            SELECT 
+                id, name, firm, title, aum_billions, investment_style, top_holdings,
+                similarity(name, $1) as similarity_score
+            FROM investor_profiles
+            WHERE 
+                name ILIKE $2
+                OR name % $1
+                OR name_normalized ILIKE $3
+            ORDER BY similarity_score DESC, aum_billions DESC NULLS LAST
+            LIMIT 5
+        """
+        
+        rows = await conn.fetch(query, display_name, f"%{display_name}%", f"%{name_normalized}%")
+        
+        if not rows:
+            logger.info(f"📭 No investor matches found for: {display_name}")
+            return {"detected": False, "display_name": display_name, "matches": []}
+        
+        matches = []
+        for row in rows:
+            matches.append({
+                "id": row["id"],
+                "name": row["name"],
+                "firm": row["firm"],
+                "title": row["title"],
+                "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
+                "investment_style": row["investment_style"],
+                "top_holdings": row["top_holdings"][:3] if row["top_holdings"] else None,  # Top 3 only
+                "confidence": round(float(row["similarity_score"]), 3) if row["similarity_score"] else 0
+            })
+        
+        logger.info(f"✅ Found {len(matches)} investor matches for: {display_name}")
+        
+        return {
+            "detected": True,
+            "display_name": display_name,
+            "matches": matches
+        }
 
 @router.post("/confirm", response_model=IdentityConfirmResponse)
 async def confirm_identity(
