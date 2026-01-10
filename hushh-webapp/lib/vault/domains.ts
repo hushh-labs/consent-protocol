@@ -13,7 +13,7 @@
  * 3. Consent Protocol - scoped tokens for each action
  */
 
-import { getAllFoodData, getAllProfessionalData } from "@/lib/db";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // DOMAIN DEFINITIONS
@@ -40,7 +40,10 @@ export interface DomainConfig {
   /** Required scope for writing this domain */
   writeScope: string;
   /** Database getter function */
-  getData: (userId: string) => Promise<Record<string, unknown> | null>;
+  getData: (
+    userId: string,
+    consentToken?: string
+  ) => Promise<Record<string, unknown> | null>;
   /** Field names in this domain */
   fields: string[];
 }
@@ -55,7 +58,12 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     description: "Dietary restrictions, cuisine preferences, and budget",
     readScope: "vault.read.food",
     writeScope: "vault.write.food",
-    getData: getAllFoodData,
+    getData: async (userId, token) => {
+      const res = await ApiService.getFoodPreferences(userId, token);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.preferences;
+    },
     fields: [
       "dietary_restrictions",
       "cuisine_preferences",
@@ -68,7 +76,12 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     description: "Job title, skills, experience, and preferences",
     readScope: "vault.read.professional",
     writeScope: "vault.write.professional",
-    getData: getAllProfessionalData,
+    getData: async (userId, token) => {
+      const res = await ApiService.getProfessionalProfile(userId, token);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.preferences;
+    },
     fields: [
       "professional_title",
       "skills",
@@ -135,14 +148,15 @@ export function isDomainActive(domain: VaultDomain): boolean {
  * Returns encrypted data only - decryption happens client-side.
  */
 export async function getAllUserPreferences(
-  userId: string
+  userId: string,
+  consentToken?: string
 ): Promise<Record<string, unknown> | null> {
   const results: Record<string, unknown> = {};
   let hasData = false;
 
   for (const domain of getActiveDomains()) {
     const config = VAULT_DOMAINS[domain];
-    const data = await config.getData(userId);
+    const data = await config.getData(userId, consentToken);
     if (data) {
       Object.assign(results, data);
       hasData = true;
@@ -157,8 +171,9 @@ export async function getAllUserPreferences(
  */
 export async function getDomainPreferences(
   userId: string,
-  domain: VaultDomain
+  domain: VaultDomain,
+  consentToken?: string
 ): Promise<Record<string, unknown> | null> {
   const config = VAULT_DOMAINS[domain];
-  return config.getData(userId);
+  return config.getData(userId, consentToken);
 }
