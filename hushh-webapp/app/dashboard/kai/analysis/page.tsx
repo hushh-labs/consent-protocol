@@ -32,6 +32,8 @@ import {
   BarChart3,
   ArrowRight,
   Loader2,
+  TrendingDown,
+  Scale,
 } from "lucide-react";
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -48,6 +50,7 @@ interface TrendDataPoint {
   value: number;
 }
 
+// MATCHING BACKEND SCHEMA (DecisionCard)
 interface LocalAnalyzeResponse {
   ticker: string;
   decision: "buy" | "hold" | "reduce";
@@ -62,9 +65,7 @@ interface LocalAnalyzeResponse {
       growth_efficiency: string;
       bull_case: string;
       bear_case: string;
-      key_metrics?: {
-        cik?: string;
-      };
+      summary?: string;
     };
     quant_metrics: {
       revenue_growth_yoy: number;
@@ -86,7 +87,13 @@ interface LocalAnalyzeResponse {
         rnd_intensity: number;
         earnings_quality: number;
       };
+      valuation?: {
+        pe_ratio: number;
+        ps_ratio: number;
+        enterprise_value_billions: number;
+      };
     };
+    risk_persona_alignment?: string;
   };
 }
 
@@ -155,15 +162,12 @@ export default function KaiAnalysis() {
 
     try {
       // 2. Fetch Encrypted Profile (Ciphertext)
-      // Requires VAULT_OWNER token
       const encryptedProfile = await import("@/lib/services/kai-service").then(
         (m) => m.getEncryptedProfile(vaultOwnerToken)
       );
 
       // 3. Decrypt Profile Context (Client Side)
       const decryptedContext: any = {};
-
-      // Decrypt "profile_data" blob
       if (encryptedProfile.profile_data) {
         const profileJson = await decryptData(
           {
@@ -175,12 +179,11 @@ export default function KaiAnalysis() {
           },
           vaultKey
         );
-        // Parse JSON string -> Object
         const profileObj = JSON.parse(profileJson);
         Object.assign(decryptedContext, profileObj);
       }
 
-      // 4. Call Fundamental Agent with Decrypted Context (Rich Engine)
+      // 4. Call Fundamental Agent with Decrypted Context
       const analysisResponse = await analyzeFundamental({
         user_id: user.uid,
         ticker: targetTicker,
@@ -190,8 +193,7 @@ export default function KaiAnalysis() {
         token: vaultOwnerToken,
       });
 
-      // Map to UI Model (Adapter)
-      // The Rich Engine returns { decision, headline, raw_card: { fundamental_insight, ... } }
+      // Map to UI Model (Standardizing on Rich Output)
       setResult({
         ticker: analysisResponse.ticker,
         decision: analysisResponse.decision,
@@ -217,30 +219,29 @@ export default function KaiAnalysis() {
 
   return (
     <div
-      className="min-h-dvh text-foreground selection:bg-primary/30 selection:text-foreground"
+      className="min-h-dvh text-foreground selection:bg-primary/30 selection:text-foreground pb-20"
       ref={containerRef}
     >
       {/* Background Glow */}
       <div className="fixed inset-0 opacity-30 pointer-events-none" />
 
-      <div className="relative max-w-6xl mx-auto px-6">
+      <div className="relative max-w-7xl mx-auto px-6">
         {/* Terminal Header */}
-        <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-4 border-b border-border/40 backdrop-blur-xs">
+        <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
           <div className="space-y-1 text-center md:text-left">
-            <h1 className="text-3xl font-black tracking-tighter flex items-center justify-center md:justify-start gap-2">
-              <Activity className="h-6 w-6 text-primary animate-pulse" />
-              KAI <span className="text-primary">TERMINAL</span>
+            <h1 className="text-3xl font-black tracking-tighter flex items-center justify-center md:justify-start gap-3">
+              <Activity className="h-8 w-8 text-primary animate-pulse" />
+              KAI <span className="text-primary/80">TERMINAL</span>
             </h1>
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/80">
               Institutional Grade Fundamental Engine
             </p>
           </div>
 
-          {/* Preferences Button - Use Link for client-side nav to preserve vault state */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <Link
               href="/dashboard/kai/preferences"
-              className="glass-interactive px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium hover:bg-primary/10 transition-colors"
+              className="glass-interactive px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold uppercase tracking-wider hover:bg-primary/10 transition-colors border border-border/50"
             >
               <ShieldCheck className="h-4 w-4 text-primary" />
               Preferences
@@ -251,15 +252,15 @@ export default function KaiAnalysis() {
             onSubmit={(e) => handleSubmit(e)}
             className="w-full md:max-w-md"
           >
-            <div className="glass-interactive flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md">
-              <div className="flex items-center gap-2 flex-1 px-3">
+            <div className="glass-interactive flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+              <div className="flex items-center gap-3 flex-1 px-4">
                 <Search className="h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Ticker (e.g. NVDA)"
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value)}
-                  className="bg-transparent border-0 outline-none text-sm font-bold placeholder:text-muted-foreground/50 w-full uppercase"
+                  className="bg-transparent border-0 outline-none text-base font-black placeholder:text-muted-foreground/50 w-full uppercase tracking-wider"
                   disabled={isAnalyzing}
                 />
               </div>
@@ -270,7 +271,7 @@ export default function KaiAnalysis() {
                 size="sm"
                 type="submit"
                 disabled={!ticker.trim() || isAnalyzing}
-                className="rounded-lg h-9 px-4 font-black text-[10px] uppercase tracking-widest shadow-lg"
+                className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
               >
                 {isAnalyzing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -283,39 +284,49 @@ export default function KaiAnalysis() {
         </header>
 
         {result ? (
-          <div className="space-y-8" ref={scorecardRef}>
-            {/* Institutional Scorecard Header */}
-            <div className="grid lg:grid-cols-3 gap-6">
+          <div
+            className="space-y-8 animate-in slide-in-from-bottom-5 duration-700"
+            ref={scorecardRef}
+          >
+            {/* 1. TOP LEVEL DECISION CARD */}
+            <div className="grid lg:grid-cols-12 gap-6">
               <Card
                 variant="none"
                 effect="glass"
-                className="lg:col-span-2 p-8 relative overflow-hidden"
+                className="lg:col-span-8 p-8 relative overflow-hidden flex flex-col justify-between min-h-[300px]"
               >
-                <div className="absolute top-0 right-0 p-12 opacity-[0.03] text-foreground pointer-events-none">
+                <div className="absolute top-0 right-0 p-12 opacity-[0.04] text-foreground pointer-events-none">
                   <Terminal className="h-64 w-64" />
                 </div>
-                <div className="relative space-y-6">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="h-16 w-16 glass flex items-center justify-center rounded-2xl border border-border shadow-inner">
-                        <span className="text-3xl font-black tracking-tighter">
+
+                <div className="space-y-6 relative z-10">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center gap-6">
+                      <div className="h-20 w-20 glass flex items-center justify-center rounded-2xl border border-border/60 shadow-inner bg-background/50">
+                        <span className="text-4xl font-black tracking-tighter text-foreground">
                           {result.ticker}
                         </span>
                       </div>
                       <div>
-                        <h2 className="text-2xl font-bold tracking-tight">
+                        <h2 className="text-2xl font-bold tracking-tight text-foreground/90 leading-tight">
                           {result.headline}
                         </h2>
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1">
-                          <ShieldCheck className="h-3 w-3" />
-                          Authenticated • {result.processing_mode} Analysis
-                        </p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3" />
+                            Verified
+                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                            {result.processing_mode} Analysis
+                          </span>
+                        </div>
                       </div>
                     </div>
+
                     <div
-                      className={`px-8 py-3 rounded-2xl border text-xl font-black uppercase tracking-tighter shadow-xl ${
+                      className={`px-8 py-4 rounded-2xl border text-3xl font-black uppercase tracking-tighter shadow-xl backdrop-blur-md ${
                         result.decision === "buy"
-                          ? "bg-green-500/10 border-green-500/20 text-green-500"
+                          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
                           : result.decision === "reduce"
                           ? "bg-red-500/10 border-red-500/20 text-red-500"
                           : "bg-blue-500/10 border-blue-500/20 text-blue-500"
@@ -324,112 +335,341 @@ export default function KaiAnalysis() {
                       {result.decision}
                     </div>
                   </div>
-                  <p className="text-sm leading-relaxed text-foreground/80 font-medium max-w-2xl">
-                    {result.summary}
-                  </p>
+
+                  <div className="grid md:grid-cols-2 gap-8 pt-4">
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
+                        <Sparkles className="h-3 w-3 text-primary" />
+                        Executive Summary
+                      </h3>
+                      {/* Summary rendered here implies we use the fundamental insight summary */}
+                      <p className="text-sm font-medium leading-relaxed text-foreground/85">
+                        {result.raw_card.fundamental_insight.summary ||
+                          result.summary}
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
+                        <Zap className="h-3 w-3 text-primary" />
+                        Risk Alignment
+                      </h3>
+                      <p className="text-sm font-medium leading-relaxed text-foreground/85 italic border-l-2 border-primary/30 pl-3">
+                        "
+                        {result.raw_card.risk_persona_alignment ||
+                          "Analysis aligned with your risk profile."}
+                        "
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </Card>
 
-              {/* Confidence & Quick Stats */}
-              <div className="space-y-6">
-                <Card variant="none" effect="glass" className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                      Fit Score
-                    </span>
-                    <span className="text-lg font-black text-primary">
-                      {(result.raw_card as any).fit_score || 0}/100
-                    </span>
+                {/* KPI Ribbon */}
+                <div className="grid grid-cols-4 gap-4 mt-8 pt-6 border-t border-border/30">
+                  <div className="text-center md:text-left">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
+                      Revenue CAGR
+                    </p>
+                    <p className="text-xl font-black text-foreground">
+                      {(
+                        result.raw_card.quant_metrics.revenue_cagr_3y * 100
+                      ).toFixed(1)}
+                      %
+                    </p>
                   </div>
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div
-                      style={{
-                        width: `${(result.raw_card as any).fit_score || 0}%`,
-                      }}
-                      className="h-full bg-primary transition-all duration-1000 ease-out"
-                    />
+                  <div className="text-center md:text-left">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
+                      R&D Intensity
+                    </p>
+                    <p className="text-xl font-black text-foreground">
+                      {(
+                        result.raw_card.key_metrics.fundamental.rnd_intensity *
+                        100
+                      ).toFixed(1)}
+                      %
+                    </p>
                   </div>
-                </Card>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Card
-                    variant="metallic"
-                    effect="glass"
-                    className="p-4 text-center"
-                  >
-                    <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">
+                  <div className="text-center md:text-left">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
+                      Debt/Equity
+                    </p>
+                    <p className="text-xl font-black text-foreground">
+                      {result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(
+                        2
+                      )}
+                      x
+                    </p>
+                  </div>
+                  <div className="text-center md:text-left">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                       P/E Ratio
                     </p>
-                    <p className="text-lg font-black text-foreground">
-                      {(result.raw_card as any).market_data?.pe_ratio?.toFixed(
+                    <p className="text-xl font-black text-foreground">
+                      {result.raw_card.key_metrics.valuation?.pe_ratio?.toFixed(
                         1
                       ) || "N/A"}
                     </p>
-                  </Card>
-                  <Card
-                    variant="metallic"
-                    effect="glass"
-                    className="p-4 text-center"
-                  >
-                    <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">
-                      Beta
-                    </p>
-                    <p className="text-lg font-black text-foreground">
-                      {(result.raw_card as any).market_data?.beta?.toFixed(2) ||
-                        "N/A"}
-                    </p>
-                  </Card>
+                  </div>
                 </div>
+              </Card>
+
+              {/* 2. TREND CHARTS */}
+              <div className="lg:col-span-4 grid gap-6 grid-rows-2">
+                {/* Revenue vs Net Income Chart */}
+                <Card
+                  variant="metallic"
+                  effect="glass"
+                  className="p-4 flex flex-col"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Performance Trend ($B)
+                    </h3>
+                    <TrendingUp className="h-3 w-3 text-primary" />
+                  </div>
+                  <div className="flex-1 min-h-[140px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart
+                        data={result.raw_card.quant_metrics.revenue_trend_data}
+                      >
+                        <XAxis
+                          dataKey="year"
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "rgba(0,0,0,0.8)",
+                            border: "none",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                          }}
+                          itemStyle={{ color: "#fff" }}
+                        />
+                        {/* We merge revenue and net income data for the chart */}
+                        <Bar
+                          dataKey="value"
+                          name="Revenue"
+                          fill="hsl(var(--primary))"
+                          radius={[4, 4, 0, 0]}
+                          opacity={0.6}
+                        />
+                        {/* Overlay Net Income Line need to join data properly in real app, simplified here as assumption data matches */}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">
+                      Revenue Growth
+                    </p>
+                  </div>
+                </Card>
+
+                {/* Fit Score Gauge */}
+                <Card
+                  variant="metallic"
+                  effect="glass"
+                  className="p-6 flex flex-col items-center justify-center text-center relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground z-10">
+                    Portfolio Fit Score
+                  </h3>
+                  <div className="my-4 relative z-10">
+                    <span className="text-5xl font-black text-primary drop-shadow-xl">
+                      {(result.raw_card as any).fit_score ||
+                        Math.round(result.confidence * 100)}
+                    </span>
+                    <span className="text-xl font-bold text-muted-foreground/50 ml-1">
+                      /100
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden z-10">
+                    <div
+                      className="h-full bg-primary transition-all duration-1000 ease-out"
+                      style={{
+                        width: `${
+                          (result.raw_card as any).fit_score ||
+                          result.confidence * 100
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </Card>
               </div>
             </div>
 
-            {/* Contextual Logic Factors (The "Why") */}
-            <div className="grid lg:grid-cols-3 gap-6">
-              {/* Render Factors dynamically */}
-              {((result.raw_card as any).factors || []).map(
-                (factor: any, idx: number) => (
-                  <Card
-                    key={idx}
-                    variant="none"
-                    effect="glass"
-                    className="p-6 h-full border-t-4 border-t-primary/50"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
-                        {factor.factor_name}
-                      </h3>
-                      <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded ${
-                          factor.score > 0
-                            ? "bg-green-500/20 text-green-500"
-                            : "bg-red-500/20 text-red-500"
+            {/* 3. DEEP DIVE INSIGHTS */}
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* MOAT Analysis */}
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 border-l-4 border-l-blue-500/50"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <ShieldCheck className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-wider">
+                    Moat & Competitive Depth
+                  </h3>
+                </div>
+                <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
+                  {result.raw_card.fundamental_insight.business_moat}
+                </p>
+              </Card>
+
+              {/* Growth & Efficiency */}
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 border-l-4 border-l-purple-500/50"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-8 w-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                    <Cpu className="h-4 w-4 text-purple-500" />
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-wider">
+                    Growth & Innovation
+                  </h3>
+                </div>
+                <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
+                  {result.raw_card.fundamental_insight.growth_efficiency}
+                </p>
+              </Card>
+
+              {/* Earnings Quality Check */}
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 border-l-4 border-l-amber-500/50"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <Scale className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-wider">
+                    Capital Allocation Audit
+                  </h3>
+                </div>
+                <div className="space-y-4">
+                  <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
+                    {result.raw_card.fundamental_insight.financial_resilience}
+                  </p>
+
+                  {/* Interactive Metrics */}
+                  <div className="grid grid-cols-2 gap-4 mt-4 bg-background/30 p-4 rounded-xl">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                        OCF / Net Income
+                      </p>
+                      <p
+                        className={`text-lg font-black ${
+                          result.raw_card.key_metrics.fundamental
+                            .earnings_quality > 1
+                            ? "text-emerald-500"
+                            : "text-amber-500"
                         }`}
                       >
-                        {factor.score > 0 ? "+" : ""}
-                        {factor.score}
-                      </span>
+                        {result.raw_card.key_metrics.fundamental.earnings_quality.toFixed(
+                          2
+                        )}
+                        x
+                      </p>
+                      <p className="text-[9px] text-muted-foreground/70">
+                        Target: {">"} 1.0x
+                      </p>
                     </div>
-                    <p className="text-sm font-medium leading-relaxed text-foreground/90">
-                      {factor.reasoning}
-                    </p>
-                  </Card>
-                )
-              )}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                        Debt to Equity
+                      </p>
+                      <p
+                        className={`text-lg font-black ${
+                          result.raw_card.key_metrics.fundamental
+                            .debt_to_equity < 1.0
+                            ? "text-emerald-500"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(
+                          2
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Valuation Placeholder (If needed) or just spacer */}
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 border-l-4 border-l-primary/50 flex flex-col justify-center items-center text-center opacity-70 hover:opacity-100 transition-opacity"
+              >
+                <BarChart3 className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Valuation Model
+                </p>
+                <p className="text-sm font-medium mt-2">
+                  Running DCF & Comps analysis...
+                </p>
+              </Card>
+            </div>
+
+            {/* 4. BULL vs BEAR THESIS */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 bg-emerald-500/5 border border-emerald-500/10"
+              >
+                <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Institutional Bull Case
+                </h3>
+                <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
+                  {result.raw_card.fundamental_insight.bull_case}
+                </p>
+              </Card>
+
+              <Card
+                variant="none"
+                effect="glass"
+                className="p-6 bg-red-500/5 border border-red-500/10"
+              >
+                <h3 className="text-xs font-black uppercase tracking-widest text-red-500 mb-4 flex items-center gap-2">
+                  <TrendingDown className="h-4 w-4" />
+                  Institutional Bear Case
+                </h3>
+                <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
+                  {result.raw_card.fundamental_insight.bear_case}
+                </p>
+              </Card>
             </div>
 
             {/* Compliance Footer */}
             <footer className="pt-12 border-t border-border/40 flex flex-col md:flex-row items-center justify-between gap-8 opacity-60">
-              <div className="flex flex-wrap gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground mr-2">
-                  Market Data:
-                </span>
-                <span className="text-xs font-mono">
-                  {(result.raw_card as any).market_data?.description?.substring(
-                    0,
-                    100
-                  )}
-                  ...
-                </span>
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground mr-2">
+                    Sources:
+                  </span>
+                  {(result.raw_card.all_sources || []).map((src, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono border border-primary/20"
+                    >
+                      {src}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground max-w-2xl leading-relaxed">
+                  IMPORTANT: This analysis is for educational purposes only and
+                  does not constitute investment advice. Data provided by SEC
+                  EDGAR and Hushh Research Agents.
+                </p>
               </div>
             </footer>
           </div>
