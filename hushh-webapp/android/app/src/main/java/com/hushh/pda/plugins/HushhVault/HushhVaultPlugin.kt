@@ -46,6 +46,28 @@ class HushhVaultPlugin : Plugin() {
     // Default Cloud Run backend URL (fallback if not provided by JS layer)
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
 
+    private fun normalizeBackendUrl(raw: String): String {
+        // Android emulator: localhost points to the emulator itself; use host alias 10.0.2.2 instead.
+        return if (raw.contains("localhost")) raw.replace("localhost", "10.0.2.2") else raw
+    }
+
+    private fun getBackendUrl(call: PluginCall? = null): String {
+        // 1) Per-call override (useful for local testing)
+        val callUrl = call?.getString("backendUrl")
+        if (!callUrl.isNullOrBlank()) return normalizeBackendUrl(callUrl)
+
+        // 2) Plugin-scoped config from capacitor.config: plugins.HushhVault.backendUrl
+        val pluginUrl = bridge.config.getString("plugins.HushhVault.backendUrl")
+        if (!pluginUrl.isNullOrBlank()) return normalizeBackendUrl(pluginUrl)
+
+        // 3) Environment (rare on-device)
+        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
+        if (!envUrl.isNullOrBlank()) return normalizeBackendUrl(envUrl)
+
+        // 4) Final fallback
+        return normalizeBackendUrl(defaultBackendUrl)
+    }
+
     // ==================== Derive Key ====================
 
     @PluginMethod
@@ -190,7 +212,7 @@ class HushhVaultPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         // Use Native Python Backend Route (POST)
         val url = "$backendUrl/db/vault/check"
         
@@ -251,7 +273,7 @@ class HushhVaultPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         // Use Native Python Backend Route (POST)
         val url = "$backendUrl/db/vault/get"
 
@@ -328,7 +350,7 @@ class HushhVaultPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val authMethod = call.getString("authMethod") ?: "passphrase"
 
         Thread {
@@ -380,7 +402,7 @@ class HushhVaultPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val sessionToken = call.getString("sessionToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         
         // Use Python consent-protocol backend: POST /db/food/get
         // (Next.js /api/* routes don't exist in static export for Android)
@@ -460,7 +482,7 @@ class HushhVaultPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val sessionToken = call.getString("sessionToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         
         // Use Python consent-protocol backend: POST /db/professional/get
         // (Next.js /api/* routes don't exist in static export for Android)
@@ -537,7 +559,7 @@ class HushhVaultPlugin : Plugin() {
     fun getPendingConsents(call: PluginCall) {
         val userId = call.getString("userId")
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         // Python Backend supports this via /api/consent/pending
         val url = "$backendUrl/api/consent/pending?userId=$userId"
 
@@ -565,7 +587,7 @@ class HushhVaultPlugin : Plugin() {
     fun getActiveConsents(call: PluginCall) {
         val userId = call.getString("userId")
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/active?userId=$userId"
 
         Thread {
@@ -594,7 +616,7 @@ class HushhVaultPlugin : Plugin() {
         val page = call.getInt("page") ?: 1
         val limit = call.getInt("limit") ?: 50
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/history?userId=$userId&page=$page&limit=$limit"
 
         Thread {
@@ -627,7 +649,7 @@ class HushhVaultPlugin : Plugin() {
         val iv = call.getString("iv")
         val tag = call.getString("tag")
         val consentToken = call.getString("consentToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val authToken = call.getString("authToken")
 
         if (userId == null || domain == null || fieldName == null || 
