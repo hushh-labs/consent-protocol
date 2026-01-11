@@ -58,6 +58,7 @@ import {
 
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 interface PendingConsent {
   id: string;
@@ -676,9 +677,7 @@ export default function ConsentsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-      </div>
+      <HushhLoader label="Loading consents..." />
     );
   }
 

@@ -17,8 +17,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
-import { Loader2 } from "lucide-react";
 import { VaultFlow } from "./vault-flow";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 // ============================================================================
 // Types
@@ -113,19 +113,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // Still checking auth/vault status
   if (status === "checking") {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Checking vault status...</p>
-          {/* Debug Info for User Feedback */}
-          <div className="text-xs text-muted-foreground/50 mt-2 font-mono">
-            Auth: {authLoading ? "Loading..." : "Done"} | User:{" "}
-            {user ? "Yes" : "No"} | Vault: {isVaultUnlocked ? "Open" : "Locked"}
-          </div>
-        </div>
-      </div>
-    );
+    return <HushhLoader label="Checking vault status..." />;
   }
 
   // Redirecting to login (no auth)
@@ -135,14 +123,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       const currentPath = window.location.pathname;
       router.push(`/?redirect=${encodeURIComponent(currentPath)}`);
     }
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Redirecting to login...</p>
-        </div>
-      </div>
-    );
+    return <HushhLoader label="Redirecting to login..." />;
   }
 
   // Vault is locked - show unlock dialog
