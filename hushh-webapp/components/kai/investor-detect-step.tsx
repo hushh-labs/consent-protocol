@@ -18,6 +18,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 import { Button } from "@/lib/morphy-ux/button";
 import {
   Card,
@@ -171,8 +172,11 @@ export function InvestorDetectStep({
     return (
       <Card className="glass-interactive border-0 shadow-2xl">
         <CardContent className="flex flex-col items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
-          <p className="text-muted-foreground">Detecting investor profile...</p>
+          <HushhLoader
+            label="Detecting investor profile..."
+            variant="page"
+            className="min-h-0"
+          />
         </CardContent>
       </Card>
     );
@@ -280,7 +284,7 @@ export function InvestorDetectStep({
             disabled={confirming}
           >
             {confirming ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <HushhLoader variant="compact" className="mr-2" />
             ) : (
               <Check className="w-4 h-4 mr-2" />
             )}
@@ -354,7 +358,7 @@ export function InvestorDetectStep({
               />
               <Button onClick={handleSearch} disabled={searching}>
                 {searching ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <HushhLoader variant="compact" />
                 ) : (
                   <Search className="w-4 h-4" />
                 )}
