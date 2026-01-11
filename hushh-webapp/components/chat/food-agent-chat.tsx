@@ -15,6 +15,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 import {
   Send,
   Bot,
@@ -302,14 +303,8 @@ export function FoodAgentChat({
 
         {/* Loading indicator */}
         {isLoading && (
-          <div className="flex gap-3 max-w-[85%] mr-auto animate-pulse">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-500/20 to-amber-600/20 border border-orange-200 dark:border-orange-800 flex items-center justify-center shrink-0 mt-1">
-              <Sparkles className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-            </div>
-            <div className="p-4 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
-              <span className="text-xs text-muted-foreground">Thinking...</span>
-            </div>
+          <div className="flex w-full justify-center py-6">
+            <HushhLoader label="Thinking..." variant="inline" />
           </div>
         )}
       </div>
