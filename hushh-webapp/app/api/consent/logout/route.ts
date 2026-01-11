@@ -8,10 +8,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+const BACKEND_URL = getPythonApiUrl();
 
 export async function POST(request: NextRequest) {
   try {
