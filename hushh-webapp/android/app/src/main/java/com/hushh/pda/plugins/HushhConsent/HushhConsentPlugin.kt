@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 /**
  * Hushh Consent Plugin - Token Management + Backend API
@@ -27,10 +28,37 @@ import org.json.JSONObject
 class HushhConsentPlugin : Plugin() {
 
     private val TAG = "HushhConsent"
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(75, TimeUnit.SECONDS)
+        .build()
     
     // Default Cloud Run backend URL (fallback if not provided by JS layer)
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
+
+    private fun normalizeBackendUrl(raw: String): String {
+        // Android emulator: localhost points to the emulator itself; use host alias 10.0.2.2 instead.
+        return if (raw.contains("localhost")) raw.replace("localhost", "10.0.2.2") else raw
+    }
+
+    private fun getBackendUrl(call: PluginCall? = null): String {
+        // 1) Per-call override (useful for local testing)
+        val callUrl = call?.getString("backendUrl")
+        if (!callUrl.isNullOrBlank()) return normalizeBackendUrl(callUrl)
+
+        // 2) Plugin-scoped config from capacitor.config: plugins.HushhConsent.backendUrl
+        val pluginUrl = bridge.config.getString("plugins.HushhConsent.backendUrl")
+        if (!pluginUrl.isNullOrBlank()) return normalizeBackendUrl(pluginUrl)
+
+        // 3) Environment (rare on-device)
+        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
+        if (!envUrl.isNullOrBlank()) return normalizeBackendUrl(envUrl)
+
+        // 4) Final fallback
+        return normalizeBackendUrl(defaultBackendUrl)
+    }
 
     companion object {
         private const val CONSENT_TOKEN_PREFIX = "HCT"
@@ -156,7 +184,7 @@ class HushhConsentPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/revoke"
 
         Log.d(TAG, "🔒 [revokeConsent] Revoking consent for scope: $scope")
@@ -333,7 +361,7 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/vault-owner-token"
 
         Log.d(TAG, "🔑 [issueVaultOwnerToken] Requesting VAULT_OWNER token for user: $userId")
@@ -394,7 +422,7 @@ class HushhConsentPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/db/consent/pending"
 
         Log.d(TAG, "📋 [getPending] Fetching pending consents for userId: $userId")
@@ -439,7 +467,7 @@ class HushhConsentPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/db/consent/active"
 
         Log.d(TAG, "✅ [getActive] Fetching active consents for userId: $userId")
@@ -484,7 +512,7 @@ class HushhConsentPlugin : Plugin() {
         val page = call.getInt("page") ?: 1
         val limit = call.getInt("limit") ?: 20
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/db/consent/history"
 
         Log.d(TAG, "📜 [getHistory] Fetching consent history for userId: $userId")
@@ -538,7 +566,7 @@ class HushhConsentPlugin : Plugin() {
         val userId = call.getString("userId") // Optional, but good context
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/pending/approve"
 
         Log.d(TAG, "✅ [approve] Approving consent request: $requestId")
@@ -600,7 +628,7 @@ class HushhConsentPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         // Python backend expects userId and requestId as query parameters
         val url = "$backendUrl/api/consent/pending/deny?userId=$userId&requestId=$requestId"
 
@@ -653,7 +681,7 @@ class HushhConsentPlugin : Plugin() {
         }
 
         val authToken = call.getString("authToken")
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/cancel"
 
         Log.d(TAG, "🚫 [cancel] Canceling consent request: $requestId")
