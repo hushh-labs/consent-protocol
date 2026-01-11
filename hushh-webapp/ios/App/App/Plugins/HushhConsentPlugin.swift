@@ -245,8 +245,9 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         performRequest(url: "\(backendUrl)/api/consent/vault-owner-token", body: body, authToken: authToken) { result, error in
             if let error = error {
-                print("❌ [\(self.TAG)] VAULT_OWNER token request failed: \(error)")
-                call.reject("Failed to issue VAULT_OWNER token: \(error)")
+                let errorMsg = "Failed to issue VAULT_OWNER token: \(error) | backendUrl: \(backendUrl)"
+                print("❌ [\(self.TAG)] VAULT_OWNER token request failed: \(errorMsg)")
+                call.reject(errorMsg)
                 return
             }
             
@@ -420,16 +421,19 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                completion(nil, error.localizedDescription)
+                let errorMsg = "\(error.localizedDescription) | backendUrl: \(url)"
+                completion(nil, errorMsg)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
                 var errorMsg = "HTTP Error: \(httpResponse.statusCode)"
-                if let data = data, let body = String(data: data, encoding: .utf8) {
-                    errorMsg += " Body: \(body)"
+                if let data = data, let bodyStr = String(data: data, encoding: .utf8) {
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    errorMsg += " | body: \(truncatedBody)"
                 }
-                print("❌ [HushhConsent] Request failed: \(url) - \(errorMsg)")
+                errorMsg += " | backendUrl: \(url)"
+                print("❌ [HushhConsent] Request failed: \(errorMsg)")
                 completion(nil, errorMsg)
                 return
             }
