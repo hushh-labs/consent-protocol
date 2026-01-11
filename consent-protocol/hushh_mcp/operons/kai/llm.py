@@ -19,6 +19,8 @@ from hushh_mcp.types import UserID
 logger = logging.getLogger(__name__)
 
 # Configure Gemini
+# NOTE: GOOGLE_API_KEY is sanitized (trimmed) in hushh_mcp/config.py to avoid Cloud Run
+# gRPC metadata errors ("Illegal header value") caused by trailing newlines.
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 else:
