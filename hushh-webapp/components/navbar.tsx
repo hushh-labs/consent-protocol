@@ -10,6 +10,7 @@ import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, Bell, User, Search } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ApiService } from "@/lib/services/api-service";
 
 interface NavItem {
   label: string;
@@ -34,11 +35,10 @@ function usePendingConsents(): number {
       if (!userId) return;
 
       try {
-        const res = await fetch(`/api/consent/pending?userId=${userId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setCount(data.pending?.length || 0);
-        }
+        const res = await ApiService.getPendingConsents(userId);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        setCount(data.pending?.length || 0);
       } catch {
         // Ignore errors
       }
