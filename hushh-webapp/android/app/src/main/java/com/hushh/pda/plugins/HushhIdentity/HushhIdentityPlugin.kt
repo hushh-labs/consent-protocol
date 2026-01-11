@@ -43,6 +43,28 @@ class HushhIdentityPlugin : Plugin() {
     // Default Cloud Run backend URL (fallback if not provided by JS layer)
     private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
 
+    private fun normalizeBackendUrl(raw: String): String {
+        // Android emulator: localhost points to the emulator itself; use host alias 10.0.2.2 instead.
+        return if (raw.contains("localhost")) raw.replace("localhost", "10.0.2.2") else raw
+    }
+
+    private fun getBackendUrl(call: PluginCall? = null): String {
+        // 1) Per-call override (useful for local testing)
+        val callUrl = call?.getString("backendUrl")
+        if (!callUrl.isNullOrBlank()) return normalizeBackendUrl(callUrl)
+
+        // 2) Plugin-scoped config from capacitor.config: plugins.HushhIdentity.backendUrl
+        val pluginUrl = bridge.config.getString("plugins.HushhIdentity.backendUrl")
+        if (!pluginUrl.isNullOrBlank()) return normalizeBackendUrl(pluginUrl)
+
+        // 3) Environment (rare on-device)
+        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
+        if (!envUrl.isNullOrBlank()) return normalizeBackendUrl(envUrl)
+
+        // 4) Final fallback
+        return normalizeBackendUrl(defaultBackendUrl)
+    }
+
     // ==================== Auto Detect ====================
     /**
      * Auto-detect investor from Firebase displayName.
@@ -57,7 +79,7 @@ class HushhIdentityPlugin : Plugin() {
             return
         }
         
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/identity/auto-detect"
         
         Log.d(TAG, "🔍 [autoDetect] Auto-detecting investor...")
@@ -113,7 +135,7 @@ class HushhIdentityPlugin : Plugin() {
         }
         
         val limit = call.getInt("limit") ?: 10
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val encodedName = java.net.URLEncoder.encode(name, "UTF-8")
         val url = "$backendUrl/api/investors/search?name=$encodedName&limit=$limit"
         
@@ -173,7 +195,7 @@ class HushhIdentityPlugin : Plugin() {
             return
         }
         
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/investors/$investorId"
         
         Log.d(TAG, "📈 [getInvestor] Getting investor $investorId")
@@ -232,12 +254,12 @@ class HushhIdentityPlugin : Plugin() {
         val profileDataTag = call.getString("profileDataTag")
         
         if (vaultOwnerToken == null || investorId == null || 
-            profileDataCiphertext == null || profileDataIv == null || profileDataTag == null) {
+            profileDataCiphertext == null || profileDataIv == null ||             profileDataTag == null) {
             call.reject("Missing required parameters")
             return
         }
         
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/identity/confirm"
         
         Log.d(TAG, "✅ [confirmIdentity] Confirming identity for investor $investorId")
@@ -303,7 +325,7 @@ class HushhIdentityPlugin : Plugin() {
             return
         }
         
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/identity/status"
         
         Log.d(TAG, "📋 [getIdentityStatus] Getting identity status")
@@ -345,6 +367,72 @@ class HushhIdentityPlugin : Plugin() {
         }.start()
     }
 
+    // ==================== Get Encrypted Profile ====================
+    /**
+     * Get encrypted investor profile (ciphertext).
+     * Requires VAULT_OWNER token.
+     */
+    @PluginMethod
+    fun getEncryptedProfile(call: PluginCall) {
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        
+        if (vaultOwnerToken == null) {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/identity/profile"
+        
+        Log.d(TAG, "📋 [getEncryptedProfile] Getting encrypted profile")
+        
+        Thread {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("consent_token", vaultOwnerToken)
+                }
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
+                    .build()
+                
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string() ?: "{}"
+                
+                if (!response.isSuccessful) {
+                    val errorMsg = if (response.code == 404) {
+                        "Profile not found"
+                    } else {
+                        "Get profile failed: HTTP ${response.code}"
+                    }
+                    Log.e(TAG, "❌ [getEncryptedProfile] Backend error: $body")
+                    activity.runOnUiThread {
+                        call.reject(errorMsg)
+                    }
+                    return@Thread
+                }
+                
+                val json = JSONObject(body)
+                val result = jsonToJSObject(json)
+                
+                Log.d(TAG, "✅ [getEncryptedProfile] Got encrypted profile")
+                
+                activity.runOnUiThread {
+                    call.resolve(result)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [getEncryptedProfile] Error: ${e.message}")
+                activity.runOnUiThread {
+                    call.reject("Get profile failed: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
     // ==================== Reset Identity ====================
     /**
      * Delete user's confirmed identity.
@@ -359,7 +447,7 @@ class HushhIdentityPlugin : Plugin() {
             return
         }
         
-        val backendUrl = call.getString("backendUrl") ?: defaultBackendUrl
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/identity/profile"
         
         Log.d(TAG, "🗑️ [resetIdentity] Resetting identity")

@@ -51,6 +51,7 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     consentToken?: string;
     riskProfile: string;
     processingMode: string;
+    context?: any;
     authToken?: string;
   }): Promise<any> {
     const headers: Record<string, string> = {
@@ -61,16 +62,23 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
       headers["Authorization"] = `Bearer ${options.authToken}`;
     }
 
+    const body: Record<string, any> = {
+      user_id: options.userId,
+      ticker: options.ticker,
+      consent_token: options.consentToken,
+      risk_profile: options.riskProfile,
+      processing_mode: options.processingMode,
+    };
+
+    // Include context if provided
+    if (options.context) {
+      body.context = options.context;
+    }
+
     const response = await fetch("/api/kai/analyze", {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        user_id: options.userId,
-        ticker: options.ticker,
-        consent_token: options.consentToken,
-        risk_profile: options.riskProfile,
-        processing_mode: options.processingMode,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -124,6 +132,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     userId: string;
     authToken?: string;
   }): Promise<{ preferences: any[] }> {
+    // Safety check: This should NOT be called on native platforms
+    if (typeof window !== 'undefined') {
+      const Capacitor = (window as any).Capacitor;
+      if (Capacitor?.isNativePlatform?.()) {
+        console.error("[KaiWeb] ⚠️ Web plugin called on native platform! This is a bug.");
+        console.error("[KaiWeb] Platform:", Capacitor.getPlatform?.());
+        console.error("[KaiWeb] This will fail because there's no Next.js server on native.");
+      }
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
