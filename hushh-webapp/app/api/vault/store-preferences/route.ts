@@ -11,12 +11,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { storeUserData } from "@/lib/db";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 // Backend URL for token validation - use consistent env var
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+const BACKEND_URL = getPythonApiUrl();
 
 /**
  * Validate consent token with Python backend

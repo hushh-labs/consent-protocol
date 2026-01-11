@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = getPythonApiUrl();
 
 /**
  * Proxy for /api/identity/confirm

@@ -7,6 +7,13 @@
 
 import { registerPlugin } from "@capacitor/core";
 
+export type KaiEncryptedPreference = {
+  field_name: string;
+  ciphertext: string;
+  iv: string;
+  tag?: string;
+};
+
 export interface KaiPlugin {
   /**
    * Grant consent for Kai analysis
@@ -37,7 +44,15 @@ export interface KaiPlugin {
    */
   storePreferences(options: {
     userId: string;
-    preferencesEncrypted: string;
+    /**
+     * Canonical payload for backend (`consent-protocol/api/routes/kai.py`)
+     */
+    preferences?: KaiEncryptedPreference[];
+    /**
+     * Deprecated legacy payload (stringified JSON array).
+     * Kept for backward compatibility during cleanup.
+     */
+    preferencesEncrypted?: string;
     authToken?: string;
   }): Promise<{ success: boolean }>;
 
@@ -49,6 +64,16 @@ export interface KaiPlugin {
     userId: string;
     authToken?: string;
   }): Promise<{ preferences: any[] }>;
+
+  /**
+   * Delete all encrypted preferences for a user.
+   * Calls: DELETE /api/kai/preferences/:userId
+   * Requires: VAULT_OWNER consent token
+   */
+  resetPreferences(options: {
+    userId: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
 }
 
 export const Kai = registerPlugin<KaiPlugin>("Kai", {

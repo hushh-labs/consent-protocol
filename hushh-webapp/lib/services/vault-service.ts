@@ -6,6 +6,7 @@ import {
   unlockVaultWithRecoveryKey as webUnlockRecall,
 } from "@/lib/vault/passphrase-key";
 import { auth } from "@/lib/firebase/config";
+import { apiJson } from "@/lib/services/api-client";
 
 // API URL for Web to talk to Next.js Backend
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -47,7 +48,7 @@ export class VaultService {
     } else {
       // Web: Call Next.js API route
       console.log("[VaultService] Using web API for VAULT_OWNER token");
-      const response = await fetch("/api/consent/vault-owner-token", {
+      return apiJson("/api/consent/vault-owner-token", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${firebaseIdToken}`,
@@ -55,13 +56,6 @@ export class VaultService {
         },
         body: JSON.stringify({ userId }),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to issue VAULT_OWNER token");
-      }
-
-      return response.json();
     }
   }
 
