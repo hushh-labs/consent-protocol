@@ -8,6 +8,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * Kai Plugin - Android Implementation
@@ -19,17 +20,48 @@ import java.io.IOException
 @CapacitorPlugin(name = "Kai")
 class KaiPlugin : Plugin() {
     
-    private fun getBackendUrl(): String {
-        // Read from environment/config, default to localhost
-        val backendUrl = bridge.config.getString("backendUrl") 
-            ?: System.getenv("NEXT_PUBLIC_BACKEND_URL")
-            ?: "http://localhost:8000"
-        
+    private val TAG = "KaiPlugin"
+
+    // OkHttp client with explicit timeouts (Kai analysis can take longer than typical API calls)
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(150, TimeUnit.SECONDS)
+        .callTimeout(170, TimeUnit.SECONDS)
+        .build()
+
+    private val defaultBackendUrl = "https://consent-protocol-1006304528804.us-central1.run.app"
+
+    private fun getBackendUrl(call: PluginCall? = null): String {
+        // 1) Allow override per-call (useful for local dev/testing)
+        val callUrl = call?.getString("backendUrl")
+        if (!callUrl.isNullOrBlank()) {
+            return normalizeBackendUrl(callUrl)
+        }
+
+        // 2) Prefer plugin-scoped config from capacitor.config.ts: plugins.Kai.backendUrl
+        // Capacitor Android config is exposed via bridge.config; dot-path access works for nested config.
+        val pluginConfigUrl = bridge.config.getString("plugins.Kai.backendUrl")
+        if (!pluginConfigUrl.isNullOrBlank()) {
+            return normalizeBackendUrl(pluginConfigUrl)
+        }
+
+        // 3) Environment fallback (rare on-device, but useful for CI/local)
+        val envUrl = System.getenv("NEXT_PUBLIC_BACKEND_URL")
+        if (!envUrl.isNullOrBlank()) {
+            return normalizeBackendUrl(envUrl)
+        }
+
+        // 4) Final fallback: production Cloud Run
+        return normalizeBackendUrl(defaultBackendUrl)
+    }
+
+    private fun normalizeBackendUrl(raw: String): String {
         // Android emulator: convert localhost to 10.0.2.2
-        return if (backendUrl.contains("localhost")) {
-            backendUrl.replace("localhost", "10.0.2.2")
+        return if (raw.contains("localhost")) {
+            raw.replace("localhost", "10.0.2.2")
         } else {
-            backendUrl
+            raw
         }
     }
     
@@ -46,7 +78,7 @@ class KaiPlugin : Plugin() {
         }
         
         val authToken = call.getString("authToken")
-        val backendUrl = getBackendUrl()
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/consent/grant"
         
         val json = JSONObject().apply {
@@ -54,7 +86,6 @@ class KaiPlugin : Plugin() {
             put("scopes", scopesArray)
         }
         
-        val client = OkHttpClient()
         val body = json.toString().toRequestBody("application/json".toMediaType())
         
         val requestBuilder = Request.Builder().url(url).post(body)
@@ -66,7 +97,7 @@ class KaiPlugin : Plugin() {
         val request = requestBuilder.build()
         val pluginCall = call // Rename to avoid shadowing in callback
         
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 pluginCall.reject("Network error: ${e.message}")
             }
@@ -113,7 +144,7 @@ class KaiPlugin : Plugin() {
         }
         
         val authToken = call.getString("authToken")
-        val backendUrl = getBackendUrl()
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/analyze"
         
         val json = JSONObject().apply {
@@ -124,7 +155,6 @@ class KaiPlugin : Plugin() {
             put("processing_mode", processingMode)
         }
         
-        val client = OkHttpClient()
         val body = json.toString().toRequestBody("application/json".toMediaType())
         
         val requestBuilder = Request.Builder().url(url).post(body)
@@ -136,7 +166,7 @@ class KaiPlugin : Plugin() {
         val request = requestBuilder.build()
         val pluginCall = call
         
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 pluginCall.reject("Network error: ${e.message}")
             }
@@ -176,7 +206,7 @@ class KaiPlugin : Plugin() {
         }
         
         val authToken = call.getString("authToken")
-        val backendUrl = getBackendUrl()
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/preferences/store"
         
         val json = JSONObject().apply {
@@ -191,7 +221,6 @@ class KaiPlugin : Plugin() {
             }
         }
         
-        val client = OkHttpClient()
         val body = json.toString().toRequestBody("application/json".toMediaType())
         
         val requestBuilder = Request.Builder().url(url).post(body)
@@ -203,7 +232,7 @@ class KaiPlugin : Plugin() {
         val request = requestBuilder.build()
         val pluginCall = call
         
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 pluginCall.reject("Network error: ${e.message}")
             }
@@ -234,13 +263,11 @@ class KaiPlugin : Plugin() {
         }
         
         val authToken = call.getString("authToken")
-        val backendUrl = getBackendUrl()
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/preferences/$userId"
         
         android.util.Log.d("KaiPlugin", "🔍 getPreferences called for userId: $userId")
         android.util.Log.d("KaiPlugin", "🌐 URL: $url")
-        
-        val client = OkHttpClient()
         
         val requestBuilder = Request.Builder().url(url).get()
         
@@ -252,7 +279,7 @@ class KaiPlugin : Plugin() {
         val request = requestBuilder.build()
         val pluginCall = call
         
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 android.util.Log.e("KaiPlugin", "❌ Network error getting preferences: ${e.message}")
                 pluginCall.reject("Network error: ${e.message}")
@@ -293,10 +320,9 @@ class KaiPlugin : Plugin() {
             return
         }
 
-        val backendUrl = getBackendUrl()
+        val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/preferences/$userId"
 
-        val client = OkHttpClient()
         val request = Request.Builder()
             .url(url)
             .delete()
@@ -304,7 +330,7 @@ class KaiPlugin : Plugin() {
             .build()
 
         val pluginCall = call
-        client.newCall(request).enqueue(object : Callback {
+        httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 pluginCall.reject("Network error: ${e.message}")
             }
