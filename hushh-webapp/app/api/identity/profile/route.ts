@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 /**
  * Proxy for /api/identity/profile
@@ -19,8 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+    const backendUrl = getPythonApiUrl();
 
     // 2. Call Backend with POST + Body
     const res = await fetch(`${backendUrl}/api/identity/profile`, {
