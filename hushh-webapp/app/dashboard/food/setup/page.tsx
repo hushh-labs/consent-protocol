@@ -9,6 +9,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { encryptData } from "@/lib/vault/encrypt";
+import { ApiService } from "@/lib/services/api-service";
+import { useAuth } from "@/lib/firebase/auth-context";
+import { useVault } from "@/lib/vault/vault-context";
 import {
   Button,
   Card,
@@ -41,6 +44,8 @@ const CUISINE_OPTIONS = [
 
 export default function SetupPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const { getVaultKey, getVaultOwnerToken } = useVault();
   const [dietary, setDietary] = useState<string[]>([]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [budget, setBudget] = useState("600");
@@ -51,11 +56,14 @@ export default function SetupPage() {
     setLoading(true);
 
     try {
-      const userId = sessionStorage.getItem("user_id");
-      const vaultKey = sessionStorage.getItem("vault_key");
+      const userId = user?.uid;
+      const vaultKey = getVaultKey();
+      const vaultOwnerToken = getVaultOwnerToken();
 
-      if (!userId || !vaultKey) {
-        throw new Error("Session expired. Please log in again.");
+      if (!userId || !vaultKey || !vaultOwnerToken) {
+        throw new Error(
+          "Vault locked or session expired. Please unlock vault."
+        );
       }
 
       // Encrypt preferences client-side
@@ -76,23 +84,18 @@ export default function SetupPage() {
         vaultKey
       );
 
-      // Store encrypted data
-      const response = await fetch("/api/vault/store-preferences", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          preferences: {
-            dietary_restrictions: dietaryEncrypted,
-            cuisine_preferences: cuisineEncrypted,
-            monthly_food_budget: budgetEncrypted,
-          },
-        }),
+      // Store encrypted data (consent-first: VAULT_OWNER token required)
+      const response = await ApiService.storePreferences({
+        userId,
+        preferences: {
+          dietary_restrictions: dietaryEncrypted,
+          cuisine_preferences: cuisineEncrypted,
+          monthly_food_budget: budgetEncrypted,
+        },
+        consentToken: vaultOwnerToken,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to save preferences");
-      }
+      if (!response.ok) throw new Error("Failed to save preferences");
 
       console.log("✅ Preferences saved to vault");
 
