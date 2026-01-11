@@ -71,8 +71,12 @@ PORT=8000
 ### Frontend (hushh-webapp/.env.local)
 
 ```bash
-# Backend URL
+# Backend URL (used by web + native routing)
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+
+# Next.js API proxy target (server-side)
+# If not set, proxies default to http://localhost:8000 in development.
+PYTHON_API_URL=http://localhost:8000
 
 # Firebase Config
 NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
