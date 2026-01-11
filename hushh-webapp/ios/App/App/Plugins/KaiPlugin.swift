@@ -100,17 +100,20 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         
         urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("[KaiPlugin] ❌ Network error: \(error.localizedDescription)")
-                call.reject("Network error: \(error.localizedDescription)")
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[KaiPlugin] ❌ \(errorMsg)")
+                call.reject(errorMsg)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse {
                 print("[KaiPlugin] 📡 Response status: \(httpResponse.statusCode)")
                 if !(200...299).contains(httpResponse.statusCode) {
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
-                    print("[KaiPlugin] ❌ HTTP Error \(httpResponse.statusCode): \(body)")
-                    call.reject("HTTP Error \(httpResponse.statusCode): \(body)")
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[KaiPlugin] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
                     return
                 }
             }
@@ -169,28 +172,37 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "user_id": userId,
             "ticker": ticker,
             "consent_token": consentToken,
             "risk_profile": riskProfile,
             "processing_mode": processingMode
         ]
+        
+        // Include context if provided
+        if let context = call.getObject("context") {
+            body["context"] = context
+        }
+        
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("[KaiPlugin] ❌ Network error: \(error.localizedDescription)")
-                call.reject("Network error: \(error.localizedDescription)")
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[KaiPlugin] ❌ \(errorMsg)")
+                call.reject(errorMsg)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse {
                 print("[KaiPlugin] 📡 Response status: \(httpResponse.statusCode)")
                 if !(200...299).contains(httpResponse.statusCode) {
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
-                    print("[KaiPlugin] ❌ HTTP Error \(httpResponse.statusCode): \(body)")
-                    call.reject("HTTP Error \(httpResponse.statusCode): \(body)")
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[KaiPlugin] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
                     return
                 }
             }
@@ -267,17 +279,20 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         
         urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("[KaiPlugin] ❌ Network error: \(error.localizedDescription)")
-                call.reject("Network error: \(error.localizedDescription)")
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[KaiPlugin] ❌ \(errorMsg)")
+                call.reject(errorMsg)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse {
                 print("[KaiPlugin] 📡 Response status: \(httpResponse.statusCode)")
                 if !(200...299).contains(httpResponse.statusCode) {
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
-                    print("[KaiPlugin] ❌ HTTP Error \(httpResponse.statusCode): \(body)")
-                    call.reject("HTTP Error \(httpResponse.statusCode): \(body)")
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[KaiPlugin] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
                     return
                 }
             }
@@ -331,17 +346,20 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         
         urlSession.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("[KaiPlugin] ❌ Network error: \(error.localizedDescription)")
-                call.reject("Network error: \(error.localizedDescription)")
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[KaiPlugin] ❌ \(errorMsg)")
+                call.reject(errorMsg)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse {
                 print("[KaiPlugin] 📡 Response status: \(httpResponse.statusCode)")
                 if !(200...299).contains(httpResponse.statusCode) {
-                    let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
-                    print("[KaiPlugin] ❌ HTTP Error \(httpResponse.statusCode): \(body)")
-                    call.reject("HTTP Error \(httpResponse.statusCode): \(body)")
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[KaiPlugin] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
                     return
                 }
             }

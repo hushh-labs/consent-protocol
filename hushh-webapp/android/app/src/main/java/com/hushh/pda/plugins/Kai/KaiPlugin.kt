@@ -99,7 +99,9 @@ class KaiPlugin : Plugin() {
         
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
-                pluginCall.reject("Network error: ${e.message}")
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                pluginCall.reject(errorMsg)
             }
             
             override fun onResponse(call: okhttp3.Call, response: Response) {
@@ -144,6 +146,7 @@ class KaiPlugin : Plugin() {
         }
         
         val authToken = call.getString("authToken")
+        val contextObj = call.getObject("context") // Optional context object
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/analyze"
         
@@ -153,6 +156,10 @@ class KaiPlugin : Plugin() {
             put("consent_token", consentToken)
             put("risk_profile", riskProfile)
             put("processing_mode", processingMode)
+            // Include context if provided
+            if (contextObj != null) {
+                put("context", contextObj)
+            }
         }
         
         val body = json.toString().toRequestBody("application/json".toMediaType())
@@ -168,14 +175,20 @@ class KaiPlugin : Plugin() {
         
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
-                pluginCall.reject("Network error: ${e.message}")
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                pluginCall.reject(errorMsg)
             }
             
             override fun onResponse(call: okhttp3.Call, response: Response) {
                 val responseBody = response.body?.string()
+                val truncatedBody = if (responseBody != null && responseBody.length > 200) responseBody.take(200) + "..." else responseBody
                 
                 if (!response.isSuccessful || responseBody == null) {
-                    pluginCall.reject("Request failed: ${response.code}")
+                    val errorMsg = "Request failed: HTTP ${response.code} | backendUrl: $backendUrl" + 
+                        if (truncatedBody != null) " | body: $truncatedBody" else ""
+                    android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                    pluginCall.reject(errorMsg)
                     return
                 }
                 
@@ -184,7 +197,9 @@ class KaiPlugin : Plugin() {
                     val result = JSObject(responseBody)
                     pluginCall.resolve(result)
                 } catch (e: Exception) {
-                    pluginCall.reject("JSON parsing error: ${e.message}")
+                    val errorMsg = "JSON parsing error: ${e.message} | backendUrl: $backendUrl"
+                    android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                    pluginCall.reject(errorMsg)
                 }
             }
         })
@@ -234,7 +249,9 @@ class KaiPlugin : Plugin() {
         
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
-                pluginCall.reject("Network error: ${e.message}")
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                pluginCall.reject(errorMsg)
             }
             
             override fun onResponse(call: okhttp3.Call, response: Response) {
@@ -332,7 +349,9 @@ class KaiPlugin : Plugin() {
         val pluginCall = call
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
-                pluginCall.reject("Network error: ${e.message}")
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [analyze] $errorMsg")
+                pluginCall.reject(errorMsg)
             }
 
             override fun onResponse(call: okhttp3.Call, response: Response) {
