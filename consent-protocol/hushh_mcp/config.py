@@ -30,7 +30,12 @@ DEFAULT_TRUST_LINK_EXPIRY_MS = int(os.getenv("DEFAULT_TRUST_LINK_EXPIRY_MS", 100
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 AGENT_ID = os.getenv("AGENT_ID", "agent_hushh_default")
 HUSHH_HACKATHON = os.getenv("HUSHH_HACKATHON", "disabled").lower() == "enabled"
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# IMPORTANT (Cloud Run):
+# Secret Manager values are commonly stored with a trailing newline. If we pass that
+# through to gRPC metadata (Gemini SDK), it can error with "Illegal header value".
+_raw_google_api_key = os.getenv("GOOGLE_API_KEY")
+GOOGLE_API_KEY = _raw_google_api_key.strip() if _raw_google_api_key else None
 
 # ==================== Defaults Export ====================
 
