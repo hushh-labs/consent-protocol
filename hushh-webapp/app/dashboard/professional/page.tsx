@@ -20,16 +20,8 @@ import {
   CardTitle,
   CardContent,
 } from "@/lib/morphy-ux/morphy";
-import {
-  User,
-  Briefcase,
-  Code,
-  Target,
-  TrendingUp,
-  Shield,
-  Edit,
-  RefreshCw,
-} from "lucide-react";
+import { User, Briefcase, Code, Target, TrendingUp, Shield, Edit, RefreshCw } from "lucide-react";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 interface ProfessionalProfile {
   professional_title: string;
@@ -164,19 +156,7 @@ export default function ProfessionalProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="space-y-4 text-center">
-          <div className="relative">
-            <div className="h-16 w-16 rounded-full bg-linear-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
-              <Briefcase className="h-8 w-8 text-white" />
-            </div>
-            <RefreshCw className="h-5 w-5 animate-spin absolute -bottom-1 -right-1 text-blue-600 bg-white rounded-full p-0.5" />
-          </div>
-          <p className="text-muted-foreground">Unlocking your profile...</p>
-        </div>
-      </div>
-    );
+    return <HushhLoader label="Unlocking your profile..." />;
   }
 
   if (error) {
