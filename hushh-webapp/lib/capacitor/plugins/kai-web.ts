@@ -5,7 +5,7 @@
  */
 
 import { WebPlugin } from "@capacitor/core";
-import type { KaiPlugin } from "../kai";
+import type { KaiEncryptedPreference, KaiPlugin } from "../kai";
 
 export class KaiWeb extends WebPlugin implements KaiPlugin {
   async grantConsent(options: {
@@ -13,9 +13,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     scopes: string[];
     authToken?: string;
   }): Promise<{ token: string; expires_at: string }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch("/api/kai/consent/grant", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ user_id: options.userId, scopes: options.scopes }),
     });
 
@@ -76,15 +83,33 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
   async storePreferences(options: {
     userId: string;
-    preferencesEncrypted: string;
+    preferences?: KaiEncryptedPreference[];
+    preferencesEncrypted?: string;
     authToken?: string;
   }): Promise<{ success: boolean }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
+    const preferences: KaiEncryptedPreference[] | undefined =
+      options.preferences ||
+      (options.preferencesEncrypted
+        ? (JSON.parse(options.preferencesEncrypted) as KaiEncryptedPreference[])
+        : undefined);
+
+    if (!preferences || !Array.isArray(preferences)) {
+      throw new Error("Missing preferences payload");
+    }
+
     const response = await fetch("/api/kai/preferences/store", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         user_id: options.userId,
-        preferences_encrypted: options.preferencesEncrypted,
+        preferences,
       }),
     });
 
@@ -99,13 +124,39 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     userId: string;
     authToken?: string;
   }): Promise<{ preferences: any[] }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
     const response = await fetch(`/api/kai/preferences/${options.userId}`, {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers,
     });
 
     if (!response.ok) {
       throw new Error("Failed to get preferences");
+    }
+
+    return response.json();
+  }
+
+  async resetPreferences(options: {
+    userId: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }> {
+    const response = await fetch(`/api/kai/preferences/${options.userId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${options.vaultOwnerToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to reset preferences");
     }
 
     return response.json();

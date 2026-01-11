@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const PYTHON_API_URL =
-  process.env.PYTHON_API_URL ||
-  process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 /**
  * Kai Catch-All Proxy
@@ -29,16 +26,27 @@ export async function GET(
   return proxyRequest(request, params);
 }
 
+export async function DELETE(
+  request: NextRequest,
+  props: { params: Promise<{ path: string[] }> }
+) {
+  const params = await props.params;
+  return proxyRequest(request, params);
+}
+
 async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   const path = params.path.join("/");
-  const url = `${PYTHON_API_URL}/api/kai/${path}`;
+  const url = `${getPythonApiUrl()}/api/kai/${path}`;
 
   try {
     const headers = new Headers(request.headers);
     // Remove host header to avoid confusion
     headers.delete("host");
 
-    const body = request.method !== "GET" ? await request.text() : undefined;
+    const body =
+      request.method !== "GET" && request.method !== "DELETE"
+        ? await request.text()
+        : undefined;
 
     const response = await fetch(url, {
       method: request.method,

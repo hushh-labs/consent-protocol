@@ -17,7 +17,7 @@ import uuid
 import logging
 
 from db.connection import get_pool
-from hushh_mcp.consent.token import issue_token
+from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 
 logger = logging.getLogger(__name__)
@@ -485,3 +485,36 @@ async def get_preferences(user_id: str):
         ))
     
     return PreferencesResponse(preferences=prefs)
+
+
+@router.delete("/preferences/{user_id}")
+async def delete_preferences(
+    user_id: str,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
+    """
+    Delete all encrypted Kai preferences for a user.
+
+    Requires VAULT_OWNER (consent protocol).
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+    token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(token)
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
+
+    if payload.scope != ConsentScope.VAULT_OWNER.value:
+        raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
+
+    if payload.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Cannot delete preferences for another user")
+
+    pool = await get_pool()
+    result = await pool.execute(
+        "DELETE FROM vault_kai_preferences WHERE user_id = $1",
+        user_id
+    )
+
+    return {"success": True, "result": result}
