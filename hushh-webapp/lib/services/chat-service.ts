@@ -8,6 +8,7 @@
 import { Capacitor } from "@capacitor/core";
 import { HushhAgent } from "../capacitor";
 import { SettingsService } from "./settings-service";
+import { apiJson } from "@/lib/services/api-client";
 
 // ==================== Types ====================
 
@@ -163,7 +164,7 @@ class ChatServiceImpl {
     agentId?: string
   ): Promise<ChatResponse> {
     try {
-      const response = await fetch("/api/chat", {
+      const data = await apiJson<any>("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -176,12 +177,6 @@ class ChatServiceImpl {
           conversationHistory: session.messages.slice(-10),
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
 
       // Handle both snake_case and camelCase responses
       return {

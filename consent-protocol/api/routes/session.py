@@ -10,6 +10,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 import consent_db
 from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
+from api.utils.firebase_auth import verify_firebase_bearer
 
 logger = logging.getLogger(__name__)
 
@@ -29,30 +30,11 @@ async def issue_session_token(
     
     Called after successful passphrase unlock on the frontend.
     """
-    import firebase_admin
-    from firebase_admin import auth, credentials
-
     from hushh_mcp.consent.token import issue_token
     from hushh_mcp.constants import ConsentScope
-    
-    # Initialize Firebase Admin if not already done
+
     try:
-        firebase_admin.get_app()
-    except ValueError:
-        # Use default credentials (works in Cloud Run with proper IAM)
-        cred = credentials.ApplicationDefault()
-        firebase_admin.initialize_app(cred)
-    
-    # Verify Firebase ID token
-    if not authorization or not authorization.startswith("Bearer "):
-        logger.warning("⚠️ Missing or invalid Authorization header")
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-    
-    id_token = authorization.split("Bearer ")[1]
-    
-    try:
-        decoded_token = auth.verify_id_token(id_token)
-        verified_uid = decoded_token["uid"]
+        verified_uid = verify_firebase_bearer(authorization)
         
         # Ensure request userId matches verified token
         if request.userId != verified_uid:
@@ -61,12 +43,6 @@ async def issue_session_token(
         
         logger.info(f"🔐 Verified user {verified_uid}, issuing session token...")
         
-    except auth.InvalidIdTokenError as e:
-        logger.warning(f"⚠️ Invalid ID token: {e}")
-        raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
-    except auth.ExpiredIdTokenError as e:
-        logger.warning(f"⚠️ Expired ID token: {e}")
-        raise HTTPException(status_code=401, detail="Expired Firebase ID token")
     except Exception as e:
         logger.error(f"❌ Token verification failed: {e}")
         raise HTTPException(status_code=401, detail="Token verification failed")
