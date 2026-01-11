@@ -49,6 +49,9 @@ const config: CapacitorConfig = {
     HushhConsent: {
       backendUrl: BACKEND_URL,
     },
+    HushhIdentity: {
+      backendUrl: BACKEND_URL,
+    },
     Kai: {
       backendUrl: BACKEND_URL,
     },
