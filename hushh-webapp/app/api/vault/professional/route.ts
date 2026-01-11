@@ -10,13 +10,12 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 export const dynamic = "force-dynamic";
 
 // Python backend URL (same as native apps use)
-const PYTHON_API_URL =
-  process.env.PYTHON_API_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+const PYTHON_API_URL = getPythonApiUrl();
 
 // ============================================================================
 // GET: Read professional data (proxies to Python /db/professional/get)

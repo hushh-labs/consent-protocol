@@ -166,8 +166,12 @@ class KaiPlugin : Plugin() {
             call.reject("Missing userId")
             return
         }
-        val preferencesEncrypted = call.getString("preferencesEncrypted") ?: run {
-            call.reject("Missing preferencesEncrypted")
+
+        // Canonical payload: preferences array (preferred)
+        val preferencesArray = call.getArray("preferences")
+        val preferencesEncrypted = call.getString("preferencesEncrypted") // legacy
+        if (preferencesArray == null && preferencesEncrypted == null) {
+            call.reject("Missing preferences payload")
             return
         }
         
@@ -177,7 +181,14 @@ class KaiPlugin : Plugin() {
         
         val json = JSONObject().apply {
             put("user_id", userId)
-            put("preferences_encrypted", preferencesEncrypted)
+            when {
+                preferencesArray != null -> put("preferences", preferencesArray)
+                else -> {
+                    // Legacy: parse stringified JSON array
+                    val parsed = JSONArray(preferencesEncrypted)
+                    put("preferences", parsed)
+                }
+            }
         }
         
         val client = OkHttpClient()
@@ -266,6 +277,53 @@ class KaiPlugin : Plugin() {
                 } catch (e: Exception) {
                     android.util.Log.e("KaiPlugin", "❌ JSON parsing error: ${e.message}")
                     pluginCall.reject("JSON parsing error: ${e.message}")
+                }
+            }
+        })
+    }
+
+    @PluginMethod
+    fun resetPreferences(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        val backendUrl = getBackendUrl()
+        val url = "$backendUrl/api/kai/preferences/$userId"
+
+        val client = OkHttpClient()
+        val request = Request.Builder()
+            .url(url)
+            .delete()
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+
+        val pluginCall = call
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                pluginCall.reject("Network error: ${e.message}")
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val responseBody = response.body?.string()
+                if (!response.isSuccessful) {
+                    pluginCall.reject("Request failed: ${response.code}")
+                    return
+                }
+                try {
+                    val result = if (responseBody.isNullOrBlank()) {
+                        JSObject().put("success", true)
+                    } else {
+                        JSObject(responseBody)
+                    }
+                    pluginCall.resolve(result)
+                } catch (e: Exception) {
+                    pluginCall.resolve(JSObject().put("success", true))
                 }
             }
         })

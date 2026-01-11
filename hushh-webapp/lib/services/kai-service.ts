@@ -7,8 +7,9 @@
  */
 
 import { Capacitor } from "@capacitor/core";
-import { Kai } from "@/lib/capacitor/kai";
+import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
 import { HushhAuth } from "@/lib/capacitor";
+import { apiJson } from "@/lib/services/api-client";
 
 // ============================================================================
 // TYPES
@@ -99,13 +100,13 @@ export async function analyzeTicker(params: {
  */
 export async function storePreferences(
   userId: string,
-  preferencesEncrypted: string
+  preferences: KaiEncryptedPreference[]
 ): Promise<{ success: boolean }> {
   const authToken = await getAuthToken();
 
   return Kai.storePreferences({
     userId,
-    preferencesEncrypted,
+    preferences,
     authToken,
   });
 }
@@ -125,17 +126,29 @@ export async function getPreferences(
 }
 
 /**
+ * Reset (delete) all Kai encrypted preferences for a user.
+ * Requires VAULT_OWNER token.
+ */
+export async function resetPreferences(
+  userId: string,
+  vaultOwnerToken: string
+): Promise<{ success: boolean }> {
+  return Kai.resetPreferences({
+    userId,
+    vaultOwnerToken,
+  });
+}
+
+/**
  * Get User's Encrypted Investor Profile (Ciphertext)
  * Calls GET /api/identity/profile
  */
 export async function getEncryptedProfile(token: string): Promise<any> {
-  const res = await fetch("/api/identity/profile", {
+  return apiJson("/api/identity/profile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ consent_token: token }),
   });
-  if (!res.ok) throw new Error("Failed to fetch profile");
-  return res.json();
 }
 
 export async function analyzeFundamental(params: {
@@ -146,7 +159,7 @@ export async function analyzeFundamental(params: {
   context: any;
   token: string;
 }): Promise<any> {
-  const res = await fetch("/api/kai/analyze", {
+  return apiJson("/api/kai/analyze", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -161,6 +174,4 @@ export async function analyzeFundamental(params: {
       consent_token: params.token,
     }),
   });
-  if (!res.ok) throw new Error("Analysis failed");
-  return res.json();
 }
