@@ -762,14 +762,14 @@ export class ApiService {
    */
   static async kaiStorePreferences(data: {
     userId: string;
-    preferencesEncrypted: string;
+    preferences: any[];
   }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
         const result = await Kai.storePreferences({
           userId: data.userId,
-          preferencesEncrypted: data.preferencesEncrypted,
+          preferences: data.preferences as any,
           authToken,
         });
 
@@ -789,7 +789,7 @@ export class ApiService {
       method: "POST",
       body: JSON.stringify({
         user_id: data.userId,
-        preferences_encrypted: data.preferencesEncrypted,
+        preferences: data.preferences,
       }),
     });
   }

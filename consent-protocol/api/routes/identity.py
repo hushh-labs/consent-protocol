@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from db.connection import get_pool
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from api.utils.firebase_auth import verify_firebase_bearer
 
 logger = logging.getLogger(__name__)
 
@@ -113,28 +114,34 @@ async def auto_detect_investor(
     If no displayName or no matches found, returns {"detected": False}
     """
     import re
-    from firebase_admin import auth as firebase_auth
-    
+
     # Validate Firebase token
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
-    token = authorization.replace("Bearer ", "")
-    
+
+    # Verify Firebase ID token and pull name/email from decoded claims
     try:
-        # Verify Firebase ID token
+        # verify uid + token validity
+        verify_firebase_bearer(authorization)
+
+        # read decoded token claims (avoid leaking errors)
+        from firebase_admin import auth as firebase_auth
+
+        token = authorization.replace("Bearer ", "")
         decoded_token = firebase_auth.verify_id_token(token)
         user_name = decoded_token.get("name", "")
         user_email = decoded_token.get("email", "")
-        
+
         # Try display name first, fallback to email prefix
         display_name = user_name or (user_email.split("@")[0] if user_email else "")
-        
+
         if not display_name or len(display_name) < 2:
             return {"detected": False, "display_name": None, "matches": []}
-        
+
         logger.info(f"🔍 Auto-detecting investor for displayName: {display_name}")
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Firebase token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid Firebase token")
