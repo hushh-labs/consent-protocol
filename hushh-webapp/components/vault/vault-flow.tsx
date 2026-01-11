@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { User } from "firebase/auth";
-import { auth } from "@/lib/firebase/config";
 
 import { useVault } from "@/lib/vault/vault-context";
 
@@ -49,6 +48,17 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
   const [copied, setCopied] = useState(false);
 
   const { unlockVault } = useVault();
+
+  // Dev-only helper to enable detailed vault owner token debugging from the UI.
+  const enableVaultOwnerDebug = () => {
+    try {
+      localStorage.setItem("debug_vault_owner", "true");
+      sessionStorage.setItem("debug_vault_owner", "true");
+      toast.success("Vault debug enabled (debug_vault_owner=true)");
+    } catch {
+      toast.error("Failed to enable debug");
+    }
+  };
 
   // Notify parent of step changes
   useEffect(() => {
@@ -110,17 +120,10 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        // Request VAULT_OWNER consent token
+        // Request VAULT_OWNER consent token (unified path)
         try {
-          const idToken = await auth.currentUser?.getIdToken();
-          if (!idToken) {
-            throw new Error("No Firebase ID token available");
-          }
-
-          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
-            user.uid,
-            idToken
-          );
+          const { token, expiresAt } =
+            await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
@@ -157,17 +160,10 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        // Request VAULT_OWNER consent token
+        // Request VAULT_OWNER consent token (unified path)
         try {
-          const idToken = await auth.currentUser?.getIdToken();
-          if (!idToken) {
-            throw new Error("No Firebase ID token available");
-          }
-
-          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
-            user.uid,
-            idToken
-          );
+          const { token, expiresAt } =
+            await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
@@ -211,17 +207,10 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       );
 
       if (decryptedKey) {
-        // Request VAULT_OWNER consent token
+        // Request VAULT_OWNER consent token (unified path)
         try {
-          const idToken = await auth.currentUser?.getIdToken();
-          if (!idToken) {
-            throw new Error("No Firebase ID token available");
-          }
-
-          const { token, expiresAt } = await VaultService.issueVaultOwnerToken(
-            user.uid,
-            idToken
-          );
+          const { token, expiresAt } =
+            await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
@@ -335,6 +324,15 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 <p className="text-sm text-muted-foreground mt-1">
                   Enter your passphrase to decrypt your data
                 </p>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={enableVaultOwnerDebug}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Enable debug
+                </button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="unlock-passphrase">Passphrase</Label>

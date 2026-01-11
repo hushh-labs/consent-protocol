@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
+import { AuthService } from "@/lib/services/auth-service";
 import {
   createVaultWithPassphrase as webCreateVault,
   unlockVaultWithPassphrase as webUnlockVault,
@@ -21,6 +22,148 @@ export interface VaultData {
 }
 
 export class VaultService {
+  private static shouldDebugVaultOwner(): boolean {
+    // Keep this very cheap and safe in production: only logs when explicitly enabled.
+    try {
+      if (typeof window !== "undefined") {
+        return (
+          window.localStorage.getItem("debug_vault_owner") === "true" ||
+          window.sessionStorage.getItem("debug_vault_owner") === "true"
+        );
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+
+  private static sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private static async debugAuthSnapshot(): Promise<Record<string, unknown>> {
+    if (!Capacitor.isNativePlatform()) {
+      return {
+        platform: "web",
+        firebaseJsCurrentUser: !!auth.currentUser,
+        firebaseJsUid: auth.currentUser?.uid || null,
+      };
+    }
+
+    try {
+      const [{ signedIn }, { user }, { idToken }] = await Promise.all([
+        HushhAuth.isSignedIn().catch(() => ({ signedIn: false })),
+        HushhAuth.getCurrentUser().catch(() => ({ user: null })),
+        HushhAuth.getIdToken().catch(() => ({ idToken: null })),
+      ]);
+
+      return {
+        platform: "native",
+        hushhAuthSignedIn: signedIn,
+        hushhAuthUserId: user?.id || null,
+        hushhAuthUserEmail: user?.email || null,
+        hushhAuthIdTokenLen: idToken ? idToken.length : 0,
+        firebaseJsCurrentUser: !!auth.currentUser,
+        firebaseJsUid: auth.currentUser?.uid || null,
+        envBackendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || null,
+      };
+    } catch (e: any) {
+      return {
+        platform: "native",
+        debugError: e?.message || String(e),
+        envBackendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || null,
+      };
+    }
+  }
+
+  /**
+   * Get or issue VAULT_OWNER consent token (unified path for all native features).
+   *
+   * This is the single canonical function used by all native features (Kai, Identity, Food, etc.).
+   * It checks for a valid cached token first, then issues a new one if needed.
+   *
+   * @param userId - Firebase user ID
+   * @param currentToken - Current token from VaultContext (if available)
+   * @param currentExpiresAt - Current token expiry timestamp (if available)
+   * @returns Token + expiry + scope
+   */
+  static async getOrIssueVaultOwnerToken(
+    userId: string,
+    currentToken: string | null = null,
+    currentExpiresAt: number | null = null
+  ): Promise<{
+    token: string;
+    expiresAt: number;
+    scope: string;
+  }> {
+    // Check if we have a valid cached token
+    if (currentToken && currentExpiresAt) {
+      const now = Date.now();
+      const bufferMs = 5 * 60 * 1000; // 5 minute buffer before expiry
+      if (now < currentExpiresAt - bufferMs) {
+        console.log(
+          "[VaultService] Reusing valid VAULT_OWNER token (expires in",
+          Math.round((currentExpiresAt - now) / 1000 / 60),
+          "minutes)"
+        );
+        return {
+          token: currentToken,
+          expiresAt: currentExpiresAt,
+          scope: "VAULT_OWNER",
+        };
+      }
+      console.log(
+        "[VaultService] Cached token expired or expiring soon, issuing new one"
+      );
+    }
+
+    // Issue new token
+    console.log("[VaultService] Issuing new VAULT_OWNER token");
+
+    // Phase A instrumentation: capture auth snapshot for debugging.
+    if (this.shouldDebugVaultOwner()) {
+      console.log(
+        "[VaultService] VAULT_OWNER debug snapshot (before token acquisition):",
+        await this.debugAuthSnapshot()
+      );
+    }
+
+    // Phase B: deterministic token acquisition (native-first + fallback + single retry)
+    const tryGetFirebaseIdToken = async (): Promise<string | undefined> => {
+      // 1) Native-first: HushhAuth plugin
+      const hushh = await HushhAuth.getIdToken().catch(() => ({ idToken: null }));
+      if (hushh?.idToken) return hushh.idToken;
+
+      // 2) Fallback: AuthService (may use @capacitor-firebase/authentication)
+      const fallback = await AuthService.getIdToken().catch(() => null);
+      if (fallback) return fallback;
+
+      // 3) Web fallback (should not happen on native, but safe)
+      return await this.getFirebaseToken();
+    };
+
+    let firebaseIdToken = await tryGetFirebaseIdToken();
+    if (!firebaseIdToken) {
+      // Small delay to mitigate race right after sign-in / app resume.
+      await this.sleep(400);
+      firebaseIdToken = await tryGetFirebaseIdToken();
+    }
+
+    if (!firebaseIdToken) {
+      const snapshot = this.shouldDebugVaultOwner()
+        ? await this.debugAuthSnapshot()
+        : undefined;
+      const hint = snapshot
+        ? ` Debug: ${JSON.stringify(snapshot)}`
+        : " Enable debug by setting localStorage.debug_vault_owner=true";
+      throw new Error(
+        `No Firebase ID token available (native).${hint}`
+      );
+    }
+
+    return this.issueVaultOwnerToken(userId, firebaseIdToken);
+  }
+
   /**
    * Issue VAULT_OWNER consent token for authenticated user.
    *
