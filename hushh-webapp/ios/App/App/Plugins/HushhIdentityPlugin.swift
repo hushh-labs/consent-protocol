@@ -26,6 +26,7 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getInvestor", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "confirmIdentity", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getIdentityStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getEncryptedProfile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resetIdentity", returnType: CAPPluginReturnPromise)
     ]
     
@@ -333,6 +334,82 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     print("✅ [\(self.TAG)] Got identity status")
+                    call.resolve(json)
+                } else {
+                    call.reject("Invalid JSON response")
+                }
+            } catch {
+                call.reject("Failed to parse response: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+    
+    // MARK: - Get Encrypted Profile
+    /**
+     * Get encrypted investor profile (ciphertext).
+     * Requires VAULT_OWNER token.
+     */
+    @objc func getEncryptedProfile(_ call: CAPPluginCall) {
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        
+        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        
+        guard let url = URL(string: "\(backendUrl)/api/identity/profile") else {
+            call.reject("Invalid URL")
+            return
+        }
+        
+        print("[\(TAG)] Getting encrypted profile")
+        
+        let body: [String: Any] = ["consent_token": vaultOwnerToken]
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            call.reject("Failed to serialize body")
+            return
+        }
+        
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ [\(self.TAG)] Get encrypted profile error: \(error.localizedDescription)")
+                call.reject("Get profile failed: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                call.reject("Invalid response")
+                return
+            }
+            
+            if httpResponse.statusCode == 404 {
+                call.reject("Profile not found")
+                return
+            }
+            
+            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+                call.reject("Get profile failed: HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
+            guard let data = data else {
+                call.reject("No data received")
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("✅ [\(self.TAG)] Got encrypted profile")
                     call.resolve(json)
                 } else {
                     call.reject("Invalid JSON response")
