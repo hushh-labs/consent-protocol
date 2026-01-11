@@ -33,7 +33,9 @@ def test_token_scope_mismatch():
     token_obj = issue_token(USER_ID, AGENT_ID, VALID_SCOPE)
     valid, reason, _ = validate_token(token_obj.token, ConsentScope.VAULT_READ_PHONE)
     assert valid is False
-    assert reason == "Scope mismatch"
+    # Reason includes expected vs actual scope for debuggability
+    assert reason is not None
+    assert reason.startswith("Scope mismatch")
 
 
 def test_token_expiry():

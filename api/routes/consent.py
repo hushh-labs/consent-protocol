@@ -284,11 +284,28 @@ async def issue_vault_owner_token(request: Request):
                 # Check if token has > 1 hour left
                 expires_at = t.get("expires_at", 0)
                 if expires_at > now_ms + (60 * 60 * 1000):  # 1 hour buffer
-                    # REUSE existing token
-                    existing_token = t.get("token_id")
+                    # REUSE existing token (only if it still validates)
+                    #
+                    # NOTE: In older deployments, some systems stored a non-token identifier in `token_id`.
+                    # If we blindly reuse it, downstream calls fail with "Invalid signature".
+                    candidate_token = t.get("token_id")
+                    if not candidate_token:
+                        logger.warning(
+                            f"⚠️ VAULT_OWNER reuse candidate missing token_id for {user_id}; issuing new token"
+                        )
+                        break
+
+                    is_valid, reason, payload = validate_token(candidate_token, ConsentScope.VAULT_OWNER)
+                    if not is_valid or not payload:
+                        logger.warning(
+                            "⚠️ Stored VAULT_OWNER token failed validation; issuing new token. "
+                            f"user_id={user_id} reason={reason}"
+                        )
+                        break
+
                     logger.info(f"♻️ Reusing active VAULT_OWNER token for {user_id} (expires: {expires_at})")
                     return {
-                        "token": existing_token,
+                        "token": candidate_token,
                         "expiresAt": expires_at,
                         "scope": ConsentScope.VAULT_OWNER.value
                     }
