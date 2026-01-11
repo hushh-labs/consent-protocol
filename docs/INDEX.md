@@ -25,6 +25,7 @@ Welcome to the Hushh Research documentation! This index provides a comprehensive
 - [Agent Kai](technical/kai.md) - Investment analysis agent with SEC compliance
 - [Developer API](technical/developer-api.md) - External developer integration
 - [Frontend Design System](technical/frontend-design-system.md) - UI/UX components
+- [Route Contracts](technical/ROUTE_CONTRACTS.md) - Web/native/backend endpoint contracts and enforcement
 
 ### Business Documentation
 
@@ -58,6 +59,7 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 
 - [Consent Implementation](technical/consent-implementation.md) - Complete VAULT_OWNER token guide
 - [Architecture](technical/architecture.md) - Updated security layers
+- [Project Context Map (Canonical)](PROJECT_CONTEXT_MAP.md) - Repo topology, consent surfaces, Capacitor-safe development rules
 
 **See Also**:
 
@@ -75,6 +77,7 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 | **Getting Started**     | [README](../README.md)                                           | Setup and installation guide   |
 | **System Architecture** | [architecture.md](technical/architecture.md)                     | High-level system overview     |
 | **Consent Protocol**    | [consent-implementation.md](technical/consent-implementation.md) | Authentication and token flows |
+| **Context Map**         | [PROJECT_CONTEXT_MAP.md](PROJECT_CONTEXT_MAP.md)                 | Canonical repo + flow map      |
 | **Database**            | [database-schema.md](technical/database-schema.md)               | Schema and queries             |
 | **API Reference**       | [developer-api.md](technical/developer-api.md)                   | REST API documentation         |
 

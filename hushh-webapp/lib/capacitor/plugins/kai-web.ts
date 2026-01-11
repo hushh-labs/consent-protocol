@@ -5,7 +5,7 @@
  */
 
 import { WebPlugin } from "@capacitor/core";
-import type { KaiPlugin } from "../kai";
+import type { KaiEncryptedPreference, KaiPlugin } from "../kai";
 
 export class KaiWeb extends WebPlugin implements KaiPlugin {
   async grantConsent(options: {
@@ -83,7 +83,8 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
   async storePreferences(options: {
     userId: string;
-    preferencesEncrypted: string;
+    preferences?: KaiEncryptedPreference[];
+    preferencesEncrypted?: string;
     authToken?: string;
   }): Promise<{ success: boolean }> {
     const headers: Record<string, string> = {
@@ -93,12 +94,22 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
       headers["Authorization"] = `Bearer ${options.authToken}`;
     }
 
+    const preferences: KaiEncryptedPreference[] | undefined =
+      options.preferences ||
+      (options.preferencesEncrypted
+        ? (JSON.parse(options.preferencesEncrypted) as KaiEncryptedPreference[])
+        : undefined);
+
+    if (!preferences || !Array.isArray(preferences)) {
+      throw new Error("Missing preferences payload");
+    }
+
     const response = await fetch("/api/kai/preferences/store", {
       method: "POST",
       headers,
       body: JSON.stringify({
         user_id: options.userId,
-        preferences_encrypted: options.preferencesEncrypted,
+        preferences,
       }),
     });
 
@@ -127,6 +138,25 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
     if (!response.ok) {
       throw new Error("Failed to get preferences");
+    }
+
+    return response.json();
+  }
+
+  async resetPreferences(options: {
+    userId: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }> {
+    const response = await fetch(`/api/kai/preferences/${options.userId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${options.vaultOwnerToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to reset preferences");
     }
 
     return response.json();

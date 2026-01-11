@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "allowlistedWebRouteFiles": ["hushh-webapp/app/api/chat/route.ts"],
+  "contracts": [
+    {
+      "id": "kaiProxy",
+      "webRouteFile": "hushh-webapp/app/api/kai/[...path]/route.ts",
+      "backend": {
+        "file": "consent-protocol/api/routes/kai.py",
+        "routerPrefix": "/api/kai",
+        "paths": [
+          "/health",
+          "/consent/grant",
+          "/analyze",
+          "/preferences/store",
+          "/preferences/{user_id}"
+        ]
+      },
+      "native": {
+        "tsPluginFile": "hushh-webapp/lib/capacitor/kai.ts",
+        "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/Kai/KaiPlugin.kt",
+        "requiredMethodNames": [
+          "grantConsent",
+          "analyze",
+          "storePreferences",
+          "getPreferences",
+          "resetPreferences"
+        ]
+      }
+    },
+    {
+      "id": "vaultWebProxy",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/vault/check/route.ts",
+        "hushh-webapp/app/api/vault/get/route.ts",
+        "hushh-webapp/app/api/vault/setup/route.ts",
+        "hushh-webapp/app/api/vault/food/route.ts",
+        "hushh-webapp/app/api/vault/professional/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/db_proxy.py",
+        "routerPrefix": "/db",
+        "paths": [
+          "/vault/check",
+          "/vault/get",
+          "/vault/setup",
+          "/food/get",
+          "/professional/get"
+        ]
+      },
+      "native": {
+        "tsPluginFile": "hushh-webapp/lib/capacitor/index.ts",
+        "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/HushhVaultPlugin.swift",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/HushhVault/HushhVaultPlugin.kt",
+        "requiredMethodNames": [
+          "hasVault",
+          "getVault",
+          "setupVault",
+          "getFoodPreferences",
+          "getProfessionalData"
+        ]
+      }
+    },
+    {
+      "id": "vaultOwnerToken",
+      "webRouteFile": "hushh-webapp/app/api/consent/vault-owner-token/route.ts",
+      "backend": {
+        "file": "consent-protocol/api/routes/consent.py",
+        "routerPrefix": "/api/consent",
+        "paths": ["/vault-owner-token"]
+      },
+      "native": {
+        "tsPluginFile": "hushh-webapp/lib/capacitor/index.ts",
+        "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/HushhConsentPlugin.swift",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/HushhConsent/HushhConsentPlugin.kt",
+        "requiredMethodNames": ["issueVaultOwnerToken"]
+      }
+    },
+    {
+      "id": "consentPendingMgmt",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/consent/pending/route.ts",
+        "hushh-webapp/app/api/consent/pending/approve/route.ts",
+        "hushh-webapp/app/api/consent/pending/deny/route.ts",
+        "hushh-webapp/app/api/consent/cancel/route.ts",
+        "hushh-webapp/app/api/consent/revoke/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/consent.py",
+        "routerPrefix": "/api/consent",
+        "paths": [
+          "/pending",
+          "/pending/approve",
+          "/pending/deny",
+          "/cancel",
+          "/revoke"
+        ]
+      }
+    },
+    {
+      "id": "consentSessionMgmt",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/consent/session-token/route.ts",
+        "hushh-webapp/app/api/consent/logout/route.ts",
+        "hushh-webapp/app/api/consent/history/route.ts",
+        "hushh-webapp/app/api/consent/active/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/session.py",
+        "routerPrefix": "/api",
+        "paths": [
+          "/consent/issue-token",
+          "/consent/logout",
+          "/consent/history",
+          "/consent/active"
+        ]
+      }
+    },
+    {
+      "id": "identityProxy",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/identity/auto-detect/route.ts",
+        "hushh-webapp/app/api/identity/confirm/route.ts",
+        "hushh-webapp/app/api/identity/status/route.ts",
+        "hushh-webapp/app/api/identity/profile/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/identity.py",
+        "routerPrefix": "/api/identity",
+        "paths": ["/auto-detect", "/confirm", "/status", "/profile"]
+      }
+    },
+    {
+      "id": "investorsPublic",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/investors/search/route.ts",
+        "hushh-webapp/app/api/investors/[id]/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/investors.py",
+        "routerPrefix": "/api/investors",
+        "paths": ["/search", "/{investor_id}"]
+      }
+    },
+    {
+      "id": "tokenValidationAndAgentChat",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/vault/store-preferences/route.ts",
+        "hushh-webapp/app/api/agents/food-dining/chat/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/agents.py",
+        "routerPrefix": "/api",
+        "paths": ["/validate-token", "/agents/food-dining/chat"]
+      }
+    },
+    {
+      "id": "authSessionInternal",
+      "webRouteFile": "hushh-webapp/app/api/auth/session/route.ts"
+    }
+  ]
+}

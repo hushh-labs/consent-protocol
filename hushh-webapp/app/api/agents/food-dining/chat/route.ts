@@ -8,12 +8,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { storeUserData } from "@/lib/db";
+import { getPythonApiUrl } from "@/app/api/_utils/backend";
 
 // Food Agent backend URL
-const FOOD_AGENT_URL =
-  process.env.FOOD_AGENT_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+const FOOD_AGENT_URL = process.env.FOOD_AGENT_URL || getPythonApiUrl();
 
 interface ChatRequest {
   userId: string;
@@ -53,11 +51,8 @@ export async function POST(req: NextRequest) {
 
     const data = await response.json();
 
-    // If conversation is complete and user consented, store to vault
-    if (data.isComplete && data.collectedData) {
-      await storePreferencesToVault(userId, data.collectedData);
-      console.log(`✅ Stored preferences for user: ${userId}`);
-    }
+    // IMPORTANT: Do NOT store plaintext to vault from server routes.
+    // The frontend must encrypt with BYOK and then perform a consented vault write.
 
     return NextResponse.json(data);
   } catch (error) {
@@ -65,62 +60,6 @@ export async function POST(req: NextRequest) {
 
     // Fallback: try direct agent call if backend is down
     return handleDirectAgentCall(req);
-  }
-}
-
-/**
- * Store collected preferences to vault
- */
-async function storePreferencesToVault(
-  userId: string,
-  data: Record<string, unknown>
-) {
-  // For now, store as plaintext JSON (encryption happens in vault layer)
-  // In production, this would use consent tokens and encryption
-
-  if (data.dietary_restrictions) {
-    await storeUserData(
-      userId,
-      "food.dietary_restrictions",
-      JSON.stringify(data.dietary_restrictions),
-      "", // iv - to be generated
-      "" // tag - to be generated
-    );
-  }
-
-  if (data.cuisine_preferences) {
-    await storeUserData(
-      userId,
-      "food.cuisine_preferences",
-      JSON.stringify(data.cuisine_preferences),
-      "",
-      ""
-    );
-  }
-
-  if (data.monthly_budget) {
-    await storeUserData(
-      userId,
-      "food.monthly_budget",
-      JSON.stringify(data.monthly_budget),
-      "",
-      ""
-    );
-  }
-
-  // Store any custom/other fields with dynamic scopes
-  if (data.custom && typeof data.custom === "object") {
-    for (const [key, value] of Object.entries(
-      data.custom as Record<string, unknown>
-    )) {
-      await storeUserData(
-        userId,
-        `food.custom.${key}`,
-        JSON.stringify(value),
-        "",
-        ""
-      );
-    }
   }
 }
 

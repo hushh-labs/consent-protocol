@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Import route modules
 from api.routes import health, agents, consent, developer, session, db_proxy, sse, kai, food, professional
+from api.routes import debug_firebase
 
 # Import rate limiting
 from slowapi import _rate_limit_exceeded_handler
@@ -91,6 +92,9 @@ app.include_router(db_proxy.router)
 
 # SSE routes for real-time consent notifications (/api/consent/events/...)
 app.include_router(sse.router)
+
+# Dev-only debug routes (/api/_debug/...)
+app.include_router(debug_firebase.router)
 
 # Kai investor onboarding routes (/api/kai/...)
 app.include_router(kai.router)
