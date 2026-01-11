@@ -48,6 +48,7 @@ import {
   IdentityService,
   InvestorProfile,
 } from "@/lib/services/identity-service";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 // ============================================================================
 // TYPES & STATE
@@ -175,12 +176,11 @@ export default function KaiOnboarding() {
 
   if (checkingDb) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          <p className="text-zinc-500 text-sm">Checking Kai status...</p>
-        </div>
-      </div>
+      <HushhLoader
+        variant="fullscreen"
+        label="Checking Kai status..."
+        className="bg-zinc-50 dark:bg-zinc-950"
+      />
     );
   }
 

@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { User } from "firebase/auth";
 
 import { useVault } from "@/lib/vault/vault-context";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 type VaultStep = "checking" | "create" | "unlock" | "recovery" | "success";
 
@@ -48,17 +49,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
   const [copied, setCopied] = useState(false);
 
   const { unlockVault } = useVault();
-
-  // Dev-only helper to enable detailed vault owner token debugging from the UI.
-  const enableVaultOwnerDebug = () => {
-    try {
-      localStorage.setItem("debug_vault_owner", "true");
-      sessionStorage.setItem("debug_vault_owner", "true");
-      toast.success("Vault debug enabled (debug_vault_owner=true)");
-    } catch {
-      toast.error("Failed to enable debug");
-    }
-  };
 
   // Notify parent of step changes
   useEffect(() => {
@@ -236,10 +226,10 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
   };
 
   if (step === "checking") {
-    return (
-      <Card variant="none" effect="glass">
-        <CardContent className="p-6 text-center py-8">
-          {error ? (
+    if (error) {
+      return (
+        <Card variant="none" effect="glass">
+          <CardContent className="p-6 text-center py-8">
             <div className="space-y-4">
               <div className="text-destructive mb-2">
                 <AlertCircle className="h-8 w-8 mx-auto" />
@@ -253,20 +243,12 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 Retry
               </Button>
             </div>
-          ) : (
-            <>
-              <div className="relative mx-auto w-16 h-16 mb-4">
-                <div className="absolute inset-0 rounded-full bg-linear-to-br from-blue-500 to-purple-600 opacity-20 animate-pulse" />
-                <div className="absolute inset-2 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                  <Loader2 className="h-6 w-6 text-white animate-spin" />
-                </div>
-              </div>
-              <p className="text-muted-foreground">Checking vault status...</p>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    );
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return <HushhLoader label="Checking vault status..." />;
   }
 
   return (
@@ -324,15 +306,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 <p className="text-sm text-muted-foreground mt-1">
                   Enter your passphrase to decrypt your data
                 </p>
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={enableVaultOwnerDebug}
-                  className="text-xs text-muted-foreground hover:text-foreground underline"
-                >
-                  Enable debug
-                </button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="unlock-passphrase">Passphrase</Label>

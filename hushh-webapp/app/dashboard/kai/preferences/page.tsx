@@ -37,6 +37,7 @@ import {
   getPreferences,
   resetPreferences,
 } from "@/lib/services/kai-service";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 type DecryptedKaiPrefs = {
   riskProfile: string | null;
@@ -292,11 +293,7 @@ export default function KaiPreferencesPage() {
       </div>
 
       {loading ? (
-        <Card variant="none" effect="glass" className="border-0">
-          <CardContent className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          </CardContent>
-        </Card>
+        <HushhLoader label="Loading preferences..." />
       ) : (
         <>
           <Card variant="none" effect="glass" className="border-0 overflow-hidden">
@@ -331,7 +328,7 @@ export default function KaiPreferencesPage() {
                   className="text-red-500"
                 >
                   {resettingIdentity ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <HushhLoader variant="compact" />
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}
@@ -403,7 +400,7 @@ export default function KaiPreferencesPage() {
                   className="text-red-500"
                 >
                   {resettingKai ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <HushhLoader variant="compact" />
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}
