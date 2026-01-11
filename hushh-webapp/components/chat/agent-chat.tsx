@@ -6,6 +6,7 @@ import { Card } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Bot, User, Loader2, Sparkles, ShieldCheck } from "lucide-react";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 import { cn } from "@/lib/utils";
 import { formatMessage } from "@/lib/format-message";
 import { CollectedDataCard } from "./collected-data-card";
@@ -572,16 +573,8 @@ export function AgentChat({
           ))}
 
           {isLoading && (
-            <div className="flex gap-3 max-w-[85%] mr-auto">
-              <div className="h-8 w-8 rounded-full bg-linear-to-br from-blue-500/20 to-purple-600/20 border border-blue-200 dark:border-blue-900 flex items-center justify-center shrink-0 mt-1">
-                <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="p-4 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">
-                  Thinking...
-                </span>
-              </div>
+            <div className="flex w-full justify-center py-6">
+              <HushhLoader label="Thinking..." variant="inline" />
             </div>
           )}
 
