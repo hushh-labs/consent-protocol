@@ -16,6 +16,7 @@ from typing import Dict, Any, List
 import logging
 import os
 from datetime import datetime, timedelta
+import asyncio
 
 import httpx
 
@@ -24,6 +25,48 @@ from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
+
+async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
+    """
+    Fast market-data fallback using Yahoo's public quote endpoint.
+
+    Rationale: `yfinance` is synchronous and can hang in some Cloud Run environments.
+    This endpoint is lighter-weight and has explicit timeouts.
+
+    NOTE: This is public market data (no user data). Consent is still enforced by the caller.
+    """
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    params = {"symbols": ticker.upper()}
+    headers = {"User-Agent": "Hushh-Research/1.0 (compliance@hushh.ai)"}
+
+    timeout = httpx.Timeout(connect=3.0, read=4.0, write=4.0, pool=3.0)
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        res = await client.get(url, params=params)
+        res.raise_for_status()
+        data = res.json() or {}
+        results = ((data.get("quoteResponse") or {}).get("result")) or []
+        if not results:
+            return {}
+
+        q = results[0] or {}
+
+        # Map a minimal common subset
+        return {
+            "ticker": ticker.upper(),
+            "price": q.get("regularMarketPrice") or 0,
+            "change_percent": q.get("regularMarketChangePercent") or 0,
+            "volume": q.get("regularMarketVolume") or 0,
+            "market_cap": q.get("marketCap") or 0,
+            "pe_ratio": q.get("trailingPE") or 0,
+            "pb_ratio": q.get("priceToBook") or 0,
+            "dividend_yield": q.get("trailingAnnualDividendYield") or 0,
+            "company_name": q.get("longName") or q.get("shortName") or ticker.upper(),
+            # Sector/industry often not present in quote endpoint; keep best-effort.
+            "sector": q.get("sector") or "Unknown",
+            "industry": q.get("industry") or "Unknown",
+            "source": "Yahoo Quote (Fast)",
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
 
 
 # ============================================================================
@@ -141,13 +184,26 @@ async def fetch_sec_filings(
         # Step 4: Fetch Company Facts for actual financial data
         logger.info(f"[SEC Fetcher] Fetching company facts (financial metrics) for CIK {cik}...")
         try:
-            facts_response = await client.get(
-                f"{EDGAR_DATA_URL}/api/xbrl/companyfacts/CIK{cik}.json",
-                headers=HEADERS,
-                timeout=15.0
-            )
-            facts_response.raise_for_status()
-            facts_data = facts_response.json()
+            facts_url = f"{EDGAR_DATA_URL}/api/xbrl/companyfacts/CIK{cik}.json"
+            # NVDA and other large filers can have very large payloads; allow a bit more time + retry.
+            # We still keep a firm ceiling so the overall Kai analysis doesn't stall.
+            facts_response = None
+            for attempt in range(1, 3):
+                try:
+                    facts_response = await client.get(
+                        facts_url,
+                        headers=HEADERS,
+                        timeout=25.0
+                    )
+                    facts_response.raise_for_status()
+                    break
+                except Exception as e:
+                    if attempt >= 2:
+                        raise
+                    logger.warning(f"[SEC Fetcher] companyfacts attempt {attempt} failed: {e}; retrying once...")
+                    await asyncio.sleep(0.5)
+
+            facts_data = (facts_response.json() if facts_response is not None else {}) or {}
             
             # Extract financial metrics from US-GAAP taxonomy
             us_gaap = facts_data.get("facts", {}).get("us-gaap", {})
@@ -396,10 +452,31 @@ async def fetch_market_data(
     # Use yfinance for real market data (free, unlimited)
     try:
         import yfinance as yf
+
+        # yfinance is synchronous and can hang indefinitely in some environments (notably Cloud Run).
+        # Run it in a thread and enforce a hard timeout so Kai can still return results.
+        async def _get_info() -> Dict[str, Any]:
+            def _blocking_fetch() -> Dict[str, Any]:
+                stock = yf.Ticker(ticker)
+                return stock.info or {}
+
+            return await asyncio.to_thread(_blocking_fetch)
+
+        try:
+            info = await asyncio.wait_for(_get_info(), timeout=8.0)
+        except asyncio.TimeoutError:
+            logger.warning("[Market Data Fetcher] yfinance timed out; returning minimal market data")
+            info = {}
         
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
+        # If yfinance returned empty (or timed out), try a fast Yahoo quote fallback.
+        if not info:
+            try:
+                yahoo = await _fetch_yahoo_quote_fast(ticker)
+                if yahoo:
+                    return yahoo
+            except Exception as e:
+                logger.warning(f"[Market Data Fetcher] Yahoo fast quote fallback failed: {e}")
+
         # Extract key market metrics
         return {
             "ticker": ticker,
@@ -438,6 +515,13 @@ async def fetch_market_data(
         }
     except Exception as e:
         logger.warning(f"[Market Data Fetcher] yfinance error (likely rate-limited): {e}")
+        # Best-effort: try fast Yahoo quote before returning minimal zeros.
+        try:
+            yahoo = await _fetch_yahoo_quote_fast(ticker)
+            if yahoo:
+                return yahoo
+        except Exception as e2:
+            logger.warning(f"[Market Data Fetcher] Yahoo fast quote fallback failed: {e2}")
         # Return minimal data structure instead of failing
         # This allows analysis to proceed with SEC data only
         return {
