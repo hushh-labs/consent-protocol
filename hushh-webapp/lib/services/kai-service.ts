@@ -8,7 +8,7 @@
 
 import { Capacitor } from "@capacitor/core";
 import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
-import { HushhAuth } from "@/lib/capacitor";
+import { HushhAuth, HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
 
 // ============================================================================
@@ -117,12 +117,36 @@ export async function storePreferences(
 export async function getPreferences(
   userId: string
 ): Promise<{ preferences: any[] }> {
-  const authToken = await getAuthToken();
+  const isNative = Capacitor.isNativePlatform();
+  console.log(
+    "[KaiService] getPreferences - Platform:",
+    isNative ? "NATIVE" : "WEB"
+  );
+  console.log("[KaiService] Capacitor platform:", Capacitor.getPlatform());
+  console.log("[KaiService] userId:", userId);
 
-  return Kai.getPreferences({
-    userId,
-    authToken,
-  });
+  const authToken = await getAuthToken();
+  console.log("[KaiService] authToken present:", !!authToken);
+
+  try {
+    const result = await Kai.getPreferences({
+      userId,
+      authToken,
+    });
+    console.log(
+      "[KaiService] getPreferences success, preferences count:",
+      result.preferences?.length || 0
+    );
+    return result;
+  } catch (error: any) {
+    console.error("[KaiService] getPreferences error:", error);
+    console.error("[KaiService] Error details:", {
+      message: error.message,
+      stack: error.stack,
+      platform: isNative ? "native" : "web",
+    });
+    throw error;
+  }
 }
 
 /**
@@ -141,16 +165,28 @@ export async function resetPreferences(
 
 /**
  * Get User's Encrypted Investor Profile (Ciphertext)
- * Calls GET /api/identity/profile
+ * Platform-aware: Uses HushhIdentity plugin on native, Next.js API on web.
  */
 export async function getEncryptedProfile(token: string): Promise<any> {
-  return apiJson("/api/identity/profile", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ consent_token: token }),
-  });
+  if (Capacitor.isNativePlatform()) {
+    // Native: Use HushhIdentity plugin (direct backend call)
+    return HushhIdentity.getEncryptedProfile({
+      vaultOwnerToken: token,
+    });
+  } else {
+    // Web: Use Next.js API route
+    return apiJson("/api/identity/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consent_token: token }),
+    });
+  }
 }
 
+/**
+ * Analyze ticker with fundamental context (decrypted investor profile).
+ * Platform-aware: Uses Kai plugin on native, Next.js API on web.
+ */
 export async function analyzeFundamental(params: {
   user_id: string;
   ticker: string;
@@ -159,19 +195,16 @@ export async function analyzeFundamental(params: {
   context: any;
   token: string;
 }): Promise<any> {
-  return apiJson("/api/kai/analyze", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${params.token}`,
-    },
-    body: JSON.stringify({
-      user_id: params.user_id,
-      ticker: params.ticker,
-      risk_profile: params.risk_profile,
-      processing_mode: params.processing_mode,
-      context: params.context,
-      consent_token: params.token,
-    }),
+  const authToken = await getAuthToken();
+
+  // Use Kai plugin (platform-aware)
+  return Kai.analyze({
+    userId: params.user_id,
+    ticker: params.ticker,
+    consentToken: params.token,
+    riskProfile: params.risk_profile,
+    processingMode: params.processing_mode,
+    context: params.context, // Include decrypted investor profile context
+    authToken,
   });
 }
