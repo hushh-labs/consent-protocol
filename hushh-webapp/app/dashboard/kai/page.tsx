@@ -48,7 +48,6 @@ import {
   IdentityService,
   InvestorProfile,
 } from "@/lib/services/identity-service";
-import { VaultService } from "@/lib/services/vault-service";
 
 // ============================================================================
 // TYPES & STATE
@@ -72,15 +71,13 @@ interface OnboardingState {
 export default function KaiOnboarding() {
   const router = useRouter();
   const { user } = useAuth();
-  const { isVaultUnlocked, vaultKey } = useVault();
+  const { isVaultUnlocked, vaultKey, vaultOwnerToken } = useVault();
 
   const [state, setState] = useState<OnboardingState>({
     step: "investor_detect", // Start with investor detection
     processingMode: "hybrid",
     riskProfile: "balanced",
   });
-
-  const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [checkingDb, setCheckingDb] = useState(true);
@@ -173,30 +170,8 @@ export default function KaiOnboarding() {
     checkExistingUser();
   }, [user, router, vaultKey]); // Added vaultKey to dependencies
 
-  // Get VAULT_OWNER token for investor detection
-  // IMPORTANT: This must be before any early returns to maintain hooks order
-  useEffect(() => {
-    async function getVaultOwnerToken() {
-      if (!user?.uid || !isVaultUnlocked) return;
-
-      try {
-        // Get Firebase token directly from auth
-        const { auth } = await import("@/lib/firebase/config");
-        const firebaseToken = await auth.currentUser?.getIdToken(true);
-        if (firebaseToken) {
-          const result = await VaultService.issueVaultOwnerToken(
-            user.uid,
-            firebaseToken
-          );
-          setVaultOwnerToken(result.token);
-        }
-      } catch (error) {
-        console.error("[Kai] Failed to get VAULT_OWNER token:", error);
-      }
-    }
-
-    getVaultOwnerToken();
-  }, [user, isVaultUnlocked]);
+  // IMPORTANT: VAULT_OWNER token is issued during vault unlock (VaultFlow) and stored in vault-context.
+  // Do not re-issue tokens here; use the single source of truth: `useVault().vaultOwnerToken`.
 
   if (checkingDb) {
     return (
@@ -296,8 +271,8 @@ export default function KaiOnboarding() {
         plaintext: state.processingMode,
       });
 
-      // Combine both encrypted preferences into a single JSON string
-      const preferencesJson = JSON.stringify([
+      // Canonical backend contract: `preferences: EncryptedPreference[]`
+      const preferences = [
         {
           field_name: "kai_risk_profile",
           ciphertext: encRisk.ciphertext,
@@ -310,10 +285,10 @@ export default function KaiOnboarding() {
           iv: encMode.iv,
           tag: encMode.tag,
         },
-      ]);
+      ];
 
       // 3. Store in DB
-      await storePreferences(user.uid, preferencesJson);
+      await storePreferences(user.uid, preferences);
 
       // 4. Update Session Storage (for immediate use)
       sessionStorage.setItem("kai_risk_profile", state.riskProfile);

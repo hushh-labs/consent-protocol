@@ -16,7 +16,7 @@ gcloud builds submit --config=deploy/backend.cloudbuild.yaml
 
 ```bash
 gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
-  --substitutions=_BACKEND_URL=https://consent-protocol-1006304528804.us-central1.run.app
+  --substitutions=_BACKEND_URL=https://consent-protocol-1006304528804.us-central1.run.app,_FRONTEND_URL=https://hushh-webapp-rpphvsc3tq-uc.a.run.app
 ```
 
 ---
@@ -114,7 +114,7 @@ gcloud builds submit --config=deploy/backend.cloudbuild.yaml
 
 # Deploy frontend (update backend URL if needed)
 gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
-  --substitutions=_BACKEND_URL=https://consent-protocol-1006304528804.us-central1.run.app
+  --substitutions=_BACKEND_URL=https://consent-protocol-1006304528804.us-central1.run.app,_FRONTEND_URL=https://hushh-webapp-rpphvsc3tq-uc.a.run.app
 ```
 
 ---
@@ -265,5 +265,5 @@ gcloud run services describe consent-protocol --region=us-central1 --format="val
 
 ---
 
-**Last Updated**: 2026-01-07  
-**Version**: 2.0 (Cloud Build YAML only)
+**Last Updated**: 2026-01-09
+**Version**: 2.1 (Verified Cloud Build with yfinance fix)
