@@ -35,6 +35,7 @@ export interface KaiPlugin {
     consentToken?: string;
     riskProfile: string;
     processingMode: string;
+    context?: any;
     authToken?: string;
   }): Promise<any>; // Returns the full analysis response
 
