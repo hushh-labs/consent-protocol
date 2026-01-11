@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import consent_db
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
+from api.utils.firebase_auth import verify_firebase_bearer
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ def get_scope_description(scope: str) -> str:
 # ============================================================================
 # PENDING CONSENT MANAGEMENT
 # ============================================================================
+
+class CancelConsentRequest(BaseModel):
+    userId: str
+    requestId: str
+
 
 @router.get("/pending")
 async def get_pending_consents(userId: str):
@@ -200,6 +206,32 @@ async def deny_consent(userId: str, requestId: str):
     return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
 
 
+@router.post("/cancel")
+async def cancel_consent(payload: CancelConsentRequest):
+    """
+    Cancel a pending consent request.
+
+    Implementation: insert a terminal audit action so the request no longer
+    appears as pending (pending = latest action == REQUESTED).
+    """
+    logger.info(f"🛑 User {payload.userId} cancelling consent request {payload.requestId}")
+
+    pending_request = await consent_db.get_pending_by_request_id(payload.userId, payload.requestId)
+    if not pending_request:
+        raise HTTPException(status_code=404, detail="Consent request not found")
+
+    await consent_db.insert_event(
+        user_id=payload.userId,
+        agent_id=pending_request["developer"],
+        scope=pending_request["scope"],
+        action="CANCELLED",
+        request_id=payload.requestId,
+        scope_description=pending_request.get("scope_description")
+    )
+
+    return {"status": "cancelled", "requestId": payload.requestId}
+
+
 @router.post("/vault-owner-token")
 async def issue_vault_owner_token(request: Request):
     """
@@ -220,17 +252,6 @@ async def issue_vault_owner_token(request: Request):
     - All access logged for compliance
     """
     try:
-        import firebase_admin
-        from firebase_admin import auth as firebase_auth
-        
-        # Initialize Firebase if needed
-        try:
-            firebase_admin.get_app()
-        except ValueError:
-            from firebase_admin import credentials
-            firebase_admin.initialize_app(credentials.ApplicationDefault())
-        
-        # Verify Firebase ID token
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             raise HTTPException(
@@ -244,26 +265,14 @@ async def issue_vault_owner_token(request: Request):
         if not user_id:
             raise HTTPException(status_code=400, detail="userId is required")
         
-        # Verify Firebase ID token from Authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-        
-        id_token = auth_header.removeprefix("Bearer ")
-        
-        try:
-            decoded_token = firebase_auth.verify_id_token(id_token)
-            firebase_uid = decoded_token.get("uid")
-            
-            # Ensure user is requesting token for their own vault
-            if firebase_uid != user_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Cannot issue VAULT_OWNER token for another user"
-                )
-        except Exception as e:
-            logger.error(f"Firebase token verification failed: {e}")
-            raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
+        firebase_uid = verify_firebase_bearer(auth_header)
+
+        # Ensure user is requesting token for their own vault
+        if firebase_uid != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot issue VAULT_OWNER token for another user"
+            )
         
         # Check for existing active VAULT_OWNER token in DB
         now_ms = int(time.time() * 1000)
