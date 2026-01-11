@@ -27,11 +27,18 @@ import { Kai } from "@/lib/capacitor/kai";
 // API Base URL configuration
 const getApiBaseUrl = (): string => {
   if (Capacitor.isNativePlatform()) {
-    // iOS/Android: Use Cloud Run backend
-    return (
+    // iOS/Android: Use backendUrl (Cloud Run in prod, localhost in local dev).
+    // IMPORTANT: Android emulator cannot reach host localhost; use 10.0.2.2.
+    const raw =
       process.env.NEXT_PUBLIC_BACKEND_URL ||
-      "https://consent-protocol-1006304528804.us-central1.run.app"
-    );
+      "https://consent-protocol-1006304528804.us-central1.run.app";
+
+    const normalized =
+      Capacitor.getPlatform() === "android" && raw.includes("localhost")
+        ? raw.replace("localhost", "10.0.2.2")
+        : raw;
+
+    return normalized.replace(/\/$/, "");
   }
 
   // Web: Use relative paths (local Next.js server)

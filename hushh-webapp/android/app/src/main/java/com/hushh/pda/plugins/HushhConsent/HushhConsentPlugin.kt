@@ -381,11 +381,13 @@ class HushhConsentPlugin : Plugin() {
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val body = response.body?.string() ?: "{}"
+                val truncatedBody = if (body.length > 200) body.take(200) + "..." else body
                 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "❌ [issueVaultOwnerToken] Backend error: $body")
+                    val errorMsg = "Failed to issue VAULT_OWNER token: HTTP ${response.code} | backendUrl: $backendUrl | body: $truncatedBody"
+                    Log.e(TAG, "❌ [issueVaultOwnerToken] $errorMsg")
                     activity.runOnUiThread {
-                        call.reject("Failed to issue VAULT_OWNER token: HTTP ${response.code}")
+                        call.reject(errorMsg)
                     }
                     return@Thread
                 }
@@ -405,9 +407,10 @@ class HushhConsentPlugin : Plugin() {
                     })
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ [issueVaultOwnerToken] Error: ${e.message}")
+                val errorMsg = "Failed to issue VAULT_OWNER token: ${e.message} | backendUrl: $backendUrl"
+                Log.e(TAG, "❌ [issueVaultOwnerToken] $errorMsg")
                 activity.runOnUiThread {
-                    call.reject("Failed to issue VAULT_OWNER token: ${e.message}")
+                    call.reject(errorMsg)
                 }
             }
         }.start()

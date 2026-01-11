@@ -214,7 +214,7 @@ export function AgentChat({
 
     // Real API Call
     try {
-      const response = await fetch("/api/chat", {
+      const response = await ApiService.apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -375,7 +375,7 @@ export function AgentChat({
 
     // Send to agent
     try {
-      const response = await fetch("/api/chat", {
+      const response = await ApiService.apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
