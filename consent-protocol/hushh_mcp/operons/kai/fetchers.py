@@ -16,6 +16,7 @@ from typing import Dict, Any, List
 import logging
 import os
 from datetime import datetime, timedelta
+import asyncio
 
 import httpx
 
@@ -396,9 +397,21 @@ async def fetch_market_data(
     # Use yfinance for real market data (free, unlimited)
     try:
         import yfinance as yf
-        
-        stock = yf.Ticker(ticker)
-        info = stock.info
+
+        # yfinance is synchronous and can hang indefinitely in some environments (notably Cloud Run).
+        # Run it in a thread and enforce a hard timeout so Kai can still return results.
+        async def _get_info() -> Dict[str, Any]:
+            def _blocking_fetch() -> Dict[str, Any]:
+                stock = yf.Ticker(ticker)
+                return stock.info or {}
+
+            return await asyncio.to_thread(_blocking_fetch)
+
+        try:
+            info = await asyncio.wait_for(_get_info(), timeout=8.0)
+        except asyncio.TimeoutError:
+            logger.warning("[Market Data Fetcher] yfinance timed out; returning minimal market data")
+            info = {}
         
         # Extract key market metrics
         return {
