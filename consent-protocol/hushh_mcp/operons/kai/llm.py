@@ -7,6 +7,7 @@ Processes financial data through Gemini-2.0-flash for deep reasoning.
 
 import logging
 from typing import Dict, Any, List, Optional
+import asyncio
 import google.generativeai as genai
 import json
 
@@ -18,6 +19,8 @@ from hushh_mcp.types import UserID
 logger = logging.getLogger(__name__)
 
 # Configure Gemini
+# NOTE: GOOGLE_API_KEY is sanitized (trimmed) in hushh_mcp/config.py to avoid Cloud Run
+# gRPC metadata errors ("Illegal header value") caused by trailing newlines.
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 else:
@@ -136,8 +139,10 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
     # 3. Call Gemini
     try:
         model = genai.GenerativeModel("models/gemini-2.0-flash")
-        response = await model.generate_content_async(
-            f"{system_instruction}\n\nCONTEXT DATA:\n{context}"
+        # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
+        response = await asyncio.wait_for(
+            model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
+            timeout=40.0,
         )
         
         text = response.text.strip()
@@ -150,6 +155,9 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
         logger.info(f"[Gemini Operon] Deep Fundamental Report success for {ticker}")
         return analysis
 
+    except asyncio.TimeoutError:
+        logger.warning(f"[Gemini Operon] Gemini timed out for {ticker}; falling back to deterministic analysis")
+        return {"error": "Gemini timeout", "fallback": True}
     except Exception as e:
         logger.error(f"[Gemini Operon] Error calling Gemini: {e}")
         return {
