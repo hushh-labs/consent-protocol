@@ -40,6 +40,7 @@ import { Card, CardContent } from "@/lib/morphy-ux/card";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 import { hasValidConsent } from "../actions";
 import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
@@ -274,7 +275,7 @@ export default function KaiAnalysis() {
                 className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
               >
                 {isAnalyzing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <HushhLoader variant="compact" />
                 ) : (
                   "ANALYZE"
                 )}
