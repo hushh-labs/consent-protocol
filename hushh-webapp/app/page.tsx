@@ -4,19 +4,13 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
-import {
-  Shield,
-  Lock,
-  Key,
-  ArrowRight,
-  AlertCircle,
-  Loader2,
-} from "lucide-react";
+import { Shield, Lock, Key, ArrowRight, AlertCircle } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getRedirectResult } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 // --- Welcome Component for First-Time Users ---
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
@@ -146,11 +140,7 @@ function LoginScreenContent() {
 
   // Show spinner while checking session OR if user authenticated (while redirecting)
   if (authLoading || user) {
-    return (
-      <main className="flex-1 flex items-center justify-center p-6 bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </main>
-    );
+    return <HushhLoader label="Checking session..." variant="fullscreen" />;
   }
 
   const handleGoogleLogin = async () => {
@@ -293,9 +283,7 @@ function LoginScreen() {
   return (
     <Suspense
       fallback={
-        <div className="flex center h-screen">
-          <Loader2 className="animate-spin" />
-        </div>
+        <HushhLoader label="Loading..." variant="fullscreen" />
       }
     >
       <LoginScreenContent />

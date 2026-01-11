@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { Shield, CheckCircle, XCircle, Clock, Lock } from "lucide-react";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 // ============================================================================
 // Types
@@ -185,7 +186,7 @@ export function ConsentDialog({
           >
             {isGranting ? (
               <>
-                <div className="h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <HushhLoader variant="compact" className="mr-2 text-white" />
                 Granting...
               </>
             ) : (
