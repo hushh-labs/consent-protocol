@@ -23,6 +23,7 @@ import {
   useConsentActions,
   type PendingConsent,
 } from "@/lib/consent";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // Helpers
@@ -126,9 +127,9 @@ export function ConsentNotificationProvider({
       );
 
       try {
-        const response = await fetch(`/api/consent/pending?userId=${userId}`);
+        const response = await ApiService.getPendingConsents(userId);
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           const pending: PendingConsent[] = data.pending || [];
           console.log(
             `🔔 [NotificationProvider] Found ${pending.length} pending consents`
@@ -231,11 +232,10 @@ export function usePendingConsentCount() {
     if (!userId) return;
 
     try {
-      const response = await fetch(`/api/consent/pending?userId=${userId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCount(data.pending?.length || 0);
-      }
+      const response = await ApiService.getPendingConsents(userId);
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      setCount(data.pending?.length || 0);
     } catch (err) {
       console.error("Error fetching pending count:", err);
     }
