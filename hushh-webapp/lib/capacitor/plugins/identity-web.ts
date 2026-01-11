@@ -178,6 +178,37 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
   }
 
   /**
+   * Get encrypted investor profile (ciphertext).
+   * Uses Next.js API route proxy.
+   */
+  async getEncryptedProfile(options: {
+    vaultOwnerToken: string;
+  }): Promise<{ profile_data: { ciphertext: string; iv: string; tag: string } }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/identity/profile`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${options.vaultOwnerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ consent_token: options.vaultOwnerToken }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Profile not found");
+        }
+        throw new Error(`Failed to get profile: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("[HushhIdentityWeb] Get encrypted profile error:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Reset/delete confirmed identity.
    * Uses Next.js API route proxy.
    */
