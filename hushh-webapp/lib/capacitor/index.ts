@@ -687,6 +687,15 @@ export interface HushhIdentityPlugin {
   }): Promise<IdentityStatusResult>;
 
   /**
+   * Get encrypted investor profile (ciphertext).
+   * Requires VAULT_OWNER token.
+   * Calls POST /api/identity/profile on backend.
+   */
+  getEncryptedProfile(options: {
+    vaultOwnerToken: string;
+  }): Promise<{ profile_data: { ciphertext: string; iv: string; tag: string } }>;
+
+  /**
    * Reset/delete confirmed identity.
    * Requires VAULT_OWNER token.
    * Calls DELETE /api/identity/profile on backend.
