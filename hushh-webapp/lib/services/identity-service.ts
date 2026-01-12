@@ -16,11 +16,13 @@
 import { Capacitor } from "@capacitor/core";
 import {
   HushhIdentity,
+  HushhAuth,
   InvestorMatch,
   InvestorProfile,
   IdentityStatusResult,
 } from "@/lib/capacitor";
 import { auth } from "@/lib/firebase/config";
+import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 
 // Re-export types for consumers
 export type { InvestorMatch, InvestorProfile, IdentityStatusResult };
@@ -152,12 +154,41 @@ export class IdentityService {
 
   /**
    * Get Firebase ID token for authentication.
+   * Works on both web and native platforms.
    */
   private static async getFirebaseToken(): Promise<string | undefined> {
+    const isNative = Capacitor.isNativePlatform();
+    
     try {
+      // Native platforms: Use HushhAuth plugin first, then @capacitor-firebase/authentication
+      if (isNative) {
+        // Try HushhAuth plugin first
+        try {
+          const hushhResult = await HushhAuth.getIdToken();
+          if (hushhResult?.idToken) {
+            console.log("[IdentityService] Got token via HushhAuth");
+            return hushhResult.idToken;
+          }
+        } catch {
+          // Fall through to next method
+        }
+        
+        // Fallback to @capacitor-firebase/authentication
+        try {
+          const fbResult = await FirebaseAuthentication.getIdToken();
+          if (fbResult?.token) {
+            console.log("[IdentityService] Got token via FirebaseAuthentication");
+            return fbResult.token;
+          }
+        } catch {
+          // Fall through to web fallback
+        }
+      }
+      
+      // Web or native fallback: Use Firebase Web SDK
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        console.warn("[IdentityService] No current user");
+        console.warn("[IdentityService] No current user (native: " + isNative + ")");
         return undefined;
       }
       return await currentUser.getIdToken(true);
