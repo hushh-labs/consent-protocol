@@ -92,14 +92,19 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     
     // MARK: - Encrypt (AES-GCM)
     @objc func encryptData(_ call: CAPPluginCall) {
+        // Accept both "keyHex" (Android/JS) and "key" (legacy) for compatibility
         guard let plaintext = call.getString("plaintext"),
-              let keyHex = call.getString("key") else {
+              let keyHex = call.getString("keyHex") ?? call.getString("key") else {
+            print("❌ [HushhVault] encryptData: Missing plaintext or keyHex")
             call.reject("Missing plaintext or key")
             return
         }
         
+        print("[HushhVault] 🔐 encryptData called, plaintext length: \(plaintext.count)")
+        
         guard let keyData = Data(hexString: keyHex),
               let plaintextData = plaintext.data(using: .utf8) else {
+            print("❌ [HushhVault] encryptData: Invalid encoding")
             call.reject("Invalid encoding")
             return
         }
@@ -108,30 +113,61 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             let key = SymmetricKey(data: keyData)
             let sealedBox = try AES.GCM.seal(plaintextData, using: key)
             
+            print("✅ [HushhVault] encryptData: Encryption successful")
             call.resolve([
                 "ciphertext": sealedBox.ciphertext.base64EncodedString(),
                 "iv": sealedBox.nonce.withUnsafeBytes { Data($0).base64EncodedString() },
-                "tag": sealedBox.tag.base64EncodedString()
+                "tag": sealedBox.tag.base64EncodedString(),
+                "encoding": "base64",
+                "algorithm": "aes-256-gcm"
             ])
         } catch {
+            print("❌ [HushhVault] encryptData failed: \(error.localizedDescription)")
             call.reject("Encryption failed: \(error.localizedDescription)")
         }
     }
     
     // MARK: - Decrypt (AES-GCM)
     @objc func decryptData(_ call: CAPPluginCall) {
-        guard let ciphertext = call.getString("ciphertext"),
-              let iv = call.getString("iv"),
-              let tag = call.getString("tag"),
-              let keyHex = call.getString("key") else {
+        // Accept "keyHex" (Android/JS) or "key" (legacy) for compatibility
+        guard let keyHex = call.getString("keyHex") ?? call.getString("key") else {
+            print("❌ [HushhVault] decryptData: Missing keyHex")
+            call.reject("Missing required parameters")
+            return
+        }
+        
+        // Support both nested payload object (Android/JS) and flat structure (legacy)
+        let ciphertext: String?
+        let iv: String?
+        let tag: String?
+        
+        if let payload = call.getObject("payload") {
+            // Android/JS style: { keyHex, payload: { ciphertext, iv, tag } }
+            ciphertext = payload["ciphertext"] as? String
+            iv = payload["iv"] as? String
+            tag = payload["tag"] as? String
+            print("[HushhVault] 🔓 decryptData using nested payload")
+        } else {
+            // Legacy flat style: { key, ciphertext, iv, tag }
+            ciphertext = call.getString("ciphertext")
+            iv = call.getString("iv")
+            tag = call.getString("tag")
+            print("[HushhVault] 🔓 decryptData using flat parameters")
+        }
+        
+        guard let ciphertextStr = ciphertext,
+              let ivStr = iv,
+              let tagStr = tag else {
+            print("❌ [HushhVault] decryptData: Missing ciphertext, iv, or tag")
             call.reject("Missing required parameters")
             return
         }
         
         guard let keyData = Data(hexString: keyHex),
-              let ciphertextData = Data(base64Encoded: ciphertext),
-              let ivData = Data(base64Encoded: iv),
-              let tagData = Data(base64Encoded: tag) else {
+              let ciphertextData = Data(base64Encoded: ciphertextStr),
+              let ivData = Data(base64Encoded: ivStr),
+              let tagData = Data(base64Encoded: tagStr) else {
+            print("❌ [HushhVault] decryptData: Invalid encoding (keyHex len: \(keyHex.count), ciphertext len: \(ciphertextStr.count))")
             call.reject("Invalid encoding")
             return
         }
@@ -143,11 +179,14 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             let decryptedData = try AES.GCM.open(sealedBox, using: key)
             
             if let plaintext = String(data: decryptedData, encoding: .utf8) {
+                print("✅ [HushhVault] decryptData: Success, plaintext length: \(plaintext.count)")
                 call.resolve(["plaintext": plaintext])
             } else {
+                print("❌ [HushhVault] decryptData: Failed to decode plaintext as UTF-8")
                 call.reject("Failed to decode plaintext")
             }
         } catch {
+            print("❌ [HushhVault] decryptData failed: \(error.localizedDescription)")
             call.reject("Decryption failed: \(error.localizedDescription)")
         }
     }
