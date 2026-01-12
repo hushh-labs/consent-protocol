@@ -63,7 +63,11 @@ export function TopAppBar({ className }: TopAppBarProps) {
     >
       <div className="flex items-center gap-2">
         <button
-          onClick={handleBack}
+          onClick={() => {
+            console.log("[TopAppBar] Back button clicked");
+            console.log(`[TopAppBar] isRootLevel: ${isRootLevel}`);
+            handleBack();
+          }}
           className="p-2 -ml-2 rounded-full hover:bg-muted/50 active:bg-muted/80 transition-colors"
           aria-label="Go back"
         >
