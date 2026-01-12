@@ -42,22 +42,38 @@ export class IdentityService {
    * - iOS/Android: HushhIdentity → Native plugin → Backend
    */
   static async autoDetect(): Promise<AutoDetectResponse> {
+    const platform = Capacitor.getPlatform();
+    const isNative = Capacitor.isNativePlatform();
+    
+    console.log("[IdentityService] 🔍 autoDetect called");
+    console.log("[IdentityService] Platform:", platform, "isNative:", isNative);
+    
     const firebaseToken = await this.getFirebaseToken();
     if (!firebaseToken) {
+      console.warn("[IdentityService] ❌ No Firebase token available");
       return { detected: false, display_name: null, matches: [] };
     }
+    
+    console.log("[IdentityService] ✅ Got Firebase token (length:", firebaseToken.length, ")");
 
     try {
       // HushhIdentity handles platform routing automatically
       // - Web: calls identity-web.ts (Next.js proxy)
       // - Native: calls HushhIdentityPlugin (direct backend)
+      console.log("[IdentityService] 📡 Calling HushhIdentity.autoDetect...");
       const result = await HushhIdentity.autoDetect({
         authToken: firebaseToken,
       });
 
+      console.log("[IdentityService] ✅ autoDetect result:", {
+        detected: result.detected,
+        display_name: result.display_name,
+        matchCount: result.matches?.length || 0,
+      });
+      
       return result;
     } catch (error) {
-      console.error("[IdentityService] Auto-detect error:", error);
+      console.error("[IdentityService] ❌ Auto-detect error:", error);
       return { detected: false, display_name: null, matches: [] };
     }
   }
@@ -158,42 +174,55 @@ export class IdentityService {
    */
   private static async getFirebaseToken(): Promise<string | undefined> {
     const isNative = Capacitor.isNativePlatform();
+    const platform = Capacitor.getPlatform();
+    
+    console.log("[IdentityService] 🔑 getFirebaseToken called");
+    console.log("[IdentityService] Platform:", platform, "isNative:", isNative);
     
     try {
       // Native platforms: Use HushhAuth plugin first, then @capacitor-firebase/authentication
       if (isNative) {
         // Try HushhAuth plugin first
         try {
+          console.log("[IdentityService] Trying HushhAuth.getIdToken...");
           const hushhResult = await HushhAuth.getIdToken();
           if (hushhResult?.idToken) {
-            console.log("[IdentityService] Got token via HushhAuth");
+            console.log("[IdentityService] ✅ Got token via HushhAuth (length:", hushhResult.idToken.length, ")");
             return hushhResult.idToken;
           }
-        } catch {
+          console.log("[IdentityService] HushhAuth returned no token");
+        } catch (hushhError) {
+          console.warn("[IdentityService] HushhAuth.getIdToken failed:", hushhError);
           // Fall through to next method
         }
         
         // Fallback to @capacitor-firebase/authentication
         try {
+          console.log("[IdentityService] Trying FirebaseAuthentication.getIdToken...");
           const fbResult = await FirebaseAuthentication.getIdToken();
           if (fbResult?.token) {
-            console.log("[IdentityService] Got token via FirebaseAuthentication");
+            console.log("[IdentityService] ✅ Got token via FirebaseAuthentication (length:", fbResult.token.length, ")");
             return fbResult.token;
           }
-        } catch {
+          console.log("[IdentityService] FirebaseAuthentication returned no token");
+        } catch (fbError) {
+          console.warn("[IdentityService] FirebaseAuthentication.getIdToken failed:", fbError);
           // Fall through to web fallback
         }
       }
       
       // Web or native fallback: Use Firebase Web SDK
+      console.log("[IdentityService] Trying Firebase Web SDK...");
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        console.warn("[IdentityService] No current user (native: " + isNative + ")");
+        console.warn("[IdentityService] ❌ No current user in Firebase Web SDK (native:", isNative, ")");
         return undefined;
       }
-      return await currentUser.getIdToken(true);
+      const token = await currentUser.getIdToken(true);
+      console.log("[IdentityService] ✅ Got token via Firebase Web SDK (length:", token.length, ")");
+      return token;
     } catch (error) {
-      console.error("[IdentityService] Failed to get Firebase token:", error);
+      console.error("[IdentityService] ❌ Failed to get Firebase token:", error);
       return undefined;
     }
   }
