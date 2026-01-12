@@ -463,7 +463,12 @@ export default function KaiPreferencesPage() {
   if (!isVaultUnlocked) {
     return (
       <div className="p-6 max-w-lg mx-auto">
-        <Card variant="none" effect="glass" className="border-0">
+        <Card
+          variant="none"
+          effect="glass"
+          showRipple={false}
+          className="border-0"
+        >
           <CardContent className="flex flex-col items-center justify-center py-8">
             <Shield className="w-10 h-10 text-amber-500 mb-3" />
             <p className="text-sm text-muted-foreground">
@@ -478,7 +483,12 @@ export default function KaiPreferencesPage() {
   if (!canLoad) {
     return (
       <div className="p-6 max-w-lg mx-auto">
-        <Card variant="none" effect="glass" className="border-0">
+        <Card
+          variant="none"
+          effect="glass"
+          showRipple={false}
+          className="border-0"
+        >
           <CardContent className="py-8 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
               Vault is unlocked, but key/token is not available in this tab.
@@ -704,7 +714,7 @@ export default function KaiPreferencesPage() {
                               key={m.id}
                               onClick={() => handleSelectProfile(m)}
                               disabled={loadingProfile}
-                              className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
+                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm"
                             >
                               <div className="font-medium">{m.name}</div>
                               <div className="text-xs text-muted-foreground">
@@ -726,6 +736,7 @@ export default function KaiPreferencesPage() {
                       <InvestorProfileEditor
                         value={editingProfile}
                         onChange={setEditingProfile}
+                        flat
                       />
 
                       <div className="flex gap-2">
@@ -762,25 +773,31 @@ export default function KaiPreferencesPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Search investor (e.g. Warren Buffett)"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                          className="h-9 text-sm"
-                        />
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+                        <div className="flex items-center gap-3 flex-1 px-4">
+                          <Search className="h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search investor (e.g. Warren Buffett)"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && handleSearch()
+                            }
+                            className="bg-transparent border-0 outline-none text-base font-black placeholder:text-muted-foreground/50 w-full"
+                          />
+                        </div>
                         <Button
                           variant="gradient"
                           effect="glass"
                           size="sm"
                           onClick={handleSearch}
                           disabled={searching}
+                          className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
                         >
                           {searching ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <Search className="w-4 h-4" />
+                            "SEARCH"
                           )}
                         </Button>
                       </div>
@@ -791,7 +808,7 @@ export default function KaiPreferencesPage() {
                             key={m.id}
                             onClick={() => handleSelectProfile(m)}
                             disabled={loadingProfile}
-                            className="w-full p-2 rounded-lg glass-interactive text-left text-sm hover:bg-primary/5"
+                            className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm"
                           >
                             <div className="font-medium">{m.name}</div>
                             <div className="text-xs text-muted-foreground">
@@ -1012,6 +1029,7 @@ export default function KaiPreferencesPage() {
                   <InvestorProfileEditor
                     value={editingProfile}
                     onChange={setEditingProfile}
+                    flat
                   />
                 </div>
               )}
