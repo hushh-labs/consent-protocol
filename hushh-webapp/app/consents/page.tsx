@@ -676,9 +676,7 @@ export default function ConsentsPage() {
   };
 
   if (loading) {
-    return (
-      <HushhLoader label="Loading consents..." />
-    );
+    return <HushhLoader label="Loading consents..." />;
   }
 
   return (
@@ -876,9 +874,6 @@ export default function ConsentsPage() {
           {/* 2. Active External Consents */}
           {activeConsents.length > 0 ? (
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground px-1">
-                External Access
-              </h3>
               {activeConsents.map((consent, index) => {
                 const scopeInfo = formatScope(consent.scope);
                 const timeRemaining = consent.expires_at

@@ -267,9 +267,7 @@ export default function KaiAnalysis() {
       toast.success(`Analysis complete for ${targetTicker}`);
     } catch (error) {
       console.error("[Kai] Analysis error:", error);
-      toast.error(
-        "Analysis failed. Ensure you have an Investor Profile loaded."
-      );
+      toast.error("Analysis failed.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -304,7 +302,7 @@ export default function KaiAnalysis() {
             onSubmit={(e) => handleSubmit(e)}
             className="w-full md:max-w-md"
           >
-            <div className="glass-interactive flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+            <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
               <div className="flex items-center gap-3 flex-1 px-4">
                 <Search className="h-4 w-4 text-muted-foreground" />
                 <input
@@ -364,6 +362,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="lg:col-span-8 p-8 relative overflow-hidden flex flex-col justify-between min-h-[300px]"
               >
                 <div className="absolute top-0 right-0 p-12 opacity-[0.04] text-foreground pointer-events-none">
@@ -490,6 +489,7 @@ export default function KaiAnalysis() {
                   variant="none"
                   effect="glass"
                   className="p-4 flex flex-col"
+                  showRipple={false}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
@@ -540,6 +540,7 @@ export default function KaiAnalysis() {
                 <Card
                   variant="none"
                   effect="glass"
+                  showRipple={false}
                   className="p-6 flex flex-col items-center justify-center text-center relative overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
@@ -579,6 +580,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-blue-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
@@ -598,6 +600,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-purple-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
@@ -617,6 +620,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-amber-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
@@ -680,6 +684,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-primary/50 flex flex-col justify-center items-center text-center opacity-70 hover:opacity-100 transition-opacity"
               >
                 <BarChart3 className="h-10 w-10 text-muted-foreground mb-3" />
@@ -697,6 +702,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 bg-emerald-500/5 border border-emerald-500/10"
               >
                 <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4 flex items-center gap-2">
@@ -711,6 +717,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 bg-red-500/5 border border-red-500/10"
               >
                 <h3 className="text-xs font-black uppercase tracking-widest text-red-500 mb-4 flex items-center gap-2">

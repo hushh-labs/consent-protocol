@@ -13,7 +13,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/button";
 import {
   Card,
   CardHeader,
@@ -21,7 +21,7 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "@/components/ui/card";
+} from "@/lib/morphy-ux/card";
 import {
   Shield,
   Lock,
@@ -31,10 +31,10 @@ import {
   Check,
   Scale,
   TrendingUp,
-  Sparkles,
   AlertTriangle,
   LineChart,
   Settings,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -52,6 +52,7 @@ import {
   InvestorProfile,
 } from "@/lib/services/identity-service";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { KaiCommitteeIcon } from "@/components/kai/kai-icons";
 
 // ============================================================================
 // TYPES & STATE
@@ -184,7 +185,7 @@ export default function KaiOnboarding() {
       <HushhLoader
         variant="fullscreen"
         label="Checking Kai status..."
-        className="bg-zinc-50 dark:bg-zinc-950"
+        className="backdrop-blur-sm"
       />
     );
   }
@@ -195,6 +196,27 @@ export default function KaiOnboarding() {
 
   const nextStep = (step: Step) => {
     setState((prev) => ({ ...prev, step }));
+  };
+
+  const backStep = () => {
+    setState((prev) => {
+      switch (prev.step) {
+        case "welcome":
+          return { ...prev, step: "investor_detect" };
+        case "mode":
+          return { ...prev, step: "welcome" };
+        case "risk":
+          return { ...prev, step: "mode" };
+        case "consent":
+          return { ...prev, step: "risk" };
+        case "ready":
+          return { ...prev, step: "consent" };
+        case "dashboard":
+          return { ...prev, step: "ready" };
+        default:
+          return prev;
+      }
+    });
   };
 
   // Handler for investor detection confirmation
@@ -324,7 +346,7 @@ export default function KaiOnboarding() {
   // ============================================================================
 
   return (
-    <div className="p-6 flex items-center justify-center w-full relative overflow-hidden">
+    <div className="p-6 flex items-center justify-center w-full min-h-[calc(100dvh-120px)] relative">
       {/* 
           Standard Design System Background is 'morphy-app-bg' 
           No extra blob divs required.
@@ -353,22 +375,37 @@ export default function KaiOnboarding() {
               </div>
             )}
           {state.step === "welcome" && (
-            <WelcomeStep onStart={handleStart} loading={loading} />
+            <WelcomeStep
+              onStart={handleStart}
+              onBack={() => backStep()}
+              loading={loading}
+            />
           )}
           {state.step === "mode" && (
-            <ModeStep onSelect={handleModeSelect} loading={loading} />
+            <ModeStep
+              onSelect={handleModeSelect}
+              onBack={() => backStep()}
+              loading={loading}
+            />
           )}
           {state.step === "risk" && (
-            <RiskStep onSelect={handleRiskSelect} loading={loading} />
+            <RiskStep
+              onSelect={handleRiskSelect}
+              onBack={() => backStep()}
+              loading={loading}
+            />
           )}
           {state.step === "consent" && (
             <ConsentStep
               onProceed={handleProceed}
+              onBack={() => backStep()}
               loading={loading}
               isVaultUnlocked={isVaultUnlocked}
             />
           )}
-          {state.step === "ready" && <ReadyStep onComplete={handleComplete} />}
+          {state.step === "ready" && (
+            <ReadyStep onComplete={handleComplete} onBack={() => backStep()} />
+          )}
           {state.step === "dashboard" && <DashboardStep />}
         </div>
       </div>
@@ -396,12 +433,12 @@ function StepIndicator({ currentStep }: { currentStep: Step }) {
       {steps.map((s, i) => (
         <div
           key={s}
-          className={`h-2 rounded-full transition-all duration-500 ${
+          className={`h-1.5 rounded-full transition-all duration-700 ${
             i < current
               ? "w-8 bg-linear-to-r from-blue-500 to-purple-500"
               : i === current
-              ? "w-8 bg-linear-to-r from-blue-500/50 to-purple-500/50"
-              : "w-2 bg-zinc-200 dark:bg-zinc-800"
+              ? "w-8 bg-linear-to-r from-blue-400/40 to-purple-400/40"
+              : "w-2 bg-zinc-200/30 dark:bg-zinc-800/30"
           }`}
         />
       ))}
@@ -411,33 +448,54 @@ function StepIndicator({ currentStep }: { currentStep: Step }) {
 
 function WelcomeStep({
   onStart,
+  onBack,
   loading,
 }: {
   onStart: () => void;
+  onBack: () => void;
   loading: boolean;
 }) {
   return (
-    <Card className="glass-interactive border-0 shadow-2xl">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl"
+    >
       <CardHeader className="text-center pb-2">
-        <div className="mx-auto w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-4 text-blue-500">
-          <Sparkles size={32} />
+        <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary">
+          <KaiCommitteeIcon className="w-10 h-10" />
         </div>
-        <CardTitle className="text-3xl font-bold bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-purple-600 p-1">
+        <CardTitle className="text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-purple-600 p-1">
           Your Personal Investment Committee
         </CardTitle>
-        <CardDescription className="text-lg mt-2">
+        <CardDescription className="text-lg mt-2 font-medium">
           Three specialist agents. Debate-driven analysis. Privacy first.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6 pt-6">
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-sm flex items-start gap-3">
-          <AlertTriangle className="shrink-0 w-5 h-5 text-amber-500" />
-          <div className="space-y-2">
-            <p className="font-semibold">Educational Tool Only</p>
-            <p className="opacity-90">
-              Kai is not an investment advisor. It does not manage portfolios or
-              execute trades. Always consult a professional before making
+        <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 text-foreground/90 text-sm flex items-start gap-3">
+          <Shield className="shrink-0 w-5 h-5 text-primary" />
+          <div className="space-y-1">
+            <p className="font-bold text-primary">
+              Your Data, Your Sovereignty
+            </p>
+            <p className="opacity-90 leading-relaxed">
+              Analysis runs in your personal vault. Kai observes your risk
+              persona and context without ever compromising your privacy.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-3">
+          <AlertTriangle className="shrink-0 w-4 h-4 text-amber-500" />
+          <div className="space-y-1">
+            <p className="font-semibold uppercase tracking-wider">
+              Educational Tool Only
+            </p>
+            <p className="opacity-80">
+              Kai is not an investment advisor. Consult a professional before
               financial decisions.
             </p>
           </div>
@@ -450,7 +508,7 @@ function WelcomeStep({
             </div>
             <h4 className="font-semibold text-sm">Privacy First</h4>
             <p className="text-xs text-muted-foreground mt-1">
-              Your data stays in your vault.
+              Your context and analysis stay in your encrypted vault.
             </p>
           </div>
           <div className="flex flex-col items-center text-center p-3">
@@ -459,7 +517,7 @@ function WelcomeStep({
             </div>
             <h4 className="font-semibold text-sm">Balanced Debate</h4>
             <p className="text-xs text-muted-foreground mt-1">
-              Agents challenge each other.
+              Agents challenge each other for unbiased truth.
             </p>
           </div>
           <div className="flex flex-col items-center text-center p-3">
@@ -468,15 +526,25 @@ function WelcomeStep({
             </div>
             <h4 className="font-semibold text-sm">Explainable</h4>
             <p className="text-xs text-muted-foreground mt-1">
-              Real receipts, no black boxes.
+              Every decision card comes with receipts and citations.
             </p>
           </div>
         </div>
       </CardContent>
 
-      <CardFooter>
+      <CardFooter className="flex gap-4">
         <Button
-          className="w-full bg-linear-to-r from-blue-600 to-purple-600 hover:opacity-90 transition-opacity"
+          variant="none"
+          effect="glass"
+          size="lg"
+          onClick={onBack}
+          disabled={loading}
+          className="flex-1 border border-border/50 text-muted-foreground"
+        >
+          Back
+        </Button>
+        <Button
+          className="flex-2 bg-linear-to-r from-blue-600 to-purple-600 hover:opacity-90 transition-opacity"
           size="lg"
           onClick={onStart}
           disabled={loading}
@@ -491,13 +559,20 @@ function WelcomeStep({
 
 function ModeStep({
   onSelect,
+  onBack,
   loading,
 }: {
   onSelect: (m: ProcessingMode) => void;
+  onBack: () => void;
   loading: boolean;
 }) {
   return (
-    <Card className="glass-interactive border-0 shadow-2xl">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl"
+    >
       <CardHeader>
         <CardTitle>Processing Mode</CardTitle>
         <CardDescription>
@@ -541,15 +616,29 @@ function ModeStep({
           </p>
         </button>
       </CardContent>
+      <CardFooter>
+        <Button
+          variant="none"
+          effect="glass"
+          size="lg"
+          onClick={onBack}
+          disabled={loading}
+          className="w-full border border-border/50 text-muted-foreground"
+        >
+          Back
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
 function RiskStep({
   onSelect,
+  onBack,
   loading,
 }: {
   onSelect: (r: RiskProfile) => void;
+  onBack: () => void;
   loading: boolean;
 }) {
   const profiles: {
@@ -579,7 +668,12 @@ function RiskStep({
   ];
 
   return (
-    <Card className="glass-interactive border-0 shadow-2xl">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl"
+    >
       <CardHeader>
         <CardTitle>Risk Profile</CardTitle>
         <CardDescription>
@@ -603,21 +697,40 @@ function RiskStep({
           </button>
         ))}
       </CardContent>
+      <CardFooter>
+        <Button
+          variant="none"
+          effect="glass"
+          size="lg"
+          onClick={onBack}
+          disabled={loading}
+          className="w-full border border-border/50 text-muted-foreground"
+        >
+          Back
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
 function ConsentStep({
   onProceed,
+  onBack,
   loading,
   isVaultUnlocked,
 }: {
-  onProceed: () => void;
+  onProceed: () => void | Promise<void>;
+  onBack: () => void;
   loading: boolean;
   isVaultUnlocked: boolean;
 }) {
   return (
-    <Card className="glass-interactive border-0 shadow-2xl">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl"
+    >
       <CardHeader>
         <CardTitle>Permissions</CardTitle>
         <CardDescription>Review what Kai needs to operate.</CardDescription>
@@ -656,9 +769,18 @@ function ConsentStep({
           </div>
         )}
       </CardContent>
-      <CardFooter>
+      <CardFooter className="flex gap-4">
         <Button
-          className="w-full"
+          variant="none"
+          effect="glass"
+          onClick={onBack}
+          className="flex-1 border border-border/50 text-muted-foreground"
+          disabled={loading}
+        >
+          Back
+        </Button>
+        <Button
+          className="flex-2"
           disabled={loading || !isVaultUnlocked}
           onClick={onProceed}
         >
@@ -669,27 +791,47 @@ function ConsentStep({
   );
 }
 
-function ReadyStep({ onComplete }: { onComplete: () => void }) {
+function ReadyStep({
+  onComplete,
+  onBack,
+}: {
+  onComplete: () => void;
+  onBack: () => void;
+}) {
   return (
-    <Card className="glass-interactive border-0 shadow-2xl text-center">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl text-center"
+    >
       <CardContent className="pt-8 pb-8 space-y-4">
-        <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto text-green-500">
-          <Sparkles size={40} />
+        <div className="w-24 h-24 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto text-primary">
+          <KaiCommitteeIcon className="w-16 h-16" />
         </div>
         <div>
           <h2 className="text-2xl font-bold">You're All Set!</h2>
           <p className="text-zinc-500 mt-2">
-            Kai is ready to analyze the market for you.
+            Kai is ready to serve as your on-demand investment committee.
           </p>
         </div>
       </CardContent>
-      <CardFooter className="justify-center pb-8">
+      <CardFooter className="flex flex-col gap-3 pb-8">
         <Button
           onClick={onComplete}
           size="lg"
           className="w-full max-w-xs bg-green-600 hover:bg-green-700"
         >
           Start Analysis
+        </Button>
+        <Button
+          variant="none"
+          effect="glass"
+          size="sm"
+          onClick={onBack}
+          className="text-muted-foreground"
+        >
+          Back to settings
         </Button>
       </CardFooter>
     </Card>
@@ -715,10 +857,15 @@ function DashboardStep() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Link href="/dashboard/kai/analysis" className="block group">
-          <Card className="h-full glass-interactive border-primary/20 hover:border-primary/50 transition-all hover:scale-[1.02] shadow-sm hover:shadow-xl">
+          <Card
+            variant="none"
+            effect="glass"
+            showRipple={false}
+            className="h-full border-primary/20 hover:border-primary/50 transition-all shadow-sm hover:shadow-xl"
+          >
             <CardHeader>
               <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:bg-primary/20 transition-colors text-primary">
-                <LineChart size={24} />
+                <KaiCommitteeIcon className="w-8 h-8" />
               </div>
               <CardTitle className=" text-lg">Analysis Engine</CardTitle>
               <CardDescription>
@@ -734,7 +881,12 @@ function DashboardStep() {
           </Card>
         </Link>
         <Link href="/dashboard/kai/preferences" className="block group">
-          <Card className="h-full glass-interactive border-border/50 hover:border-primary/50 transition-all hover:scale-[1.02] shadow-sm hover:shadow-xl">
+          <Card
+            variant="none"
+            effect="glass"
+            showRipple={false}
+            className="h-full border-border/50 hover:border-primary/50 transition-all shadow-sm hover:shadow-xl"
+          >
             <CardHeader>
               <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-2 group-hover:bg-zinc-200 dark:group-hover:bg-zinc-700 transition-colors">
                 <Settings size={24} />

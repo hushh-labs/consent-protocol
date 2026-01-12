@@ -174,6 +174,15 @@ async def auto_detect_investor(
         
         matches = []
         for row in rows:
+            # Handle JSONB decoding (asyncpg returns str)
+            top_holdings = row["top_holdings"]
+            if isinstance(top_holdings, str):
+                import json
+                try:
+                    top_holdings = json.loads(top_holdings)
+                except:
+                    top_holdings = []
+            
             matches.append({
                 "id": row["id"],
                 "name": row["name"],
@@ -181,17 +190,25 @@ async def auto_detect_investor(
                 "title": row["title"],
                 "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
                 "investment_style": row["investment_style"],
-                "top_holdings": row["top_holdings"][:3] if row["top_holdings"] else None,  # Top 3 only
+                "top_holdings": top_holdings[:3] if top_holdings else None,  # Top 3 only
                 "confidence": round(float(row["similarity_score"]), 3) if row["similarity_score"] else 0
             })
         
         logger.info(f"✅ Found {len(matches)} investor matches for: {display_name}")
         
-        return {
-            "detected": True,
-            "display_name": display_name,
-            "matches": matches
-        }
+        # Debug logging to inspect matches content before Pydantic validation
+        try:
+            for match in matches:
+                logger.info(f"Match: {match}")
+            
+            return {
+                "detected": True,
+                "display_name": display_name,
+                "matches": matches
+            }
+        except Exception as e:
+            logger.error(f"Error constructing/validating response: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/confirm", response_model=IdentityConfirmResponse)
 async def confirm_identity(
