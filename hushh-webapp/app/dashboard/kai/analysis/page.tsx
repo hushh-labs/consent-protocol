@@ -19,6 +19,12 @@ import {
 } from "recharts";
 import {
   Search,
+  Brain,
+  Target,
+  LineChart,
+  Crosshair,
+  Rocket,
+  Wallet,
   Sparkles,
   Lock,
   AlertTriangle,
@@ -404,7 +410,7 @@ export default function KaiAnalysis() {
                   <div className="grid md:grid-cols-2 gap-8 pt-4">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
-                        <Sparkles className="h-3 w-3 text-primary" />
+                        <Brain className="h-3 w-3 text-primary" />
                         Executive Summary
                       </h3>
                       {/* Summary rendered here implies we use the fundamental insight summary */}
@@ -415,7 +421,7 @@ export default function KaiAnalysis() {
                     </div>
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
-                        <Zap className="h-3 w-3 text-primary" />
+                        <Target className="h-3 w-3 text-primary" />
                         Risk Alignment
                       </h3>
                       <p className="text-sm font-medium leading-relaxed text-foreground/85 italic border-l-2 border-primary/30 pl-3">
@@ -481,7 +487,7 @@ export default function KaiAnalysis() {
               <div className="lg:col-span-4 grid gap-6 grid-rows-2">
                 {/* Revenue vs Net Income Chart */}
                 <Card
-                  variant="metallic"
+                  variant="none"
                   effect="glass"
                   className="p-4 flex flex-col"
                 >
@@ -489,7 +495,7 @@ export default function KaiAnalysis() {
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       Performance Trend ($B)
                     </h3>
-                    <TrendingUp className="h-3 w-3 text-primary" />
+                    <LineChart className="h-3 w-3 text-primary" />
                   </div>
                   <div className="flex-1 min-h-[140px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -532,14 +538,17 @@ export default function KaiAnalysis() {
 
                 {/* Fit Score Gauge */}
                 <Card
-                  variant="metallic"
+                  variant="none"
                   effect="glass"
                   className="p-6 flex flex-col items-center justify-center text-center relative overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground z-10">
-                    Portfolio Fit Score
-                  </h3>
+                  <div className="flex items-center justify-between w-full mb-2 z-10">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Portfolio Fit Score
+                    </h3>
+                    <Crosshair className="h-3 w-3 text-primary" />
+                  </div>
                   <div className="my-4 relative z-10">
                     <span className="text-5xl font-black text-primary drop-shadow-xl">
                       {(result.raw_card as any).fit_score ||
@@ -593,7 +602,7 @@ export default function KaiAnalysis() {
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Cpu className="h-4 w-4 text-purple-500" />
+                    <Rocket className="h-4 w-4 text-purple-500" />
                   </div>
                   <h3 className="text-sm font-black uppercase tracking-wider">
                     Growth & Innovation
@@ -612,7 +621,7 @@ export default function KaiAnalysis() {
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <Scale className="h-4 w-4 text-amber-500" />
+                    <Wallet className="h-4 w-4 text-amber-500" />
                   </div>
                   <h3 className="text-sm font-black uppercase tracking-wider">
                     Capital Allocation Audit
