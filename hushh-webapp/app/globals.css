@@ -92,8 +92,8 @@ body {
   --activeShadowColor: var(--shadow1);
   --fadeGrey: #e5e7eb80;
   /* Hushh Brand Color Tokens (from hushh.ai) */
-  --morphy-primary-start: #0071e3; /* Hushh Blue */
-  --morphy-primary-end: #bb62fc; /* Hushh Purple (data sovereignty gradient) */
+  --morphy-primary-start: #e91e63; /* Pink (Welcome Gradient Start) */
+  --morphy-primary-end: #9c27b0; /* Purple (Welcome Gradient End) */
   --morphy-secondary-start: #c0c0c0; /* Silver gradient start */
   --morphy-secondary-end: #e8e8e8; /* Silver gradient end (FAQ style) */
 
@@ -125,9 +125,9 @@ body {
   --md-ripple-pressed-opacity: 0.12;
 }
 
-/* Theme-aware gradient text - blue→purple in light mode, silver in dark mode */
+/* Theme-aware gradient text - pink→purple consistently */
 .hushh-gradient-text {
-  background-image: linear-gradient(to right, #0071e3, #bb62fc);
+  background-image: linear-gradient(to right, #e91e63, #9c27b0);
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
@@ -176,11 +176,11 @@ body {
   --shadow2: #0000004f;
   --activeShadowColor: var(--shadow2);
   --fadeGrey: #e5e7eb80;
-  /* Morphy UI Color Tokens - Dark Mode - SAME as light mode (blue-purple) */
-  --morphy-primary-start: #0071e3;
-  --morphy-primary-end: #bb62fc;
-  --morphy-secondary-start: #0071e3;
-  --morphy-secondary-end: #bb62fc;
+  /* Morphy UI Color Tokens - Dark Mode */
+  --morphy-primary-start: #e91e63;
+  --morphy-primary-end: #9c27b0;
+  --morphy-secondary-start: #e91e63;
+  --morphy-secondary-end: #9c27b0;
 
   /* Ensure gradient colors are available immediately in dark mode */
   --morphy-secondary-gradient: linear-gradient(
@@ -189,9 +189,9 @@ body {
     var(--morphy-secondary-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens - Blue for Hushh brand */
-  --md-ripple-hover-color: #0071e3;
-  --md-ripple-pressed-color: #bb62fc;
+  /* Material 3 Expressive Ripple Tokens - Pink/Purple for Hushh brand */
+  --md-ripple-hover-color: #e91e63;
+  --md-ripple-pressed-color: #9c27b0;
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }
@@ -199,6 +199,23 @@ body {
 /* Hero card specific glass effect - automatically switches between light/dark modes */
 .hero-card-glass {
   background-color: var(--activeGlassColor) !important;
+}
+
+.glass-interactive {
+  background-color: var(--activeGlassColor) !important;
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-interactive:hover {
+  background-color: var(--glass1) !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+}
+
+.dark .glass-interactive:hover {
+  background-color: var(--glass2) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
 /* Remove Barlow Condensed font-face and utility */
@@ -244,7 +261,7 @@ body {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     /* Safe area bottom is handled by the navbar component */
-    
+
     scrollbar-gutter: stable;
     overflow-x: hidden;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
