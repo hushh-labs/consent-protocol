@@ -7,7 +7,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const DEV_MODE = false;
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
-  (DEV_MODE ? "http://localhost:3000" : undefined);
+  (DEV_MODE ? "http://10.0.2.2:3000" : undefined);
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ||

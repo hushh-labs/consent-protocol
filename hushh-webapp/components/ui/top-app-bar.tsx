@@ -3,8 +3,9 @@
 /**
  * TopAppBar - Smart Mobile Navigation Header
  *
- * Shows back button only on Level 2+ pages (sub-pages).
- * Uses the navigation context for layered back navigation.
+ * Shows back button on all pages except the landing page ("/").
+ * On root-level pages (/dashboard, /consents, /profile), triggers exit dialog.
+ * On sub-pages (Level 2+), navigates to parent route.
  *
  * Place this at the layout level for seamless integration.
  */
@@ -39,7 +40,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  // Don't show back button on root-level pages
+  // Don't show TopAppBar only on the landing page
   if (pathname === "/") {
     return null;
   }
@@ -63,11 +64,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
     >
       <div className="flex items-center gap-2">
         <button
-          onClick={() => {
-            console.log("[TopAppBar] Back button clicked");
-            console.log(`[TopAppBar] isRootLevel: ${isRootLevel}`);
-            handleBack();
-          }}
+          onClick={handleBack}
           className="p-2 -ml-2 rounded-full hover:bg-muted/50 active:bg-muted/80 transition-colors"
           aria-label="Go back"
         >
