@@ -233,27 +233,48 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     @objc func setupVault(_ call: CAPPluginCall) {
+        print("[\(TAG)] 🔐 setupVault called")
+        let receivedKeys = call.options.keys.compactMap { $0 as? String }.sorted()
+        print("[\(TAG)] Received keys: \(receivedKeys)")
+        
         guard let userId = call.getString("userId"),
-              let encryptedKey = call.getString("encryptedKey"),
-              let salt = call.getString("salt") else {
-            call.reject("Missing required parameters")
+              let encryptedVaultKey = call.getString("encryptedVaultKey"),
+              let salt = call.getString("salt"),
+              let iv = call.getString("iv") else {
+            print("❌ [\(TAG)] setupVault: Missing required parameters")
+            print("   Available keys: \(receivedKeys)")
+            call.reject("Missing required parameters: userId, encryptedVaultKey, salt, iv")
             return
         }
         
+        let authMethod = call.getString("authMethod") ?? "passphrase"
+        let recoveryEncryptedVaultKey = call.getString("recoveryEncryptedVaultKey") ?? ""
+        let recoverySalt = call.getString("recoverySalt") ?? ""
+        let recoveryIv = call.getString("recoveryIv") ?? ""
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
-        let urlStr = "\(backendUrl)/db/vault/create"
+        let urlStr = "\(backendUrl)/db/vault/setup"
+        
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
+        print("[\(TAG)] userId: \(userId), authMethod: \(authMethod)")
         
         let body: [String: Any] = [
             "userId": userId,
-            "encryptedMasterKey": encryptedKey,
-            "salt": salt
+            "authMethod": authMethod,
+            "encryptedVaultKey": encryptedVaultKey,
+            "salt": salt,
+            "iv": iv,
+            "recoveryEncryptedVaultKey": recoveryEncryptedVaultKey,
+            "recoverySalt": recoverySalt,
+            "recoveryIv": recoveryIv
         ]
         
         performRequest(urlStr: urlStr, body: body, authToken: authToken) { json, error in
             if json != nil {
+                print("✅ [\(self.TAG)] setupVault completed successfully")
                 call.resolve(["success": true])
             } else {
+                print("❌ [\(self.TAG)] setupVault failed: \(error ?? "unknown error")")
                 call.reject(error ?? "Failed to create vault")
             }
         }
