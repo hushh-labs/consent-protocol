@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Hushh PDA</string>
-    <string name="title_activity_main">Hushh PDA</string>
-    <string name="package_name">com.hushh.pda</string>
-    <string name="custom_url_scheme">com.hushh.pda</string>
+    <string name="app_name">Hushh</string>
+    <string name="title_activity_main">Hushh</string>
+    <string name="package_name">com.hushh.app</string>
+    <string name="custom_url_scheme">com.hushh.app</string>
 </resources>

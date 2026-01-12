@@ -14,6 +14,7 @@ import {
 import { Button } from '@/lib/morphy-ux/morphy';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Copy, Check, Download, AlertTriangle } from 'lucide-react';
+import { downloadTextFile } from '@/lib/utils/native-download';
 
 interface RecoveryKeyDialogProps {
   open: boolean;
@@ -39,18 +40,12 @@ export function RecoveryKeyDialog({
     }
   };
 
-  const handleDownload = () => {
-    const element = document.createElement('a');
-    const file = new Blob(
-      [`Hushh Vault Recovery Key\n\n${recoveryKey}\n\nKeep this safe! You'll need it if you forget your passphrase.`],
-      { type: 'text/plain' }
-    );
-    element.href = URL.createObjectURL(file);
-    element.download = 'hushh-recovery-key.txt';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    setDownloaded(true);
+  const handleDownload = async () => {
+    const content = `Hushh Vault Recovery Key\n\n${recoveryKey}\n\nKeep this safe! You'll need it if you forget your passphrase.`;
+    const success = await downloadTextFile(content, 'hushh-recovery-key.txt');
+    if (success) {
+      setDownloaded(true);
+    }
   };
 
   return (

@@ -835,6 +835,41 @@ output: isCapacitorBuild ? "export" : undefined;
 
 > **Note:** Changes to next.config.ts require restarting `npm run dev`.
 
+### Capacitor Configuration (capacitor.config.ts)
+
+The `DEV_MODE` constant controls whether the app connects to a development server or uses the static build:
+
+```typescript
+// For development: set to true to use localhost:3000 hot reload
+// For production: set to false to use static build in /out
+const DEV_MODE = false; // ⚠️ MUST be false for production builds
+
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (DEV_MODE ? "http://10.0.2.2:3000" : undefined);
+
+const config: CapacitorConfig = {
+  appId: "com.hushh.pda",
+  appName: "Hushh PDA",
+  webDir: "out",
+  server: {
+    url: APP_URL, // undefined in production = uses static files
+    cleartext: true,
+    androidScheme: "https",
+  },
+};
+```
+
+**Mode Behavior:**
+- `DEV_MODE = true`: App loads from `http://10.0.2.2:3000` (Android) or `http://localhost:3000` (iOS) with hot reload
+- `DEV_MODE = false`: App loads from static `/out` directory (production mode)
+
+**Production Checklist:**
+- [ ] Set `DEV_MODE = false` in `capacitor.config.ts`
+- [ ] Run `npm run cap:build` to create static export
+- [ ] Run `npx cap sync` to copy assets to native projects
+- [ ] Verify `capacitor.config.json` in native assets has no `url` in `server` section
+
 ---
 
 ## 📱 Mobile UX & Interface Standards
@@ -853,6 +888,46 @@ The app follows a strict **Layered Navigation** model to handle the differences 
 - **State Management**: Uses `useRef` to maintain stable access to navigation state inside the permanent native listener.
 - **Native Listener**: `App.addListener('backButton')` intercepts the hardware button.
 - **Exit Logic**: On Level 1 pages, triggers a custom `<ExitDialog />` instead of a toast or immediate exit.
+
+#### Exit Dialog Security
+
+When users attempt to exit from root-level pages, a secure exit flow is triggered:
+
+**Flow:**
+1. User clicks back button on `/dashboard`, `/consents`, `/profile`, or `/agent-nav`
+2. `NavigationProvider` detects `isRootLevel = true`
+3. `ExitDialog` (ShadCN AlertDialog) appears with:
+   - Shield icon and "Exit Hushh" title
+   - Security warning: "Your vault will be locked for security"
+   - Gradient red action button (`bg-gradient-to-r from-red-500 via-red-600 to-red-700`)
+   - Cancel button
+
+**On Confirm:**
+```typescript
+// 1. Lock vault (clears encryption key from memory)
+vaultContext.lockVault();
+
+// 2. Clear session storage
+sessionStorage.clear();
+
+// 3. Remove sensitive localStorage items
+localStorage.removeItem("user_id");
+localStorage.removeItem("vault_token");
+localStorage.removeItem("vault_unlocked");
+
+// 4. Exit app via Capacitor
+App.exitApp();
+```
+
+**Files:**
+- `lib/navigation/navigation-context.tsx` - Navigation logic & dialog state
+- `components/exit-dialog.tsx` - Exit dialog UI & security cleanup
+- `components/ui/top-app-bar.tsx` - Back button UI
+
+**Platform Support:**
+- ✅ Android: Hardware back button
+- ✅ iOS: Edge swipe gesture (30px from left edge)
+- ✅ Web: UI back button (for development)
 
 ### Layout & Safe Area
 
