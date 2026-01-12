@@ -11,8 +11,6 @@ import { ConsentSSEProvider } from "@/lib/consent";
 import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
 import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
 
-import { DashboardHeader } from "@/components/layout/dashboard-header";
-
 export default function DashboardLayout({
   children,
 }: {
