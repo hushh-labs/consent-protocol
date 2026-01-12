@@ -14,8 +14,8 @@ const BACKEND_URL =
   "https://consent-protocol-1006304528804.us-central1.run.app";
 
 const config: CapacitorConfig = {
-  appId: "com.hushh.pda",
-  appName: "Hushh PDA",
+  appId: "com.hushh.app",
+  appName: "Hushh",
   webDir: "out",
 
   // iOS-specific configuration
