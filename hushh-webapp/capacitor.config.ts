@@ -20,7 +20,7 @@ const config: CapacitorConfig = {
 
   // iOS-specific configuration
   ios: {
-    contentInset: "automatic",
+    contentInset: "always", // "always" for stable layout (prevents bounce)
     allowsLinkPreview: true,
     scrollEnabled: true,
     backgroundColor: "#0a0a0a",
@@ -59,9 +59,9 @@ const config: CapacitorConfig = {
       enabled: true,
     },
     StatusBar: {
-      overlaysWebView: true,
+      overlaysWebView: false, // false for stable layout (prevents iOS bounce)
       style: "DARK",
-      backgroundColor: "#ffffffff",
+      backgroundColor: "#0a0a0a",
     },
   },
 };
