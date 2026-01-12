@@ -9,23 +9,25 @@
  *
  * Back button behavior:
  * - Level 2+ → navigates to parent level
- * - Level 1 → prompts to exit app (Android only)
+ * - Level 1 → prompts to exit app (iOS and Android)
  */
 
-import React, { createContext, useContext, useMemo, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useState,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { App } from "@capacitor/app";
-import { toast } from "sonner";
+import { ExitDialog } from "@/components/exit-dialog";
 
-// Level 1 root paths (no back button or exit prompt)
-const LEVEL_1_PATHS = [
-  "/",
-  "/dashboard",
-  "/consents",
-  "/profile",
-  "/agent-nav",
-];
+// Level 1 root paths (exit prompt on back button)
+const LEVEL_1_PATHS = ["/", "/dashboard", "/consents", "/profile", "/agent-nav"];
 
 interface NavigationContextType {
   /** Current path */
@@ -42,11 +44,6 @@ interface NavigationContextType {
 
 const NavigationContext = createContext<NavigationContextType | null>(null);
 
-// ... imports
-import { ExitDialog } from "@/components/exit-dialog";
-
-// ... existing code ...
-
 export function NavigationProvider({
   children,
 }: {
@@ -54,11 +51,13 @@ export function NavigationProvider({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [showExitDialog, setShowExitDialog] = React.useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
-  // ... existing calculation code ...
+  // Use ref to avoid stale closure issues with the back button listener
+  const handleBackRef = useRef<() => void>(() => {});
+
+  // Calculate navigation level and parent path
   const { level, isRootLevel, parentPath } = useMemo(() => {
-    // ... same logic ...
     // Check if it's a level 1 path
     if (LEVEL_1_PATHS.includes(pathname)) {
       return { level: 1, isRootLevel: true, parentPath: null };
@@ -70,7 +69,7 @@ export function NavigationProvider({
 
     // Find parent path (go up one level)
     const parent =
-      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard"; // Default fallback for orphan routes
+      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard";
 
     return {
       level: depth,
@@ -79,50 +78,60 @@ export function NavigationProvider({
     };
   }, [pathname]);
 
-  // Handle back navigation
-  const handleBack = useCallback(async () => {
+  // Handle back navigation - show exit dialog on BOTH iOS and Android
+  const handleBack = useCallback(() => {
+    console.log(
+      `[Navigation] handleBack called - pathname: ${pathname}, isRootLevel: ${isRootLevel}`
+    );
+
     if (isRootLevel) {
-      // Level 1: Ask to exit app on Android
-      if (
-        Capacitor.isNativePlatform() &&
-        Capacitor.getPlatform() === "android"
-      ) {
-        // Show the Exit Dialog UI instead of a toast
+      // Level 1: Show exit dialog on native platforms (iOS and Android)
+      if (Capacitor.isNativePlatform()) {
+        console.log("[Navigation] Showing exit dialog");
         setShowExitDialog(true);
       }
-      // On web or iOS, do nothing at root level
+      // On web, do nothing at root level
       return;
     }
 
     // Level 2+: Navigate to parent
     if (parentPath) {
+      console.log(`[Navigation] Navigating to parent: ${parentPath}`);
       router.push(parentPath);
     } else {
+      console.log("[Navigation] Using router.back()");
       router.back();
     }
-  }, [isRootLevel, parentPath, router]);
+  }, [isRootLevel, parentPath, pathname, router]);
 
-  // REGISTER BACK BUTTON LISTENER
-  React.useEffect(() => {
-    // ... same listener ...
-    let backButtonListener: any;
+  // Update ref whenever handleBack changes
+  useEffect(() => {
+    handleBackRef.current = handleBack;
+  }, [handleBack]);
+
+  // Register back button listener ONCE with stable ref
+  useEffect(() => {
+    let backButtonListener: PluginListenerHandle | null = null;
 
     const setupListener = async () => {
-      if (Capacitor.isNativePlatform()) {
-        backButtonListener = await App.addListener("backButton", async () => {
-          handleBack();
-        });
-      }
+      if (!Capacitor.isNativePlatform()) return;
+
+      console.log("[Navigation] Registering back button listener");
+      backButtonListener = await App.addListener("backButton", () => {
+        console.log("[Navigation] Back button pressed");
+        handleBackRef.current();
+      });
     };
 
     setupListener();
 
     return () => {
       if (backButtonListener) {
+        console.log("[Navigation] Removing back button listener");
         backButtonListener.remove();
       }
     };
-  }, [handleBack]);
+  }, []); // Empty deps - listener stays stable, ref provides latest handler
 
   const value = useMemo(
     () => ({
@@ -141,7 +150,10 @@ export function NavigationProvider({
       <ExitDialog
         open={showExitDialog}
         onOpenChange={setShowExitDialog}
-        onConfirm={() => App.exitApp()}
+        onConfirm={() => {
+          console.log("[Navigation] Exit app confirmed");
+          App.exitApp();
+        }}
       />
     </NavigationContext.Provider>
   );
