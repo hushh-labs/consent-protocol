@@ -41,6 +41,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { Badge } from "@/components/ui/badge";
 import { hasValidConsent } from "../actions";
 import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
@@ -109,6 +110,7 @@ export default function KaiAnalysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
   const [result, setResult] = useState<LocalAnalyzeResponse | null>(null);
+  const [inputsUsed, setInputsUsed] = useState<string[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scorecardRef = useRef<HTMLDivElement>(null);
@@ -184,12 +186,58 @@ export default function KaiAnalysis() {
         Object.assign(decryptedContext, profileObj);
       }
 
-      // 4. Call Fundamental Agent with Decrypted Context
+      // 4. Load Kai runtime prefs (decrypted) for analysis parameters
+      const { preferences } = await getPreferences(user.uid);
+      let riskProfile: "conservative" | "balanced" | "aggressive" = "balanced";
+      let processingMode: "on_device" | "hybrid" = "hybrid";
+
+      const decryptKaiPref = async (pref: any): Promise<string | null> => {
+        if (!pref?.ciphertext || !pref?.iv || !pref?.tag) return null;
+        return decryptData(
+          {
+            ciphertext: pref.ciphertext,
+            iv: pref.iv,
+            tag: pref.tag,
+            encoding: "base64",
+            algorithm: "aes-256-gcm",
+          },
+          vaultKey
+        );
+      };
+
+      for (const pref of preferences || []) {
+        const plaintext = await decryptKaiPref(pref);
+        if (!plaintext) continue;
+        if (pref.field_name === "kai_risk_profile") {
+          const v = plaintext as any;
+          if (v === "conservative" || v === "balanced" || v === "aggressive") {
+            riskProfile = v;
+          }
+        }
+        if (pref.field_name === "kai_processing_mode") {
+          const v = plaintext as any;
+          if (v === "on_device" || v === "hybrid") {
+            processingMode = v;
+          }
+        }
+      }
+
+      setInputsUsed([
+        `risk:${riskProfile}`,
+        `mode:${processingMode}`,
+        decryptedContext?.risk_tolerance ? `profile_risk:${decryptedContext.risk_tolerance}` : "",
+        Array.isArray(decryptedContext?.investment_style) &&
+        decryptedContext.investment_style.length
+          ? `style:${decryptedContext.investment_style.join("/")}`
+          : "",
+      ].filter(Boolean));
+
+      // 5. Call Fundamental Agent with Decrypted Context
       const analysisResponse = await analyzeFundamental({
         user_id: user.uid,
         ticker: targetTicker,
-        risk_profile: "balanced", // TODO: Derive from context or preferences
-        processing_mode: "hybrid",
+        risk_profile: riskProfile,
+        processing_mode: processingMode,
         context: decryptedContext,
         token: vaultOwnerToken,
       });
@@ -289,6 +337,15 @@ export default function KaiAnalysis() {
             className="space-y-8 animate-in slide-in-from-bottom-5 duration-700"
             ref={scorecardRef}
           >
+            {inputsUsed.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {inputsUsed.map((t) => (
+                  <Badge key={t} variant="secondary">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            )}
             {/* 1. TOP LEVEL DECISION CARD */}
             <div className="grid lg:grid-cols-12 gap-6">
               <Card
