@@ -19,6 +19,12 @@ import {
 } from "recharts";
 import {
   Search,
+  Brain,
+  Target,
+  LineChart,
+  Crosshair,
+  Rocket,
+  Wallet,
   Sparkles,
   Lock,
   AlertTriangle,
@@ -261,9 +267,7 @@ export default function KaiAnalysis() {
       toast.success(`Analysis complete for ${targetTicker}`);
     } catch (error) {
       console.error("[Kai] Analysis error:", error);
-      toast.error(
-        "Analysis failed. Ensure you have an Investor Profile loaded."
-      );
+      toast.error("Analysis failed.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -281,6 +285,11 @@ export default function KaiAnalysis() {
         {/* Terminal Header */}
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
           <div className="space-y-1 text-center md:text-left">
+            <div className="flex justify-center md:justify-start gap-2 mb-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold uppercase tracking-wider">
+                Hushh Technologies
+              </span>
+            </div>
             <h1 className="text-3xl font-black tracking-tighter flex items-center justify-center md:justify-start gap-3">
               KAI <span className="text-primary/80"></span>
             </h1>
@@ -289,21 +298,11 @@ export default function KaiAnalysis() {
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <Link
-              href="/dashboard/kai/preferences"
-              className="glass-interactive px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold uppercase tracking-wider hover:bg-primary/10 transition-colors border border-border/50"
-            >
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              Preferences
-            </Link>
-          </div>
-
           <form
             onSubmit={(e) => handleSubmit(e)}
             className="w-full md:max-w-md"
           >
-            <div className="glass-interactive flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+            <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
               <div className="flex items-center gap-3 flex-1 px-4">
                 <Search className="h-4 w-4 text-muted-foreground" />
                 <input
@@ -363,6 +362,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="lg:col-span-8 p-8 relative overflow-hidden flex flex-col justify-between min-h-[300px]"
               >
                 <div className="absolute top-0 right-0 p-12 opacity-[0.04] text-foreground pointer-events-none">
@@ -409,7 +409,7 @@ export default function KaiAnalysis() {
                   <div className="grid md:grid-cols-2 gap-8 pt-4">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
-                        <Sparkles className="h-3 w-3 text-primary" />
+                        <Brain className="h-3 w-3 text-primary" />
                         Executive Summary
                       </h3>
                       {/* Summary rendered here implies we use the fundamental insight summary */}
@@ -420,7 +420,7 @@ export default function KaiAnalysis() {
                     </div>
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
-                        <Zap className="h-3 w-3 text-primary" />
+                        <Target className="h-3 w-3 text-primary" />
                         Risk Alignment
                       </h3>
                       <p className="text-sm font-medium leading-relaxed text-foreground/85 italic border-l-2 border-primary/30 pl-3">
@@ -486,15 +486,16 @@ export default function KaiAnalysis() {
               <div className="lg:col-span-4 grid gap-6 grid-rows-2">
                 {/* Revenue vs Net Income Chart */}
                 <Card
-                  variant="metallic"
+                  variant="none"
                   effect="glass"
                   className="p-4 flex flex-col"
+                  showRipple={false}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                       Performance Trend ($B)
                     </h3>
-                    <TrendingUp className="h-3 w-3 text-primary" />
+                    <LineChart className="h-3 w-3 text-primary" />
                   </div>
                   <div className="flex-1 min-h-[140px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -537,14 +538,18 @@ export default function KaiAnalysis() {
 
                 {/* Fit Score Gauge */}
                 <Card
-                  variant="metallic"
+                  variant="none"
                   effect="glass"
+                  showRipple={false}
                   className="p-6 flex flex-col items-center justify-center text-center relative overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground z-10">
-                    Portfolio Fit Score
-                  </h3>
+                  <div className="flex items-center justify-between w-full mb-2 z-10">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Portfolio Fit Score
+                    </h3>
+                    <Crosshair className="h-3 w-3 text-primary" />
+                  </div>
                   <div className="my-4 relative z-10">
                     <span className="text-5xl font-black text-primary drop-shadow-xl">
                       {(result.raw_card as any).fit_score ||
@@ -575,6 +580,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-blue-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
@@ -594,11 +600,12 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-purple-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Cpu className="h-4 w-4 text-purple-500" />
+                    <Rocket className="h-4 w-4 text-purple-500" />
                   </div>
                   <h3 className="text-sm font-black uppercase tracking-wider">
                     Growth & Innovation
@@ -613,11 +620,12 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-amber-500/50"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                    <Scale className="h-4 w-4 text-amber-500" />
+                    <Wallet className="h-4 w-4 text-amber-500" />
                   </div>
                   <h3 className="text-sm font-black uppercase tracking-wider">
                     Capital Allocation Audit
@@ -676,6 +684,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 border-l-4 border-l-primary/50 flex flex-col justify-center items-center text-center opacity-70 hover:opacity-100 transition-opacity"
               >
                 <BarChart3 className="h-10 w-10 text-muted-foreground mb-3" />
@@ -693,6 +702,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 bg-emerald-500/5 border border-emerald-500/10"
               >
                 <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-4 flex items-center gap-2">
@@ -707,6 +717,7 @@ export default function KaiAnalysis() {
               <Card
                 variant="none"
                 effect="glass"
+                showRipple={false}
                 className="p-6 bg-red-500/5 border border-red-500/10"
               >
                 <h3 className="text-xs font-black uppercase tracking-widest text-red-500 mb-4 flex items-center gap-2">
