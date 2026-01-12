@@ -61,6 +61,25 @@ export const Navbar = () => {
   const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsents();
 
+  // Sticky Dashboard Logic
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
+
+  useEffect(() => {
+    // 1. Recover last path on mount
+    const saved = localStorage.getItem("lastDashboardPath");
+    if (saved) {
+      setDashboardHref(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 2. Save path whenever we are inside /dashboard
+    if (pathname && pathname.startsWith("/dashboard")) {
+      localStorage.setItem("lastDashboardPath", pathname);
+      setDashboardHref(pathname);
+    }
+  }, [pathname]);
+
   // If not authenticated, ONLY show the theme toggle in a floating pill
   if (!isAuthenticated) {
     return (
@@ -76,7 +95,7 @@ export const Navbar = () => {
   const navigationItems: NavItem[] = [
     {
       label: "Dashboard",
-      href: "/dashboard",
+      href: dashboardHref, // Use sticky href here
       icon: LayoutDashboard,
     },
     {
