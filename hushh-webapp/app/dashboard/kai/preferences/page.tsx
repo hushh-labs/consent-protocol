@@ -502,9 +502,29 @@ export default function KaiPreferencesPage() {
     );
   }
 
-  // Derived dashboard visuals (view-mode)
+  // Derived visual state (Live Preview during edit)
+  const displayProfile = useMemo(() => {
+    return isEditing && editingProfile ? editingProfile : profile;
+  }, [isEditing, editingProfile, profile]);
+
+  const displayKaiPrefs = useMemo(() => {
+    if (isEditing) {
+      return {
+        riskProfile: draftRiskProfile || kaiPrefs.riskProfile,
+        processingMode: draftProcessingMode || kaiPrefs.processingMode,
+      };
+    }
+    return kaiPrefs;
+  }, [
+    isEditing,
+    draftRiskProfile,
+    draftProcessingMode,
+    kaiPrefs.riskProfile,
+    kaiPrefs.processingMode,
+  ]);
+
   const holdingsChartData = useMemo(() => {
-    const list = (profile as any)?.top_holdings;
+    const list = (displayProfile as any)?.top_holdings || [];
     if (!Array.isArray(list)) return [];
     return list
       .map((h: any) => ({
@@ -513,16 +533,16 @@ export default function KaiPreferencesPage() {
       }))
       .filter((r: any) => r.ticker && Number.isFinite(r.value) && r.value > 0)
       .slice(0, 10);
-  }, [profile]);
+  }, [displayProfile]);
 
   const sectorChartData = useMemo(() => {
-    const obj = (profile as any)?.sector_exposure;
+    const obj = (displayProfile as any)?.sector_exposure;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
     return Object.entries(obj as Record<string, any>)
       .map(([name, v]) => ({ name, value: typeof v === "number" ? v : 0 }))
       .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
       .slice(0, 10);
-  }, [profile]);
+  }, [displayProfile]);
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
@@ -545,6 +565,7 @@ export default function KaiPreferencesPage() {
                 }
                 if (!profile) return;
                 if (!isEditing) {
+                  // Enter Edit Mode
                   setEditingProfile({
                     ...(profile as any),
                     profile_version: (profile as any).profile_version || 2,
@@ -554,14 +575,16 @@ export default function KaiPreferencesPage() {
                   });
                   setIsEditing(true);
                 } else {
+                  // Cancel Edit Mode
                   setIsEditing(false);
+                  setEditingProfile(null);
                 }
               }}
             >
               {isEditing ? (
                 <>
                   <X className="w-4 h-4 mr-2" />
-                  View
+                  Cancel
                 </>
               ) : (
                 <>
@@ -606,16 +629,16 @@ export default function KaiPreferencesPage() {
                   <div className="text-xs text-muted-foreground">
                     VIP profile (baseline)
                   </div>
-                  {profile ? (
+                  {displayProfile ? (
                     <>
                       <div className="text-base font-semibold">
-                        {profile.name}
+                        {displayProfile.name}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {(profile as any).title
-                          ? `${(profile as any).title} • `
+                        {(displayProfile as any).title
+                          ? `${(displayProfile as any).title} • `
                           : ""}
-                        {profile.firm || "—"}
+                        {displayProfile.firm || "—"}
                       </div>
                     </>
                   ) : (
@@ -636,7 +659,7 @@ export default function KaiPreferencesPage() {
                     onClick={() => setShowProfileSearch(true)}
                   >
                     <Search className="w-4 h-4 mr-2" />
-                    {profile ? "Change VIP" : "Select VIP"}
+                    {profile ? "Change" : "Select VIP"}
                   </Button>
                   <TooltipProvider>
                     <Tooltip>
@@ -843,194 +866,88 @@ export default function KaiPreferencesPage() {
                 </div>
               )}
 
-              {/* Preferences dashboard */}
-              {profile && !isEditing && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
+              {/* Preferences Editor (Always visible) */}
+              {displayProfile && (
+                <div className="space-y-4 pt-4 animate-in fade-in duration-500">
+                  {/* Kai Runtime Settings */}
+                  {isEditing ? (
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        Kai runtime settings
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Risk profile
+                          </div>
+                          <Select
+                            value={draftRiskProfile}
+                            onValueChange={(v: any) => setDraftRiskProfile(v)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="conservative">
+                                conservative
+                              </SelectItem>
+                              <SelectItem value="balanced">balanced</SelectItem>
+                              <SelectItem value="aggressive">
+                                aggressive
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Processing
+                          </div>
+                          <Select
+                            value={draftProcessingMode}
+                            onValueChange={(v: any) =>
+                              setDraftProcessingMode(v)
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="hybrid">hybrid</SelectItem>
+                              <SelectItem value="on_device">
+                                on_device
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
                     <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Risk tolerance
+                      <div className="text-xs text-muted-foreground mb-2">
+                        Kai runtime
                       </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).risk_tolerance || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Time horizon
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).time_horizon || "—"}
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          risk:{displayKaiPrefs.riskProfile || "—"}
+                        </Badge>
+                        <Badge variant="secondary">
+                          mode:{displayKaiPrefs.processingMode || "—"}
+                        </Badge>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Turnover
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).portfolio_turnover || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        AUM
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).aum_billions != null
-                          ? `$${(profile as any).aum_billions}B`
-                          : "—"}
-                      </div>
-                    </div>
+                  )}
+
+                  {/* Main Profile Editor (Read-only or Editable) */}
+                  <div className={isEditing ? "opacity-100" : "opacity-90"}>
+                    <InvestorProfileEditor
+                      value={displayProfile}
+                      onChange={
+                        isEditing ? setEditingProfile : (v) => undefined
+                      }
+                      flat
+                      readOnly={!isEditing}
+                    />
                   </div>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    {holdingsChartData.length > 0 && (
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">
-                          Holdings snapshot
-                        </div>
-                        <div className="h-40">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={holdingsChartData}>
-                              <XAxis
-                                dataKey="ticker"
-                                fontSize={10}
-                                tickLine={false}
-                                axisLine={false}
-                              />
-                              <YAxis hide />
-                              <RechartsTooltip
-                                contentStyle={{
-                                  background: "rgba(0,0,0,0.8)",
-                                  border: "none",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                }}
-                                itemStyle={{ color: "#fff" }}
-                              />
-                              <Bar
-                                dataKey="value"
-                                radius={[6, 6, 6, 6]}
-                                fill="hsl(var(--primary))"
-                                opacity={0.7}
-                              />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-
-                    {sectorChartData.length > 0 && (
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">
-                          Sector donut
-                        </div>
-                        <div className="h-44">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <RechartsTooltip
-                                contentStyle={{
-                                  background: "rgba(0,0,0,0.8)",
-                                  border: "none",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                }}
-                                itemStyle={{ color: "#fff" }}
-                              />
-                              <Pie
-                                data={sectorChartData}
-                                dataKey="value"
-                                nameKey="name"
-                                innerRadius={42}
-                                outerRadius={72}
-                                paddingAngle={2}
-                              >
-                                {sectorChartData.map((_, i) => (
-                                  <Cell
-                                    key={i}
-                                    fill="hsl(var(--primary))"
-                                    fillOpacity={0.25 + (i % 6) * 0.1}
-                                  />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      Kai runtime
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">
-                        risk:{kaiPrefs.riskProfile || "—"}
-                      </Badge>
-                      <Badge variant="secondary">
-                        mode:{kaiPrefs.processingMode || "—"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Edit-mode: inline editor */}
-              {isEditing && editingProfile && (
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      Kai runtime settings
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">
-                          Risk profile
-                        </div>
-                        <Select
-                          value={draftRiskProfile}
-                          onValueChange={(v: any) => setDraftRiskProfile(v)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="conservative">
-                              conservative
-                            </SelectItem>
-                            <SelectItem value="balanced">balanced</SelectItem>
-                            <SelectItem value="aggressive">
-                              aggressive
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">
-                          Processing
-                        </div>
-                        <Select
-                          value={draftProcessingMode}
-                          onValueChange={(v: any) => setDraftProcessingMode(v)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="hybrid">hybrid</SelectItem>
-                            <SelectItem value="on_device">on_device</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <InvestorProfileEditor
-                    value={editingProfile}
-                    onChange={setEditingProfile}
-                    flat
-                  />
                 </div>
               )}
             </CardContent>
