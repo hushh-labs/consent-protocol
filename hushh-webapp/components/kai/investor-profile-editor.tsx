@@ -171,8 +171,15 @@ export function InvestorProfileEditor(props: {
   onChange: (next: EnrichedInvestorProfile) => void;
   readOnlyProvenance?: boolean;
   flat?: boolean;
+  readOnly?: boolean;
 }) {
-  const { value, onChange, readOnlyProvenance = true, flat = false } = props;
+  const {
+    value,
+    onChange,
+    readOnlyProvenance = true,
+    flat = false,
+    readOnly = false,
+  } = props;
 
   const [styleInput, setStyleInput] = useState("");
   const [buysInput, setBuysInput] = useState("");
@@ -269,6 +276,7 @@ export function InvestorProfileEditor(props: {
                     safeAum={safeAum}
                     styleInput={styleInput}
                     setStyleInput={setStyleInput}
+                    readOnly={readOnly}
                   />
                 </CardContent>
               </Card>
@@ -280,6 +288,7 @@ export function InvestorProfileEditor(props: {
                   safeAum={safeAum}
                   styleInput={styleInput}
                   setStyleInput={setStyleInput}
+                  readOnly={readOnly}
                 />
               </div>
             )}
@@ -303,6 +312,7 @@ export function InvestorProfileEditor(props: {
                 sellsInput={sellsInput}
                 setSellsInput={setSellsInput}
                 applyStructured={applyStructured}
+                readOnly={readOnly}
               />
             </Card>
           ) : (
@@ -321,6 +331,7 @@ export function InvestorProfileEditor(props: {
                 sellsInput={sellsInput}
                 setSellsInput={setSellsInput}
                 applyStructured={applyStructured}
+                readOnly={readOnly}
               />
             </div>
           )}
@@ -333,6 +344,7 @@ export function InvestorProfileEditor(props: {
                 value={value}
                 onChange={onChange}
                 readOnlyProvenance={readOnlyProvenance}
+                readOnly={readOnly}
               />
             </Card>
           ) : (
@@ -341,6 +353,7 @@ export function InvestorProfileEditor(props: {
                 value={value}
                 onChange={onChange}
                 readOnlyProvenance={readOnlyProvenance}
+                readOnly={readOnly}
               />
             </div>
           )}
@@ -358,12 +371,14 @@ function PreferenceFormContent({
   safeAum,
   styleInput,
   setStyleInput,
+  readOnly = false,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
   safeAum: string;
   styleInput: string;
   setStyleInput: (v: string) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -377,8 +392,9 @@ function PreferenceFormContent({
             onChange={(e) =>
               onChange({ ...value, risk_tolerance: e.target.value })
             }
+            disabled={readOnly}
             placeholder="balanced"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal"
+            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -390,8 +406,9 @@ function PreferenceFormContent({
             onChange={(e) =>
               onChange({ ...value, time_horizon: e.target.value })
             }
+            disabled={readOnly}
             placeholder="long"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal"
+            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -403,8 +420,9 @@ function PreferenceFormContent({
             onChange={(e) =>
               onChange({ ...value, portfolio_turnover: e.target.value })
             }
+            disabled={readOnly}
             placeholder="low"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal"
+            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -421,8 +439,9 @@ function PreferenceFormContent({
                 aum_billions: Number.isFinite(num as number) ? num : null,
               });
             }}
+            disabled={readOnly}
             placeholder="—"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal"
+            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
             inputMode="decimal"
           />
         </div>
@@ -440,52 +459,56 @@ function PreferenceFormContent({
               className="gap-1 border-primary/20 bg-primary/5 text-primary"
             >
               {s}
-              <button
-                type="button"
-                className="opacity-70 hover:opacity-100 transition-opacity"
-                onClick={() =>
-                  onChange({
-                    ...value,
-                    investment_style: removeAt(
-                      value.investment_style || [],
-                      idx
-                    ),
-                  })
-                }
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="opacity-70 hover:opacity-100 transition-opacity"
+                  onClick={() =>
+                    onChange({
+                      ...value,
+                      investment_style: removeAt(
+                        value.investment_style || [],
+                        idx
+                      ),
+                    })
+                  }
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </Badge>
           ))}
         </div>
-        <div className="flex gap-2">
-          <Input
-            value={styleInput}
-            onChange={(e) => setStyleInput(e.target.value)}
-            placeholder="Add a style (e.g., value, growth)"
-            className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
-          />
-          <Button
-            variant="none"
-            effect="glass"
-            size="icon-sm"
-            showRipple
-            onClick={() => {
-              if (styleInput.trim()) {
-                onChange({
-                  ...value,
-                  investment_style: uniqAdd(
-                    value.investment_style,
-                    styleInput.trim()
-                  ),
-                });
-                setStyleInput("");
-              }
-            }}
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="flex gap-2">
+            <Input
+              value={styleInput}
+              onChange={(e) => setStyleInput(e.target.value)}
+              placeholder="Add a style (e.g., value, growth)"
+              className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+            />
+            <Button
+              variant="none"
+              effect="glass"
+              size="icon-sm"
+              showRipple
+              onClick={() => {
+                if (styleInput.trim()) {
+                  onChange({
+                    ...value,
+                    investment_style: uniqAdd(
+                      value.investment_style,
+                      styleInput.trim()
+                    ),
+                  });
+                  setStyleInput("");
+                }
+              }}
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -505,6 +528,7 @@ function PortfolioDNAContent({
   sellsInput,
   setSellsInput,
   applyStructured,
+  readOnly = false,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
@@ -519,6 +543,7 @@ function PortfolioDNAContent({
   sellsInput: string;
   setSellsInput: (v: string) => void;
   applyStructured: () => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -527,19 +552,54 @@ function PortfolioDNAContent({
           <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Top holdings
           </h4>
-          <Button
-            variant="none"
-            effect="glass"
-            size="sm"
-            showRipple
-            onClick={() =>
-              setHoldingsRows([...holdingsRows, { ticker: "", weight: null }])
-            }
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="none"
+              effect="glass"
+              size="sm"
+              showRipple
+              onClick={() =>
+                setHoldingsRows([...holdingsRows, { ticker: "", weight: null }])
+              }
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add
+            </Button>
+          )}
         </div>
+
+        {holdingsChartData.length > 0 && (
+          <div className="h-40 w-full mb-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={holdingsChartData}>
+                <XAxis
+                  dataKey="ticker"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(0,0,0,0.8)",
+                    border: "none",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                  }}
+                  itemStyle={{ color: "#fff" }}
+                  cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                />
+                <Bar
+                  dataKey="value"
+                  radius={[6, 6, 6, 6]}
+                  fill="hsl(var(--primary))"
+                  opacity={0.7}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
         <div className="space-y-2">
           {holdingsRows.map((r, idx) => (
             <div
@@ -556,8 +616,9 @@ function PortfolioDNAContent({
                   };
                   setHoldingsRows(next);
                 }}
+                disabled={readOnly}
                 placeholder="Ticker"
-                className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+                className="h-9 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
               />
               <Input
                 value={typeof r.weight === "number" ? String(r.weight) : ""}
@@ -574,19 +635,22 @@ function PortfolioDNAContent({
                   };
                   setHoldingsRows(next);
                 }}
+                disabled={readOnly}
                 placeholder="%"
-                className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+                className="h-9 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
                 inputMode="decimal"
               />
-              <Button
-                variant="none"
-                effect="glass"
-                size="icon-sm"
-                showRipple
-                onClick={() => setHoldingsRows(removeAt(holdingsRows, idx))}
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="icon-sm"
+                  showRipple
+                  onClick={() => setHoldingsRows(removeAt(holdingsRows, idx))}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
@@ -597,19 +661,56 @@ function PortfolioDNAContent({
           <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Sector exposure
           </h4>
-          <Button
-            variant="none"
-            effect="glass"
-            size="sm"
-            showRipple
-            onClick={() =>
-              setSectorRows([...sectorRows, { sector: "", value: null }])
-            }
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="none"
+              effect="glass"
+              size="sm"
+              showRipple
+              onClick={() =>
+                setSectorRows([...sectorRows, { sector: "", value: null }])
+              }
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add
+            </Button>
+          )}
         </div>
+
+        {sectorChartData.length > 0 && (
+          <div className="h-44 w-full mb-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(0,0,0,0.8)",
+                    border: "none",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                  }}
+                  itemStyle={{ color: "#fff" }}
+                />
+                <Pie
+                  data={sectorChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={42}
+                  outerRadius={72}
+                  paddingAngle={2}
+                >
+                  {sectorChartData.map((_, i) => (
+                    <Cell
+                      key={i}
+                      fill="hsl(var(--primary))"
+                      fillOpacity={0.25 + (i % 6) * 0.1}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
         <div className="space-y-2">
           {sectorRows.map((r, idx) => (
             <div
@@ -644,19 +745,22 @@ function PortfolioDNAContent({
                   };
                   setSectorRows(next);
                 }}
+                disabled={readOnly}
                 placeholder="%"
-                className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+                className="h-9 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
                 inputMode="decimal"
               />
-              <Button
-                variant="none"
-                effect="glass"
-                size="icon-sm"
-                showRipple
-                onClick={() => setSectorRows(removeAt(sectorRows, idx))}
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="icon-sm"
+                  showRipple
+                  onClick={() => setSectorRows(removeAt(sectorRows, idx))}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
@@ -679,49 +783,53 @@ function PortfolioDNAContent({
                   className="gap-1 rounded-lg border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400"
                 >
                   {t}
-                  <button
-                    type="button"
-                    className="opacity-70 hover:opacity-100 transition-opacity"
-                    onClick={() =>
-                      onChange({
-                        ...value,
-                        recent_buys: removeAt(value.recent_buys || [], idx),
-                      })
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="opacity-70 hover:opacity-100 transition-opacity"
+                      onClick={() =>
+                        onChange({
+                          ...value,
+                          recent_buys: removeAt(value.recent_buys || [], idx),
+                        })
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </Badge>
               ))}
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={buysInput}
-                onChange={(e) => setBuysInput(e.target.value)}
-                placeholder="Add buy ticker"
-                className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
-              />
-              <Button
-                variant="none"
-                effect="glass"
-                size="icon-sm"
-                showRipple
-                onClick={() => {
-                  if (buysInput.trim()) {
-                    onChange({
-                      ...value,
-                      recent_buys: uniqAdd(
-                        value.recent_buys,
-                        buysInput.trim().toUpperCase()
-                      ),
-                    });
-                    setBuysInput("");
-                  }
-                }}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex gap-2">
+                <Input
+                  value={buysInput}
+                  onChange={(e) => setBuysInput(e.target.value)}
+                  placeholder="Add buy ticker"
+                  className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+                />
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="icon-sm"
+                  showRipple
+                  onClick={() => {
+                    if (buysInput.trim()) {
+                      onChange({
+                        ...value,
+                        recent_buys: uniqAdd(
+                          value.recent_buys,
+                          buysInput.trim().toUpperCase()
+                        ),
+                      });
+                      setBuysInput("");
+                    }
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -736,49 +844,53 @@ function PortfolioDNAContent({
                   className="gap-1 rounded-lg border-rose-500/20 bg-rose-500/5 text-rose-600 dark:text-rose-400"
                 >
                   {t}
-                  <button
-                    type="button"
-                    className="opacity-70 hover:opacity-100 transition-opacity"
-                    onClick={() =>
-                      onChange({
-                        ...value,
-                        recent_sells: removeAt(value.recent_sells || [], idx),
-                      })
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="opacity-70 hover:opacity-100 transition-opacity"
+                      onClick={() =>
+                        onChange({
+                          ...value,
+                          recent_sells: removeAt(value.recent_sells || [], idx),
+                        })
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </Badge>
               ))}
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={sellsInput}
-                onChange={(e) => setSellsInput(e.target.value)}
-                placeholder="Add sell ticker"
-                className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
-              />
-              <Button
-                variant="none"
-                effect="glass"
-                size="icon-sm"
-                showRipple
-                onClick={() => {
-                  if (sellsInput.trim()) {
-                    onChange({
-                      ...value,
-                      recent_sells: uniqAdd(
-                        value.recent_sells,
-                        sellsInput.trim().toUpperCase()
-                      ),
-                    });
-                    setSellsInput("");
-                  }
-                }}
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex gap-2">
+                <Input
+                  value={sellsInput}
+                  onChange={(e) => setSellsInput(e.target.value)}
+                  placeholder="Add sell ticker"
+                  className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
+                />
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="icon-sm"
+                  showRipple
+                  onClick={() => {
+                    if (sellsInput.trim()) {
+                      onChange({
+                        ...value,
+                        recent_sells: uniqAdd(
+                          value.recent_sells,
+                          sellsInput.trim().toUpperCase()
+                        ),
+                      });
+                      setSellsInput("");
+                    }
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -802,10 +914,12 @@ function BackgroundContent({
   value,
   onChange,
   readOnlyProvenance,
+  readOnly = false,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
   readOnlyProvenance: boolean;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -818,20 +932,23 @@ function BackgroundContent({
             value={value.name || ""}
             onChange={(e) => onChange({ ...value, name: e.target.value })}
             placeholder="Full Name"
-            className="h-10 text-sm rounded-lg border-border/50 bg-background/40"
+            disabled={readOnly}
+            className="h-10 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
           />
           <div className="grid grid-cols-2 gap-2">
             <Input
               value={value.firm || ""}
               onChange={(e) => onChange({ ...value, firm: e.target.value })}
               placeholder="Firm"
-              className="h-10 text-sm rounded-lg border-border/50 bg-background/40"
+              disabled={readOnly}
+              className="h-10 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
             />
             <Input
               value={value.title || ""}
               onChange={(e) => onChange({ ...value, title: e.target.value })}
               placeholder="Title"
-              className="h-10 text-sm rounded-lg border-border/50 bg-background/40"
+              disabled={readOnly}
+              className="h-10 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
             />
           </div>
         </div>
@@ -844,7 +961,8 @@ function BackgroundContent({
         <textarea
           value={value.biography || ""}
           onChange={(e) => onChange({ ...value, biography: e.target.value })}
-          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
+          disabled={readOnly}
+          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-100 disabled:cursor-default"
           placeholder="Investing philosophy, track record, etc."
         />
       </div>
@@ -861,7 +979,8 @@ function BackgroundContent({
             onChange={(e) =>
               onChange({ ...value, is_insider: e.target.checked })
             }
-            className="w-4 h-4 rounded border-border/50 text-primary focus:ring-0"
+            disabled={readOnly}
+            className="w-4 h-4 rounded border-border/50 text-primary focus:ring-0 disabled:opacity-50"
           />
           <label
             htmlFor="is-insider-checkbox"
@@ -879,8 +998,9 @@ function BackgroundContent({
                 insider_company_ticker: e.target.value.toUpperCase() || null,
               })
             }
+            disabled={readOnly}
             placeholder="COMPANY TICKER"
-            className="h-10 text-sm rounded-lg border-border/50 bg-background/40"
+            className="h-10 text-sm rounded-lg border-border/50 bg-background/40 disabled:opacity-100 disabled:cursor-default"
           />
         )}
       </div>
