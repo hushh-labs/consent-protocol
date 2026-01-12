@@ -181,9 +181,9 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
    * Get encrypted investor profile (ciphertext).
    * Uses Next.js API route proxy.
    */
-  async getEncryptedProfile(options: {
-    vaultOwnerToken: string;
-  }): Promise<{ profile_data: { ciphertext: string; iv: string; tag: string } }> {
+  async getEncryptedProfile(options: { vaultOwnerToken: string }): Promise<{
+    profile_data: { ciphertext: string; iv: string; tag: string };
+  }> {
     try {
       const response = await fetch(`${API_BASE_URL}/api/identity/profile`, {
         method: "POST",
@@ -216,6 +216,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     vaultOwnerToken: string;
   }): Promise<{ success: boolean }> {
     try {
+      // Web contract: DELETE is proxied via /api/identity/status (see app/api/identity/status/route.ts)
       const response = await fetch(`${API_BASE_URL}/api/identity/status`, {
         method: "DELETE",
         headers: {
@@ -224,10 +225,16 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
         },
       });
 
-      return { success: response.ok };
-    } catch (error) {
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || "Reset failed");
+      }
+
+      const data = await response.json().catch(() => ({ success: true }));
+      return { success: data.success !== false };
+    } catch (error: any) {
       console.error("[HushhIdentityWeb] Reset error:", error);
-      return { success: false };
+      throw error;
     }
   }
 }
