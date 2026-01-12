@@ -104,9 +104,10 @@ export function InvestorDetectStep({
       if (profile) {
         setSelectedInvestor(profile);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[InvestorDetect] Load profile error:", error);
-      toast.error("Failed to load investor profile");
+      const errorMessage = error?.message || "Failed to load investor profile";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -157,11 +158,12 @@ export function InvestorDetectStep({
         toast.success(`Identity confirmed as ${selectedInvestor.name}`);
         onConfirm(selectedInvestor);
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "Failed to confirm identity");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[InvestorDetect] Confirm error:", error);
-      toast.error("Failed to confirm identity");
+      const errorMessage = error?.message || "Failed to confirm identity";
+      toast.error(errorMessage);
     } finally {
       setConfirming(false);
     }
