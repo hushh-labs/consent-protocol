@@ -1,7 +1,7 @@
 /**
  * Bottom Navigation Component
  * ===========================
- * 
+ *
  * Mobile-first bottom navigation bar with proper dark mode theming.
  * Uses CSS variables for glass effect that automatically switches in dark mode.
  */
@@ -38,7 +38,10 @@ export function BottomNav() {
 
   // Replace Account with profile when logged in
   const items = user
-    ? [...visibleItems.filter(i => i.href !== "/login"), { href: "/dashboard", label: "Profile", icon: "👤" }]
+    ? [
+        ...visibleItems.filter((i) => i.href !== "/login"),
+        { href: "/dashboard", label: "Profile", icon: "👤" },
+      ]
     : visibleItems;
 
   // Check if path is active
@@ -46,6 +49,26 @@ export function BottomNav() {
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(href + "/");
   };
+
+  // Sticky Dashboard Logic
+  const [dashboardHref, setDashboardHref] = React.useState("/dashboard");
+
+  React.useEffect(() => {
+    // 1. Recover last path on mount
+    const saved = localStorage.getItem("lastDashboardPath");
+    if (saved) {
+      setDashboardHref(saved);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    // 2. Save path whenever we are inside /dashboard (but not exactly /dashboard if we want deep linking)
+    // Actually, saving any /dashboard path is good.
+    if (pathname.startsWith("/dashboard")) {
+      localStorage.setItem("lastDashboardPath", pathname);
+      setDashboardHref(pathname);
+    }
+  }, [pathname]);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
@@ -58,23 +81,35 @@ export function BottomNav() {
         }}
       >
         <div className="flex items-center justify-around px-2 py-3">
-          {items.filter((item, index, self) => 
-            self.findIndex(i => i.href === item.href) === index
-          ).slice(0, 5).map((item) => (
-            <Link
-              key={`${item.href}-${item.label}`}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all min-w-[64px]",
-                isActive(item.href)
-                  ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              )}
-            >
-              <span className="text-xl">{item.icon}</span>
-              <span className="text-xs font-medium">{item.label}</span>
-            </Link>
-          ))}
+          {items
+            .filter(
+              (item, index, self) =>
+                self.findIndex((i) => i.href === item.href) === index
+            )
+            .slice(0, 5)
+            .map((item) => {
+              // Override href for Dashboard item only
+              const finalHref =
+                item.label === "Dashboard" || item.label === "Profile"
+                  ? dashboardHref
+                  : item.href;
+
+              return (
+                <Link
+                  key={`${item.href}-${item.label}`}
+                  href={finalHref}
+                  className={cn(
+                    "flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all min-w-[64px]",
+                    isActive(item.href)
+                      ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  )}
+                >
+                  <span className="text-xl">{item.icon}</span>
+                  <span className="text-xs font-medium">{item.label}</span>
+                </Link>
+              );
+            })}
         </div>
       </div>
     </nav>

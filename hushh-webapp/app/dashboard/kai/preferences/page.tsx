@@ -35,7 +35,7 @@ import {
   Pie,
   PieChart,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -51,6 +51,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
@@ -305,7 +315,9 @@ export default function KaiPreferencesPage() {
       return;
     }
     const investorId =
-      (selectedProfile as any)?.id ?? (editingProfile as any).id ?? editingProfile.confirmed_investor_id;
+      (selectedProfile as any)?.id ??
+      (editingProfile as any).id ??
+      editingProfile.confirmed_investor_id;
     if (!investorId) {
       toast.error("Missing investor id. Please re-select your VIP profile.");
       return;
@@ -337,7 +349,10 @@ export default function KaiPreferencesPage() {
             tag: encMode.tag,
           },
         ]);
-        setKaiPrefs({ riskProfile: draftRiskProfile, processingMode: draftProcessingMode });
+        setKaiPrefs({
+          riskProfile: draftRiskProfile,
+          processingMode: draftProcessingMode,
+        });
       }
 
       // 2) Save investor profile metrics (encrypted blob)
@@ -353,7 +368,11 @@ export default function KaiPreferencesPage() {
 
       const result = await IdentityService.confirmIdentity(
         investorId,
-        { ciphertext: encrypted.ciphertext, iv: encrypted.iv, tag: encrypted.tag },
+        {
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          tag: encrypted.tag,
+        },
         vaultOwnerToken
       );
 
@@ -471,14 +490,6 @@ export default function KaiPreferencesPage() {
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
       <div className="flex items-center gap-3">
-        <Button
-          variant="none"
-          effect="glass"
-          size="icon-sm"
-          onClick={() => router.back()}
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
         <h1 className="text-xl font-bold">Preferences</h1>
 
         <div className="ml-auto flex items-center gap-2">
@@ -541,22 +552,34 @@ export default function KaiPreferencesPage() {
         <HushhLoader label="Loading preferences..." />
       ) : (
         <>
-          <Card variant="none" effect="glass" className="border-0 overflow-hidden">
+          <Card
+            variant="none"
+            effect="glass"
+            className="border-0 overflow-hidden"
+          >
             <CardContent className="p-4 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">VIP profile (baseline)</div>
+                  <div className="text-xs text-muted-foreground">
+                    VIP profile (baseline)
+                  </div>
                   {profile ? (
                     <>
-                      <div className="text-base font-semibold">{profile.name}</div>
+                      <div className="text-base font-semibold">
+                        {profile.name}
+                      </div>
                       <div className="text-xs text-muted-foreground">
-                        {(profile as any).title ? `${(profile as any).title} • ` : ""}
+                        {(profile as any).title
+                          ? `${(profile as any).title} • `
+                          : ""}
                         {profile.firm || "—"}
                       </div>
                     </>
                   ) : (
                     <div className="text-sm text-muted-foreground">
-                      {profileNotFound ? "No VIP profile set yet." : "Unable to load profile."}
+                      {profileNotFound
+                        ? "No VIP profile set yet."
+                        : "Unable to load profile."}
                     </div>
                   )}
                 </div>
@@ -572,17 +595,33 @@ export default function KaiPreferencesPage() {
                     <Search className="w-4 h-4 mr-2" />
                     {profile ? "Change VIP" : "Select VIP"}
                   </Button>
-                  <Button
-                    variant="none"
-                    effect="glass"
-                    size="icon-sm"
-                    onClick={handleResetIdentity}
-                    disabled={!profile || resettingIdentity}
-                    className="text-red-500"
-                    showRipple
-                  >
-                    {resettingIdentity ? <HushhLoader variant="compact" /> : <Trash2 className="w-4 h-4" />}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="none"
+                          effect="glass"
+                          size="icon-sm"
+                          onClick={handleResetIdentity}
+                          disabled={!profile || resettingIdentity}
+                          className="text-red-500"
+                          showRipple
+                        >
+                          {resettingIdentity ? (
+                            <HushhLoader variant="compact" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          Unlink this investor profile. Your Kai risk
+                          preferences remain saved.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
 
@@ -591,21 +630,37 @@ export default function KaiPreferencesPage() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">Risk tolerance</div>
-                      <div className="text-sm font-semibold">{(profile as any).risk_tolerance || "—"}</div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">Time horizon</div>
-                      <div className="text-sm font-semibold">{(profile as any).time_horizon || "—"}</div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">Turnover</div>
-                      <div className="text-sm font-semibold">{(profile as any).portfolio_turnover || "—"}</div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">AUM</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Risk tolerance
+                      </div>
                       <div className="text-sm font-semibold">
-                        {(profile as any).aum_billions != null ? `$${(profile as any).aum_billions}B` : "—"}
+                        {(profile as any).risk_tolerance || "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+                      <div className="text-[10px] text-muted-foreground">
+                        Time horizon
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {(profile as any).time_horizon || "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+                      <div className="text-[10px] text-muted-foreground">
+                        Turnover
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {(profile as any).portfolio_turnover || "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+                      <div className="text-[10px] text-muted-foreground">
+                        AUM
+                      </div>
+                      <div className="text-sm font-semibold">
+                        {(profile as any).aum_billions != null
+                          ? `$${(profile as any).aum_billions}B`
+                          : "—"}
                       </div>
                     </div>
                   </div>
@@ -613,13 +668,20 @@ export default function KaiPreferencesPage() {
                   <div className="grid grid-cols-1 gap-3">
                     {holdingsChartData.length > 0 && (
                       <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">Holdings snapshot</div>
+                        <div className="text-[10px] text-muted-foreground mb-2">
+                          Holdings snapshot
+                        </div>
                         <div className="h-40">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={holdingsChartData}>
-                              <XAxis dataKey="ticker" fontSize={10} tickLine={false} axisLine={false} />
+                              <XAxis
+                                dataKey="ticker"
+                                fontSize={10}
+                                tickLine={false}
+                                axisLine={false}
+                              />
                               <YAxis hide />
-                              <Tooltip
+                              <RechartsTooltip
                                 contentStyle={{
                                   background: "rgba(0,0,0,0.8)",
                                   border: "none",
@@ -628,7 +690,12 @@ export default function KaiPreferencesPage() {
                                 }}
                                 itemStyle={{ color: "#fff" }}
                               />
-                              <Bar dataKey="value" radius={[6, 6, 6, 6]} fill="hsl(var(--primary))" opacity={0.7} />
+                              <Bar
+                                dataKey="value"
+                                radius={[6, 6, 6, 6]}
+                                fill="hsl(var(--primary))"
+                                opacity={0.7}
+                              />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -637,11 +704,13 @@ export default function KaiPreferencesPage() {
 
                     {sectorChartData.length > 0 && (
                       <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">Sector donut</div>
+                        <div className="text-[10px] text-muted-foreground mb-2">
+                          Sector donut
+                        </div>
                         <div className="h-44">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                              <Tooltip
+                              <RechartsTooltip
                                 contentStyle={{
                                   background: "rgba(0,0,0,0.8)",
                                   border: "none",
@@ -674,10 +743,16 @@ export default function KaiPreferencesPage() {
                   </div>
 
                   <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                    <div className="text-xs text-muted-foreground mb-2">Kai runtime</div>
+                    <div className="text-xs text-muted-foreground mb-2">
+                      Kai runtime
+                    </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">risk:{kaiPrefs.riskProfile || "—"}</Badge>
-                      <Badge variant="secondary">mode:{kaiPrefs.processingMode || "—"}</Badge>
+                      <Badge variant="secondary">
+                        risk:{kaiPrefs.riskProfile || "—"}
+                      </Badge>
+                      <Badge variant="secondary">
+                        mode:{kaiPrefs.processingMode || "—"}
+                      </Badge>
                     </div>
                   </div>
                 </div>
@@ -687,24 +762,40 @@ export default function KaiPreferencesPage() {
               {isEditing && editingProfile && (
                 <div className="space-y-4">
                   <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">Kai runtime settings</div>
+                    <div className="text-xs text-muted-foreground">
+                      Kai runtime settings
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">Risk profile</div>
-                        <Select value={draftRiskProfile} onValueChange={(v: any) => setDraftRiskProfile(v)}>
+                        <div className="text-[10px] text-muted-foreground">
+                          Risk profile
+                        </div>
+                        <Select
+                          value={draftRiskProfile}
+                          onValueChange={(v: any) => setDraftRiskProfile(v)}
+                        >
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="conservative">conservative</SelectItem>
+                            <SelectItem value="conservative">
+                              conservative
+                            </SelectItem>
                             <SelectItem value="balanced">balanced</SelectItem>
-                            <SelectItem value="aggressive">aggressive</SelectItem>
+                            <SelectItem value="aggressive">
+                              aggressive
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">Processing</div>
-                        <Select value={draftProcessingMode} onValueChange={(v: any) => setDraftProcessingMode(v)}>
+                        <div className="text-[10px] text-muted-foreground">
+                          Processing
+                        </div>
+                        <Select
+                          value={draftProcessingMode}
+                          onValueChange={(v: any) => setDraftProcessingMode(v)}
+                        >
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select" />
                           </SelectTrigger>
@@ -717,7 +808,10 @@ export default function KaiPreferencesPage() {
                     </div>
                   </div>
 
-                  <InvestorProfileEditor value={editingProfile} onChange={setEditingProfile} />
+                  <InvestorProfileEditor
+                    value={editingProfile}
+                    onChange={setEditingProfile}
+                  />
                 </div>
               )}
             </CardContent>
@@ -728,8 +822,12 @@ export default function KaiPreferencesPage() {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-muted-foreground">VIP selector</div>
-                    <div className="text-sm font-semibold">Choose a public baseline profile</div>
+                    <div className="text-xs text-muted-foreground">
+                      VIP selector
+                    </div>
+                    <div className="text-sm font-semibold">
+                      Choose a public baseline profile
+                    </div>
                   </div>
                   <Button
                     variant="none"
@@ -748,29 +846,36 @@ export default function KaiPreferencesPage() {
                   </Button>
                 </div>
 
-                {autoDetectMatches.length > 0 && !selectedProfile && !editingProfile && (
-                  <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">Suggested matches</div>
-                    <div className="space-y-1">
-                      {autoDetectMatches.slice(0, 4).map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => handleSelectProfile(m)}
-                          disabled={loadingProfile}
-                          className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
-                        >
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-xs text-muted-foreground">{m.firm || "—"}</div>
-                        </button>
-                      ))}
+                {autoDetectMatches.length > 0 &&
+                  !selectedProfile &&
+                  !editingProfile && (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        Suggested matches
+                      </div>
+                      <div className="space-y-1">
+                        {autoDetectMatches.slice(0, 4).map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => handleSelectProfile(m)}
+                            disabled={loadingProfile}
+                            className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
+                          >
+                            <div className="font-medium">{m.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {m.firm || "—"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {selectedProfile && editingProfile ? (
                   <div className="space-y-3">
                     <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
-                      This will copy the public VIP profile into your encrypted vault. You can edit any fields before confirming.
+                      This will copy the public VIP profile into your encrypted
+                      vault. You can edit any fields before confirming.
                     </div>
                     <InvestorProfileEditor
                       value={editingProfile}
@@ -858,13 +963,6 @@ export default function KaiPreferencesPage() {
               </CardContent>
             </Card>
           )}
-
-          <Link href="/dashboard/kai/analysis">
-            <Button variant="none" effect="glass" size="sm" className="w-full">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Analysis
-            </Button>
-          </Link>
         </>
       )}
     </div>
