@@ -191,7 +191,12 @@ export function InvestorDetectStep({
   // Loading state
   if (loading && !selectedInvestor) {
     return (
-      <Card className="glass-interactive border-0 shadow-2xl">
+      <Card
+        variant="none"
+        effect="glass"
+        showRipple={false}
+        className="border-0 shadow-2xl"
+      >
         <CardContent className="flex flex-col items-center justify-center py-12">
           <HushhLoader
             label="Detecting investor profile..."
@@ -206,10 +211,15 @@ export function InvestorDetectStep({
   // Profile preview state
   if (selectedInvestor) {
     return (
-      <Card className="glass-interactive border-0 shadow-2xl">
+      <Card
+        variant="none"
+        effect="glass"
+        showRipple={false}
+        className="border-0 shadow-2xl"
+      >
         <CardHeader className="text-center pb-2">
           <CardTitle className="text-xl">
-            Set up your Investor Mindset
+            Set up your Investor Preferences
           </CardTitle>
           <CardDescription>
             Kai tailors analysis using these signals. Edit anything — it’s
@@ -217,12 +227,13 @@ export function InvestorDetectStep({
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pb-2">
           {/* Full, editable metrics */}
           {editableProfile && (
             <InvestorProfileEditor
               value={editableProfile}
               onChange={setEditableProfile}
+              flat
             />
           )}
 
@@ -240,8 +251,11 @@ export function InvestorDetectStep({
           <Button
             variant="none"
             effect="glass"
-            className="flex-1"
-            onClick={() => setSelectedInvestor(null)}
+            className="flex-1 border border-border/50 text-muted-foreground"
+            onClick={() => {
+              setSelectedInvestor(null);
+              setEditableProfile(null);
+            }}
             disabled={confirming}
           >
             <X className="w-4 h-4 mr-2" />
@@ -255,11 +269,11 @@ export function InvestorDetectStep({
             disabled={confirming}
           >
             {confirming ? (
-              <HushhLoader variant="compact" className="mr-2" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Check className="w-4 h-4 mr-2" />
             )}
-            {confirming ? "Saving..." : "Save Mindset"}
+            {confirming ? "Saving..." : "Save Preferences"}
           </Button>
         </CardFooter>
       </Card>
@@ -268,7 +282,12 @@ export function InvestorDetectStep({
 
   // Detection results or search state
   return (
-    <Card className="glass-interactive border-0 shadow-2xl">
+    <Card
+      variant="none"
+      effect="glass"
+      showRipple={false}
+      className="border-0 shadow-2xl"
+    >
       <CardHeader className="text-center pb-2">
         <CardTitle className="text-xl">
           {detectedMatches.length > 0
@@ -320,18 +339,29 @@ export function InvestorDetectStep({
         {/* Search section */}
         {(showSearch || detectedMatches.length === 0) && (
           <div className="space-y-3">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Search by name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-              <Button onClick={handleSearch} disabled={searching}>
+            <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+              <div className="flex items-center gap-3 flex-1 px-4">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  className="bg-transparent border-0 outline-none text-base font-black placeholder:text-muted-foreground/50 w-full"
+                />
+              </div>
+              <Button
+                variant="gradient"
+                effect="glass"
+                size="sm"
+                onClick={handleSearch}
+                disabled={searching}
+                className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
+              >
                 {searching ? (
-                  <HushhLoader variant="compact" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Search className="w-4 h-4" />
+                  "SEARCH"
                 )}
               </Button>
             </div>

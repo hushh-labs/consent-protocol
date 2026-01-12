@@ -331,9 +331,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   Use Recovery Key
                 </Button>
                 <Button
-                  variant="gradient"
-                  effect="fill"
-                  className="flex-1 text-white order-1 sm:order-2"
+                  variant="none"
+                  effect="glass"
+                  className="flex-1 order-1 sm:order-2"
                   onClick={handleUnlockPassphrase}
                 >
                   Unlock
