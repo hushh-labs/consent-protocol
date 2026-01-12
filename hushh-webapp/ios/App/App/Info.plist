@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>GIDClientID</key>
-    <string>1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm.apps.googleusercontent.com</string>
+    <string>1006304528804-5f4ni5h8nschgv9gcoa9i07bhqtjeb91.apps.googleusercontent.com</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.googleusercontent.apps.1006304528804-0kmnav8igjf7qbb3e4a2656d56ecvscm</string>
+                <string>com.googleusercontent.apps.1006304528804-5f4ni5h8nschgv9gcoa9i07bhqtjeb91</string>
             </array>
         </dict>
     </array>
@@ -18,7 +18,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Hushh PDA</string>
+        <string>Hushh</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -57,6 +57,10 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
     <key>NSAppTransportSecurity</key>
     <dict>

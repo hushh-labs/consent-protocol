@@ -20,22 +20,20 @@ export function useStatusBar() {
           style: resolvedTheme === "dark" ? Style.Dark : Style.Light,
         });
 
-        // Android-specific: Set background color to match app theme exactly
-        if (Capacitor.getPlatform() === "android") {
-          // Colors matching CSS --background variable:
-          // Light: oklch(1 0 0) = #ffffff
-          // Dark: oklch(0.145 0 0) = ~#1f1f1f
-          const bgColor =
-            resolvedTheme === "dark"
-              ? "#1f1f1f" // Dark mode - oklch(0.145 0 0)
-              : "#FFFFFF"; // Light mode - oklch(1 0 0)
+        // Set background color to match app theme (both platforms for consistency)
+        // Colors matching CSS --background variable:
+        // Light: oklch(1 0 0) = #ffffff
+        // Dark: oklch(0.145 0 0) = ~#1f1f1f
+        const bgColor =
+          resolvedTheme === "dark"
+            ? "#1f1f1f" // Dark mode - oklch(0.145 0 0)
+            : "#FFFFFF"; // Light mode - oklch(1 0 0)
 
-          console.log(`[StatusBar] Android bg: ${bgColor}`);
-          await StatusBar.setBackgroundColor({ color: bgColor });
-          await StatusBar.setOverlaysWebView({ overlay: false });
-        } else {
-          await StatusBar.setOverlaysWebView({ overlay: true });
-        }
+        console.log(`[StatusBar] Setting bg: ${bgColor}`);
+        
+        // Both platforms: overlay false for stable layout (prevents iOS bounce)
+        await StatusBar.setOverlaysWebView({ overlay: false });
+        await StatusBar.setBackgroundColor({ color: bgColor });
       } catch (e) {
         console.warn("[StatusBar] Error:", e);
       }

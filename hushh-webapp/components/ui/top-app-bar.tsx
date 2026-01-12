@@ -3,8 +3,9 @@
 /**
  * TopAppBar - Smart Mobile Navigation Header
  *
- * Shows back button only on Level 2+ pages (sub-pages).
- * Uses the navigation context for layered back navigation.
+ * Shows back button on all pages except the landing page ("/").
+ * On root-level pages (/dashboard, /consents, /profile), triggers exit dialog.
+ * On sub-pages (Level 2+), navigates to parent route.
  *
  * Place this at the layout level for seamless integration.
  */
@@ -39,7 +40,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  // Don't show back button on root-level pages
+  // Don't show TopAppBar only on the landing page
   if (pathname === "/") {
     return null;
   }
