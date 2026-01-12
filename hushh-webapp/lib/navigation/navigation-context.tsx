@@ -68,19 +68,9 @@ export function NavigationProvider({
     const segments = pathname.split("/").filter(Boolean);
     const depth = segments.length;
 
-    // CUSTOM OVERRIDES
-    // Flatten hierarchy for specific flows where sub-pages should return to dashboard
-    let customParent: string | null = null;
-
-    // Kai Analysis -> Dashboard (Skip onboarding page)
-    if (pathname === "/dashboard/kai/analysis") {
-      customParent = "/dashboard";
-    }
-
-    // Find parent path (go up one level) or use custom override
+    // Find parent path (go up one level)
     const parent =
-      customParent ||
-      (depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard"); // Default fallback for orphan routes
+      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard"; // Default fallback for orphan routes
 
     return {
       level: depth,
