@@ -40,7 +40,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
   }, []);
 
   // Don't show back button on root-level pages
-  if (isRootLevel) {
+  if (pathname === "/") {
     return null;
   }
 
@@ -114,7 +114,8 @@ export function TopAppBarSpacer() {
 
   // Root Level: Just clear the status bar (safe area)
   // We use max(env, 32px) to ensure there is always SOME space on mobile
-  if (isRootLevel) {
+  const pathname = usePathname();
+  if (pathname === "/") {
     return (
       <div className="w-full shrink-0 transition-[height] h-[max(env(safe-area-inset-top),32px)]" />
     );
