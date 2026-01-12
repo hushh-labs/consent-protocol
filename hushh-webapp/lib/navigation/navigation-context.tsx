@@ -56,10 +56,18 @@ export function NavigationProvider({
   // Use ref to avoid stale closure issues with the back button listener
   const handleBackRef = useRef<() => void>(() => {});
 
+  // Log on mount
+  useEffect(() => {
+    console.log("[Navigation] NavigationProvider mounted");
+    console.log("[Navigation] Platform:", Capacitor.getPlatform());
+    console.log("[Navigation] isNativePlatform:", Capacitor.isNativePlatform());
+  }, []);
+
   // Calculate navigation level and parent path
   const { level, isRootLevel, parentPath } = useMemo(() => {
     // Check if it's a level 1 path
     if (LEVEL_1_PATHS.includes(pathname)) {
+      console.log(`[Navigation] Path ${pathname} is LEVEL 1 (root)`);
       return { level: 1, isRootLevel: true, parentPath: null };
     }
 
@@ -71,6 +79,7 @@ export function NavigationProvider({
     const parent =
       depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard";
 
+    console.log(`[Navigation] Path ${pathname} is LEVEL ${depth}, parent: ${parent}`);
     return {
       level: depth,
       isRootLevel: false,
@@ -80,15 +89,19 @@ export function NavigationProvider({
 
   // Handle back navigation - show exit dialog on BOTH iOS and Android
   const handleBack = useCallback(() => {
-    console.log(
-      `[Navigation] handleBack called - pathname: ${pathname}, isRootLevel: ${isRootLevel}`
-    );
+    console.log("[Navigation] ========== handleBack() called ==========");
+    console.log("[Navigation] Current pathname:", pathname);
+    console.log("[Navigation] isRootLevel:", isRootLevel);
+    console.log("[Navigation] parentPath:", parentPath);
+    console.log("[Navigation] isNativePlatform:", Capacitor.isNativePlatform());
 
     if (isRootLevel) {
       // Level 1: Show exit dialog on native platforms (iOS and Android)
       if (Capacitor.isNativePlatform()) {
-        console.log("[Navigation] Showing exit dialog");
+        console.log("[Navigation] >>> SHOWING EXIT DIALOG <<<");
         setShowExitDialog(true);
+      } else {
+        console.log("[Navigation] Web platform at root - doing nothing");
       }
       // On web, do nothing at root level
       return;
@@ -114,13 +127,23 @@ export function NavigationProvider({
     let backButtonListener: PluginListenerHandle | null = null;
 
     const setupListener = async () => {
-      if (!Capacitor.isNativePlatform()) return;
+      if (!Capacitor.isNativePlatform()) {
+        console.log("[Navigation] Not native platform, skipping back button listener");
+        return;
+      }
 
-      console.log("[Navigation] Registering back button listener");
-      backButtonListener = await App.addListener("backButton", () => {
-        console.log("[Navigation] Back button pressed");
-        handleBackRef.current();
-      });
+      try {
+        console.log("[Navigation] Registering Android hardware back button listener...");
+        backButtonListener = await App.addListener("backButton", ({ canGoBack }) => {
+          console.log("[Navigation] *** HARDWARE BACK BUTTON PRESSED ***");
+          console.log("[Navigation] canGoBack from Capacitor:", canGoBack);
+          console.log("[Navigation] Calling handleBackRef.current()...");
+          handleBackRef.current();
+        });
+        console.log("[Navigation] Back button listener registered successfully");
+      } catch (error) {
+        console.error("[Navigation] Failed to register back button listener:", error);
+      }
     };
 
     setupListener();
@@ -149,9 +172,12 @@ export function NavigationProvider({
       {children}
       <ExitDialog
         open={showExitDialog}
-        onOpenChange={setShowExitDialog}
+        onOpenChange={(open) => {
+          console.log("[Navigation] ExitDialog onOpenChange:", open);
+          setShowExitDialog(open);
+        }}
         onConfirm={() => {
-          console.log("[Navigation] Exit app confirmed");
+          console.log("[Navigation] Exit app confirmed - calling App.exitApp()");
           App.exitApp();
         }}
       />
