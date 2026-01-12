@@ -7,20 +7,20 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const DEV_MODE = false;
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
-  (DEV_MODE ? "http://localhost:3000" : undefined);
+  (DEV_MODE ? "http://10.0.2.2:3000" : undefined);
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "https://consent-protocol-1006304528804.us-central1.run.app";
 
 const config: CapacitorConfig = {
-  appId: "com.hushh.pda",
-  appName: "Hushh PDA",
+  appId: "com.hushh.app",
+  appName: "Hushh",
   webDir: "out",
 
   // iOS-specific configuration
   ios: {
-    contentInset: "automatic",
+    contentInset: "always", // "always" for stable layout (prevents bounce)
     allowsLinkPreview: true,
     scrollEnabled: true,
     backgroundColor: "#0a0a0a",
@@ -59,9 +59,9 @@ const config: CapacitorConfig = {
       enabled: true,
     },
     StatusBar: {
-      overlaysWebView: true,
+      overlaysWebView: false, // false for stable layout (prevents iOS bounce)
       style: "DARK",
-      backgroundColor: "#ffffffff",
+      backgroundColor: "#0a0a0a",
     },
   },
 };
