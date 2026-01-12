@@ -101,8 +101,8 @@ export function BottomNav() {
                   className={cn(
                     "flex flex-col items-center gap-1 px-4 py-2 rounded-2xl transition-all min-w-[64px]",
                     isActive(item.href)
-                      ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <span className="text-xl">{item.icon}</span>

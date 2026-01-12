@@ -119,6 +119,7 @@ export default function KaiPreferencesPage() {
     useState<InvestorProfile | null>(null);
   const [editingProfile, setEditingProfile] =
     useState<EnrichedInvestorProfile | null>(null);
+  const [isManualSetup, setIsManualSetup] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [resettingIdentity, setResettingIdentity] = useState(false);
@@ -259,6 +260,24 @@ export default function KaiPreferencesPage() {
     [autoDetectMatches]
   );
 
+  const handleManualSetup = useCallback(() => {
+    setIsManualSetup(true);
+    setEditingProfile({
+      id: 0, // Placeholder
+      name: "Manual Profile",
+      firm: "Self-Managed",
+      profile_version: 2,
+      source: "manual",
+      last_edited_at: new Date().toISOString(),
+      confirmed_investor_id: 0,
+      risk_tolerance: "Balanced",
+      investment_style: [],
+      top_holdings: [],
+      sector_exposure: {},
+    } as any);
+    setIsEditing(true);
+  }, []);
+
   const handleConfirmProfile = useCallback(async () => {
     if (!selectedProfile || !editingProfile || !vaultKey || !vaultOwnerToken) {
       toast.error("Missing required data");
@@ -318,10 +337,9 @@ export default function KaiPreferencesPage() {
       (selectedProfile as any)?.id ??
       (editingProfile as any).id ??
       editingProfile.confirmed_investor_id;
-    if (!investorId) {
-      toast.error("Missing investor id. Please re-select your VIP profile.");
-      return;
-    }
+
+    // Allow saving Kai Prefs even if no investor ID (Manual Mode)
+    const isManual = !investorId || investorId === 0;
 
     setSavingAll(true);
     try {
@@ -355,35 +373,44 @@ export default function KaiPreferencesPage() {
         });
       }
 
-      // 2) Save investor profile metrics (encrypted blob)
-      const encrypted = await HushhVault.encryptData({
-        keyHex: vaultKey,
-        plaintext: JSON.stringify({
-          ...editingProfile,
-          profile_version: 2,
-          last_edited_at: new Date().toISOString(),
-          confirmed_investor_id: investorId,
-        }),
-      });
+      // 2) Save investor profile metrics (encrypted blob) - ONLY if linked to VIP
+      if (!isManual) {
+        const encrypted = await HushhVault.encryptData({
+          keyHex: vaultKey,
+          plaintext: JSON.stringify({
+            ...editingProfile,
+            profile_version: 2,
+            last_edited_at: new Date().toISOString(),
+            confirmed_investor_id: investorId,
+          }),
+        });
 
-      const result = await IdentityService.confirmIdentity(
-        investorId,
-        {
-          ciphertext: encrypted.ciphertext,
-          iv: encrypted.iv,
-          tag: encrypted.tag,
-        },
-        vaultOwnerToken
-      );
+        const result = await IdentityService.confirmIdentity(
+          investorId,
+          {
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            tag: encrypted.tag,
+          },
+          vaultOwnerToken
+        );
 
-      if (!result.success) {
-        toast.error(result.message || "Failed to save preferences");
-        return;
+        if (!result.success) {
+          toast.error(result.message || "Failed to save preferences");
+          return;
+        }
+        setProfile(editingProfile as InvestorProfile);
+      } else {
+        // Manual mode: we don't save the blob to DB, but we keep it in local state
+        // or we could warn the user. For now, let's just toast.
+        toast.info(
+          "Runtime preferences saved. Link a VIP to save portfolio DNA."
+        );
       }
 
-      setProfile(editingProfile as InvestorProfile);
       toast.success("Preferences saved");
       setIsEditing(false);
+      setIsManualSetup(false);
     } catch (e: any) {
       console.error("[KaiPreferences] Save error:", e);
       toast.error(e?.message || "Failed to save preferences");
@@ -436,7 +463,12 @@ export default function KaiPreferencesPage() {
   if (!isVaultUnlocked) {
     return (
       <div className="p-6 max-w-lg mx-auto">
-        <Card variant="none" effect="glass" className="border-0">
+        <Card
+          variant="none"
+          effect="glass"
+          showRipple={false}
+          className="border-0"
+        >
           <CardContent className="flex flex-col items-center justify-center py-8">
             <Shield className="w-10 h-10 text-amber-500 mb-3" />
             <p className="text-sm text-muted-foreground">
@@ -451,7 +483,12 @@ export default function KaiPreferencesPage() {
   if (!canLoad) {
     return (
       <div className="p-6 max-w-lg mx-auto">
-        <Card variant="none" effect="glass" className="border-0">
+        <Card
+          variant="none"
+          effect="glass"
+          showRipple={false}
+          className="border-0"
+        >
           <CardContent className="py-8 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
               Vault is unlocked, but key/token is not available in this tab.
@@ -465,9 +502,29 @@ export default function KaiPreferencesPage() {
     );
   }
 
-  // Derived dashboard visuals (view-mode)
+  // Derived visual state (Live Preview during edit)
+  const displayProfile = useMemo(() => {
+    return isEditing && editingProfile ? editingProfile : profile;
+  }, [isEditing, editingProfile, profile]);
+
+  const displayKaiPrefs = useMemo(() => {
+    if (isEditing) {
+      return {
+        riskProfile: draftRiskProfile || kaiPrefs.riskProfile,
+        processingMode: draftProcessingMode || kaiPrefs.processingMode,
+      };
+    }
+    return kaiPrefs;
+  }, [
+    isEditing,
+    draftRiskProfile,
+    draftProcessingMode,
+    kaiPrefs.riskProfile,
+    kaiPrefs.processingMode,
+  ]);
+
   const holdingsChartData = useMemo(() => {
-    const list = (profile as any)?.top_holdings;
+    const list = (displayProfile as any)?.top_holdings || [];
     if (!Array.isArray(list)) return [];
     return list
       .map((h: any) => ({
@@ -476,16 +533,16 @@ export default function KaiPreferencesPage() {
       }))
       .filter((r: any) => r.ticker && Number.isFinite(r.value) && r.value > 0)
       .slice(0, 10);
-  }, [profile]);
+  }, [displayProfile]);
 
   const sectorChartData = useMemo(() => {
-    const obj = (profile as any)?.sector_exposure;
+    const obj = (displayProfile as any)?.sector_exposure;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
     return Object.entries(obj as Record<string, any>)
       .map(([name, v]) => ({ name, value: typeof v === "number" ? v : 0 }))
       .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
       .slice(0, 10);
-  }, [profile]);
+  }, [displayProfile]);
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
@@ -493,15 +550,22 @@ export default function KaiPreferencesPage() {
         <h1 className="text-xl font-bold">Preferences</h1>
 
         <div className="ml-auto flex items-center gap-2">
-          {profile && (
+          {(profile || isManualSetup) && (
             <Button
               variant={isEditing ? "none" : "gradient"}
               effect="glass"
               size="sm"
               showRipple
               onClick={() => {
+                if (isManualSetup) {
+                  setIsManualSetup(false);
+                  setEditingProfile(null);
+                  setIsEditing(false);
+                  return;
+                }
                 if (!profile) return;
                 if (!isEditing) {
+                  // Enter Edit Mode
                   setEditingProfile({
                     ...(profile as any),
                     profile_version: (profile as any).profile_version || 2,
@@ -511,14 +575,16 @@ export default function KaiPreferencesPage() {
                   });
                   setIsEditing(true);
                 } else {
+                  // Cancel Edit Mode
                   setIsEditing(false);
+                  setEditingProfile(null);
                 }
               }}
             >
               {isEditing ? (
                 <>
                   <X className="w-4 h-4 mr-2" />
-                  View
+                  Cancel
                 </>
               ) : (
                 <>
@@ -563,16 +629,16 @@ export default function KaiPreferencesPage() {
                   <div className="text-xs text-muted-foreground">
                     VIP profile (baseline)
                   </div>
-                  {profile ? (
+                  {displayProfile ? (
                     <>
                       <div className="text-base font-semibold">
-                        {profile.name}
+                        {displayProfile.name}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {(profile as any).title
-                          ? `${(profile as any).title} • `
+                        {(displayProfile as any).title
+                          ? `${(displayProfile as any).title} • `
                           : ""}
-                        {profile.firm || "—"}
+                        {displayProfile.firm || "—"}
                       </div>
                     </>
                   ) : (
@@ -593,7 +659,7 @@ export default function KaiPreferencesPage() {
                     onClick={() => setShowProfileSearch(true)}
                   >
                     <Search className="w-4 h-4 mr-2" />
-                    {profile ? "Change VIP" : "Select VIP"}
+                    {profile ? "Change" : "Select VIP"}
                   </Button>
                   <TooltipProvider>
                     <Tooltip>
@@ -602,7 +668,12 @@ export default function KaiPreferencesPage() {
                           variant="none"
                           effect="glass"
                           size="icon-sm"
-                          onClick={handleResetIdentity}
+                          onClick={() => {
+                            handleResetIdentity();
+                            setIsManualSetup(false);
+                            setEditingProfile(null);
+                            setIsEditing(false);
+                          }}
                           disabled={!profile || resettingIdentity}
                           className="text-red-500"
                           showRipple
@@ -625,241 +696,142 @@ export default function KaiPreferencesPage() {
                 </div>
               </div>
 
-              {/* Preferences dashboard */}
-              {profile && !isEditing && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Risk tolerance
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).risk_tolerance || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Time horizon
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).time_horizon || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        Turnover
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).portfolio_turnover || "—"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-[10px] text-muted-foreground">
-                        AUM
-                      </div>
-                      <div className="text-sm font-semibold">
-                        {(profile as any).aum_billions != null
-                          ? `$${(profile as any).aum_billions}B`
-                          : "—"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    {holdingsChartData.length > 0 && (
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">
-                          Holdings snapshot
-                        </div>
-                        <div className="h-40">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={holdingsChartData}>
-                              <XAxis
-                                dataKey="ticker"
-                                fontSize={10}
-                                tickLine={false}
-                                axisLine={false}
-                              />
-                              <YAxis hide />
-                              <RechartsTooltip
-                                contentStyle={{
-                                  background: "rgba(0,0,0,0.8)",
-                                  border: "none",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                }}
-                                itemStyle={{ color: "#fff" }}
-                              />
-                              <Bar
-                                dataKey="value"
-                                radius={[6, 6, 6, 6]}
-                                fill="hsl(var(--primary))"
-                                opacity={0.7}
-                              />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-
-                    {sectorChartData.length > 0 && (
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                        <div className="text-[10px] text-muted-foreground mb-2">
-                          Sector donut
-                        </div>
-                        <div className="h-44">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <RechartsTooltip
-                                contentStyle={{
-                                  background: "rgba(0,0,0,0.8)",
-                                  border: "none",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                }}
-                                itemStyle={{ color: "#fff" }}
-                              />
-                              <Pie
-                                data={sectorChartData}
-                                dataKey="value"
-                                nameKey="name"
-                                innerRadius={42}
-                                outerRadius={72}
-                                paddingAngle={2}
-                              >
-                                {sectorChartData.map((_, i) => (
-                                  <Cell
-                                    key={i}
-                                    fill="hsl(var(--primary))"
-                                    fillOpacity={0.25 + (i % 6) * 0.1}
-                                  />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      Kai runtime
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">
-                        risk:{kaiPrefs.riskProfile || "—"}
-                      </Badge>
-                      <Badge variant="secondary">
-                        mode:{kaiPrefs.processingMode || "—"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Edit-mode: inline editor */}
-              {isEditing && editingProfile && (
-                <div className="space-y-4">
-                  <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      Kai runtime settings
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">
-                          Risk profile
-                        </div>
-                        <Select
-                          value={draftRiskProfile}
-                          onValueChange={(v: any) => setDraftRiskProfile(v)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="conservative">
-                              conservative
-                            </SelectItem>
-                            <SelectItem value="balanced">balanced</SelectItem>
-                            <SelectItem value="aggressive">
-                              aggressive
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-[10px] text-muted-foreground">
-                          Processing
-                        </div>
-                        <Select
-                          value={draftProcessingMode}
-                          onValueChange={(v: any) => setDraftProcessingMode(v)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="hybrid">hybrid</SelectItem>
-                            <SelectItem value="on_device">on_device</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <InvestorProfileEditor
-                    value={editingProfile}
-                    onChange={setEditingProfile}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {showProfileSearch && (
-            <Card variant="none" effect="glass" className="border-0">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      VIP selector
-                    </div>
-                    <div className="text-sm font-semibold">
-                      Choose a public baseline profile
-                    </div>
-                  </div>
-                  <Button
-                    variant="none"
-                    effect="glass"
-                    size="icon-sm"
-                    showRipple
-                    onClick={() => {
-                      setShowProfileSearch(false);
-                      setSelectedProfile(null);
-                      setEditingProfile(null);
-                      setSearchResults([]);
-                      setSearchQuery("");
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                {autoDetectMatches.length > 0 &&
-                  !selectedProfile &&
-                  !editingProfile && (
-                    <div className="space-y-2">
+              {showProfileSearch && (
+                <div className="mt-4 rounded-xl border border-border/50 bg-background/50 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
                       <div className="text-xs text-muted-foreground">
-                        Suggested matches
+                        VIP selector
                       </div>
-                      <div className="space-y-1">
-                        {autoDetectMatches.slice(0, 4).map((m) => (
+                      <div className="text-sm font-semibold">
+                        Choose a public baseline profile
+                      </div>
+                    </div>
+                    <Button
+                      variant="none"
+                      effect="glass"
+                      size="icon-sm"
+                      showRipple
+                      onClick={() => {
+                        setShowProfileSearch(false);
+                        setSelectedProfile(null);
+                        setEditingProfile(null);
+                        setSearchResults([]);
+                        setSearchQuery("");
+                      }}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {autoDetectMatches.length > 0 &&
+                    !selectedProfile &&
+                    !editingProfile && (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Suggested matches
+                        </div>
+                        <div className="space-y-1">
+                          {autoDetectMatches.slice(0, 4).map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => handleSelectProfile(m)}
+                              disabled={loadingProfile}
+                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm"
+                            >
+                              <div className="font-medium">{m.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {m.firm || "—"}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {selectedProfile && editingProfile ? (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
+                        This will copy the public VIP profile into your
+                        encrypted vault. You can edit any fields before
+                        confirming.
+                      </div>
+                      <InvestorProfileEditor
+                        value={editingProfile}
+                        onChange={setEditingProfile}
+                        flat
+                      />
+
+                      <div className="flex gap-2">
+                        <Button
+                          variant="none"
+                          effect="glass"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedProfile(null);
+                            setEditingProfile(null);
+                          }}
+                          disabled={confirming}
+                        >
+                          Back
+                        </Button>
+                        <Button
+                          variant="gradient"
+                          effect="glass"
+                          size="sm"
+                          className="flex-1"
+                          onClick={handleConfirmProfile}
+                          disabled={confirming}
+                          showRipple
+                        >
+                          {confirming ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4 mr-2" />
+                          )}
+                          Confirm
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
+                        <div className="flex items-center gap-3 flex-1 px-4">
+                          <Search className="h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search investor (e.g. Warren Buffett)"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) =>
+                              e.key === "Enter" && handleSearch()
+                            }
+                            className="bg-transparent border-0 outline-none text-base font-black placeholder:text-muted-foreground/50 w-full"
+                          />
+                        </div>
+                        <Button
+                          variant="gradient"
+                          effect="glass"
+                          size="sm"
+                          onClick={handleSearch}
+                          disabled={searching}
+                          className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
+                        >
+                          {searching ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "SEARCH"
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="space-y-1 max-h-56 overflow-y-auto">
+                        {searchResults.map((m) => (
                           <button
                             key={m.id}
                             onClick={() => handleSelectProfile(m)}
                             disabled={loadingProfile}
-                            className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
+                            className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm"
                           >
                             <div className="font-medium">{m.name}</div>
                             <div className="text-xs text-muted-foreground">
@@ -868,101 +840,118 @@ export default function KaiPreferencesPage() {
                           </button>
                         ))}
                       </div>
+
+                      <div className="text-xs text-muted-foreground">
+                        Tip: pick the closest match, then fine-tune in Edit
+                        mode.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!profile && !isEditing && !showProfileSearch && (
+                <div className="mt-4">
+                  <Button
+                    variant="none"
+                    effect="glass"
+                    size="sm"
+                    showRipple
+                    onClick={handleManualSetup}
+                    className="w-full border border-border/50 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Manual Setup
+                  </Button>
+                </div>
+              )}
+
+              {/* Preferences Editor (Always visible) */}
+              {displayProfile && (
+                <div className="space-y-4 pt-4 animate-in fade-in duration-500">
+                  {/* Kai Runtime Settings */}
+                  {isEditing ? (
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        Kai runtime settings
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Risk profile
+                          </div>
+                          <Select
+                            value={draftRiskProfile}
+                            onValueChange={(v: any) => setDraftRiskProfile(v)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="conservative">
+                                conservative
+                              </SelectItem>
+                              <SelectItem value="balanced">balanced</SelectItem>
+                              <SelectItem value="aggressive">
+                                aggressive
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Processing
+                          </div>
+                          <Select
+                            value={draftProcessingMode}
+                            onValueChange={(v: any) =>
+                              setDraftProcessingMode(v)
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="hybrid">hybrid</SelectItem>
+                              <SelectItem value="on_device">
+                                on_device
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+                      <div className="text-xs text-muted-foreground mb-2">
+                        Kai runtime
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          risk:{displayKaiPrefs.riskProfile || "—"}
+                        </Badge>
+                        <Badge variant="secondary">
+                          mode:{displayKaiPrefs.processingMode || "—"}
+                        </Badge>
+                      </div>
                     </div>
                   )}
 
-                {selectedProfile && editingProfile ? (
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
-                      This will copy the public VIP profile into your encrypted
-                      vault. You can edit any fields before confirming.
-                    </div>
+                  {/* Main Profile Editor (Read-only or Editable) */}
+                  <div className={isEditing ? "opacity-100" : "opacity-90"}>
                     <InvestorProfileEditor
-                      value={editingProfile}
-                      onChange={setEditingProfile}
+                      value={displayProfile}
+                      onChange={
+                        isEditing ? setEditingProfile : (v) => undefined
+                      }
+                      flat
+                      readOnly={!isEditing}
                     />
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="none"
-                        effect="glass"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedProfile(null);
-                          setEditingProfile(null);
-                        }}
-                        disabled={confirming}
-                      >
-                        Back
-                      </Button>
-                      <Button
-                        variant="gradient"
-                        effect="glass"
-                        size="sm"
-                        className="flex-1"
-                        onClick={handleConfirmProfile}
-                        disabled={confirming}
-                        showRipple
-                      >
-                        {confirming ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Check className="w-4 h-4 mr-2" />
-                        )}
-                        Confirm
-                      </Button>
-                    </div>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Search investor (e.g. Warren Buffett)"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                        className="h-9 text-sm"
-                      />
-                      <Button
-                        variant="gradient"
-                        effect="glass"
-                        size="sm"
-                        onClick={handleSearch}
-                        disabled={searching}
-                      >
-                        {searching ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Search className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="space-y-1 max-h-56 overflow-y-auto">
-                      {searchResults.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => handleSelectProfile(m)}
-                          disabled={loadingProfile}
-                          className="w-full p-2 rounded-lg glass-interactive text-left text-sm hover:bg-primary/5"
-                        >
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {m.firm || "—"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="text-xs text-muted-foreground">
-                      Tip: pick the closest match, then fine-tune in Edit mode.
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
