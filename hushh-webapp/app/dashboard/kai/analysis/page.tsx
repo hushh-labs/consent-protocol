@@ -24,16 +24,15 @@ import {
   AlertTriangle,
   Info,
   TrendingUp,
-  Activity,
-  ShieldCheck,
   Zap,
-  Terminal,
   Cpu,
   BarChart3,
   ArrowRight,
   Loader2,
   TrendingDown,
   Scale,
+  ShieldCheck,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -222,15 +221,19 @@ export default function KaiAnalysis() {
         }
       }
 
-      setInputsUsed([
-        `risk:${riskProfile}`,
-        `mode:${processingMode}`,
-        decryptedContext?.risk_tolerance ? `profile_risk:${decryptedContext.risk_tolerance}` : "",
-        Array.isArray(decryptedContext?.investment_style) &&
-        decryptedContext.investment_style.length
-          ? `style:${decryptedContext.investment_style.join("/")}`
-          : "",
-      ].filter(Boolean));
+      setInputsUsed(
+        [
+          `risk:${riskProfile}`,
+          `mode:${processingMode}`,
+          decryptedContext?.risk_tolerance
+            ? `profile_risk:${decryptedContext.risk_tolerance}`
+            : "",
+          Array.isArray(decryptedContext?.investment_style) &&
+          decryptedContext.investment_style.length
+            ? `style:${decryptedContext.investment_style.join("/")}`
+            : "",
+        ].filter(Boolean)
+      );
 
       // 5. Call Fundamental Agent with Decrypted Context
       const analysisResponse = await analyzeFundamental({
@@ -279,11 +282,10 @@ export default function KaiAnalysis() {
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
           <div className="space-y-1 text-center md:text-left">
             <h1 className="text-3xl font-black tracking-tighter flex items-center justify-center md:justify-start gap-3">
-              <Activity className="h-8 w-8 text-primary animate-pulse" />
-              KAI <span className="text-primary/80">TERMINAL</span>
+              KAI <span className="text-primary/80"></span>
             </h1>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/80">
-              Institutional Grade Fundamental Engine
+              Fundamental Engine
             </p>
           </div>
 
@@ -322,12 +324,22 @@ export default function KaiAnalysis() {
                 disabled={!ticker.trim() || isAnalyzing}
                 className="rounded-lg h-10 px-6 font-black text-[10px] uppercase tracking-[0.2em] shadow-lg"
               >
-                {isAnalyzing ? (
-                  <HushhLoader variant="compact" />
-                ) : (
-                  "ANALYZE"
-                )}
+                {isAnalyzing ? <HushhLoader variant="compact" /> : "ANALYZE"}
               </Button>
+            </div>
+            {/* Quick Actions (Persisted) */}
+            <div className="flex gap-2 mt-2 justify-center md:justify-end">
+              {QUICK_TICKERS.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => handleSubmit(undefined, t)}
+                  disabled={isAnalyzing}
+                  className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors border border-border/40 hover:border-primary/40 px-3 py-1 rounded-full bg-background/20 disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  {t}
+                </button>
+              ))}
             </div>
           </form>
         </header>
@@ -733,43 +745,12 @@ export default function KaiAnalysis() {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-center space-y-12 animate-in fade-in duration-1000">
-            {/* Terminal Quick Start */}
-            <div className="relative group">
-              <div className="absolute inset-0 bg-primary/20 blur-3xl opacity-20 rounded-full group-hover:opacity-30 transition-opacity" />
-              <div className="h-24 w-24 glass rounded-4xl flex items-center justify-center border border-border bg-background/50 backdrop-blur-md shadow-2xl relative z-10 mx-auto">
-                <Terminal className="h-10 w-10 text-primary" />
-              </div>
-            </div>
-
-            <div className="space-y-2 max-w-md mx-auto">
-              <h3 className="text-2xl font-black tracking-tight">
-                Command Center Ready
-              </h3>
+            <div className="space-y-2 max-w-md mx-auto text-center">
               <p className="text-sm font-medium text-muted-foreground/80 leading-relaxed">
                 Initialize analysis on any US equity. The engine will decrypt
                 your investor profile locally and securely compute a
                 personalized fit score.
               </p>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl">
-              {QUICK_TICKERS.map((t) => (
-                <Button
-                  key={t}
-                  variant="metallic"
-                  effect="glass"
-                  showRipple
-                  onClick={() => handleSubmit(undefined, t)}
-                  className="h-16 flex flex-col items-center justify-center gap-1 rounded-2xl border border-border/50 hover:border-primary/50 transition-colors"
-                >
-                  <span className="text-lg font-black tracking-tighter">
-                    {t}
-                  </span>
-                  <span className="text-[9px] font-bold uppercase text-muted-foreground">
-                    Quick Scan
-                  </span>
-                </Button>
-              ))}
             </div>
 
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">

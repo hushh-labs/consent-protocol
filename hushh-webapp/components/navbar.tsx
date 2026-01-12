@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bell, User, Search } from "lucide-react";
+import { LayoutDashboard, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiService } from "@/lib/services/api-service";
 
@@ -112,7 +112,7 @@ export const Navbar = () => {
     {
       label: "Agent Nav",
       href: "/agent-nav",
-      icon: Search,
+      icon: Mic,
     },
   ];
 
