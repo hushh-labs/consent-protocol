@@ -333,7 +333,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 <Button
                   variant="none"
                   effect="glass"
-                  className="flex-1 text-white order-1 sm:order-2"
+                  className="flex-1 order-1 sm:order-2"
                   onClick={handleUnlockPassphrase}
                 >
                   Unlock
