@@ -27,7 +27,13 @@ import { App } from "@capacitor/app";
 import { ExitDialog } from "@/components/exit-dialog";
 
 // Level 1 root paths (exit prompt on back button)
-const LEVEL_1_PATHS = ["/", "/dashboard", "/consents", "/profile", "/agent-nav"];
+const LEVEL_1_PATHS = [
+  "/",
+  "/dashboard",
+  "/consents",
+  "/profile",
+  "/agent-nav",
+];
 
 interface NavigationContextType {
   /** Current path */
@@ -56,30 +62,24 @@ export function NavigationProvider({
   // Use ref to avoid stale closure issues with the back button listener
   const handleBackRef = useRef<() => void>(() => {});
 
-  // Log on mount
-  useEffect(() => {
-    console.log("[Navigation] NavigationProvider mounted");
-    console.log("[Navigation] Platform:", Capacitor.getPlatform());
-    console.log("[Navigation] isNativePlatform:", Capacitor.isNativePlatform());
-  }, []);
-
   // Calculate navigation level and parent path
   const { level, isRootLevel, parentPath } = useMemo(() => {
+    // Normalize pathname (remove trailing slash except for root)
+    const normalizedPath = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+
     // Check if it's a level 1 path
-    if (LEVEL_1_PATHS.includes(pathname)) {
-      console.log(`[Navigation] Path ${pathname} is LEVEL 1 (root)`);
+    if (LEVEL_1_PATHS.includes(normalizedPath)) {
       return { level: 1, isRootLevel: true, parentPath: null };
     }
 
     // Calculate depth from path segments
-    const segments = pathname.split("/").filter(Boolean);
+    const segments = normalizedPath.split("/").filter(Boolean);
     const depth = segments.length;
 
     // Find parent path (go up one level)
     const parent =
       depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard";
 
-    console.log(`[Navigation] Path ${pathname} is LEVEL ${depth}, parent: ${parent}`);
     return {
       level: depth,
       isRootLevel: false,
@@ -89,33 +89,19 @@ export function NavigationProvider({
 
   // Handle back navigation - show exit dialog on BOTH iOS and Android
   const handleBack = useCallback(() => {
-    console.log("[Navigation] ========== handleBack() called ==========");
-    console.log("[Navigation] Current pathname:", pathname);
-    console.log("[Navigation] isRootLevel:", isRootLevel);
-    console.log("[Navigation] parentPath:", parentPath);
-    console.log("[Navigation] isNativePlatform:", Capacitor.isNativePlatform());
-
     if (isRootLevel) {
-      // Level 1: Show exit dialog on native platforms (iOS and Android)
-      if (Capacitor.isNativePlatform()) {
-        console.log("[Navigation] >>> SHOWING EXIT DIALOG <<<");
-        setShowExitDialog(true);
-      } else {
-        console.log("[Navigation] Web platform at root - doing nothing");
-      }
-      // On web, do nothing at root level
+      // Level 1: Show exit dialog with vault lock and app exit
+      setShowExitDialog(true);
       return;
     }
 
     // Level 2+: Navigate to parent
     if (parentPath) {
-      console.log(`[Navigation] Navigating to parent: ${parentPath}`);
       router.push(parentPath);
     } else {
-      console.log("[Navigation] Using router.back()");
       router.back();
     }
-  }, [isRootLevel, parentPath, pathname, router]);
+  }, [isRootLevel, parentPath, router]);
 
   // Update ref whenever handleBack changes
   useEffect(() => {
@@ -128,21 +114,21 @@ export function NavigationProvider({
 
     const setupListener = async () => {
       if (!Capacitor.isNativePlatform()) {
-        console.log("[Navigation] Not native platform, skipping back button listener");
         return;
       }
 
       try {
-        console.log("[Navigation] Registering Android hardware back button listener...");
-        backButtonListener = await App.addListener("backButton", ({ canGoBack }) => {
-          console.log("[Navigation] *** HARDWARE BACK BUTTON PRESSED ***");
-          console.log("[Navigation] canGoBack from Capacitor:", canGoBack);
-          console.log("[Navigation] Calling handleBackRef.current()...");
-          handleBackRef.current();
-        });
-        console.log("[Navigation] Back button listener registered successfully");
+        backButtonListener = await App.addListener(
+          "backButton",
+          ({ canGoBack }) => {
+            handleBackRef.current();
+          }
+        );
       } catch (error) {
-        console.error("[Navigation] Failed to register back button listener:", error);
+        console.error(
+          "[Navigation] Failed to register back button listener:",
+          error
+        );
       }
     };
 
@@ -150,9 +136,55 @@ export function NavigationProvider({
 
     return () => {
       if (backButtonListener) {
-        console.log("[Navigation] Removing back button listener");
         backButtonListener.remove();
       }
+    };
+  }, []); // Empty deps - listener stays stable, ref provides latest handler
+
+  // iOS swipe-back gesture detection
+  // Since @capacitor/app backButton only fires on Android, we implement
+  // edge swipe gesture for iOS to provide the same back navigation experience
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const EDGE_THRESHOLD = 30; // px from left edge to start swipe
+    const SWIPE_THRESHOLD = 100; // min px horizontal distance to trigger back
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      if (touch.clientX < EDGE_THRESHOLD) {
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (touchStartX === 0) return;
+
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+
+      // Horizontal swipe from edge, minimal vertical movement
+      if (deltaX > SWIPE_THRESHOLD && deltaY < 100) {
+        handleBackRef.current();
+      }
+
+      // Reset
+      touchStartX = 0;
+      touchStartY = 0;
+    };
+
+    document.addEventListener("touchstart", handleTouchStart);
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchend", handleTouchEnd);
     };
   }, []); // Empty deps - listener stays stable, ref provides latest handler
 
@@ -172,14 +204,8 @@ export function NavigationProvider({
       {children}
       <ExitDialog
         open={showExitDialog}
-        onOpenChange={(open) => {
-          console.log("[Navigation] ExitDialog onOpenChange:", open);
-          setShowExitDialog(open);
-        }}
-        onConfirm={() => {
-          console.log("[Navigation] Exit app confirmed - calling App.exitApp()");
-          App.exitApp();
-        }}
+        onOpenChange={setShowExitDialog}
+        onConfirm={() => App.exitApp()}
       />
     </NavigationContext.Provider>
   );
