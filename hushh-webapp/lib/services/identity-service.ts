@@ -106,9 +106,11 @@ export class IdentityService {
         profileDataTag: encryptedProfile.tag,
         vaultOwnerToken,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("[IdentityService] Confirm error:", error);
-      return { success: false, message: "Network error" };
+      // Preserve error message for UI layer
+      const errorMessage = error?.message || "Network error";
+      return { success: false, message: errorMessage };
     }
   }
 
@@ -141,9 +143,10 @@ export class IdentityService {
   ): Promise<{ success: boolean }> {
     try {
       return await HushhIdentity.resetIdentity({ vaultOwnerToken });
-    } catch (error) {
+    } catch (error: any) {
       console.error("[IdentityService] Reset error:", error);
-      return { success: false };
+      // Preserve error message for UI layer
+      throw new Error(error?.message || "Failed to reset identity");
     }
   }
 

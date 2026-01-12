@@ -36,6 +36,10 @@ import {
 } from "@/lib/services/identity-service";
 import { HushhVault } from "@/lib/capacitor";
 import { toast } from "sonner";
+import {
+  InvestorProfileEditor,
+  type EnrichedInvestorProfile,
+} from "@/components/kai/investor-profile-editor";
 
 interface InvestorDetectStepProps {
   onConfirm: (investor: InvestorProfile) => void;
@@ -59,6 +63,11 @@ export function InvestorDetectStep({
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [selectedInvestor, setSelectedInvestor] =
     useState<InvestorProfile | null>(null);
+  const [editableProfile, setEditableProfile] =
+    useState<EnrichedInvestorProfile | null>(null);
+  const [selectionSource, setSelectionSource] = useState<
+    "auto_detect" | "search" | null
+  >(null);
   const [showSearch, setShowSearch] = useState(false);
 
   // Auto-detect on mount
@@ -103,10 +112,20 @@ export function InvestorDetectStep({
       const profile = await IdentityService.getInvestorProfile(match.id);
       if (profile) {
         setSelectedInvestor(profile);
+        const isAuto = detectedMatches.some((m) => m.id === match.id);
+        setSelectionSource(isAuto ? "auto_detect" : "search");
+        setEditableProfile({
+          ...profile,
+          profile_version: 2,
+          source: isAuto ? "auto_detect" : "search",
+          last_edited_at: new Date().toISOString(),
+          confirmed_investor_id: profile.id,
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[InvestorDetect] Load profile error:", error);
-      toast.error("Failed to load investor profile");
+      const errorMessage = error?.message || "Failed to load investor profile";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -114,28 +133,29 @@ export function InvestorDetectStep({
 
   // Confirm and encrypt profile to vault
   const handleConfirm = async () => {
-    if (!selectedInvestor || !vaultKey || !vaultOwnerToken) {
+    if (
+      !selectedInvestor ||
+      !editableProfile ||
+      !vaultKey ||
+      !vaultOwnerToken
+    ) {
       toast.error("Missing required data");
       return;
     }
 
     setConfirming(true);
     try {
-      // Encrypt the profile data using vault key
-      const profileJson = JSON.stringify({
-        id: selectedInvestor.id,
-        name: selectedInvestor.name,
-        firm: selectedInvestor.firm,
-        title: selectedInvestor.title,
-        aum_billions: selectedInvestor.aum_billions,
-        investment_style: selectedInvestor.investment_style,
-        risk_tolerance: selectedInvestor.risk_tolerance,
-        time_horizon: selectedInvestor.time_horizon,
-        top_holdings: selectedInvestor.top_holdings,
-        sector_exposure: selectedInvestor.sector_exposure,
-        public_quotes: selectedInvestor.public_quotes,
-        biography: selectedInvestor.biography,
-      });
+      // Encrypt the FULL (possibly edited) profile data using vault key.
+      // Backward compatible: older stored blobs may be partial; new writes are v2.
+      const finalProfile: EnrichedInvestorProfile = {
+        ...editableProfile,
+        profile_version: 2,
+        source: selectionSource || editableProfile.source || "search",
+        last_edited_at: new Date().toISOString(),
+        confirmed_investor_id: selectedInvestor.id,
+      };
+
+      const profileJson = JSON.stringify(finalProfile);
 
       const encrypted = await HushhVault.encryptData({
         keyHex: vaultKey,
@@ -154,14 +174,15 @@ export function InvestorDetectStep({
       );
 
       if (result.success) {
-        toast.success(`Identity confirmed as ${selectedInvestor.name}`);
-        onConfirm(selectedInvestor);
+        toast.success(`Identity confirmed as ${finalProfile.name}`);
+        onConfirm(finalProfile);
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "Failed to confirm identity");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[InvestorDetect] Confirm error:", error);
-      toast.error("Failed to confirm identity");
+      const errorMessage = error?.message || "Failed to confirm identity";
+      toast.error(errorMessage);
     } finally {
       setConfirming(false);
     }
@@ -187,73 +208,23 @@ export function InvestorDetectStep({
     return (
       <Card className="glass-interactive border-0 shadow-2xl">
         <CardHeader className="text-center pb-2">
-          <CardTitle className="text-xl">Confirm Your Profile</CardTitle>
+          <CardTitle className="text-xl">
+            Set up your Investor Mindset
+          </CardTitle>
           <CardDescription>
-            This public information will be encrypted and stored in your vault
+            Kai tailors analysis using these signals. Edit anything — it’s
+            encrypted with your vault key.
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Profile Card */}
-          <div className="p-4 rounded-xl bg-linear-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <User className="w-6 h-6 text-blue-500" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg">{selectedInvestor.name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {selectedInvestor.title} @ {selectedInvestor.firm}
-                </p>
-                {selectedInvestor.aum_billions && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    AUM: ${selectedInvestor.aum_billions}B
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Investment Style */}
-            {selectedInvestor.investment_style && (
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-muted-foreground mb-2">
-                  INVESTMENT STYLE
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {selectedInvestor.investment_style.map((style) => (
-                    <span
-                      key={style}
-                      className="px-2 py-1 text-xs rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                    >
-                      {style}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Top Holdings */}
-            {selectedInvestor.top_holdings &&
-              selectedInvestor.top_holdings.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">
-                    TOP HOLDINGS
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedInvestor.top_holdings
-                      .slice(0, 5)
-                      .map((holding: any) => (
-                        <span
-                          key={holding.ticker}
-                          className="px-2 py-1 text-xs rounded-full bg-zinc-500/20"
-                        >
-                          {holding.ticker}
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              )}
-          </div>
+          {/* Full, editable metrics */}
+          {editableProfile && (
+            <InvestorProfileEditor
+              value={editableProfile}
+              onChange={setEditableProfile}
+            />
+          )}
 
           {/* Privacy Notice */}
           <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs">
@@ -274,7 +245,7 @@ export function InvestorDetectStep({
             disabled={confirming}
           >
             <X className="w-4 h-4 mr-2" />
-            Not Me
+            Back
           </Button>
           <Button
             variant="gradient"
@@ -284,11 +255,11 @@ export function InvestorDetectStep({
             disabled={confirming}
           >
             {confirming ? (
-            <HushhLoader variant="compact" className="mr-2" />
+              <HushhLoader variant="compact" className="mr-2" />
             ) : (
               <Check className="w-4 h-4 mr-2" />
             )}
-            {confirming ? "Encrypting..." : "Confirm & Encrypt"}
+            {confirming ? "Saving..." : "Save Mindset"}
           </Button>
         </CardFooter>
       </Card>
