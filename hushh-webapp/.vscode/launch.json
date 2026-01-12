@@ -8,16 +8,35 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/next/**",
+        "**/.next/**"
+      ],
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
       "env": {
-        "NODE_OPTIONS": "--inspect"
-      }
+        "NODE_OPTIONS": "--inspect",
+        "NODE_ENV": "development"
+      },
+      "outputCapture": "std"
     },
     {
       "name": "Next.js: Client",
       "type": "chrome",
       "request": "launch",
-      "url": "http://localhost:3000"
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack://_N_E/*": "${workspaceFolder}/*",
+        "webpack:///./*": "${workspaceFolder}/*",
+        "webpack:///./~/*": "${workspaceFolder}/node_modules/*"
+      },
+      "skipFiles": ["<node_internals>/**", "**/node_modules/next/**"]
     },
     {
       "name": "Capacitor: Attach to Android WebView",

@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/lib/firebase";
 import { useVault } from "@/lib/vault/vault-context";
-import { Search } from "lucide-react";
+import { Mic } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", public: true },
@@ -81,7 +81,7 @@ export function Navigation() {
                 }`}
                 title="Agent Nav - Universal Agent Search"
               >
-                <Search className="h-4 w-4" />
+                <Mic className="h-4 w-4" />
                 <span className="hidden lg:inline">Agent Nav</span>
               </Button>
             </Link>

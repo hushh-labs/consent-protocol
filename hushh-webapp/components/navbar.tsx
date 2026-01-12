@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bell, User, Search } from "lucide-react";
+import { LayoutDashboard, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiService } from "@/lib/services/api-service";
 
@@ -61,6 +61,25 @@ export const Navbar = () => {
   const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsents();
 
+  // Sticky Dashboard Logic
+  const [dashboardHref, setDashboardHref] = useState("/dashboard");
+
+  useEffect(() => {
+    // 1. Recover last path on mount
+    const saved = localStorage.getItem("lastDashboardPath");
+    if (saved) {
+      setDashboardHref(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 2. Save path whenever we are inside /dashboard
+    if (pathname && pathname.startsWith("/dashboard")) {
+      localStorage.setItem("lastDashboardPath", pathname);
+      setDashboardHref(pathname);
+    }
+  }, [pathname]);
+
   // If not authenticated, ONLY show the theme toggle in a floating pill
   if (!isAuthenticated) {
     return (
@@ -76,7 +95,7 @@ export const Navbar = () => {
   const navigationItems: NavItem[] = [
     {
       label: "Dashboard",
-      href: "/dashboard",
+      href: dashboardHref, // Use sticky href here
       icon: LayoutDashboard,
     },
     {
@@ -93,7 +112,7 @@ export const Navbar = () => {
     {
       label: "Agent Nav",
       href: "/agent-nav",
-      icon: Search,
+      icon: Mic,
     },
   ];
 
