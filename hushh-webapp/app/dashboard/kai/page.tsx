@@ -338,7 +338,8 @@ export default function KaiOnboarding() {
   };
 
   const handleComplete = () => {
-    router.push("/dashboard/kai/analysis");
+    // Show Dashboard in-place instead of redirecting
+    setState((prev) => ({ ...prev, step: "dashboard" }));
   };
 
   // ============================================================================
@@ -435,9 +436,9 @@ function StepIndicator({ currentStep }: { currentStep: Step }) {
           key={s}
           className={`h-1.5 rounded-full transition-all duration-700 ${
             i < current
-              ? "w-8 bg-linear-to-r from-blue-500 to-purple-500"
+              ? "w-8 bg-linear-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]"
               : i === current
-              ? "w-8 bg-linear-to-r from-blue-400/40 to-purple-400/40"
+              ? "w-8 bg-linear-to-r from-[var(--morphy-primary-start)]/40 to-[var(--morphy-primary-end)]/40"
               : "w-2 bg-zinc-200/30 dark:bg-zinc-800/30"
           }`}
         />
@@ -466,7 +467,7 @@ function WelcomeStep({
         <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary">
           <KaiCommitteeIcon className="w-10 h-10" />
         </div>
-        <CardTitle className="text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-purple-600 p-1">
+        <CardTitle className="text-4xl font-black tracking-tighter bg-clip-text text-transparent hushh-gradient-text p-1">
           Your Personal Investment Committee
         </CardTitle>
         <CardDescription className="text-lg mt-2 font-medium">
@@ -544,7 +545,7 @@ function WelcomeStep({
           Back
         </Button>
         <Button
-          className="flex-2 bg-linear-to-r from-blue-600 to-purple-600 hover:opacity-90 transition-opacity"
+          className="flex-2 bg-linear-to-r from-(--morphy-primary-start) to-(--morphy-primary-end) hover:opacity-90 transition-opacity"
           size="lg"
           onClick={onStart}
           disabled={loading}
@@ -735,7 +736,7 @@ function ConsentStep({
         <CardTitle>Permissions</CardTitle>
         <CardDescription>Review what Kai needs to operate.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pb-4">
         <div className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
           <ul className="space-y-3 text-sm">
             <li className="flex items-start gap-2">
@@ -875,7 +876,7 @@ function DashboardStep() {
             </CardHeader>
             <CardContent>
               <div className="text-xs font-mono text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
-                &gt; Awaiting prompt...
+                &gt; Decision Cards
               </div>
             </CardContent>
           </Card>
