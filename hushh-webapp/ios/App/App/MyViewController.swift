@@ -5,7 +5,7 @@ import Capacitor
  * MyViewController - Custom Capacitor Bridge View Controller
  * 
  * This is the iOS equivalent of Android's MainActivity.kt
- * Registers all 6 native Hushh plugins with the Capacitor bridge.
+ * Registers all 8 native Hushh plugins with the Capacitor bridge.
  *
  * Following Capacitor 8 documentation:
  * https://capacitorjs.com/docs/ios/custom-code#register-the-plugin
@@ -16,6 +16,7 @@ class MyViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         
         print("🔌 [MyViewController] Registering all native plugins...")
+        print("🔌 [MyViewController] Bridge available: \(bridge != nil)")
         
         // Register all Hushh native plugins
         // These must match the jsName in each plugin's CAPBridgedPlugin protocol
@@ -36,6 +37,33 @@ class MyViewController: CAPBridgeViewController {
         print("   - Kai (Agent Kai)")
         print("   - HushhSync (Cloud Sync)")
         print("   - HushhSettings (App Settings)")
-        print("   - HushhKeychain (Secure Storage)")
+        print("   - HushhKeystore (Secure Storage)")
+        
+        // Verify plugins are actually accessible by the bridge
+        verifyPluginRegistration()
+    }
+    
+    /// Debug helper to verify plugins are properly registered and accessible
+    private func verifyPluginRegistration() {
+        print("🔍 [MyViewController] Verifying plugin registration...")
+        
+        let pluginNames = [
+            "HushhAuth",
+            "HushhVault", 
+            "HushhConsent",
+            "HushhIdentity",
+            "Kai",
+            "HushhSync",
+            "HushhSettings",
+            "HushhKeychain"  // Note: jsName is HushhKeychain (not HushhKeystore)
+        ]
+        
+        for name in pluginNames {
+            if let plugin = bridge?.plugin(withName: name) {
+                print("   ✅ \(name) found: \(type(of: plugin))")
+            } else {
+                print("   ❌ \(name) NOT FOUND!")
+            }
+        }
     }
 }
