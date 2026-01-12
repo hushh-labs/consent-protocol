@@ -12,6 +12,19 @@ import Capacitor
  */
 class MyViewController: CAPBridgeViewController {
     
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // Disable bounce effect for stable scrolling (fixes iOS layout bounce)
+        if let webView = self.webView {
+            webView.scrollView.bounces = false
+            webView.scrollView.alwaysBounceVertical = false
+            webView.scrollView.alwaysBounceHorizontal = false
+            webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+            print("🔧 [MyViewController] WebView bounce disabled for stable scrolling")
+        }
+    }
+    
     override open func capacitorDidLoad() {
         super.capacitorDidLoad()
         
