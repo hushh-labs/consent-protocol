@@ -13,6 +13,7 @@ import {
   Download,
 } from "lucide-react";
 import { VaultService } from "@/lib/services/vault-service";
+import { downloadTextFile } from "@/lib/utils/native-download";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -453,19 +454,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
               <Button
                 variant="none"
                 className="flex-1 border border-gray-200 dark:border-gray-700"
-                onClick={() => {
-                  const blob = new Blob(
-                    [
-                      `Hushh Recovery Key\n\n${recoveryKey}\n\nStore this file securely. This is the ONLY way to recover your vault if you forget your passphrase.`,
-                    ],
-                    { type: "text/plain" }
-                  );
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = "hushh-recovery-key.txt";
-                  a.click();
-                  URL.revokeObjectURL(url);
+                onClick={async () => {
+                  const content = `Hushh Recovery Key\n\n${recoveryKey}\n\nStore this file securely. This is the ONLY way to recover your vault if you forget your passphrase.`;
+                  await downloadTextFile(content, "hushh-recovery-key.txt");
                 }}
               >
                 <Download className="h-4 w-4 mr-2" />
