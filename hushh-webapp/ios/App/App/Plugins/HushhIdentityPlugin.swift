@@ -33,7 +33,11 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
     private let TAG = "HushhIdentity"
     
     private var defaultBackendUrl: String {
-        return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) ?? "https://consent-protocol-1006304528804.us-central1.run.app"
+        let configUrl = bridge?.config.getPluginConfig(jsName).getString("backendUrl")
+        if configUrl != nil {
+            print("[\(TAG)] 🔧 Using config backendUrl: \(configUrl!)")
+        }
+        return configUrl ?? "https://consent-protocol-1006304528804.us-central1.run.app"
     }
     
     private lazy var urlSession: URLSession = {
@@ -50,6 +54,7 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func autoDetect(_ call: CAPPluginCall) {
         guard let authToken = call.getString("authToken") else {
+            print("[\(TAG)] ❌ autoDetect: Missing authToken")
             call.reject("Missing required parameter: authToken")
             return
         }
@@ -57,7 +62,8 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         let urlStr = "\(backendUrl)/api/identity/auto-detect"
         
-        print("[\(TAG)] Auto-detecting investor...")
+        print("[\(TAG)] 🔍 Auto-detecting investor...")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL: \(urlStr)")
@@ -73,29 +79,44 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Auto-detect error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Auto-detect network error: \(error.localizedDescription)")
                 call.reject("Auto-detect failed: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Auto-detect: Invalid response type")
                 call.reject("Invalid response")
                 return
             }
             
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            // Check HTTP status code
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Auto-detect failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                call.reject("Auto-detect failed: HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
             guard let data = data else {
+                print("❌ [\(self.TAG)] Auto-detect: No data received")
                 call.reject("No data received")
                 return
             }
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("✅ [\(self.TAG)] Auto-detect response received")
+                    print("✅ [\(self.TAG)] Auto-detect response received: \(json.keys)")
                     call.resolve(json)
                 } else {
+                    print("❌ [\(self.TAG)] Auto-detect: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Auto-detect parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -107,12 +128,14 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func searchInvestors(_ call: CAPPluginCall) {
         guard let name = call.getString("name") else {
+            print("[\(TAG)] ❌ searchInvestors: Missing name parameter")
             call.reject("Missing required parameter: name")
             return
         }
         
         let limit = call.getInt("limit") ?? 10
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/investors/search?name=\(name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name)&limit=\(limit)"
         
         guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "\(backendUrl)/api/investors/search?name=\(encodedName)&limit=\(limit)") else {
@@ -120,7 +143,8 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        print("[\(TAG)] Searching investors for: \(name)")
+        print("[\(TAG)] 🔍 Searching investors for: \(name)")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -130,12 +154,30 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Search error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Search network error: \(error.localizedDescription)")
                 call.reject("Search failed: \(error.localizedDescription)")
                 return
             }
             
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Search: Invalid response type")
+                call.reject("Invalid response")
+                return
+            }
+            
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            // Check HTTP status code
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Search failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                call.reject("Search failed: HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
             guard let data = data else {
+                print("❌ [\(self.TAG)] Search: No data received")
                 call.reject("No data received")
                 return
             }
@@ -145,9 +187,11 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("✅ [\(self.TAG)] Found \(jsonArray.count) investors")
                     call.resolve(["investors": jsonArray])
                 } else {
+                    print("❌ [\(self.TAG)] Search: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Search parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -159,18 +203,21 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func getInvestor(_ call: CAPPluginCall) {
         guard let investorId = call.getInt("id") else {
+            print("[\(TAG)] ❌ getInvestor: Missing id parameter")
             call.reject("Missing required parameter: id")
             return
         }
         
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/investors/\(investorId)"
         
-        guard let url = URL(string: "\(backendUrl)/api/investors/\(investorId)") else {
+        guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL")
             return
         }
         
-        print("[\(TAG)] Getting investor \(investorId)")
+        print("[\(TAG)] 📋 Getting investor \(investorId)")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -180,34 +227,48 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Get investor error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Get investor network error: \(error.localizedDescription)")
                 call.reject("Get investor failed: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Get investor: Invalid response type")
                 call.reject("Invalid response")
                 return
             }
             
-            if httpResponse.statusCode == 404 {
-                call.reject("Investor not found")
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            // Check HTTP status code
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Get investor failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                if httpResponse.statusCode == 404 {
+                    call.reject("Investor not found")
+                } else {
+                    call.reject("Get investor failed: HTTP \(httpResponse.statusCode)")
+                }
                 return
             }
             
             guard let data = data else {
+                print("❌ [\(self.TAG)] Get investor: No data received")
                 call.reject("No data received")
                 return
             }
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("✅ [\(self.TAG)] Got investor profile")
+                    print("✅ [\(self.TAG)] Got investor profile: \(json.keys)")
                     call.resolve(json)
                 } else {
+                    print("❌ [\(self.TAG)] Get investor: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Get investor parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -224,18 +285,21 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
               let profileDataCiphertext = call.getString("profileDataCiphertext"),
               let profileDataIv = call.getString("profileDataIv"),
               let profileDataTag = call.getString("profileDataTag") else {
+            print("[\(TAG)] ❌ confirmIdentity: Missing required parameters")
             call.reject("Missing required parameters")
             return
         }
         
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/identity/confirm"
         
-        guard let url = URL(string: "\(backendUrl)/api/identity/confirm") else {
+        guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL")
             return
         }
         
-        print("[\(TAG)] Confirming identity for investor \(investorId)")
+        print("[\(TAG)] ✍️ Confirming identity for investor \(investorId)")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         let body: [String: Any] = [
             "investor_id": investorId,
@@ -252,6 +316,7 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
+            print("❌ [\(self.TAG)] confirmIdentity: Failed to serialize body")
             call.reject("Failed to serialize body")
             return
         }
@@ -260,17 +325,24 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Confirm error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Confirm network error: \(error.localizedDescription)")
                 call.reject("Confirm failed: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Confirm: Invalid response type")
                 call.reject("Invalid response")
                 return
             }
             
-            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Confirm failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                
                 let errorMsg: String
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -279,12 +351,12 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     errorMsg = "Confirm failed: HTTP \(httpResponse.statusCode)"
                 }
-                print("❌ [\(self.TAG)] Backend error: \(errorMsg)")
                 call.reject(errorMsg)
                 return
             }
             
             guard let data = data else {
+                print("❌ [\(self.TAG)] Confirm: No data received")
                 call.reject("No data received")
                 return
             }
@@ -294,10 +366,11 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
                     print("✅ [\(self.TAG)] Identity confirmed!")
                     call.resolve(json)
                 } else {
+                    print("❌ [\(self.TAG)] Confirm: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
-                print("❌ [\(self.TAG)] Failed to parse response: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Confirm parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -310,18 +383,21 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func getIdentityStatus(_ call: CAPPluginCall) {
         guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            print("[\(TAG)] ❌ getIdentityStatus: Missing vaultOwnerToken")
             call.reject("Missing required parameter: vaultOwnerToken")
             return
         }
         
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/identity/status"
         
-        guard let url = URL(string: "\(backendUrl)/api/identity/status") else {
+        guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL")
             return
         }
         
-        print("[\(TAG)] Getting identity status")
+        print("[\(TAG)] 📊 Getting identity status")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -332,23 +408,44 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
+                print("❌ [\(self.TAG)] Get status network error: \(error.localizedDescription)")
                 call.reject("Get status failed: \(error.localizedDescription)")
                 return
             }
             
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Get status: Invalid response type")
+                call.reject("Invalid response")
+                return
+            }
+            
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            // Check HTTP status code
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Get status failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                call.reject("Get status failed: HTTP \(httpResponse.statusCode)")
+                return
+            }
+            
             guard let data = data else {
+                print("❌ [\(self.TAG)] Get status: No data received")
                 call.reject("No data received")
                 return
             }
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("✅ [\(self.TAG)] Got identity status")
+                    print("✅ [\(self.TAG)] Got identity status: \(json.keys)")
                     call.resolve(json)
                 } else {
+                    print("❌ [\(self.TAG)] Get status: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Get status parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -361,18 +458,21 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func getEncryptedProfile(_ call: CAPPluginCall) {
         guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            print("[\(TAG)] ❌ getEncryptedProfile: Missing vaultOwnerToken")
             call.reject("Missing required parameter: vaultOwnerToken")
             return
         }
         
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/identity/profile"
         
-        guard let url = URL(string: "\(backendUrl)/api/identity/profile") else {
+        guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL")
             return
         }
         
-        print("[\(TAG)] Getting encrypted profile")
+        print("[\(TAG)] 🔐 Getting encrypted profile")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         let body: [String: Any] = ["consent_token": vaultOwnerToken]
         
@@ -384,6 +484,7 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
+            print("❌ [\(self.TAG)] getEncryptedProfile: Failed to serialize body")
             call.reject("Failed to serialize body")
             return
         }
@@ -392,39 +493,48 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Get encrypted profile error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Get encrypted profile network error: \(error.localizedDescription)")
                 call.reject("Get profile failed: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Get encrypted profile: Invalid response type")
                 call.reject("Invalid response")
                 return
             }
             
-            if httpResponse.statusCode == 404 {
-                call.reject("Profile not found")
-                return
-            }
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
             
-            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-                call.reject("Get profile failed: HTTP \(httpResponse.statusCode)")
+            // Check HTTP status code
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Get encrypted profile failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                if httpResponse.statusCode == 404 {
+                    call.reject("Profile not found")
+                } else {
+                    call.reject("Get profile failed: HTTP \(httpResponse.statusCode)")
+                }
                 return
             }
             
             guard let data = data else {
+                print("❌ [\(self.TAG)] Get encrypted profile: No data received")
                 call.reject("No data received")
                 return
             }
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("✅ [\(self.TAG)] Got encrypted profile")
+                    print("✅ [\(self.TAG)] Got encrypted profile: \(json.keys)")
                     call.resolve(json)
                 } else {
+                    print("❌ [\(self.TAG)] Get encrypted profile: Invalid JSON format")
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Get encrypted profile parse error: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -437,18 +547,21 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func resetIdentity(_ call: CAPPluginCall) {
         guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            print("[\(TAG)] ❌ resetIdentity: Missing vaultOwnerToken")
             call.reject("Missing required parameter: vaultOwnerToken")
             return
         }
         
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        let urlStr = "\(backendUrl)/api/identity/profile"
         
-        guard let url = URL(string: "\(backendUrl)/api/identity/profile") else {
+        guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL")
             return
         }
         
-        print("[\(TAG)] Resetting identity")
+        print("[\(TAG)] 🗑️ Resetting identity")
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -459,17 +572,24 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
-                print("❌ [\(self.TAG)] Reset error: \(error.localizedDescription)")
+                print("❌ [\(self.TAG)] Reset network error: \(error.localizedDescription)")
                 call.reject("Reset failed: \(error.localizedDescription)")
                 return
             }
             
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ [\(self.TAG)] Reset: Invalid response type")
                 call.reject("Invalid response")
                 return
             }
             
-            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+            print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                print("❌ [\(self.TAG)] Reset failed: HTTP \(httpResponse.statusCode) | body: \(truncatedBody)")
+                
                 let errorMsg: String
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -478,7 +598,6 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     errorMsg = "Reset failed: HTTP \(httpResponse.statusCode)"
                 }
-                print("❌ [\(self.TAG)] Backend error: \(errorMsg)")
                 call.reject(errorMsg)
                 return
             }
