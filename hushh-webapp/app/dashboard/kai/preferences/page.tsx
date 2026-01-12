@@ -195,7 +195,7 @@ export default function KaiPreferencesPage() {
       );
 
       if (!result.success) {
-        toast.error(result.message);
+        toast.error(result.message || "Failed to confirm profile");
         return;
       }
 
@@ -223,9 +223,10 @@ export default function KaiPreferencesPage() {
       setProfile(null);
       setProfileNotFound(true);
       toast.success("Identity reset");
-    } catch (e) {
+    } catch (e: any) {
       console.error("[KaiPreferences] Reset identity error:", e);
-      toast.error("Failed to reset identity");
+      const errorMessage = e?.message || "Failed to reset identity";
+      toast.error(errorMessage);
     } finally {
       setResettingIdentity(false);
     }
