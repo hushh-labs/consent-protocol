@@ -281,22 +281,17 @@ export default function KaiAnalysis() {
         {/* Terminal Header */}
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
           <div className="space-y-1 text-center md:text-left">
+            <div className="flex justify-center md:justify-start gap-2 mb-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold uppercase tracking-wider">
+                Hushh Technologies
+              </span>
+            </div>
             <h1 className="text-3xl font-black tracking-tighter flex items-center justify-center md:justify-start gap-3">
               KAI <span className="text-primary/80"></span>
             </h1>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/80">
               Fundamental Engine
             </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <Link
-              href="/dashboard/kai/preferences"
-              className="glass-interactive px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold uppercase tracking-wider hover:bg-primary/10 transition-colors border border-border/50"
-            >
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              Preferences
-            </Link>
           </div>
 
           <form
