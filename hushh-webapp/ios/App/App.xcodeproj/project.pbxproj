@@ -20,6 +20,7 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		A2774DC0614D2A490F85042E /* HushhConsentPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D0CE383269D3D6B23A9A02 /* HushhConsentPlugin.swift */; };
+		B8D1F91A2F0E967A009FC3FC /* HushhIdentityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D1F9192F0E967A009FC3FC /* HushhIdentityPlugin.swift */; };
 		D1F9F9122F0E966A009FC3FB /* KaiPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F9F90F2F0E966A009FC3FB /* KaiPlugin.swift */; };
 		E8B31D0870530F4CFA77B50B /* HushhSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695EAEF496545F6564EEC117 /* HushhSettingsPlugin.swift */; };
 		F368A19E68607FCBA9D2DD32 /* HushhSyncPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */; };
@@ -43,6 +44,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		99D0CE383269D3D6B23A9A02 /* HushhConsentPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhConsentPlugin.swift; path = Plugins/HushhConsentPlugin.swift; sourceTree = "<group>"; };
 		9ECA7AA8B6B21BD4F7D2F44F /* HushhKeystorePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhKeystorePlugin.swift; path = Plugins/HushhKeystorePlugin.swift; sourceTree = "<group>"; };
+		B8D1F9192F0E967A009FC3FC /* HushhIdentityPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhIdentityPlugin.swift; path = Plugins/HushhIdentityPlugin.swift; sourceTree = "<group>"; };
 		D1F9F90F2F0E966A009FC3FB /* KaiPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KaiPlugin.swift; path = Plugins/KaiPlugin.swift; sourceTree = "<group>"; };
 		EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhVaultPlugin.swift; path = Plugins/HushhVaultPlugin.swift; sourceTree = "<group>"; };
 		EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhSyncPlugin.swift; path = Plugins/HushhSyncPlugin.swift; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */,
 				695EAEF496545F6564EEC117 /* HushhSettingsPlugin.swift */,
 				9ECA7AA8B6B21BD4F7D2F44F /* HushhKeystorePlugin.swift */,
+				B8D1F9192F0E967A009FC3FC /* HushhIdentityPlugin.swift */,
 			);
 			name = Plugins;
 			sourceTree = "<group>";
@@ -138,8 +141,8 @@
 		504EC2FC1FED79650016851F /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastSwiftUpdateCheck = 0920;
-				LastUpgradeCheck = 0920;
+				LastSwiftUpdateCheck = 920;
+				LastUpgradeCheck = 920;
 				TargetAttributes = {
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
@@ -200,6 +203,7 @@
 				FC968756EFA54153BC098D3D /* HushhVaultPlugin.swift in Sources */,
 				E8B31D0870530F4CFA77B50B /* HushhSettingsPlugin.swift in Sources */,
 				39FF675A1CDE37244E8EAEF2 /* HushhKeystorePlugin.swift in Sources */,
+				B8D1F91A2F0E967A009FC3FC /* HushhIdentityPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +345,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WVDK9JW99C;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -349,7 +354,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.hushh.pda;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hushh.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -363,6 +368,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WVDK9JW99C;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -370,7 +376,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hushh.pda;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hushh.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
