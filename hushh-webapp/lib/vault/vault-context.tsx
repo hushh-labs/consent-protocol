@@ -59,7 +59,8 @@ interface VaultContextType {
 // Context
 // ============================================================================
 
-const VaultContext = createContext<VaultContextType | null>(null);
+// Export context for components that need optional access (e.g., ExitDialog)
+export const VaultContext = createContext<VaultContextType | null>(null);
 
 // ============================================================================
 // Provider
