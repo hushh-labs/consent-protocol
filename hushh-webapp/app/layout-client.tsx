@@ -2,8 +2,6 @@
 
 import { ReactNode } from "react";
 import { useStatusBar } from "@/lib/hooks/use-status-bar";
-import { NavigationProvider } from "@/lib/navigation/navigation-context";
-import { TopAppBar, TopAppBarSpacer } from "@/components/ui/top-app-bar";
 
 interface RootLayoutClientProps {
   children: ReactNode;
@@ -13,6 +11,9 @@ interface RootLayoutClientProps {
 /**
  * Client-side wrapper for body element
  * Enables client-side features in root layout
+ * 
+ * Note: NavigationProvider moved to layout.tsx inside ThemeProvider
+ * to ensure AlertDialog portal has access to theme context.
  */
 export function RootLayoutClient({
   children,
@@ -33,12 +34,7 @@ export function RootLayoutClient({
       {/* Subtle radial glow overlay */}
       <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-1" />
 
-      <NavigationProvider>
-        {/* Top App Bar - Shows back button on sub-pages only */}
-        <TopAppBar />
-        <TopAppBarSpacer />
-        {children}
-      </NavigationProvider>
+      {children}
     </body>
   );
 }

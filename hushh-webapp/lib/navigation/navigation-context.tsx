@@ -9,16 +9,24 @@
  *
  * Back button behavior:
  * - Level 2+ → navigates to parent level
- * - Level 1 → prompts to exit app (Android only)
+ * - Level 1 → prompts to exit app (iOS and Android)
  */
 
-import React, { createContext, useContext, useMemo, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useState,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { App } from "@capacitor/app";
-import { toast } from "sonner";
+import { ExitDialog } from "@/components/exit-dialog";
 
-// Level 1 root paths (no back button or exit prompt)
+// Level 1 root paths (exit prompt on back button)
 const LEVEL_1_PATHS = [
   "/",
   "/dashboard",
@@ -42,11 +50,6 @@ interface NavigationContextType {
 
 const NavigationContext = createContext<NavigationContextType | null>(null);
 
-// ... imports
-import { ExitDialog } from "@/components/exit-dialog";
-
-// ... existing code ...
-
 export function NavigationProvider({
   children,
 }: {
@@ -54,23 +57,28 @@ export function NavigationProvider({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [showExitDialog, setShowExitDialog] = React.useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
-  // ... existing calculation code ...
+  // Use ref to avoid stale closure issues with the back button listener
+  const handleBackRef = useRef<() => void>(() => {});
+
+  // Calculate navigation level and parent path
   const { level, isRootLevel, parentPath } = useMemo(() => {
-    // ... same logic ...
+    // Normalize pathname (remove trailing slash except for root)
+    const normalizedPath = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+
     // Check if it's a level 1 path
-    if (LEVEL_1_PATHS.includes(pathname)) {
+    if (LEVEL_1_PATHS.includes(normalizedPath)) {
       return { level: 1, isRootLevel: true, parentPath: null };
     }
 
     // Calculate depth from path segments
-    const segments = pathname.split("/").filter(Boolean);
+    const segments = normalizedPath.split("/").filter(Boolean);
     const depth = segments.length;
 
     // Find parent path (go up one level)
     const parent =
-      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard"; // Default fallback for orphan routes
+      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard";
 
     return {
       level: depth,
@@ -79,18 +87,11 @@ export function NavigationProvider({
     };
   }, [pathname]);
 
-  // Handle back navigation
-  const handleBack = useCallback(async () => {
+  // Handle back navigation - show exit dialog on BOTH iOS and Android
+  const handleBack = useCallback(() => {
     if (isRootLevel) {
-      // Level 1: Ask to exit app on Android
-      if (
-        Capacitor.isNativePlatform() &&
-        Capacitor.getPlatform() === "android"
-      ) {
-        // Show the Exit Dialog UI instead of a toast
-        setShowExitDialog(true);
-      }
-      // On web or iOS, do nothing at root level
+      // Level 1: Show exit dialog with vault lock and app exit
+      setShowExitDialog(true);
       return;
     }
 
@@ -102,16 +103,32 @@ export function NavigationProvider({
     }
   }, [isRootLevel, parentPath, router]);
 
-  // REGISTER BACK BUTTON LISTENER
-  React.useEffect(() => {
-    // ... same listener ...
-    let backButtonListener: any;
+  // Update ref whenever handleBack changes
+  useEffect(() => {
+    handleBackRef.current = handleBack;
+  }, [handleBack]);
+
+  // Register back button listener ONCE with stable ref
+  useEffect(() => {
+    let backButtonListener: PluginListenerHandle | null = null;
 
     const setupListener = async () => {
-      if (Capacitor.isNativePlatform()) {
-        backButtonListener = await App.addListener("backButton", async () => {
-          handleBack();
-        });
+      if (!Capacitor.isNativePlatform()) {
+        return;
+      }
+
+      try {
+        backButtonListener = await App.addListener(
+          "backButton",
+          ({ canGoBack }) => {
+            handleBackRef.current();
+          }
+        );
+      } catch (error) {
+        console.error(
+          "[Navigation] Failed to register back button listener:",
+          error
+        );
       }
     };
 
@@ -122,7 +139,54 @@ export function NavigationProvider({
         backButtonListener.remove();
       }
     };
-  }, [handleBack]);
+  }, []); // Empty deps - listener stays stable, ref provides latest handler
+
+  // iOS swipe-back gesture detection
+  // Since @capacitor/app backButton only fires on Android, we implement
+  // edge swipe gesture for iOS to provide the same back navigation experience
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const EDGE_THRESHOLD = 30; // px from left edge to start swipe
+    const SWIPE_THRESHOLD = 100; // min px horizontal distance to trigger back
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      if (touch.clientX < EDGE_THRESHOLD) {
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (touchStartX === 0) return;
+
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+
+      // Horizontal swipe from edge, minimal vertical movement
+      if (deltaX > SWIPE_THRESHOLD && deltaY < 100) {
+        handleBackRef.current();
+      }
+
+      // Reset
+      touchStartX = 0;
+      touchStartY = 0;
+    };
+
+    document.addEventListener("touchstart", handleTouchStart);
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []); // Empty deps - listener stays stable, ref provides latest handler
 
   const value = useMemo(
     () => ({

@@ -1,12 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Quicksand, Exo_2, Figtree } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { AuthProvider } from "@/lib/firebase";
-import { VaultProvider } from "@/lib/vault/vault-context";
-import { Navbar } from "@/components/navbar";
-import { Toaster } from "@/components/ui/sonner";
 import { RootLayoutClient } from "./layout-client";
+import { Providers } from "./providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -75,19 +71,7 @@ export default function RootLayout({
       <RootLayoutClient
         fontClasses={`${inter.variable} ${quicksand.variable} ${exo2.variable} ${figtree.variable}`}
       >
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>
-            <VaultProvider>
-              <Navbar />
-              {/* Main Content Area - Padding handled by Smart TopAppBarSpacer */}
-              <div className="pt-0 pb-24 flex-1 flex flex-col relative z-10">
-                {children}
-              </div>
-              {/* Sonner Toast Notifications - high z-index to appear above everything */}
-              <Toaster />
-            </VaultProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <Providers>{children}</Providers>
       </RootLayoutClient>
     </html>
   );
