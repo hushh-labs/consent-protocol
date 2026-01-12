@@ -270,6 +270,20 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             
+            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+                let errorMsg: String
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let detail = json["detail"] as? String ?? json["message"] as? String {
+                    errorMsg = detail
+                } else {
+                    errorMsg = "Confirm failed: HTTP \(httpResponse.statusCode)"
+                }
+                print("❌ [\(self.TAG)] Backend error: \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+            
             guard let data = data else {
                 call.reject("No data received")
                 return
@@ -277,17 +291,13 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
-                        print("✅ [\(self.TAG)] Identity confirmed!")
-                        call.resolve(json)
-                    } else {
-                        let detail = json["detail"] as? String ?? "Unknown error"
-                        call.reject(detail)
-                    }
+                    print("✅ [\(self.TAG)] Identity confirmed!")
+                    call.resolve(json)
                 } else {
                     call.reject("Invalid JSON response")
                 }
             } catch {
+                print("❌ [\(self.TAG)] Failed to parse response: \(error.localizedDescription)")
                 call.reject("Failed to parse response: \(error.localizedDescription)")
             }
         }.resume()
@@ -449,12 +459,41 @@ public class HushhIdentityPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self = self else { return }
             
             if let error = error {
+                print("❌ [\(self.TAG)] Reset error: \(error.localizedDescription)")
                 call.reject("Reset failed: \(error.localizedDescription)")
                 return
             }
             
-            print("✅ [\(self.TAG)] Identity reset")
-            call.resolve(["success": true])
+            guard let httpResponse = response as? HTTPURLResponse else {
+                call.reject("Invalid response")
+                return
+            }
+            
+            guard httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
+                let errorMsg: String
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let detail = json["detail"] as? String ?? json["error"] as? String {
+                    errorMsg = detail
+                } else {
+                    errorMsg = "Reset failed: HTTP \(httpResponse.statusCode)"
+                }
+                print("❌ [\(self.TAG)] Backend error: \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+            
+            // Parse response if available, otherwise return success
+            let result: [String: Any]
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                result = json
+            } else {
+                result = ["success": true]
+            }
+            
+            print("✅ [\(self.TAG)] Identity reset successfully")
+            call.resolve(result)
         }.resume()
     }
 }

@@ -63,21 +63,75 @@ async def analyze_stock_with_gemini(
     # 2. Build Rich Context (Trends + Fundamentals)
     latest_10k = sec_data.get('latest_10k', {})
     
-    # Extract User Context (Personalization)
+    # Extract User Context (Personalization) — tolerant to missing keys (backward compatible).
     user_context = user_context or {}
-    style = user_context.get('investment_style', [])
-    risk = user_context.get('risk_tolerance', 'Balanced')
-    holdings = user_context.get('top_holdings', [])
-    
+
+    def _safe_list(val: Any) -> List[Any]:
+        return val if isinstance(val, list) else []
+
+    def _safe_dict(val: Any) -> Dict[str, Any]:
+        return val if isinstance(val, dict) else {}
+
+    def _tickers_from_holdings(val: Any) -> List[str]:
+        out: List[str] = []
+        for h in _safe_list(val):
+            if isinstance(h, dict):
+                t = h.get("ticker") or h.get("symbol")
+                if isinstance(t, str) and t.strip():
+                    out.append(t.strip().upper())
+        return out
+
+    # Strategy
+    risk = user_context.get("risk_tolerance") or "Balanced"
+    style = _safe_list(user_context.get("investment_style"))
+    time_horizon = user_context.get("time_horizon") or "Unknown"
+    turnover = user_context.get("portfolio_turnover") or "Unknown"
+
+    # Identity / scale
+    firm = user_context.get("firm") or "—"
+    title = user_context.get("title") or "—"
+    investor_type = user_context.get("investor_type") or "—"
+    aum_b = user_context.get("aum_billions")
+
+    # Portfolio footprint
+    holdings = user_context.get("top_holdings")
+    holdings_tickers = _tickers_from_holdings(holdings)
+    sector_exposure = _safe_dict(user_context.get("sector_exposure"))
+    recent_buys = _safe_list(user_context.get("recent_buys"))
+    recent_sells = _safe_list(user_context.get("recent_sells"))
+
+    # Insider
+    is_insider = bool(user_context.get("is_insider"))
+    insider_ticker = user_context.get("insider_company_ticker") or "—"
+
+    # Provenance (optional)
+    last_13f_date = user_context.get("last_13f_date") or "—"
+    last_form4_date = user_context.get("last_form4_date") or "—"
+
     personalization = f"""
     --- INVESTOR PROFILE (AUDIENCE) ---
+    Name: {user_context.get('name', '—')}
+    Firm/Title: {firm} / {title}
+    Investor Type: {investor_type}
     Risk Tolerance: {risk}
-    Investment Style: {style}
-    Current Holdings: {[h.get('ticker') for h in holdings] if holdings else 'None'}
-    
-    INSTRUCTION: Tailor your "Bull Case" and "Bear Case" specifically for this profile.
-    - If Conservative: Heavily penalize high beta/volatility and debt. Focus on capital preservation.
-    - If Aggressive/Growth: Forgive high PE if growth is real. Focus on upside capture.
+    Time Horizon: {time_horizon}
+    Portfolio Turnover: {turnover}
+    AUM (B): {aum_b if aum_b is not None else '—'}
+
+    Investment Style: {style if style else '—'}
+    Current Holdings (tickers): {holdings_tickers if holdings_tickers else '—'}
+    Sector Exposure (if provided): {sector_exposure if sector_exposure else '—'}
+    Recent Buys/Sells: {recent_buys if recent_buys else '—'} / {recent_sells if recent_sells else '—'}
+
+    Insider: {is_insider} (company: {insider_ticker})
+    Data Freshness (optional): last_13F={last_13f_date}, last_Form4={last_form4_date}
+
+    INSTRUCTION: Tailor your \"Bull Case\" and \"Bear Case\" specifically for this profile.
+    - If Conservative: penalize high volatility, leverage, weak FCF conversion; prioritize downside protection.
+    - If Aggressive/Growth: allow higher multiples if durability + growth are supported by SEC numbers; prioritize upside capture.
+    - If Time Horizon is short: emphasize near-term catalysts + downside risk.
+    - If Turnover is low: emphasize moat durability + long-run compounding.
+    - Use sector exposure/holdings to avoid redundant bets and highlight concentration risks.
     """
 
     context = f"""
