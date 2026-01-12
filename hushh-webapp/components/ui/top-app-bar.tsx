@@ -14,6 +14,16 @@ import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigation } from "@/lib/navigation/navigation-context";
 import { Capacitor } from "@capacitor/core";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 interface TopAppBarProps {
   className?: string;
@@ -22,6 +32,7 @@ interface TopAppBarProps {
 export function TopAppBar({ className }: TopAppBarProps) {
   const { isRootLevel, handleBack } = useNavigation();
   const [isNative, setIsNative] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     // Check platform on mount to avoid hydration mismatch
@@ -29,7 +40,7 @@ export function TopAppBar({ className }: TopAppBarProps) {
   }, []);
 
   // Don't show back button on root-level pages
-  if (isRootLevel) {
+  if (pathname === "/") {
     return null;
   }
 
@@ -50,13 +61,45 @@ export function TopAppBar({ className }: TopAppBarProps) {
         className
       )}
     >
-      <button
-        onClick={handleBack}
-        className="p-2 -ml-2 rounded-full hover:bg-muted/50 active:bg-muted/80 transition-colors"
-        aria-label="Go back"
-      >
-        <ArrowLeft className="h-5 w-5" />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleBack}
+          className="p-2 -ml-2 rounded-full hover:bg-muted/50 active:bg-muted/80 transition-colors"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+
+        <Breadcrumb>
+          <BreadcrumbList>
+            {pathname
+              .split("/")
+              .filter(Boolean)
+              .map((segment, index, arr) => {
+                const height = arr.length;
+                const isLast = index === height - 1;
+                const href = `/${arr.slice(0, index + 1).join("/")}`;
+                const label =
+                  segment.charAt(0).toUpperCase() + segment.slice(1);
+
+                return (
+                  <div key={href} className="flex items-center gap-2">
+                    <BreadcrumbItem>
+                      {isLast ? (
+                        <BreadcrumbPage>{label}</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild>
+                          <Link href={href}>{label}</Link>
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                    {!isLast && <BreadcrumbSeparator />}
+                  </div>
+                );
+              })}
+          </BreadcrumbList>
+        </Breadcrumb>
+      </div>
     </div>
   );
 }
@@ -71,7 +114,8 @@ export function TopAppBarSpacer() {
 
   // Root Level: Just clear the status bar (safe area)
   // We use max(env, 32px) to ensure there is always SOME space on mobile
-  if (isRootLevel) {
+  const pathname = usePathname();
+  if (pathname === "/") {
     return (
       <div className="w-full shrink-0 transition-[height] h-[max(env(safe-area-inset-top),32px)]" />
     );

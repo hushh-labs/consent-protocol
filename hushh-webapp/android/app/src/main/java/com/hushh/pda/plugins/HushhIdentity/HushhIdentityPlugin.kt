@@ -284,18 +284,30 @@ class HushhIdentityPlugin : Plugin() {
                 val response = httpClient.newCall(request).execute()
                 val body = response.body?.string() ?: "{}"
                 
-                val json = JSONObject(body)
-                
                 if (!response.isSuccessful) {
-                    val detail = json.optString("detail", "Unknown error")
-                    Log.e(TAG, "❌ [confirmIdentity] Backend error: $detail")
+                    val errorMsg = try {
+                        val json = JSONObject(body)
+                        json.optString("detail", json.optString("message", "Unknown error"))
+                    } catch (e: Exception) {
+                        "Confirm failed: HTTP ${response.code}"
+                    }
+                    Log.e(TAG, "❌ [confirmIdentity] Backend error: $errorMsg")
                     activity.runOnUiThread {
-                        call.reject(detail)
+                        call.reject(errorMsg)
                     }
                     return@Thread
                 }
                 
-                val result = jsonToJSObject(json)
+                val result = try {
+                    val json = JSONObject(body)
+                    jsonToJSObject(json)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ [confirmIdentity] Failed to parse response: ${e.message}")
+                    activity.runOnUiThread {
+                        call.reject("Failed to parse response: ${e.message}")
+                    }
+                    return@Thread
+                }
                 
                 Log.d(TAG, "✅ [confirmIdentity] Identity confirmed!")
                 
@@ -462,13 +474,36 @@ class HushhIdentityPlugin : Plugin() {
                     .build()
                 
                 val response = httpClient.newCall(request).execute()
+                val body = response.body?.string() ?: "{}"
                 
-                Log.d(TAG, "✅ [resetIdentity] Identity reset")
+                if (!response.isSuccessful) {
+                    val errorMsg = try {
+                        val json = JSONObject(body)
+                        json.optString("detail", json.optString("message", "Unknown error"))
+                    } catch (e: Exception) {
+                        "Reset failed: HTTP ${response.code}"
+                    }
+                    Log.e(TAG, "❌ [resetIdentity] Backend error: $errorMsg")
+                    activity.runOnUiThread {
+                        call.reject(errorMsg)
+                    }
+                    return@Thread
+                }
+                
+                // Parse response if available
+                val result = try {
+                    val json = JSONObject(body)
+                    jsonToJSObject(json)
+                } catch (e: Exception) {
+                    JSObject().apply {
+                        put("success", true)
+                    }
+                }
+                
+                Log.d(TAG, "✅ [resetIdentity] Identity reset successfully")
                 
                 activity.runOnUiThread {
-                    call.resolve(JSObject().apply {
-                        put("success", true)
-                    })
+                    call.resolve(result)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [resetIdentity] Error: ${e.message}")
