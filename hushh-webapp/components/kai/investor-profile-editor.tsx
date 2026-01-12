@@ -264,7 +264,7 @@ export function InvestorProfileEditor(props: {
   const [activeTab, setActiveTab] = useState("mindset");
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6 pb-20">
       <Tabs
         defaultValue="mindset"
         value={activeTab}
@@ -298,14 +298,14 @@ export function InvestorProfileEditor(props: {
           </div>
         </div>
 
-        <TabsContent value="mindset" className="space-y-3">
-          <div className="glass-interactive rounded-xl border border-border/50 p-4 space-y-3">
+        <TabsContent value="mindset" className="space-y-4">
+          <div className="glass-interactive rounded-xl border border-border/50 p-5 md:p-6 space-y-5">
             <div className="text-xs text-muted-foreground">
               How Kai will tailor analysis
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-border/50 bg-background/40 p-4">
                 <div className="text-[10px] text-muted-foreground">
                   Risk tolerance
                 </div>
@@ -318,7 +318,7 @@ export function InvestorProfileEditor(props: {
                   className="h-9 text-sm mt-1"
                 />
               </div>
-              <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/40 p-4">
                 <div className="text-[10px] text-muted-foreground">
                   Time horizon
                 </div>
@@ -331,7 +331,7 @@ export function InvestorProfileEditor(props: {
                   className="h-9 text-sm mt-1"
                 />
               </div>
-              <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/40 p-4">
                 <div className="text-[10px] text-muted-foreground">
                   Portfolio turnover
                 </div>
@@ -344,7 +344,7 @@ export function InvestorProfileEditor(props: {
                   className="h-9 text-sm mt-1"
                 />
               </div>
-              <div className="rounded-xl border border-border/50 bg-background/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/40 p-4">
                 <div className="text-[10px] text-muted-foreground">AUM (B)</div>
                 <Input
                   value={safeAum}

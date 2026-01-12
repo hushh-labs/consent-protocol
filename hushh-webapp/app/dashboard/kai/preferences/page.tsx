@@ -119,6 +119,7 @@ export default function KaiPreferencesPage() {
     useState<InvestorProfile | null>(null);
   const [editingProfile, setEditingProfile] =
     useState<EnrichedInvestorProfile | null>(null);
+  const [isManualSetup, setIsManualSetup] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [resettingIdentity, setResettingIdentity] = useState(false);
@@ -259,6 +260,24 @@ export default function KaiPreferencesPage() {
     [autoDetectMatches]
   );
 
+  const handleManualSetup = useCallback(() => {
+    setIsManualSetup(true);
+    setEditingProfile({
+      id: 0, // Placeholder
+      name: "Manual Profile",
+      firm: "Self-Managed",
+      profile_version: 2,
+      source: "manual",
+      last_edited_at: new Date().toISOString(),
+      confirmed_investor_id: 0,
+      risk_tolerance: "Balanced",
+      investment_style: [],
+      top_holdings: [],
+      sector_exposure: {},
+    } as any);
+    setIsEditing(true);
+  }, []);
+
   const handleConfirmProfile = useCallback(async () => {
     if (!selectedProfile || !editingProfile || !vaultKey || !vaultOwnerToken) {
       toast.error("Missing required data");
@@ -318,10 +337,9 @@ export default function KaiPreferencesPage() {
       (selectedProfile as any)?.id ??
       (editingProfile as any).id ??
       editingProfile.confirmed_investor_id;
-    if (!investorId) {
-      toast.error("Missing investor id. Please re-select your VIP profile.");
-      return;
-    }
+
+    // Allow saving Kai Prefs even if no investor ID (Manual Mode)
+    const isManual = !investorId || investorId === 0;
 
     setSavingAll(true);
     try {
@@ -355,35 +373,44 @@ export default function KaiPreferencesPage() {
         });
       }
 
-      // 2) Save investor profile metrics (encrypted blob)
-      const encrypted = await HushhVault.encryptData({
-        keyHex: vaultKey,
-        plaintext: JSON.stringify({
-          ...editingProfile,
-          profile_version: 2,
-          last_edited_at: new Date().toISOString(),
-          confirmed_investor_id: investorId,
-        }),
-      });
+      // 2) Save investor profile metrics (encrypted blob) - ONLY if linked to VIP
+      if (!isManual) {
+        const encrypted = await HushhVault.encryptData({
+          keyHex: vaultKey,
+          plaintext: JSON.stringify({
+            ...editingProfile,
+            profile_version: 2,
+            last_edited_at: new Date().toISOString(),
+            confirmed_investor_id: investorId,
+          }),
+        });
 
-      const result = await IdentityService.confirmIdentity(
-        investorId,
-        {
-          ciphertext: encrypted.ciphertext,
-          iv: encrypted.iv,
-          tag: encrypted.tag,
-        },
-        vaultOwnerToken
-      );
+        const result = await IdentityService.confirmIdentity(
+          investorId,
+          {
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            tag: encrypted.tag,
+          },
+          vaultOwnerToken
+        );
 
-      if (!result.success) {
-        toast.error(result.message || "Failed to save preferences");
-        return;
+        if (!result.success) {
+          toast.error(result.message || "Failed to save preferences");
+          return;
+        }
+        setProfile(editingProfile as InvestorProfile);
+      } else {
+        // Manual mode: we don't save the blob to DB, but we keep it in local state
+        // or we could warn the user. For now, let's just toast.
+        toast.info(
+          "Runtime preferences saved. Link a VIP to save portfolio DNA."
+        );
       }
 
-      setProfile(editingProfile as InvestorProfile);
       toast.success("Preferences saved");
       setIsEditing(false);
+      setIsManualSetup(false);
     } catch (e: any) {
       console.error("[KaiPreferences] Save error:", e);
       toast.error(e?.message || "Failed to save preferences");
@@ -493,13 +520,19 @@ export default function KaiPreferencesPage() {
         <h1 className="text-xl font-bold">Preferences</h1>
 
         <div className="ml-auto flex items-center gap-2">
-          {profile && (
+          {(profile || isManualSetup) && (
             <Button
               variant={isEditing ? "none" : "gradient"}
               effect="glass"
               size="sm"
               showRipple
               onClick={() => {
+                if (isManualSetup) {
+                  setIsManualSetup(false);
+                  setEditingProfile(null);
+                  setIsEditing(false);
+                  return;
+                }
                 if (!profile) return;
                 if (!isEditing) {
                   setEditingProfile({
@@ -602,7 +635,12 @@ export default function KaiPreferencesPage() {
                           variant="none"
                           effect="glass"
                           size="icon-sm"
-                          onClick={handleResetIdentity}
+                          onClick={() => {
+                            handleResetIdentity();
+                            setIsManualSetup(false);
+                            setEditingProfile(null);
+                            setIsEditing(false);
+                          }}
                           disabled={!profile || resettingIdentity}
                           className="text-red-500"
                           showRipple
@@ -624,6 +662,169 @@ export default function KaiPreferencesPage() {
                   </TooltipProvider>
                 </div>
               </div>
+
+              {showProfileSearch && (
+                <div className="mt-4 rounded-xl border border-border/50 bg-background/50 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        VIP selector
+                      </div>
+                      <div className="text-sm font-semibold">
+                        Choose a public baseline profile
+                      </div>
+                    </div>
+                    <Button
+                      variant="none"
+                      effect="glass"
+                      size="icon-sm"
+                      showRipple
+                      onClick={() => {
+                        setShowProfileSearch(false);
+                        setSelectedProfile(null);
+                        setEditingProfile(null);
+                        setSearchResults([]);
+                        setSearchQuery("");
+                      }}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {autoDetectMatches.length > 0 &&
+                    !selectedProfile &&
+                    !editingProfile && (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Suggested matches
+                        </div>
+                        <div className="space-y-1">
+                          {autoDetectMatches.slice(0, 4).map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => handleSelectProfile(m)}
+                              disabled={loadingProfile}
+                              className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
+                            >
+                              <div className="font-medium">{m.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {m.firm || "—"}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {selectedProfile && editingProfile ? (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
+                        This will copy the public VIP profile into your
+                        encrypted vault. You can edit any fields before
+                        confirming.
+                      </div>
+                      <InvestorProfileEditor
+                        value={editingProfile}
+                        onChange={setEditingProfile}
+                      />
+
+                      <div className="flex gap-2">
+                        <Button
+                          variant="none"
+                          effect="glass"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedProfile(null);
+                            setEditingProfile(null);
+                          }}
+                          disabled={confirming}
+                        >
+                          Back
+                        </Button>
+                        <Button
+                          variant="gradient"
+                          effect="glass"
+                          size="sm"
+                          className="flex-1"
+                          onClick={handleConfirmProfile}
+                          disabled={confirming}
+                          showRipple
+                        >
+                          {confirming ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4 mr-2" />
+                          )}
+                          Confirm
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Search investor (e.g. Warren Buffett)"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                          className="h-9 text-sm"
+                        />
+                        <Button
+                          variant="gradient"
+                          effect="glass"
+                          size="sm"
+                          onClick={handleSearch}
+                          disabled={searching}
+                        >
+                          {searching ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Search className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="space-y-1 max-h-56 overflow-y-auto">
+                        {searchResults.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => handleSelectProfile(m)}
+                            disabled={loadingProfile}
+                            className="w-full p-2 rounded-lg glass-interactive text-left text-sm hover:bg-primary/5"
+                          >
+                            <div className="font-medium">{m.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {m.firm || "—"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="text-xs text-muted-foreground">
+                        Tip: pick the closest match, then fine-tune in Edit
+                        mode.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!profile && !isEditing && !showProfileSearch && (
+                <div className="mt-4">
+                  <Button
+                    variant="none"
+                    effect="glass"
+                    size="sm"
+                    showRipple
+                    onClick={handleManualSetup}
+                    className="w-full border border-border/50 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Manual Setup
+                  </Button>
+                </div>
+              )}
 
               {/* Preferences dashboard */}
               {profile && !isEditing && (
@@ -816,153 +1017,6 @@ export default function KaiPreferencesPage() {
               )}
             </CardContent>
           </Card>
-
-          {showProfileSearch && (
-            <Card variant="none" effect="glass" className="border-0">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      VIP selector
-                    </div>
-                    <div className="text-sm font-semibold">
-                      Choose a public baseline profile
-                    </div>
-                  </div>
-                  <Button
-                    variant="none"
-                    effect="glass"
-                    size="icon-sm"
-                    showRipple
-                    onClick={() => {
-                      setShowProfileSearch(false);
-                      setSelectedProfile(null);
-                      setEditingProfile(null);
-                      setSearchResults([]);
-                      setSearchQuery("");
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                {autoDetectMatches.length > 0 &&
-                  !selectedProfile &&
-                  !editingProfile && (
-                    <div className="space-y-2">
-                      <div className="text-xs text-muted-foreground">
-                        Suggested matches
-                      </div>
-                      <div className="space-y-1">
-                        {autoDetectMatches.slice(0, 4).map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => handleSelectProfile(m)}
-                            disabled={loadingProfile}
-                            className="w-full p-3 rounded-xl glass-interactive text-left text-sm hover:bg-primary/5"
-                          >
-                            <div className="font-medium">{m.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {m.firm || "—"}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                {selectedProfile && editingProfile ? (
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
-                      This will copy the public VIP profile into your encrypted
-                      vault. You can edit any fields before confirming.
-                    </div>
-                    <InvestorProfileEditor
-                      value={editingProfile}
-                      onChange={setEditingProfile}
-                    />
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="none"
-                        effect="glass"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          setSelectedProfile(null);
-                          setEditingProfile(null);
-                        }}
-                        disabled={confirming}
-                      >
-                        Back
-                      </Button>
-                      <Button
-                        variant="gradient"
-                        effect="glass"
-                        size="sm"
-                        className="flex-1"
-                        onClick={handleConfirmProfile}
-                        disabled={confirming}
-                        showRipple
-                      >
-                        {confirming ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Check className="w-4 h-4 mr-2" />
-                        )}
-                        Confirm
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Search investor (e.g. Warren Buffett)"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                        className="h-9 text-sm"
-                      />
-                      <Button
-                        variant="gradient"
-                        effect="glass"
-                        size="sm"
-                        onClick={handleSearch}
-                        disabled={searching}
-                      >
-                        {searching ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Search className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="space-y-1 max-h-56 overflow-y-auto">
-                      {searchResults.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => handleSelectProfile(m)}
-                          disabled={loadingProfile}
-                          className="w-full p-2 rounded-lg glass-interactive text-left text-sm hover:bg-primary/5"
-                        >
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {m.firm || "—"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="text-xs text-muted-foreground">
-                      Tip: pick the closest match, then fine-tune in Edit mode.
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </>
       )}
     </div>

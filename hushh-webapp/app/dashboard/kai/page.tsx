@@ -33,7 +33,10 @@ import {
   TrendingUp,
   Sparkles,
   AlertTriangle,
+  LineChart,
+  Settings,
 } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhVault } from "@/lib/capacitor";
@@ -60,7 +63,8 @@ type Step =
   | "mode"
   | "risk"
   | "consent"
-  | "ready";
+  | "ready"
+  | "dashboard";
 
 interface OnboardingState {
   step: Step;
@@ -152,8 +156,9 @@ export default function KaiOnboarding() {
             });
           }
 
-          // Navigate to analysis page since user already onboarded
-          router.push("/dashboard/kai/analysis");
+          // Show Dashboard instead of auto-redirect
+          // router.push("/dashboard/kai/analysis");
+          setState((prev) => ({ ...prev, step: "dashboard" }));
         } else {
           console.log("[Kai] No preferences found. Showing onboarding.");
         }
@@ -326,7 +331,9 @@ export default function KaiOnboarding() {
       */}
 
       <div className="relative z-10 w-full max-w-2xl">
-        <StepIndicator currentStep={state.step} />
+        {state.step !== "dashboard" && (
+          <StepIndicator currentStep={state.step} />
+        )}
 
         <div className="mt-8 transition-all duration-500 ease-in-out">
           {state.step === "investor_detect" && vaultKey && vaultOwnerToken && (
@@ -362,6 +369,7 @@ export default function KaiOnboarding() {
             />
           )}
           {state.step === "ready" && <ReadyStep onComplete={handleComplete} />}
+          {state.step === "dashboard" && <DashboardStep />}
         </div>
       </div>
     </div>
@@ -685,5 +693,65 @@ function ReadyStep({ onComplete }: { onComplete: () => void }) {
         </Button>
       </CardFooter>
     </Card>
+  );
+}
+
+function DashboardStep() {
+  return (
+    <div className="space-y-6 w-full max-w-2xl mx-auto">
+      <div className="text-center space-y-3 mb-8">
+        <div className="flex justify-center gap-2 mb-1">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold uppercase tracking-wider">
+            Hushh Technologies
+          </span>
+        </div>
+        <h1 className="text-3xl font-black tracking-tighter uppercase">
+          Investment <span className="text-primary">Committee</span>
+        </h1>
+        <p className="text-muted-foreground font-medium text-sm">
+          Decide like a committee. Carry it in your pocket.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link href="/dashboard/kai/analysis" className="block group">
+          <Card className="h-full glass-interactive border-primary/20 hover:border-primary/50 transition-all hover:scale-[1.02] shadow-sm hover:shadow-xl">
+            <CardHeader>
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:bg-primary/20 transition-colors text-primary">
+                <LineChart size={24} />
+              </div>
+              <CardTitle className=" text-lg">Analysis Engine</CardTitle>
+              <CardDescription>
+                Three specialist agents debate to find the truth. Sources
+                included.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs font-mono text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
+                &gt; Awaiting prompt...
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/dashboard/kai/preferences" className="block group">
+          <Card className="h-full glass-interactive border-border/50 hover:border-primary/50 transition-all hover:scale-[1.02] shadow-sm hover:shadow-xl">
+            <CardHeader>
+              <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-2 group-hover:bg-zinc-200 dark:group-hover:bg-zinc-700 transition-colors">
+                <Settings size={24} />
+              </div>
+              <CardTitle className="text-lg">Agent Settings</CardTitle>
+              <CardDescription>
+                Calibrate your Risk Persona and Privacy Model.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs font-mono text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
+                &gt; System calibrated
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+    </div>
   );
 }
