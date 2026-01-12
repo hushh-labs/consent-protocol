@@ -26,9 +26,9 @@ export async function downloadTextFile(
   if (isNative) {
     try {
       // Dynamic import to avoid bundling issues on web
-      const { Filesystem, Directory, Encoding } = await import(
+      const { Filesystem, Directory, Encoding } = (await import(
         "@capacitor/filesystem"
-      );
+      )) as typeof import("@capacitor/filesystem");
 
       console.log("[Download] Writing file to Documents directory...");
 
