@@ -296,11 +296,12 @@ export interface HushhVaultPlugin {
   /**
    * Get Food Preferences from Cloud DB
    * Replaces: /api/vault/food on iOS
+   * Requires: VAULT_OWNER token for consent-first architecture
    */
   getFoodPreferences(options: {
     userId: string;
+    vaultOwnerToken: string;
     authToken?: string;
-    sessionToken?: string;
   }): Promise<{
     domain: string;
     preferences: Record<string, EncryptedPayload> | null;
@@ -309,11 +310,12 @@ export interface HushhVaultPlugin {
   /**
    * Get Professional Data from Cloud DB
    * Replaces: /api/vault/professional on iOS
+   * Requires: VAULT_OWNER token for consent-first architecture
    */
   getProfessionalData(options: {
     userId: string;
+    vaultOwnerToken: string;
     authToken?: string;
-    sessionToken?: string;
   }): Promise<{
     domain: string;
     preferences: Record<string, EncryptedPayload> | null;

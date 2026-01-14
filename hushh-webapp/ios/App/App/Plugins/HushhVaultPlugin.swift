@@ -290,16 +290,25 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     private func fetchDomainData(domain: String, call: CAPPluginCall) {
-        guard let userId = call.getString("userId") else {
-            call.reject("Missing userId")
+        guard let userId = call.getString("userId"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            call.reject("Missing userId or vaultOwnerToken")
             return
         }
         
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
-        let urlStr = "\(backendUrl)/db/\(domain)/get"
         
-        performRequest(urlStr: urlStr, body: ["userId": userId], authToken: authToken) { json, error in
+        // Use new token-enforced endpoint
+        let urlStr = "\(backendUrl)/api/vault/\(domain)/preferences"
+        
+        // Send token in body for validation
+        let body: [String: Any] = [
+            "userId": userId,
+            "consentToken": vaultOwnerToken
+        ]
+        
+        performRequest(urlStr: urlStr, body: body, authToken: authToken) { json, error in
             if let json = json {
                 call.resolve(["domain": domain, "preferences": json["preferences"] ?? NSNull()])
             } else {
@@ -319,17 +328,25 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
+        let consentToken = call.getString("consentToken")
         let authToken = call.getString("authToken")
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
-        let urlStr = "\(backendUrl)/db/\(domain)/store"
         
-        let body: [String: Any] = [
+        // Use new token-enforced endpoint
+        let urlStr = "\(backendUrl)/api/\(domain)/preferences/store"
+        
+        var body: [String: Any] = [
             "userId": userId,
             "fieldName": fieldName,
             "ciphertext": ciphertext,
             "iv": iv,
             "tag": tag
         ]
+        
+        // Include consent token for VAULT_OWNER validation
+        if let token = consentToken {
+            body["consentToken"] = token
+        }
         
         performRequest(urlStr: urlStr, body: body, authToken: authToken) { _, error in
             if error == nil {
