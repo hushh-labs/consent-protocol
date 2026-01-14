@@ -395,25 +395,26 @@ class HushhVaultPlugin : Plugin() {
     @PluginMethod
     fun getFoodPreferences(call: PluginCall) {
         val userId = call.getString("userId")
-        if (userId == null) {
-            call.reject("Missing required parameter: userId")
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        
+        if (userId == null || vaultOwnerToken == null) {
+            call.reject("Missing required parameter: userId or vaultOwnerToken")
             return
         }
 
         val authToken = call.getString("authToken")
-        val sessionToken = call.getString("sessionToken")
         val backendUrl = getBackendUrl(call)
         
-        // Use Python consent-protocol backend: POST /db/food/get
-        // (Next.js /api/* routes don't exist in static export for Android)
-        val url = "$backendUrl/db/food/get"
+        // Use new token-enforced endpoint
+        val url = "$backendUrl/api/vault/food/preferences"
 
-        Log.d(TAG, "🍽️ [getFoodPreferences] Fetching food data from: $url")
+        Log.d(TAG, "🍽️ [getFoodPreferences] Fetching with token from: $url")
 
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
                     put("userId", userId)
+                    put("consentToken", vaultOwnerToken)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
                 
@@ -424,9 +425,6 @@ class HushhVaultPlugin : Plugin() {
 
                 if (authToken != null) {
                     requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
-                if (sessionToken != null) {
-                    requestBuilder.addHeader("X-Session-Token", sessionToken)
                 }
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
@@ -475,25 +473,26 @@ class HushhVaultPlugin : Plugin() {
     @PluginMethod
     fun getProfessionalData(call: PluginCall) {
         val userId = call.getString("userId")
-        if (userId == null) {
-            call.reject("Missing required parameter: userId")
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        
+        if (userId == null || vaultOwnerToken == null) {
+            call.reject("Missing required parameter: userId or vaultOwnerToken")
             return
         }
 
         val authToken = call.getString("authToken")
-        val sessionToken = call.getString("sessionToken")
         val backendUrl = getBackendUrl(call)
         
-        // Use Python consent-protocol backend: POST /db/professional/get
-        // (Next.js /api/* routes don't exist in static export for Android)
-        val url = "$backendUrl/db/professional/get"
+        // Use new token-enforced endpoint
+        val url = "$backendUrl/api/vault/professional/preferences"
 
-        Log.d(TAG, "💼 [getProfessionalData] Fetching professional data from: $url")
+        Log.d(TAG, "💼 [getProfessionalData] Fetching with token from: $url")
 
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
                     put("userId", userId)
+                    put("consentToken", vaultOwnerToken)
                 }
                 val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
 
@@ -504,9 +503,6 @@ class HushhVaultPlugin : Plugin() {
 
                 if (authToken != null) {
                     requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
-                if (sessionToken != null) {
-                    requestBuilder.addHeader("X-Session-Token", sessionToken)
                 }
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
@@ -658,10 +654,10 @@ class HushhVaultPlugin : Plugin() {
             return
         }
 
-        // Revert to /db/$domain/store
-        val url = "$backendUrl/db/$domain/store"
+        // Use new token-enforced endpoint
+        val url = "$backendUrl/api/$domain/preferences/store"
 
-        Log.d(TAG, "💾 [storePreferencesToCloud] Storing $fieldName for userId: $userId")
+        Log.d(TAG, "💾 [storePreferencesToCloud] Storing $fieldName with token to: $url")
 
         Thread {
             try {

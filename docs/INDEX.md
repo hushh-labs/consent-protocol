@@ -49,11 +49,13 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 
 **Key Changes**:
 
-- ✅ **VAULT_OWNER tokens**: Vault owners now use consent tokens instead of bypasses
-- ✅ **Token reuse**: Tokens are reused while valid (reduces database writes)
-- ✅ **Modular agents**: New Food and Professional agents with uniform validation
-- ✅ **Platform support**: iOS Swift + Android Kotlin plugins implemented
-- ✅ **Audit trail**: All vault access logged for compliance
+- ✅ **VAULT_OWNER tokens**: Vault owners now use consent tokens for all data access (no bypasses)
+- ✅ **Token reuse**: Active tokens are reused while valid (reduces database writes, improves performance)
+- ✅ **Unified validation**: Food, Professional, and Kai agents all validate tokens identically
+- ✅ **Platform support**: iOS Swift + Android Kotlin + Web all enforce token validation
+- ✅ **Audit trail**: Every vault access logged to `consent_audit` table for compliance
+- ✅ **Token expiry**: 24-hour VAULT_OWNER tokens, 7-day agent tokens
+- ✅ **Compliance-ready**: CCPA/GDPR/SEC audit trail with exportable logs
 
 **Updated Documentation**:
 
@@ -129,19 +131,23 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 
 ## 🔒 Security Model
 
-### Four-Layer Authentication
+### Four-Layer Authentication (Correct Order)
 
-1. **Firebase Auth** - Identity verification
-2. **Passphrase** - Zero-knowledge vault unlock
-3. **Firebase ID Token** - Backend identity validation
-4. **VAULT_OWNER Token** - Master consent token (NEW!)
+1. **Firebase Auth** - Identity verification (OAuth) - **Always first**
+2. **Vault Unlock** - Passphrase or Recovery Key (zero-knowledge)
+   - Current: Passphrase-based (PBKDF2) + Recovery key
+   - Future: Passkey/FaceID/TouchID (passphrase as fallback)
+3. **VAULT_OWNER Token** - Cryptographic consent for data access (24h)
+4. **Agent Tokens** - Scoped permissions for AI operations (7 days)
 
 ### Key Principles
 
-- ✅ **Consent-First**: All data access requires consent tokens
-- ✅ **Zero-Knowledge**: Passcodes never leave device
-- ✅ **Memory-Only**: Vault keys stored in React Context
-- ✅ **Auditable**: Complete logging of all token operations
+- ✅ **Consent-First**: All data access requires valid consent tokens (no exceptions)
+- ✅ **Zero-Knowledge**: Vault keys never leave device (BYOK)
+- ✅ **Memory-Only**: Vault keys stored in React Context (lost on refresh)
+- ✅ **Token Reuse**: Active tokens reused to prevent duplicates
+- ✅ **Auditable**: Complete logging of all token operations to `consent_audit`
+- ✅ **Platform-Agnostic**: Web, iOS, Android all enforce identical validation
 
 ---
 
@@ -178,4 +184,4 @@ When updating documentation:
 
 ---
 
-_Last Updated: January 2026 | Version: 5.0 | VAULT_OWNER Token Release_
+_Last Updated: January 14, 2026 | Version: 6.0 | VAULT_OWNER Token Enforcement + Compliance Refresh_
