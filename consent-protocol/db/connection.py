@@ -32,11 +32,15 @@ async def get_pool() -> asyncpg.Pool:
         logger.info(f"📦 Connecting to PostgreSQL...")
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
-            min_size=2,
-            max_size=10,
-            command_timeout=60
+            min_size=3,  # Increased from 2
+            max_size=20,  # Increased from 10 for better scaling
+            command_timeout=60,
+            max_inactive_connection_lifetime=300  # Close idle connections after 5min
         )
-        logger.info("✅ PostgreSQL connection pool created")
+        logger.info(
+            f"✅ PostgreSQL pool created: min={_pool.get_min_size()}, "
+            f"max={_pool.get_max_size()}"
+        )
     return _pool
 
 

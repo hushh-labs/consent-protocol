@@ -408,28 +408,68 @@ export class ApiService {
   }
 
   /**
-   * Get food preferences (encrypted)
-   * Route: GET /api/vault/food?userId=xxx
+   * Get vault status (domain counts without encrypted data)
+   * Requires VAULT_OWNER token
+   * 
+   * Platform routing:
+   * - Native: Direct backend call → /db/vault/status
+   * - Web: Next.js proxy → Backend
+   * 
+   * Route: GET /api/vault/status (web) or POST /db/vault/status (native)
    */
-  static async getFoodPreferences(
+  static async getVaultStatus(
     userId: string,
-    sessionToken?: string
+    vaultOwnerToken: string
   ): Promise<Response> {
-    const headers: HeadersInit = {};
-    let url = `/api/vault/food?userId=${encodeURIComponent(userId)}`;
-
-    if (sessionToken) {
-      headers["X-Session-Token"] = sessionToken;
-      url += `&sessionToken=${encodeURIComponent(sessionToken)}`;
-    }
-
+    // Native: Call backend directly
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
+        
+        const response = await fetch(`${API_BASE}/db/vault/status`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({ userId, consentToken: vaultOwnerToken }),
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native getVaultStatus error:", error);
+        return new Response(null, { status: 500 });
+      }
+    }
+
+    // Web: Use Next.js proxy
+    const url = `/api/vault/status?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    return apiFetch(url, { method: "GET" });
+  }
+
+  /**
+   * Get food preferences (encrypted)
+   * Requires VAULT_OWNER token for consent-first architecture
+   * 
+   * Platform routing:
+   * - Native: HushhVault plugin → Backend (direct)
+   * - Web: Next.js proxy → Backend
+   * 
+   * Route: POST /api/vault/food/preferences (web) or direct backend call (native)
+   */
+  static async getFoodPreferences(
+    userId: string,
+    vaultOwnerToken: string
+  ): Promise<Response> {
+    // Native: Use plugin (bypasses Next.js, calls backend directly)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
         const { preferences } = await HushhVault.getFoodPreferences({
           userId,
+          vaultOwnerToken,
           authToken,
-          sessionToken,
         });
 
         if (!preferences) {
@@ -446,7 +486,9 @@ export class ApiService {
       }
     }
 
-    return apiFetch(url, { headers });
+    // Web: Use Next.js proxy with token in query param
+    const url = `/api/vault/food/preferences?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    return apiFetch(url, { method: "GET" });
   }
 
   /**
@@ -483,27 +525,27 @@ export class ApiService {
 
   /**
    * Get professional profile (encrypted)
-   * Route: GET /api/vault/professional?userId=xxx
+   * Requires VAULT_OWNER token for consent-first architecture
+   * 
+   * Platform routing:
+   * - Native: HushhVault plugin → Backend (direct)
+   * - Web: Next.js proxy → Backend
+   * 
+   * Route: POST /api/vault/professional/preferences (web) or direct backend call (native)
    */
   static async getProfessionalProfile(
     userId: string,
-    sessionToken?: string
+    vaultOwnerToken: string
   ): Promise<Response> {
-    const headers: HeadersInit = {};
-    let url = `/api/vault/professional?userId=${encodeURIComponent(userId)}`;
-
-    if (sessionToken) {
-      headers["X-Session-Token"] = sessionToken;
-      url += `&sessionToken=${encodeURIComponent(sessionToken)}`;
-    }
-
+    // Native: Use plugin (bypasses Next.js, calls backend directly)
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
+        
         const { preferences } = await HushhVault.getProfessionalData({
           userId,
+          vaultOwnerToken,
           authToken,
-          sessionToken,
         });
 
         if (!preferences) {
@@ -523,7 +565,9 @@ export class ApiService {
       }
     }
 
-    return apiFetch(url, { headers });
+    // Web: Use Next.js proxy with token in query param
+    const url = `/api/vault/professional/preferences?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    return apiFetch(url, { method: "GET" });
   }
 
   /**

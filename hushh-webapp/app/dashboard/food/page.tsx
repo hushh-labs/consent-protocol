@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { decryptData } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
+import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
 import { getSessionItem } from "@/lib/utils/session-storage";
 import {
@@ -21,6 +22,7 @@ import {
 } from "@/lib/morphy-ux/morphy";
 import { RefreshCw, Utensils, Leaf, ChefHat, Wallet, Shield, Edit3 } from "lucide-react";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { FoodPreferencesEditor } from "@/components/food/food-preferences-editor";
 
 interface UserPreferences {
   dietary: string[];
@@ -74,10 +76,12 @@ const CUISINE_ICONS: Record<string, string> = {
 
 export default function FoodDashboardPage() {
   const router = useRouter();
-  const { getVaultKey, isVaultUnlocked } = useVault();
+  const { user } = useAuth();
+  const { getVaultKey, getVaultOwnerToken, isVaultUnlocked } = useVault();
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     // Redirect if vault not unlocked
@@ -90,34 +94,26 @@ export default function FoodDashboardPage() {
 
   async function loadDashboard() {
     try {
-      // Use platform-aware session storage
-      const userId =
-        localStorage.getItem("user_id") || getSessionItem("user_id");
-      const vaultKey = getVaultKey(); // Use vault context instead of sessionStorage
+      const userId = user?.uid;
+      const vaultKey = getVaultKey();
+      const vaultOwnerToken = getVaultOwnerToken();
 
-      if (!userId || !vaultKey) {
+      if (!userId || !vaultKey || !vaultOwnerToken) {
         console.warn("Redirecting from Food: Missing auth", {
           userId: !!userId,
           vaultKey: !!vaultKey,
+          vaultOwnerToken: !!vaultOwnerToken,
         });
         router.push("/");
         return;
       }
 
-      // Get session token from platform-aware storage
-      const sessionToken = getSessionItem("session_token");
-      if (process.env.NODE_ENV === "development") {
-        console.log(
-          `🔍 [FoodDashboard] Loading preferences. UserId: ${userId}, SessionToken: ${
-            sessionToken ? "Present" : "Missing"
-          }`
-        );
-      }
+      console.log(`🔍 [FoodDashboard] Loading preferences with VAULT_OWNER token`);
 
-      // Use ApiService for platform-aware API calls
+      // ✅ SEND VAULT_OWNER TOKEN (works on web AND native)
       const response = await ApiService.getFoodPreferences(
         userId,
-        sessionToken || undefined
+        vaultOwnerToken
       );
 
       if (!response.ok) {
@@ -186,9 +182,32 @@ export default function FoodDashboardPage() {
 
   // Empty State
   if (!preferences) {
+    // Show editor for setup if vault is unlocked
+    if (isEditing && user?.uid) {
+      const vaultKey = getVaultKey();
+      const vaultOwnerToken = getVaultOwnerToken();
+      
+      if (vaultKey && vaultOwnerToken) {
+        return (
+          <div className="py-8">
+            <FoodPreferencesEditor
+              userId={user.uid}
+              vaultKey={vaultKey}
+              vaultOwnerToken={vaultOwnerToken}
+              onSave={async () => {
+                await loadDashboard();
+                setIsEditing(false);
+              }}
+              onCancel={() => setIsEditing(false)}
+            />
+          </div>
+        );
+      }
+    }
+
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-lg" variant="none" effect="glass">
+      <div className="flex items-center justify-center min-h-[60vh] px-4 md:px-6 lg:px-8">
+        <Card className="max-w-lg w-full mx-auto" variant="none" effect="glass">
           <CardContent className="p-10 text-center space-y-6">
             <div className="h-24 w-24 rounded-full bg-gradient-to-br from-orange-400 to-red-500 mx-auto flex items-center justify-center shadow-lg">
               <Utensils className="h-12 w-12 text-white" />
@@ -201,7 +220,7 @@ export default function FoodDashboardPage() {
               </p>
             </div>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => setIsEditing(true)}
               variant="gradient"
               effect="glass"
               size="lg"
@@ -221,6 +240,30 @@ export default function FoodDashboardPage() {
   const perMealBudget = preferences.budget / 60;
   const budgetPercentage = Math.min((preferences.budget / 1000) * 100, 100);
 
+  // Show editor when editing
+  if (isEditing && user?.uid) {
+    const vaultKey = getVaultKey();
+    const vaultOwnerToken = getVaultOwnerToken();
+    
+    if (vaultKey && vaultOwnerToken) {
+      return (
+        <div className="py-8">
+          <FoodPreferencesEditor
+            initialPreferences={preferences}
+            userId={user.uid}
+            vaultKey={vaultKey}
+            vaultOwnerToken={vaultOwnerToken}
+            onSave={async () => {
+              await loadDashboard();
+              setIsEditing(false);
+            }}
+            onCancel={() => setIsEditing(false)}
+          />
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto px-4">
       {/* Header */}
@@ -237,7 +280,7 @@ export default function FoodDashboardPage() {
           </div>
         </div>
         <Button
-          onClick={() => router.push("/dashboard/food/setup")}
+          onClick={() => setIsEditing(true)}
           variant="none"
           size="sm"
           className="text-muted-foreground hover:text-foreground"
