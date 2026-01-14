@@ -96,30 +96,41 @@ async def get_professional_data(request: Request):
         # Validate VAULT_OWNER token
         validate_vault_owner_token(consent_token, user_id)
         
-        # Fetch encrypted preferences from database
+        # Fetch encrypted preferences from vault_professional table
         pool = await get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
+            rows = await conn.fetch(
                 """
-                SELECT domain, preferences 
-                FROM vault_encrypted 
-                WHERE user_id = $1 AND domain = 'professional'
+                SELECT field_name, ciphertext, iv, tag, algorithm
+                FROM vault_professional 
+                WHERE user_id = $1
                 """,
                 user_id
             )
         
-        if not row:
+        if not rows:
             logger.info(f"No professional data found for {user_id}")
             return {
                 "domain": "professional",
                 "preferences": None
             }
         
+        # Build preferences object from rows
+        preferences = {}
+        for row in rows:
+            preferences[row["field_name"]] = {
+                "ciphertext": row["ciphertext"],
+                "iv": row["iv"],
+                "tag": row["tag"],
+                "algorithm": row["algorithm"] or "aes-256-gcm",
+                "encoding": "base64"
+            }
+        
         logger.info(f"✅ Professional data retrieved for {user_id}")
         
         return {
-            "domain": row["domain"],
-            "preferences": row["preferences"]  # JSONB with encrypted fields
+            "domain": "professional",
+            "preferences": preferences
         }
     
     except HTTPException:
@@ -155,30 +166,25 @@ async def store_professional_data(request: Request):
         # Validate VAULT_OWNER token
         validate_vault_owner_token(consent_token, user_id)
         
-        # Store encrypted preference in database
+        import time
+        now_ms = int(time.time() * 1000)
+        
+        # Store encrypted preference in vault_professional table
         pool = await get_pool()
         async with pool.acquire() as conn:
             # Upsert: update if exists, insert if not
             await conn.execute(
                 """
-                INSERT INTO vault_encrypted (user_id, domain, preferences)
-                VALUES ($1, 'professional', jsonb_build_object($2, jsonb_build_object(
-                    'ciphertext', $3,
-                    'iv', $4,
-                    'tag', $5,
-                    'encoding', 'base64',
-                    'algorithm', 'aes-256-gcm'
-                )))
-                ON CONFLICT (user_id, domain)
-                DO UPDATE SET preferences = vault_encrypted.preferences || jsonb_build_object($2, jsonb_build_object(
-                    'ciphertext', $3,
-                    'iv', $4,
-                    'tag', $5,
-                    'encoding', 'base64',
-                    'algorithm', 'aes-256-gcm'
-                ))
+                INSERT INTO vault_professional (user_id, field_name, ciphertext, iv, tag, algorithm, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'aes-256-gcm', $6, $6)
+                ON CONFLICT (user_id, field_name)
+                DO UPDATE SET 
+                    ciphertext = EXCLUDED.ciphertext,
+                    iv = EXCLUDED.iv,
+                    tag = EXCLUDED.tag,
+                    updated_at = EXCLUDED.updated_at
                 """,
-                user_id, field_name, ciphertext, iv, tag
+                user_id, field_name, ciphertext, iv, tag, now_ms
             )
         
         logger.info(f"✅ Professional field '{field_name}' stored for {user_id}")
