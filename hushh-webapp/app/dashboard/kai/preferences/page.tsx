@@ -650,62 +650,59 @@ export default function KaiPreferencesPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="none"
-                    effect="glass"
-                    size="sm"
-                    showRipple
-                    onClick={() => setShowProfileSearch(true)}
-                  >
-                    <Search className="w-4 h-4 mr-2" />
-                    {profile ? "Change" : "Select VIP"}
-                  </Button>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="none"
-                          effect="glass"
-                          size="icon-sm"
-                          onClick={() => {
-                            handleResetIdentity();
-                            setIsManualSetup(false);
-                            setEditingProfile(null);
-                            setIsEditing(false);
-                          }}
-                          disabled={!profile || resettingIdentity}
-                          className="text-red-500"
-                          showRipple
-                        >
-                          {resettingIdentity ? (
-                            <HushhLoader variant="compact" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          Unlink this investor profile. Your Kai risk
-                          preferences remain saved.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                {isEditing && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="none"
+                      effect="glass"
+                      size="sm"
+                      showRipple
+                      onClick={() => setShowProfileSearch(true)}
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      {profile ? "Change" : "Select VIP"}
+                    </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="none"
+                            effect="glass"
+                            size="icon-sm"
+                            onClick={() => {
+                              handleResetIdentity();
+                              setIsManualSetup(false);
+                              setEditingProfile(null);
+                              setIsEditing(false);
+                            }}
+                            disabled={!profile || resettingIdentity}
+                            className="text-red-500"
+                            showRipple
+                          >
+                            {resettingIdentity ? (
+                              <HushhLoader variant="compact" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            Unlink this investor profile. Your Kai risk
+                            preferences remain saved.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                )}
               </div>
 
-              {showProfileSearch && (
-                <div className="mt-4 rounded-xl border border-border/50 bg-background/50 p-4 space-y-4">
+              {showProfileSearch && isEditing && (
+                <div className="mt-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-muted-foreground">
-                        VIP selector
-                      </div>
-                      <div className="text-sm font-semibold">
-                        Choose a public baseline profile
-                      </div>
+                    <div className="text-sm font-semibold">
+                      Choose a public baseline profile
                     </div>
                     <Button
                       variant="none"
@@ -853,12 +850,12 @@ export default function KaiPreferencesPage() {
               {!profile && !isEditing && !showProfileSearch && (
                 <div className="mt-4">
                   <Button
-                    variant="none"
+                    variant="gradient"
                     effect="glass"
                     size="sm"
                     showRipple
                     onClick={handleManualSetup}
-                    className="w-full border border-border/50 text-muted-foreground hover:text-foreground"
+                    className="w-full"
                   >
                     <Pencil className="w-4 h-4 mr-2" />
                     Manual Setup
