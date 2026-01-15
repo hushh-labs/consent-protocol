@@ -1,17 +1,19 @@
 # Database Schema
 
-> PostgreSQL schema for the Hushh encrypted vault and consent audit system.
+> PostgreSQL schema for the Hushh encrypted vault, investor profiles, and consent audit system.
 
 ---
 
 ## 🎯 Design Principles
 
-| Principle             | Implementation                                 |
-| --------------------- | ---------------------------------------------- |
-| **Zero-Knowledge**    | All user data stored as AES-256-GCM ciphertext |
-| **Domain Separation** | Separate tables per data category              |
-| **Audit Trail**       | `consent_audit` logs all token operations      |
-| **No Plaintext**      | Server cannot decrypt any user data            |
+| Principle             | Implementation                                     |
+| --------------------- | -------------------------------------------------- |
+| **Zero-Knowledge**    | All user data stored as AES-256-GCM ciphertext     |
+| **Domain Separation** | Separate tables per data category                  |
+| **Field-Based Storage** | Each encrypted field stored as separate row      |
+| **Audit Trail**       | `consent_audit` logs all token operations          |
+| **No Plaintext**      | Server cannot decrypt any user data                |
+| **Investor Layer**    | Public profiles for discovery, encrypted for vault |
 
 ---
 
@@ -19,48 +21,57 @@
 
 ```
 ┌──────────────────────┐
-│       users          │
+│     vault_keys       │  (User vault authentication)
 ├──────────────────────┤
-│ id (PK)              │
-│ email                │
-│ name                 │
-│ image                │
-│ firebase_uid         │
-│ created_at           │
-│ updated_at           │
-└──────────┬───────────┘
-           │
-           │ 1:1
-           ▼
-┌──────────────────────┐
-│     vault_keys       │
-├──────────────────────┤
-│ user_id (PK, FK)     │
+│ user_id (PK)         │
+│ auth_method          │
 │ encrypted_vault_key  │
-│ recovery_encrypted_  │
-│   vault_key          │
-│ key_version          │
+│ salt, iv             │
+│ recovery_*           │
 │ created_at           │
-│ updated_at           │
 └──────────┬───────────┘
            │
-           │ 1:1
+           │ 1:N (field-based storage)
            ▼
 ┌──────────────────────┐     ┌──────────────────────┐
 │     vault_food       │     │  vault_professional  │
 ├──────────────────────┤     ├──────────────────────┤
-│ user_id (PK, FK)     │     │ user_id (PK, FK)     │
-│ dietary_restrictions │     │ professional_title   │
-│   (ENCRYPTED)        │     │   (ENCRYPTED)        │
-│ cuisine_preferences  │     │ skills               │
-│   (ENCRYPTED)        │     │   (ENCRYPTED)        │
-│ monthly_food_budget  │     │ experience_level     │
-│   (ENCRYPTED)        │     │   (ENCRYPTED)        │
-│ created_at           │     │ job_preferences      │
-│ updated_at           │     │   (ENCRYPTED)        │
-└──────────────────────┘     │ created_at           │
-                              │ updated_at           │
-                              └──────────────────────┘
+│ id (PK)              │     │ id (PK)              │
+│ user_id (FK)         │     │ user_id (FK)         │
+│ field_name           │     │ field_name           │
+│ ciphertext           │     │ ciphertext           │
+│ iv, tag              │     │ iv, tag              │
+│ UNIQUE(user_id,      │     │ UNIQUE(user_id,      │
+│   field_name)        │     │   field_name)        │
+└──────────────────────┘     └──────────────────────┘
+           │
+           │ 1:N
+           ▼
+┌──────────────────────┐     ┌──────────────────────┐
+│ vault_kai_preferences│     │      vault_kai       │
+├──────────────────────┤     ├──────────────────────┤
+│ id (PK)              │     │ id (PK)              │
+│ user_id (FK)         │     │ user_id (FK)         │
+│ field_name           │     │ ticker               │
+│ ciphertext           │     │ decision_type        │
+│ iv, tag              │     │ decision_ciphertext  │
+│ UNIQUE(user_id,      │     │ iv, tag              │
+│   field_name)        │     │ confidence_score     │
+└──────────────────────┘     └──────────────────────┘
+           │
+           │ 1:1
+           ▼
+┌──────────────────────┐     ┌──────────────────────┐
+│user_investor_profiles│────▶│  investor_profiles   │
+├──────────────────────┤     ├──────────────────────┤
+│ id (PK)              │     │ id (PK)              │
+│ user_id (FK, UNIQUE) │     │ name                 │
+│ confirmed_investor_id│     │ cik (SEC identifier) │
+│ profile_data_*       │     │ firm, title          │
+│   (ENCRYPTED)        │     │ top_holdings (JSONB) │
+│ custom_holdings_*    │     │ investment_style     │
+│   (ENCRYPTED)        │     │ (PUBLIC DATA)        │
+└──────────────────────┘     └──────────────────────┘
            │
            │ 1:N
            ▼
@@ -68,12 +79,13 @@
 │    consent_audit     │
 ├──────────────────────┤
 │ id (PK)              │
-│ user_id (FK)         │
+│ token_id             │
+│ user_id              │
 │ agent_id             │
 │ scope                │
 │ action               │
-│ token_hash           │
-│ created_at           │
+│ issued_at            │
+│ expires_at           │
 └──────────────────────┘
 ```
 
@@ -81,144 +93,272 @@
 
 ## 📋 Table Definitions
 
-### users
-
-Core user identity from Firebase OAuth.
-
-```sql
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) NOT NULL UNIQUE,
-    name VARCHAR(255),
-    image TEXT,
-    firebase_uid VARCHAR(128) NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_users_firebase_uid ON users(firebase_uid);
-```
-
----
-
 ### vault_keys
 
-Stores encrypted vault keys for zero-knowledge recovery.
+Stores encrypted vault keys for zero-knowledge recovery. This is the root table - all other vault tables reference it.
 
 ```sql
 CREATE TABLE vault_keys (
-    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-
-    -- Vault key encrypted with passphrase-derived key
+    user_id TEXT PRIMARY KEY,
+    auth_method TEXT NOT NULL DEFAULT 'passphrase',
+    
+    -- Passphrase-encrypted vault key
     encrypted_vault_key TEXT NOT NULL,
-
-    -- Vault key encrypted with recovery key
+    salt TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    
+    -- Recovery-encrypted vault key
     recovery_encrypted_vault_key TEXT NOT NULL,
-
-    -- Key rotation versioning
-    key_version INTEGER DEFAULT 1,
-
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    recovery_salt TEXT NOT NULL,
+    recovery_iv TEXT NOT NULL,
+    
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT
 );
-
-COMMENT ON COLUMN vault_keys.encrypted_vault_key IS
-    'AES-256-GCM encrypted with PBKDF2-derived key from passphrase';
-COMMENT ON COLUMN vault_keys.recovery_encrypted_vault_key IS
-    'AES-256-GCM encrypted with PBKDF2-derived key from recovery key';
 ```
+
+**Notes:**
+- `user_id` is Firebase UID (e.g., `UWHGeUyfUAbmEl5xwIPoWJ7Cyft2`)
+- `auth_method` is currently always `'passphrase'` (biometric planned)
+- Both passphrase and recovery keys can decrypt the vault key
 
 ---
 
 ### vault_food
 
-Food & Dining preferences (all fields encrypted).
+Food & Dining preferences using **field-based storage** (each field is a separate encrypted row).
 
 ```sql
 CREATE TABLE vault_food (
-    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-
-    -- All fields are AES-256-GCM encrypted JSON
-    dietary_restrictions TEXT,  -- Encrypted: ["Vegetarian", "Gluten-Free"]
-    cuisine_preferences TEXT,   -- Encrypted: ["Italian", "Mexican"]
-    monthly_food_budget TEXT,   -- Encrypted: 500
-
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    field_name TEXT NOT NULL,        -- e.g., 'dietary_restrictions', 'cuisines', 'budget'
+    ciphertext TEXT NOT NULL,        -- AES-256-GCM encrypted value
+    iv TEXT NOT NULL,                -- 12-byte initialization vector
+    tag TEXT NOT NULL,               -- 16-byte authentication tag
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    consent_token_id TEXT,           -- Token used for this write
+    UNIQUE(user_id, field_name)      -- One value per field per user
 );
 
-COMMENT ON TABLE vault_food IS
-    'All fields are AES-256-GCM encrypted. Server cannot decrypt.';
+CREATE INDEX idx_vault_food_user ON vault_food(user_id);
 ```
+
+**Example Data:**
+| user_id | field_name | ciphertext | iv | tag |
+|---------|------------|------------|-----|-----|
+| UWHGe... | dietary_restrictions | eyJhbGc... | abc123... | def456... |
+| UWHGe... | cuisines | eyJhbGc... | ghi789... | jkl012... |
+| UWHGe... | budget | eyJhbGc... | mno345... | pqr678... |
 
 ---
 
 ### vault_professional
 
-Professional profile data (all fields encrypted).
-
-````sql
-CREATE TABLE vault_professional (
-    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-
-    -- All fields are AES-256-GCM encrypted JSON
-    professional_title TEXT,   -- Encrypted: "Senior Software Engineer"
-    skills TEXT,               -- Encrypted: ["Python", "React", "AWS"]
-    experience_level TEXT,     -- Encrypted: "Senior (5-8 years)"
-    job_preferences TEXT,      -- Encrypted: ["Full-time", "Remote"]
-
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
----
-
-### vault_kai
-
-Encrypted investment decision history.
+Professional profile data using **field-based storage**.
 
 ```sql
-CREATE TABLE vault_kai (
+CREATE TABLE vault_professional (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    ticker TEXT NOT NULL,
-    decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
-
-    -- Encrypted Decision Card (JSON)
-    decision_ciphertext TEXT NOT NULL,
+    field_name TEXT NOT NULL,        -- e.g., 'title', 'skills', 'experience', 'job_preferences'
+    ciphertext TEXT NOT NULL,
     iv TEXT NOT NULL,
     tag TEXT NOT NULL,
-
-    confidence_score DECIMAL(3,2),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    algorithm TEXT DEFAULT 'aes-256-gcm'
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    consent_token_id TEXT,
+    UNIQUE(user_id, field_name)
 );
-````
+
+CREATE INDEX idx_vault_professional_user ON vault_professional(user_id);
+```
 
 ---
 
 ### vault_kai_preferences
 
-Encrypted user settings for Kai (Risk Profile, Processing Mode).
+Encrypted user settings for Agent Kai (Risk Profile, Processing Mode).
 
 ```sql
 CREATE TABLE vault_kai_preferences (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL, -- e.g., 'risk_profile', 'processing_mode'
-
-    -- Encrypted Value
+    field_name TEXT NOT NULL,        -- 'kai_risk_profile', 'kai_processing_mode'
     ciphertext TEXT NOT NULL,
     iv TEXT NOT NULL,
     tag TEXT NOT NULL,
-
+    algorithm TEXT DEFAULT 'aes-256-gcm',
     created_at BIGINT NOT NULL,
     updated_at BIGINT,
     UNIQUE(user_id, field_name)
 );
+
+CREATE INDEX idx_vault_kai_prefs_user ON vault_kai_preferences(user_id);
 ```
 
-````
+---
+
+### vault_kai
+
+Encrypted investment decision history (analysis results).
+
+```sql
+CREATE TABLE vault_kai (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES kai_sessions(session_id),
+    ticker TEXT NOT NULL,
+    decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
+    
+    -- Encrypted Decision Card (JSON)
+    decision_ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    
+    confidence_score DECIMAL(3,2),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_vault_kai_user ON vault_kai(user_id);
+CREATE INDEX idx_vault_kai_ticker ON vault_kai(ticker);
+```
+
+---
+
+### investor_profiles (PUBLIC)
+
+**Public discovery layer** - stores publicly available investor information from SEC filings.
+**NOT encrypted** - server can read this (it's all public data).
+
+Used during Kai onboarding to show: "Is this you?"
+
+```sql
+CREATE TABLE investor_profiles (
+    id SERIAL PRIMARY KEY,
+    
+    -- Identity (for name-based matching)
+    name TEXT NOT NULL,
+    name_normalized TEXT,            -- Lowercase, no spaces (for fuzzy search)
+    cik TEXT UNIQUE,                 -- SEC CIK number
+    
+    -- Profile
+    firm TEXT,
+    title TEXT,
+    investor_type TEXT,              -- 'institutional', 'insider', etc.
+    photo_url TEXT,
+    
+    -- Holdings Summary (from 13F/Form4)
+    aum_billions NUMERIC,
+    top_holdings JSONB,              -- [{ticker, weight}, ...]
+    sector_exposure JSONB,           -- {Technology: 40, Healthcare: 20, ...}
+    
+    -- Inferred Profile
+    investment_style TEXT[],         -- ['Value', 'Growth', ...]
+    risk_tolerance TEXT,
+    time_horizon TEXT,
+    portfolio_turnover TEXT,
+    
+    -- Activity Signals
+    recent_buys TEXT[],
+    recent_sells TEXT[],
+    
+    -- Enrichment
+    public_quotes JSONB,
+    biography TEXT,
+    education TEXT[],
+    board_memberships TEXT[],
+    peer_investors TEXT[],
+    
+    -- Insider-specific (Form 4)
+    is_insider BOOLEAN DEFAULT FALSE,
+    insider_company_ticker TEXT,
+    
+    -- Data Source Tracking
+    data_sources TEXT[],
+    last_13f_date DATE,
+    last_form4_date DATE,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for efficient searching
+CREATE INDEX idx_investor_name ON investor_profiles(name);
+CREATE INDEX idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops);
+CREATE INDEX idx_investor_firm ON investor_profiles(firm);
+CREATE INDEX idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
+```
+
+**Example `top_holdings` JSONB:**
+```json
+[
+  {"ticker": "NVDA", "weight": 20.0},
+  {"ticker": "MSFT", "weight": 15.0},
+  {"ticker": "GOOGL", "weight": 10.0}
+]
+```
+
+---
+
+### user_investor_profiles (PRIVATE)
+
+**Private vault layer** - stores user-confirmed investor profile data.
+**E2E encrypted** - server CANNOT read this.
+
+Created when user confirms: "Yes, this is me"
+
+```sql
+CREATE TABLE user_investor_profiles (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    
+    -- Link to public profile (optional, for reference only)
+    confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
+    
+    -- Encrypted profile data (E2E encrypted copy from public)
+    profile_data_ciphertext TEXT,
+    profile_data_iv TEXT,
+    profile_data_tag TEXT,
+    
+    -- Encrypted holdings (user's actual holdings, not public)
+    custom_holdings_ciphertext TEXT,
+    custom_holdings_iv TEXT,
+    custom_holdings_tag TEXT,
+    
+    -- Encrypted preferences (user's adjusted preferences)
+    preferences_ciphertext TEXT,
+    preferences_iv TEXT,
+    preferences_tag TEXT,
+    
+    -- Consent tracking
+    confirmed_at TIMESTAMPTZ,
+    consent_scope TEXT,
+    
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    UNIQUE(user_id)                  -- One profile per user
+);
+
+CREATE INDEX idx_user_investor_user ON user_investor_profiles(user_id);
+```
+
+**Data Flow:**
+```
+investor_profiles (PUBLIC)     user_investor_profiles (PRIVATE)
+┌─────────────────────────┐    ┌─────────────────────────────────┐
+│ id: 21                  │◄───│ confirmed_investor_id: 21       │
+│ name: "Kushal Mehta"    │    │ user_id: "UWHGeUyf..."          │
+│ top_holdings: [...]     │    │ profile_data_ciphertext: "..."  │
+│ ...all public fields... │    │ (encrypted copy of public data) │
+└─────────────────────────┘    └─────────────────────────────────┘
+```
 
 ---
 
@@ -229,47 +369,29 @@ Immutable audit log of all consent token operations.
 ```sql
 CREATE TABLE consent_audit (
     id SERIAL PRIMARY KEY,
-    token_id TEXT NOT NULL UNIQUE,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    agent_id TEXT NOT NULL,
-    scope TEXT NOT NULL,
-    action TEXT NOT NULL,
+    token_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,          -- 'self' for VAULT_OWNER, agent name otherwise
+    scope TEXT NOT NULL,             -- 'vault.owner', 'agent.kai.analyze', etc.
+    action TEXT NOT NULL,            -- 'ISSUED', 'VALIDATED', 'REVOKED', 'REQUESTED'
     issued_at BIGINT NOT NULL,
     expires_at BIGINT,
     revoked_at BIGINT,
     metadata JSONB,
-    -- Added for consent protocol
     token_type VARCHAR(20) DEFAULT 'consent',
     ip_address VARCHAR(45),
-    user_agent TEXT
+    user_agent TEXT,
+    request_id VARCHAR(32),          -- For consent request tracking
+    scope_description TEXT,
+    poll_timeout_at BIGINT           -- For pending consent requests
 );
 
 CREATE INDEX idx_consent_user ON consent_audit(user_id);
 CREATE INDEX idx_consent_token ON consent_audit(token_id);
 CREATE INDEX idx_consent_audit_created ON consent_audit(issued_at DESC);
-````
-
----
-
-### session_tokens
-
-Tracks active user session tokens (issued after passphrase verification).
-
-```sql
-CREATE TABLE session_tokens (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    token_hash VARCHAR(64) NOT NULL,
-    scope TEXT DEFAULT 'session',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ,
-    is_active BOOLEAN DEFAULT TRUE,
-    ip_address VARCHAR(45),
-    user_agent TEXT
-);
-
-CREATE INDEX idx_session_tokens_user ON session_tokens(user_id);
-CREATE INDEX idx_session_tokens_active ON session_tokens(user_id, is_active);
+CREATE INDEX idx_consent_audit_user_action ON consent_audit(user_id, action);
+CREATE INDEX idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
 ```
 
 ---
@@ -280,65 +402,63 @@ Each encrypted field follows this structure:
 
 ```json
 {
-  "iv": "base64-encoded-12-byte-iv",
   "ciphertext": "base64-encoded-ciphertext",
-  "tag": "base64-encoded-16-byte-auth-tag",
-  "algorithm": "AES-256-GCM"
+  "iv": "base64-encoded-12-byte-iv",
+  "tag": "base64-encoded-16-byte-auth-tag"
 }
 ```
 
-### Example Encrypted Value
-
-```
-dietary_restrictions:
-"eyJpdiI6ImpKM2RhS2x..."  <- base64 of JSON structure above
-```
-
----
-
-## 🔄 Migrations
-
-### Initial Setup
-
-```sql
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- Run table creation in order
--- 1. users
--- 2. vault_keys
--- 3. vault_food
--- 4. vault_professional
--- 5. consent_audit
-```
-
-### Check Tables Exist
-
-```sql
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema = 'public'
-AND table_name LIKE 'vault_%';
-```
+**Encryption Details:**
+- Algorithm: AES-256-GCM
+- Key: 256-bit derived from passphrase via PBKDF2 (100k iterations)
+- IV: 12 bytes, randomly generated per encryption
+- Tag: 16 bytes, authentication tag
 
 ---
 
-## 📈 Queries
+## 📈 Key Queries
 
-### Get User with All Vault Data
+### Get Vault Status (Optimized CTE)
+
+Used by dashboard to show domain counts without fetching encrypted data:
 
 ```sql
-SELECT
-    u.id,
-    u.email,
-    vf.dietary_restrictions,
-    vf.cuisine_preferences,
-    vp.professional_title,
-    vp.skills
-FROM users u
-LEFT JOIN vault_food vf ON u.id = vf.user_id
-LEFT JOIN vault_professional vp ON u.id = vp.user_id
-WHERE u.firebase_uid = $1;
+WITH food_count AS (
+    SELECT COUNT(*) as cnt FROM vault_food WHERE user_id = $1
+),
+prof_count AS (
+    SELECT COUNT(*) as cnt FROM vault_professional WHERE user_id = $1
+),
+kai_check AS (
+    SELECT EXISTS(SELECT 1 FROM user_investor_profiles WHERE user_id = $1) as exists
+),
+kai_prefs_count AS (
+    SELECT COUNT(*) as cnt FROM vault_kai_preferences WHERE user_id = $1
+)
+SELECT 
+    (SELECT cnt FROM food_count) as food_count,
+    (SELECT cnt FROM prof_count) as prof_count,
+    (SELECT exists FROM kai_check) as kai_onboarded,
+    (SELECT cnt FROM kai_prefs_count) as kai_prefs_count;
+```
+
+### Get Investor Stock Count
+
+To display stock count on dashboard, the **client** must decrypt `profile_data_ciphertext`:
+
+```typescript
+// Dashboard fetches encrypted profile
+const encrypted = await HushhIdentity.getEncryptedProfile({ vaultOwnerToken });
+
+// Client decrypts with vault key
+const plaintext = await HushhVault.decryptData({
+  keyHex: vaultKey,
+  payload: encrypted.profile_data,
+});
+
+// Parse and count holdings
+const profile = JSON.parse(plaintext);
+const stockCount = profile.top_holdings?.length || 0;
 ```
 
 ### Audit Trail for User
@@ -348,100 +468,68 @@ SELECT
     agent_id,
     scope,
     action,
-    created_at
+    to_timestamp(issued_at) as issued_at
 FROM consent_audit
 WHERE user_id = $1
-ORDER BY created_at DESC
+ORDER BY issued_at DESC
 LIMIT 50;
-```
-
-### Count Actions by Agent
-
-```sql
-SELECT
-    agent_id,
-    action,
-    COUNT(*) as count
-FROM consent_audit
-WHERE created_at > NOW() - INTERVAL '30 days'
-GROUP BY agent_id, action
-ORDER BY count DESC;
 ```
 
 ---
 
 ## 🛡️ Security Notes
 
-| Concern         | Mitigation                             |
-| --------------- | -------------------------------------- |
-| SQL Injection   | Parameterized queries only             |
-| Data at Rest    | All vault\_\* fields encrypted         |
-| Key Storage     | Vault keys encrypted with derived keys |
-| Audit Integrity | Append-only table, no UPDATE/DELETE    |
-| Token Exposure  | Only token hash stored in audit        |
+| Concern           | Mitigation                                    |
+| ----------------- | --------------------------------------------- |
+| SQL Injection     | Parameterized queries only (asyncpg)          |
+| Data at Rest      | All vault_* fields encrypted with AES-256-GCM |
+| Key Storage       | Vault keys encrypted with derived keys        |
+| Audit Integrity   | Append-only design, no UPDATE/DELETE on audit |
+| Token Exposure    | Token ID stored, not full token               |
+| Public vs Private | `investor_profiles` public, `user_investor_profiles` encrypted |
 
 ---
 
-## 🍽️ Domain: Food & Dining
+## 🔄 Migrations
 
-Stored in `vault_food` table as encrypted JSON.
+### Run Migration Script
 
-### Data Types
+```bash
+cd consent-protocol
 
-| Type                    | Fields                                                               |
-| ----------------------- | -------------------------------------------------------------------- |
-| `DietaryProfile`        | diet_type, allergies, intolerances, restrictions, calorie_target     |
-| `FoodPreferences`       | favorite_cuisines, disliked_cuisines, spice_tolerance, cooking_skill |
-| `RestaurantPreferences` | price_range, ambiance, location_radius, favorites                    |
+# Create specific table
+python db/migrate.py --table vault_food
 
-### Consent Scopes
+# Create all tables
+python db/migrate.py --full
 
-| Scope              | Description            |
-| ------------------ | ---------------------- |
-| `vault.read.food`  | Read food preferences  |
-| `vault.write.food` | Write food preferences |
-
-### Example Decrypted Data
-
-```json
-{
-  "dietary_restrictions": ["Vegetarian", "Gluten-Free"],
-  "cuisine_preferences": ["Italian", "Mexican", "Japanese"],
-  "monthly_food_budget": 500,
-  "spice_tolerance": "medium"
-}
+# Show status
+python db/migrate.py --status
 ```
 
----
+### Table Creation Order (Dependencies)
 
-## 💼 Domain: Professional Profile
-
-Stored in `vault_professional` table as encrypted JSON.
-
-### Data Types
-
-| Type                  | Fields                                           |
-| --------------------- | ------------------------------------------------ |
-| `ProfessionalProfile` | title, skills, experience_level, job_preferences |
-
-### Consent Scopes
-
-| Scope                      | Description             |
-| -------------------------- | ----------------------- |
-| `vault.read.professional`  | Read professional data  |
-| `vault.write.professional` | Write professional data |
-
-### Example Decrypted Data
-
-```json
-{
-  "professional_title": "Senior Software Engineer",
-  "skills": ["Python", "React", "AWS"],
-  "experience_level": "Senior (5-8 years)",
-  "job_preferences": ["Full-time", "Remote"]
-}
-```
+1. `vault_keys` (root)
+2. `vault_food`, `vault_professional` (depend on vault_keys)
+3. `consent_audit` (references vault_keys)
+4. `investor_profiles` (standalone public table)
+5. `user_investor_profiles` (depends on vault_keys, references investor_profiles)
+6. `vault_kai`, `vault_kai_preferences` (depend on vault_keys)
 
 ---
 
-_Version: 1.1 | Updated: 2024-12-14_
+## 📊 Domain Summary
+
+| Domain | Table | Storage Pattern | Privacy |
+|--------|-------|-----------------|---------|
+| **Food** | `vault_food` | Field-based (N rows per user) | E2E Encrypted |
+| **Professional** | `vault_professional` | Field-based (N rows per user) | E2E Encrypted |
+| **Kai Preferences** | `vault_kai_preferences` | Field-based (N rows per user) | E2E Encrypted |
+| **Kai Decisions** | `vault_kai` | Row per analysis | E2E Encrypted |
+| **Investor (Public)** | `investor_profiles` | Single row per investor | **Public** (SEC data) |
+| **Investor (Private)** | `user_investor_profiles` | Single row per user | E2E Encrypted |
+| **Consent Audit** | `consent_audit` | Append-only log | Token IDs only |
+
+---
+
+_Version: 2.0 | Updated: January 14, 2026 | Field-based storage + Investor profiles_

@@ -208,7 +208,7 @@ class HushhConsentPlugin : Plugin() {
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
-                val responseBody = response.body?.string() ?: ""
+                val responseBody = response.body?.string() ?: "{}"
 
                 if (!success) {
                     Log.e(TAG, "❌ [revokeConsent] Backend error: $responseBody")
@@ -216,7 +216,16 @@ class HushhConsentPlugin : Plugin() {
                 
                 activity.runOnUiThread {
                     if (success) {
-                        call.resolve(JSObject().put("success", true))
+                        // Parse backend response to extract lockVault flag
+                        val responseJson = try { JSONObject(responseBody) } catch (e: Exception) { JSONObject() }
+                        val lockVault = responseJson.optBoolean("lockVault", false)
+                        
+                        Log.d(TAG, "🔒 [revokeConsent] Success, lockVault: $lockVault")
+                        
+                        call.resolve(JSObject().apply {
+                            put("success", true)
+                            put("lockVault", lockVault)
+                        })
                     } else {
                         call.reject("Backend rejected revoke: $responseBody")
                     }

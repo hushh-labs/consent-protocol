@@ -124,6 +124,6 @@ export function TopAppBarSpacer() {
 
   // Sub-pages: Clear the fixed TopAppBar (48px) + Status Bar
   return (
-    <div className="w-full shrink-0 transition-[height] h-[calc(max(env(safe-area-inset-top),32px)+48px)]" />
+    <div className="w-full shrink-0 transition-[height] h-[calc(max(env(safe-area-inset-top),32px)+20px)]" />
   );
 }

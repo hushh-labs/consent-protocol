@@ -14,6 +14,22 @@ const eslintConfig = [
   {
     rules: {
       "react/no-unescaped-entities": "off",
+      // Ban direct fetch() in components - must use service layer for tri-flow architecture
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Direct fetch() is banned in components. Use ApiService or VaultService instead. Native platforms (iOS/Android) have no Next.js server. See docs/PROJECT_CONTEXT_MAP.md for tri-flow architecture.",
+        },
+      ],
+    },
+  },
+  {
+    // Allow fetch() only in API routes and tests
+    files: ["app/api/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
 ];
