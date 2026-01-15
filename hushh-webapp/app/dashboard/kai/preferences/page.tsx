@@ -805,7 +805,8 @@ export default function KaiPreferencesPage() {
                       <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
                         <div className="flex items-center gap-3 flex-1 px-4">
                           <Search className="h-4 w-4 text-muted-foreground" />
-                          <Input
+                          <input
+                            type="text"
                             placeholder="Search investor (e.g. Warren Buffett)"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -924,7 +925,9 @@ export default function KaiPreferencesPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="hybrid">hybrid</SelectItem>
-                                <SelectItem value="on_device">on_device</SelectItem>
+                                <SelectItem value="on_device">
+                                  on_device
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
