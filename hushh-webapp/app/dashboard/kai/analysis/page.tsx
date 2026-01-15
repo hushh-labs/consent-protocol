@@ -193,8 +193,15 @@ export default function KaiAnalysis() {
 
       // 4. Load Kai runtime prefs (decrypted) for analysis parameters
       const { preferences } = await getPreferences(user.uid);
+      // Risk profile now comes from profile's risk_tolerance (not separate encrypted pref)
       let riskProfile: "conservative" | "balanced" | "aggressive" = "balanced";
       let processingMode: "on_device" | "hybrid" = "hybrid";
+
+      // Map profile's risk_tolerance to orchestrator's risk_profile
+      const profileRisk = decryptedContext?.risk_tolerance?.toLowerCase();
+      if (profileRisk === "conservative" || profileRisk === "balanced" || profileRisk === "aggressive") {
+        riskProfile = profileRisk;
+      }
 
       const decryptKaiPref = async (pref: any): Promise<string | null> => {
         if (!pref?.ciphertext || !pref?.iv || !pref?.tag) return null;
@@ -210,15 +217,10 @@ export default function KaiAnalysis() {
         );
       };
 
+      // Only load processing_mode from preferences (risk comes from profile)
       for (const pref of preferences || []) {
         const plaintext = await decryptKaiPref(pref);
         if (!plaintext) continue;
-        if (pref.field_name === "kai_risk_profile") {
-          const v = plaintext as any;
-          if (v === "conservative" || v === "balanced" || v === "aggressive") {
-            riskProfile = v;
-          }
-        }
         if (pref.field_name === "kai_processing_mode") {
           const v = plaintext as any;
           if (v === "on_device" || v === "hybrid") {
@@ -231,9 +233,6 @@ export default function KaiAnalysis() {
         [
           `risk:${riskProfile}`,
           `mode:${processingMode}`,
-          decryptedContext?.risk_tolerance
-            ? `profile_risk:${decryptedContext.risk_tolerance}`
-            : "",
           Array.isArray(decryptedContext?.investment_style) &&
           decryptedContext.investment_style.length
             ? `style:${decryptedContext.investment_style.join("/")}`
