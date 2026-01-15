@@ -103,12 +103,15 @@ export function VaultProvider({ children }: VaultProviderProps) {
   useEffect(() => {
     const handleLockRequest = (event: Event) => {
       const customEvent = event as CustomEvent<{ reason: string }>;
-      console.log(`🔒 [VaultProvider] Lock requested: ${customEvent.detail?.reason}`);
+      console.log(
+        `🔒 [VaultProvider] Lock requested: ${customEvent.detail?.reason}`
+      );
       lockVault();
     };
 
     window.addEventListener("vault-lock-requested", handleLockRequest);
-    return () => window.removeEventListener("vault-lock-requested", handleLockRequest);
+    return () =>
+      window.removeEventListener("vault-lock-requested", handleLockRequest);
   }, [lockVault]);
 
   const unlockVault = useCallback(

@@ -235,30 +235,11 @@ export function InvestorProfileEditor(props: {
         onValueChange={setActiveTab}
         className="w-full"
       >
-        <div className="w-full justify-between mb-4">
-          {/* Mobile Dropdown */}
-          <div className="sm:hidden w-full">
-            <Select value={activeTab} onValueChange={setActiveTab}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select section" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="preference">Preference</SelectItem>
-                <SelectItem value="portfolio">Portfolio DNA</SelectItem>
-                <SelectItem value="background">Background</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Desktop Tabs */}
-          <div className="hidden sm:block">
-            <TabsList className="w-full justify-between">
-              <TabsTrigger value="preference">Preference</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio DNA</TabsTrigger>
-              <TabsTrigger value="background">Background</TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
+        <TabsList className="w-full justify-between">
+          <TabsTrigger value="preference">Preference</TabsTrigger>
+          <TabsTrigger value="portfolio">Portfolio DNA</TabsTrigger>
+          <TabsTrigger value="background">Background</TabsTrigger>
+        </TabsList>
 
         <TabsContent value="preference" className="space-y-4">
           <div className={flat ? "space-y-4" : ""}>
@@ -382,7 +363,7 @@ function PreferenceFormContent({
 }) {
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Risk tolerance
@@ -394,7 +375,7 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="balanced"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -408,7 +389,7 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="long"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -422,7 +403,7 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="low"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
         <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
@@ -441,7 +422,7 @@ function PreferenceFormContent({
             }}
             disabled={readOnly}
             placeholder="—"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
             inputMode="decimal"
           />
         </div>
@@ -893,18 +874,6 @@ function PortfolioDNAContent({
             )}
           </div>
         </div>
-      </div>
-
-      <div className="pt-2">
-        <Button
-          variant="gradient"
-          effect="glass"
-          size="sm"
-          className="w-full text-[10px] font-black uppercase tracking-[0.2em]"
-          onClick={applyStructured}
-        >
-          APPLY CHANGES
-        </Button>
       </div>
     </div>
   );

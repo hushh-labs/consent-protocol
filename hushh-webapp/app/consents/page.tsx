@@ -435,13 +435,17 @@ export default function ConsentsPage() {
           // Revoke - remove from active, update audit
           fetchActiveConsents(userId);
           fetchAuditLog(userId);
-          
+
           // If VAULT_OWNER was revoked via SSE (e.g., from another tab), lock vault
           if (scope === "vault.owner" || scope === "VAULT_OWNER") {
-            console.log("🔒 [SSE] VAULT_OWNER revoked - dispatching lock event");
-            window.dispatchEvent(new CustomEvent("vault-lock-requested", {
-              detail: { reason: "VAULT_OWNER token revoked (SSE)" }
-            }));
+            console.log(
+              "🔒 [SSE] VAULT_OWNER revoked - dispatching lock event"
+            );
+            window.dispatchEvent(
+              new CustomEvent("vault-lock-requested", {
+                detail: { reason: "VAULT_OWNER token revoked (SSE)" },
+              })
+            );
           }
           break;
         default:
