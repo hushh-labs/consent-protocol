@@ -15,17 +15,13 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
+import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 import {
   Card,
@@ -54,6 +50,21 @@ import {
 } from "@/components/ui/select";
 
 import type { InvestorProfile } from "@/lib/services/identity-service";
+import { cn } from "@/lib/utils";
+
+// Predefined investment styles for multi-select
+const INVESTMENT_STYLES = [
+  "Growth",
+  "Value",
+  "Income",
+  "Momentum",
+  "Quality",
+  "GARP",
+  "Deep Value",
+  "Contrarian",
+  "Index",
+  "Quant",
+] as const;
 
 export type EnrichedInvestorProfile = InvestorProfile & {
   profile_version?: number;
@@ -106,6 +117,15 @@ function stringifyJson(value: Jsonish): string {
 function listToCsv(list: string[] | null | undefined): string {
   return list?.length ? list.join(", ") : "";
 }
+
+// Chart configurations for shadcn charts
+const holdingsChartConfig = {
+  value: { label: "Weight %", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
+const sectorChartConfig = {
+  value: { label: "Allocation %", color: "var(--chart-2)" },
+} satisfies ChartConfig;
 
 function csvToList(raw: string): string[] | null {
   const items = raw
@@ -181,7 +201,6 @@ export function InvestorProfileEditor(props: {
     readOnly = false,
   } = props;
 
-  const [styleInput, setStyleInput] = useState("");
   const [buysInput, setBuysInput] = useState("");
   const [sellsInput, setSellsInput] = useState("");
 
@@ -235,128 +254,53 @@ export function InvestorProfileEditor(props: {
         onValueChange={setActiveTab}
         className="w-full"
       >
-        <div className="w-full justify-between mb-4">
-          {/* Mobile Dropdown */}
-          <div className="sm:hidden w-full">
-            <Select value={activeTab} onValueChange={setActiveTab}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select section" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="preference">Preference</SelectItem>
-                <SelectItem value="portfolio">Portfolio DNA</SelectItem>
-                <SelectItem value="background">Background</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Desktop Tabs */}
-          <div className="hidden sm:block">
-            <TabsList className="w-full justify-between">
-              <TabsTrigger value="preference">Preference</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio DNA</TabsTrigger>
-              <TabsTrigger value="background">Background</TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
+        <TabsList className="w-full justify-between text-xs">
+          <TabsTrigger value="preference" className="text-xs">
+            Prefs
+          </TabsTrigger>
+          <TabsTrigger value="portfolio" className="text-xs">
+            Portfolio
+          </TabsTrigger>
+          <TabsTrigger value="background" className="text-xs">
+            Info
+          </TabsTrigger>
+        </TabsList>
 
         <TabsContent value="preference" className="space-y-4">
-          <div className={flat ? "space-y-4" : ""}>
-            {!flat ? (
-              <Card variant="none" effect="glass" showRipple={false}>
-                <CardHeader>
-                  <CardDescription>
-                    How Kai will tailor analysis
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PreferenceFormContent
-                    value={value}
-                    onChange={onChange}
-                    safeAum={safeAum}
-                    styleInput={styleInput}
-                    setStyleInput={setStyleInput}
-                    readOnly={readOnly}
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-6 pt-2">
-                <PreferenceFormContent
-                  value={value}
-                  onChange={onChange}
-                  safeAum={safeAum}
-                  styleInput={styleInput}
-                  setStyleInput={setStyleInput}
-                  readOnly={readOnly}
-                />
-              </div>
-            )}
-          </div>
+          <PreferenceFormContent
+            value={value}
+            onChange={onChange}
+            safeAum={safeAum}
+            readOnly={readOnly}
+          />
         </TabsContent>
 
         <TabsContent value="portfolio" className="space-y-3">
-          {!flat ? (
-            <Card variant="none" effect="glass" showRipple={false}>
-              <PortfolioDNAContent
-                value={value}
-                onChange={onChange}
-                holdingsRows={holdingsRows}
-                setHoldingsRows={setHoldingsRows}
-                holdingsChartData={holdingsChartData}
-                sectorRows={sectorRows}
-                setSectorRows={setSectorRows}
-                sectorChartData={sectorChartData}
-                buysInput={buysInput}
-                setBuysInput={setBuysInput}
-                sellsInput={sellsInput}
-                setSellsInput={setSellsInput}
-                applyStructured={applyStructured}
-                readOnly={readOnly}
-              />
-            </Card>
-          ) : (
-            <div className="pt-2">
-              <PortfolioDNAContent
-                value={value}
-                onChange={onChange}
-                holdingsRows={holdingsRows}
-                setHoldingsRows={setHoldingsRows}
-                holdingsChartData={holdingsChartData}
-                sectorRows={sectorRows}
-                setSectorRows={setSectorRows}
-                sectorChartData={sectorChartData}
-                buysInput={buysInput}
-                setBuysInput={setBuysInput}
-                sellsInput={sellsInput}
-                setSellsInput={setSellsInput}
-                applyStructured={applyStructured}
-                readOnly={readOnly}
-              />
-            </div>
-          )}
+          <PortfolioDNAContent
+            value={value}
+            onChange={onChange}
+            holdingsRows={holdingsRows}
+            setHoldingsRows={setHoldingsRows}
+            holdingsChartData={holdingsChartData}
+            sectorRows={sectorRows}
+            setSectorRows={setSectorRows}
+            sectorChartData={sectorChartData}
+            buysInput={buysInput}
+            setBuysInput={setBuysInput}
+            sellsInput={sellsInput}
+            setSellsInput={setSellsInput}
+            applyStructured={applyStructured}
+            readOnly={readOnly}
+          />
         </TabsContent>
 
         <TabsContent value="background" className="space-y-3">
-          {!flat ? (
-            <Card variant="none" effect="glass" showRipple={false}>
-              <BackgroundContent
-                value={value}
-                onChange={onChange}
-                readOnlyProvenance={readOnlyProvenance}
-                readOnly={readOnly}
-              />
-            </Card>
-          ) : (
-            <div className="pt-2">
-              <BackgroundContent
-                value={value}
-                onChange={onChange}
-                readOnlyProvenance={readOnlyProvenance}
-                readOnly={readOnly}
-              />
-            </div>
-          )}
+          <BackgroundContent
+            value={value}
+            onChange={onChange}
+            readOnlyProvenance={readOnlyProvenance}
+            readOnly={readOnly}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -369,21 +313,17 @@ function PreferenceFormContent({
   value,
   onChange,
   safeAum,
-  styleInput,
-  setStyleInput,
   readOnly = false,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
   safeAum: string;
-  styleInput: string;
-  setStyleInput: (v: string) => void;
   readOnly?: boolean;
 }) {
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Risk tolerance
           </div>
@@ -394,10 +334,10 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="balanced"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Time horizon
           </div>
@@ -408,10 +348,10 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="long"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Portfolio turnover
           </div>
@@ -422,10 +362,10 @@ function PreferenceFormContent({
             }
             disabled={readOnly}
             placeholder="low"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-xl border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             AUM (B)
           </div>
@@ -441,7 +381,7 @@ function PreferenceFormContent({
             }}
             disabled={readOnly}
             placeholder="—"
-            className="h-9 text-sm mt-1 bg-transparent border-0 p-0 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
+            className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
             inputMode="decimal"
           />
         </div>
@@ -452,63 +392,44 @@ function PreferenceFormContent({
           Investment style
         </div>
         <div className="flex flex-wrap gap-2">
-          {(value.investment_style || []).map((s, idx) => (
-            <Badge
-              key={`${s}-${idx}`}
-              variant="secondary"
-              className="gap-1 border-primary/20 bg-primary/5 text-primary"
-            >
-              {s}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className="opacity-70 hover:opacity-100 transition-opacity"
-                  onClick={() =>
+          {INVESTMENT_STYLES.map((style) => {
+            const isSelected = (value.investment_style || []).includes(style);
+            return (
+              <Badge
+                key={style}
+                variant={isSelected ? "default" : "outline"}
+                className={cn(
+                  "cursor-pointer transition-all",
+                  isSelected
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border/50 hover:border-primary/50 hover:bg-primary/5",
+                  readOnly && "cursor-default"
+                )}
+                onClick={() => {
+                  if (readOnly) return;
+                  if (isSelected) {
                     onChange({
                       ...value,
-                      investment_style: removeAt(
-                        value.investment_style || [],
-                        idx
+                      investment_style: (value.investment_style || []).filter(
+                        (s) => s !== style
                       ),
-                    })
+                    });
+                  } else {
+                    onChange({
+                      ...value,
+                      investment_style: [
+                        ...(value.investment_style || []),
+                        style,
+                      ],
+                    });
                   }
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </Badge>
-          ))}
+                }}
+              >
+                {style}
+              </Badge>
+            );
+          })}
         </div>
-        {!readOnly && (
-          <div className="flex gap-2">
-            <Input
-              value={styleInput}
-              onChange={(e) => setStyleInput(e.target.value)}
-              placeholder="Add a style (e.g., value, growth)"
-              className="h-9 text-sm rounded-lg border-border/50 bg-background/40"
-            />
-            <Button
-              variant="none"
-              effect="glass"
-              size="icon-sm"
-              showRipple
-              onClick={() => {
-                if (styleInput.trim()) {
-                  onChange({
-                    ...value,
-                    investment_style: uniqAdd(
-                      value.investment_style,
-                      styleInput.trim()
-                    ),
-                  });
-                  setStyleInput("");
-                }
-              }}
-            >
-              <Plus className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -569,35 +490,26 @@ function PortfolioDNAContent({
         </div>
 
         {holdingsChartData.length > 0 && (
-          <div className="h-40 w-full mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={holdingsChartData}>
-                <XAxis
-                  dataKey="ticker"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(0,0,0,0.8)",
-                    border: "none",
-                    borderRadius: "10px",
-                    fontSize: "12px",
-                  }}
-                  itemStyle={{ color: "#fff" }}
-                  cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                />
-                <Bar
-                  dataKey="value"
-                  radius={[6, 6, 6, 6]}
-                  fill="hsl(var(--primary))"
-                  opacity={0.7}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartContainer
+            config={holdingsChartConfig}
+            className="h-40 w-full mb-4"
+          >
+            <BarChart data={holdingsChartData}>
+              <XAxis
+                dataKey="ticker"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis hide />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar
+                dataKey="value"
+                radius={[6, 6, 6, 6]}
+                fill="var(--color-value)"
+              />
+            </BarChart>
+          </ChartContainer>
         )}
 
         <div className="space-y-2">
@@ -678,37 +590,23 @@ function PortfolioDNAContent({
         </div>
 
         {sectorChartData.length > 0 && (
-          <div className="h-44 w-full mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(0,0,0,0.8)",
-                    border: "none",
-                    borderRadius: "10px",
-                    fontSize: "12px",
-                  }}
-                  itemStyle={{ color: "#fff" }}
-                />
-                <Pie
-                  data={sectorChartData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={42}
-                  outerRadius={72}
-                  paddingAngle={2}
-                >
-                  {sectorChartData.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill="hsl(var(--primary))"
-                      fillOpacity={0.25 + (i % 6) * 0.1}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartContainer
+            config={sectorChartConfig}
+            className="h-44 w-full mb-4"
+          >
+            <PieChart>
+              <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+              <Pie
+                data={sectorChartData}
+                dataKey="value"
+                nameKey="name"
+                innerRadius={42}
+                outerRadius={72}
+                paddingAngle={2}
+                fill="var(--color-value)"
+              />
+            </PieChart>
+          </ChartContainer>
         )}
 
         <div className="space-y-2">
@@ -894,18 +792,6 @@ function PortfolioDNAContent({
           </div>
         </div>
       </div>
-
-      <div className="pt-2">
-        <Button
-          variant="gradient"
-          effect="glass"
-          size="sm"
-          className="w-full text-[10px] font-black uppercase tracking-[0.2em]"
-          onClick={applyStructured}
-        >
-          APPLY CHANGES
-        </Button>
-      </div>
     </div>
   );
 }
@@ -962,7 +848,7 @@ function BackgroundContent({
           value={value.biography || ""}
           onChange={(e) => onChange({ ...value, biography: e.target.value })}
           disabled={readOnly}
-          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-100 disabled:cursor-default"
+          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-100 disabled:cursor-default"
           placeholder="Investing philosophy, track record, etc."
         />
       </div>
@@ -1005,52 +891,65 @@ function BackgroundContent({
         )}
       </div>
 
-      <div className="pt-4 border-t border-border/20">
-        <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-3">
-          Provenance Data
-        </h4>
-        <div className="p-4 rounded-xl border border-border/50 bg-background/30 space-y-4">
-          <div className="space-y-1">
-            <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-              Data Sources
-            </div>
-            <Input
-              value={listToCsv((value.data_sources as any) || null)}
-              onChange={(e) => {
-                if (readOnlyProvenance) return;
-                onChange({
-                  ...value,
-                  data_sources: csvToList(e.target.value),
-                });
-              }}
-              className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-              disabled={readOnlyProvenance}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+      <Card variant="muted" effect="glass" showRipple={false}>
+        <CardContent className="p-4 space-y-4">
+          <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
+            Data Provenance
+          </h4>
+          <div className="space-y-3">
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-                13F Date
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                Data Sources
               </div>
               <Input
-                value={(value.last_13f_date as any) || "N/A"}
-                className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-                disabled
+                value={listToCsv((value.data_sources as any) || null)}
+                onChange={(e) => {
+                  onChange({
+                    ...value,
+                    data_sources: csvToList(e.target.value),
+                  });
+                }}
+                placeholder="SEC EDGAR, Form 13F, Form 4"
+                className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                disabled={readOnly}
               />
             </div>
-            <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-                Form 4 Date
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                  13F Date
+                </div>
+                <Input
+                  type="date"
+                  value={(value.last_13f_date as any) || ""}
+                  onChange={(e) =>
+                    onChange({ ...value, last_13f_date: e.target.value as any })
+                  }
+                  className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                  disabled={readOnly}
+                />
               </div>
-              <Input
-                value={(value.last_form4_date as any) || "N/A"}
-                className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-                disabled
-              />
+              <div className="space-y-1">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                  Form 4 Date
+                </div>
+                <Input
+                  type="date"
+                  value={(value.last_form4_date as any) || ""}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      last_form4_date: e.target.value as any,
+                    })
+                  }
+                  className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                  disabled={readOnly}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

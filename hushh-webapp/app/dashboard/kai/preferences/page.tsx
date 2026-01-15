@@ -28,17 +28,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -125,10 +114,7 @@ export default function KaiPreferencesPage() {
   const [resettingIdentity, setResettingIdentity] = useState(false);
   const [resettingKai, setResettingKai] = useState(false);
 
-  // Runtime settings (draft when editing)
-  const [draftRiskProfile, setDraftRiskProfile] = useState<
-    "conservative" | "balanced" | "aggressive" | ""
-  >("");
+  // Processing mode draft (risk comes from profile now)
   const [draftProcessingMode, setDraftProcessingMode] = useState<
     "on_device" | "hybrid" | ""
   >("");
@@ -191,13 +177,7 @@ export default function KaiPreferencesPage() {
           nextPrefs.processingMode = plaintext;
       }
       setKaiPrefs(nextPrefs);
-      setDraftRiskProfile(
-        (nextPrefs.riskProfile as any) === "conservative" ||
-          (nextPrefs.riskProfile as any) === "balanced" ||
-          (nextPrefs.riskProfile as any) === "aggressive"
-          ? (nextPrefs.riskProfile as any)
-          : ""
-      );
+      // Processing mode only (risk comes from profile now)
       setDraftProcessingMode(
         (nextPrefs.processingMode as any) === "on_device" ||
           (nextPrefs.processingMode as any) === "hybrid"
@@ -343,23 +323,13 @@ export default function KaiPreferencesPage() {
 
     setSavingAll(true);
     try {
-      // 1) Save runtime prefs (encrypted rows)
-      if (draftRiskProfile && draftProcessingMode) {
-        const encRisk = await HushhVault.encryptData({
-          keyHex: vaultKey,
-          plaintext: draftRiskProfile,
-        });
+      // 1) Save processing mode only (risk comes from profile's risk_tolerance)
+      if (draftProcessingMode) {
         const encMode = await HushhVault.encryptData({
           keyHex: vaultKey,
           plaintext: draftProcessingMode,
         });
         await storePreferences(user.uid, [
-          {
-            field_name: "kai_risk_profile",
-            ciphertext: encRisk.ciphertext,
-            iv: encRisk.iv,
-            tag: encRisk.tag,
-          },
           {
             field_name: "kai_processing_mode",
             ciphertext: encMode.ciphertext,
@@ -368,7 +338,7 @@ export default function KaiPreferencesPage() {
           },
         ]);
         setKaiPrefs({
-          riskProfile: draftRiskProfile,
+          riskProfile: null, // No longer stored separately
           processingMode: draftProcessingMode,
         });
       }
@@ -423,7 +393,6 @@ export default function KaiPreferencesPage() {
     vaultOwnerToken,
     editingProfile,
     selectedProfile,
-    draftRiskProfile,
     draftProcessingMode,
   ]);
 
@@ -508,20 +477,12 @@ export default function KaiPreferencesPage() {
   }, [isEditing, editingProfile, profile]);
 
   const displayKaiPrefs = useMemo(() => {
-    if (isEditing) {
-      return {
-        riskProfile: draftRiskProfile || kaiPrefs.riskProfile,
-        processingMode: draftProcessingMode || kaiPrefs.processingMode,
-      };
-    }
-    return kaiPrefs;
-  }, [
-    isEditing,
-    draftRiskProfile,
-    draftProcessingMode,
-    kaiPrefs.riskProfile,
-    kaiPrefs.processingMode,
-  ]);
+    // Risk now comes from profile, only processing mode is tracked separately
+    return {
+      riskProfile: null, // Deprecated - use displayProfile.risk_tolerance
+      processingMode: draftProcessingMode || kaiPrefs.processingMode,
+    };
+  }, [draftProcessingMode, kaiPrefs.processingMode]);
 
   const holdingsChartData = useMemo(() => {
     const list = (displayProfile as any)?.top_holdings || [];
@@ -624,8 +585,8 @@ export default function KaiPreferencesPage() {
             className="border-0 overflow-hidden"
           >
             <CardContent className="p-4 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 space-y-1">
                   <div className="text-xs text-muted-foreground">
                     VIP profile (baseline)
                   </div>
@@ -650,17 +611,7 @@ export default function KaiPreferencesPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="none"
-                    effect="glass"
-                    size="sm"
-                    showRipple
-                    onClick={() => setShowProfileSearch(true)}
-                  >
-                    <Search className="w-4 h-4 mr-2" />
-                    {profile ? "Change" : "Select VIP"}
-                  </Button>
+                {isEditing && profile && (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -674,7 +625,7 @@ export default function KaiPreferencesPage() {
                             setEditingProfile(null);
                             setIsEditing(false);
                           }}
-                          disabled={!profile || resettingIdentity}
+                          disabled={resettingIdentity}
                           className="text-red-500"
                           showRipple
                         >
@@ -693,19 +644,28 @@ export default function KaiPreferencesPage() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                </div>
+                )}
               </div>
 
-              {showProfileSearch && (
-                <div className="mt-4 rounded-xl border border-border/50 bg-background/50 p-4 space-y-4">
+              {isEditing && (
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="sm"
+                  showRipple
+                  onClick={() => setShowProfileSearch(true)}
+                  className="w-full"
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  {profile ? "Change VIP Profile" : "Select VIP Profile"}
+                </Button>
+              )}
+
+              {showProfileSearch && isEditing && (
+                <div className="mt-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-muted-foreground">
-                        VIP selector
-                      </div>
-                      <div className="text-sm font-semibold">
-                        Choose a public baseline profile
-                      </div>
+                    <div className="text-sm font-semibold">
+                      Choose a public baseline profile
                     </div>
                     <Button
                       variant="none"
@@ -737,7 +697,7 @@ export default function KaiPreferencesPage() {
                               key={m.id}
                               onClick={() => handleSelectProfile(m)}
                               disabled={loadingProfile}
-                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm"
+                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm hover:border-primary/50 transition-colors"
                             >
                               <div className="font-medium">{m.name}</div>
                               <div className="text-xs text-muted-foreground">
@@ -751,11 +711,18 @@ export default function KaiPreferencesPage() {
 
                   {selectedProfile && editingProfile ? (
                     <div className="space-y-3">
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
-                        This will copy the public VIP profile into your
-                        encrypted vault. You can edit any fields before
-                        confirming.
-                      </div>
+                      <Card
+                        variant="none"
+                        effect="glass"
+                        showRipple={false}
+                        className="border-0"
+                      >
+                        <CardContent className="p-3 text-xs text-muted-foreground">
+                          This will copy the public VIP profile into your
+                          encrypted vault. You can edit any fields before
+                          confirming.
+                        </CardContent>
+                      </Card>
                       <InvestorProfileEditor
                         value={editingProfile}
                         onChange={setEditingProfile}
@@ -799,7 +766,8 @@ export default function KaiPreferencesPage() {
                       <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
                         <div className="flex items-center gap-3 flex-1 px-4">
                           <Search className="h-4 w-4 text-muted-foreground" />
-                          <Input
+                          <input
+                            type="text"
                             placeholder="Search investor (e.g. Warren Buffett)"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -825,21 +793,23 @@ export default function KaiPreferencesPage() {
                         </Button>
                       </div>
 
-                      <div className="space-y-1 max-h-56 overflow-y-auto">
-                        {searchResults.map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => handleSelectProfile(m)}
-                            disabled={loadingProfile}
-                            className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm"
-                          >
-                            <div className="font-medium">{m.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {m.firm || "—"}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      {searchResults.length > 0 && (
+                        <div className="space-y-1 max-h-56 overflow-y-auto">
+                          {searchResults.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => handleSelectProfile(m)}
+                              disabled={loadingProfile}
+                              className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm hover:border-primary/50 transition-colors"
+                            >
+                              <div className="font-medium">{m.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {m.firm || "—"}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="text-xs text-muted-foreground">
                         Tip: pick the closest match, then fine-tune in Edit
@@ -853,12 +823,12 @@ export default function KaiPreferencesPage() {
               {!profile && !isEditing && !showProfileSearch && (
                 <div className="mt-4">
                   <Button
-                    variant="none"
+                    variant="gradient"
                     effect="glass"
                     size="sm"
                     showRipple
                     onClick={handleManualSetup}
-                    className="w-full border border-border/50 text-muted-foreground hover:text-foreground"
+                    className="w-full"
                   >
                     <Pencil className="w-4 h-4 mr-2" />
                     Manual Setup
@@ -867,74 +837,62 @@ export default function KaiPreferencesPage() {
               )}
 
               {/* Preferences Editor (Always visible) */}
-              {displayProfile && (
+              {displayProfile && !showProfileSearch && (
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
-                  {/* Kai Runtime Settings */}
+                  {/* Kai Runtime Settings - Processing Mode Only (Risk comes from profile) */}
                   {isEditing ? (
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
-                      <div className="text-xs text-muted-foreground">
-                        Kai runtime settings
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <div className="text-[10px] text-muted-foreground">
-                            Risk profile
-                          </div>
-                          <Select
-                            value={draftRiskProfile}
-                            onValueChange={(v: any) => setDraftRiskProfile(v)}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="conservative">
-                                conservative
-                              </SelectItem>
-                              <SelectItem value="balanced">balanced</SelectItem>
-                              <SelectItem value="aggressive">
-                                aggressive
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                    <Card variant="muted" effect="glass" showRipple={false}>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Kai runtime settings
                         </div>
                         <div className="space-y-1">
                           <div className="text-[10px] text-muted-foreground">
-                            Processing
+                            Processing mode
                           </div>
                           <Select
-                            value={draftProcessingMode}
-                            onValueChange={(v: any) =>
-                              setDraftProcessingMode(v)
-                            }
+                            value={draftProcessingMode || "hybrid"}
+                            onValueChange={(v: any) => {
+                              if (v !== "on_device") setDraftProcessingMode(v);
+                            }}
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue placeholder="hybrid" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="hybrid">hybrid</SelectItem>
-                              <SelectItem value="on_device">
-                                on_device
+                              <SelectItem value="on_device" disabled>
+                                on_device (Coming Soon)
                               </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                      </div>
-                    </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Risk is derived from profile&apos;s risk tolerance in
+                          Prefs tab
+                        </p>
+                      </CardContent>
+                    </Card>
                   ) : (
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-xs text-muted-foreground mb-2">
-                        Kai runtime
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary">
-                          risk:{displayKaiPrefs.riskProfile || "—"}
-                        </Badge>
-                        <Badge variant="secondary">
-                          mode:{displayKaiPrefs.processingMode || "—"}
-                        </Badge>
-                      </div>
-                    </div>
+                    <Card variant="muted" effect="glass" showRipple={false}>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Kai runtime settings
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Processing mode
+                          </div>
+                          <div className="flex items-center h-9 px-3 py-2 rounded-md border border-border/50 bg-background/20 text-sm">
+                            {displayKaiPrefs.processingMode || "hybrid"}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Risk is derived from profile&apos;s risk tolerance in
+                          Prefs tab
+                        </p>
+                      </CardContent>
+                    </Card>
                   )}
 
                   {/* Main Profile Editor (Read-only or Editable) */}
