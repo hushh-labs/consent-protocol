@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { decryptData, EncryptedPayload } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
+import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
 import { getSessionItem } from "@/lib/utils/session-storage";
 import {
@@ -20,8 +21,18 @@ import {
   CardTitle,
   CardContent,
 } from "@/lib/morphy-ux/morphy";
-import { User, Briefcase, Code, Target, TrendingUp, Shield, Edit, RefreshCw } from "lucide-react";
+import {
+  User,
+  Briefcase,
+  Code,
+  Target,
+  TrendingUp,
+  Shield,
+  Edit,
+  RefreshCw,
+} from "lucide-react";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { ProfessionalProfileEditor } from "@/components/professional/professional-profile-editor";
 
 interface ProfessionalProfile {
   professional_title: string;
@@ -32,10 +43,12 @@ interface ProfessionalProfile {
 
 export default function ProfessionalProfilePage() {
   const router = useRouter();
-  const { getVaultKey, isVaultUnlocked } = useVault();
+  const { user } = useAuth();
+  const { getVaultKey, getVaultOwnerToken, isVaultUnlocked } = useVault();
   const [profile, setProfile] = useState<ProfessionalProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     // Redirect if vault not unlocked
@@ -51,27 +64,22 @@ export default function ProfessionalProfilePage() {
     setError("");
 
     try {
+      const userId = user?.uid;
       const vaultKey = getVaultKey();
-      if (!vaultKey) {
-        setError("Vault not unlocked");
+      const vaultOwnerToken = getVaultOwnerToken();
+
+      if (!userId || !vaultKey || !vaultOwnerToken) {
+        setError("Vault not unlocked or session expired");
         return;
       }
 
-      const userId =
-        localStorage.getItem("user_id") || getSessionItem("user_id");
-      if (!userId) {
-        setError("No user ID found");
-        return;
-      }
+      console.log(`🔍 [ProfDashboard] Loading profile with VAULT_OWNER token`);
 
-      // Get session token from platform-aware storage
-      // const sessionToken = getSessionItem("session_token"); // Removed as per diff
-      if (process.env.NODE_ENV === "development") {
-        console.log(`🔍 [ProfDashboard] Loading profile. UserId: ${userId}`);
-      }
-
-      // Use ApiService for platform-aware API calls
-      const response = await ApiService.getProfessionalProfile(userId);
+      // ✅ SEND VAULT_OWNER TOKEN (works on web AND native)
+      const response = await ApiService.getProfessionalProfile(
+        userId,
+        vaultOwnerToken
+      );
       if (!response.ok) {
         if (response.status === 404) {
           // No profile yet, show empty state
@@ -178,9 +186,32 @@ export default function ProfessionalProfilePage() {
   }
 
   if (!profile) {
+    // Show editor for setup if vault is unlocked
+    if (isEditing && user?.uid) {
+      const vaultKey = getVaultKey();
+      const vaultOwnerToken = getVaultOwnerToken();
+
+      if (vaultKey && vaultOwnerToken) {
+        return (
+          <div className="py-8">
+            <ProfessionalProfileEditor
+              userId={user.uid}
+              vaultKey={vaultKey}
+              vaultOwnerToken={vaultOwnerToken}
+              onSave={async () => {
+                await loadProfile();
+                setIsEditing(false);
+              }}
+              onCancel={() => setIsEditing(false)}
+            />
+          </div>
+        );
+      }
+    }
+
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md" variant="none" effect="glass">
+      <div className="flex items-center justify-center min-h-[60vh] px-4 md:px-6 lg:px-8">
+        <Card className="max-w-lg w-full mx-auto" variant="none" effect="glass">
           <CardContent className="p-8 text-center space-y-4">
             <div className="h-16 w-16 rounded-full bg-linear-to-br from-blue-400 to-purple-500 mx-auto flex items-center justify-center">
               <User className="h-8 w-8 text-white" />
@@ -191,7 +222,7 @@ export default function ProfessionalProfilePage() {
               job preferences to help us match you with opportunities.
             </p>
             <Button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => setIsEditing(true)}
               variant="gradient"
               effect="fill"
               size="lg"
@@ -203,6 +234,30 @@ export default function ProfessionalProfilePage() {
         </Card>
       </div>
     );
+  }
+
+  // Show editor when editing
+  if (isEditing && user?.uid) {
+    const vaultKey = getVaultKey();
+    const vaultOwnerToken = getVaultOwnerToken();
+
+    if (vaultKey && vaultOwnerToken) {
+      return (
+        <div className="py-8">
+          <ProfessionalProfileEditor
+            initialProfile={profile}
+            userId={user.uid}
+            vaultKey={vaultKey}
+            vaultOwnerToken={vaultOwnerToken}
+            onSave={async () => {
+              await loadProfile();
+              setIsEditing(false);
+            }}
+            onCancel={() => setIsEditing(false)}
+          />
+        </div>
+      );
+    }
   }
 
   return (
@@ -221,7 +276,7 @@ export default function ProfessionalProfilePage() {
           </div>
         </div>
         <Button
-          onClick={() => router.push("/dashboard")}
+          onClick={() => setIsEditing(true)}
           variant="none"
           size="sm"
           className="text-muted-foreground hover:text-foreground"
@@ -304,18 +359,6 @@ export default function ProfessionalProfilePage() {
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-4 justify-center">
-        <Button onClick={() => router.push("/dashboard")} variant="blue">
-          <Edit className="h-4 w-4 mr-2" />
-          Update Profile
-        </Button>
-        <Button onClick={loadProfile} variant="none">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
       </div>
     </div>
   );

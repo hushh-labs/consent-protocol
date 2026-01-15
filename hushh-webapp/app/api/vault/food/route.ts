@@ -1,12 +1,10 @@
 // app/api/vault/food/route.ts
 
 /**
- * Food Domain Vault API - Symmetric with Native
+ * Food Domain Vault API - Consent-First Architecture
  *
- * Native Swift: POST /db/food/get with {userId} body, optional authToken header
- * Web Next.js: GET /api/vault/food → proxies to Python /db/food/get
- *
- * Auth is handled by Python backend, not here (matches native).
+ * All endpoints require VAULT_OWNER token for data access.
+ * Matches native plugin routing (iOS/Android).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,42 +16,46 @@ export const dynamic = "force-dynamic";
 const PYTHON_API_URL = getPythonApiUrl();
 
 // ============================================================================
-// GET: Read food preferences (proxies to Python /db/food/get)
-// Matches Swift: fetchDomainData(domain: "food", call: call)
+// GET: Read food preferences with VAULT_OWNER token
+// Route: /api/vault/food/preferences?userId=xxx&consentToken=xxx
 // ============================================================================
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
+  const consentToken = searchParams.get("consentToken");
 
-  if (!userId) {
-    return NextResponse.json({ error: "userId required" }, { status: 400 });
+  if (!userId || !consentToken) {
+    return NextResponse.json(
+      { error: "userId and consentToken are required" },
+      { status: 400 }
+    );
   }
 
-  const authHeader = request.headers.get("Authorization");
-
-  // =========================================================================
-  // PROXY TO PYTHON BACKEND (Same as native iOS/Android)
-  // Swift calls: performRequest(urlStr: "\(backendUrl)/db/food/get", body: ["userId": userId])
-  // =========================================================================
   try {
-    const response = await fetch(`${PYTHON_API_URL}/db/food/get`, {
+    // Proxy to Python backend with token for validation (note: /api/food, not /api/vault/food)
+    const response = await fetch(`${PYTHON_API_URL}/api/food/preferences`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeader ? { Authorization: authHeader } : {}),
-      },
-      body: JSON.stringify({ userId }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, consentToken }),
     });
 
-    // Swift returns: ["domain": domain, "preferences": json["preferences"] ?? NSNull()]
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[API] Python backend error:", response.status, errorText);
+      return NextResponse.json(
+        { error: "Backend error", details: errorText },
+        { status: response.status }
+      );
+    }
+
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error("[API] Food fetch error:", error);
+    console.error("[API] Food preferences fetch error:", error);
     return NextResponse.json(
-      { domain: "food", preferences: null },
-      { status: 200 }
+      { error: "Internal server error" },
+      { status: 500 }
     );
   }
 }
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     const authHeader = request.headers.get("Authorization");
 
-    const response = await fetch(`${PYTHON_API_URL}/db/food/store`, {
+    const response = await fetch(`${PYTHON_API_URL}/api/food/preferences/store`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

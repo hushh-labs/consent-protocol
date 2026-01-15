@@ -77,10 +77,109 @@ The specialists reach a **Consensus** or document **Dissenting Opinions**, which
 
 ## 🔐 Consent & Security
 
-Kai strictly adheres to the **Hushh Consent Protocol**:
+Kai strictly adheres to the **Hushh Consent Protocol** with enhanced token-based compliance:
 
-- **Hierarchical Access**: Uses the `vault.owner` scope, which satisfies all downstream `agent.kai.analyze` requirements via hierarchical validation in `token.py`.
-- **Zero-Knowledge**: Personal holdings and profiles are only ever decrypted in the client's memory.
+### Token-Based Access Control
+
+- **VAULT_OWNER Token**: All user data reads require VAULT_OWNER token
+  - Investor profile access: `getEncryptedProfile(vaultOwnerToken)`
+  - Kai preferences access: Via VaultContext with token validation
+  - Analysis history: Stored with token reference
+
+- **Agent-Scoped Token**: Analysis operations use scoped tokens
+  - Scope: `agent.kai.analyze`
+  - Duration: 7 days (renewable)
+  - Validated on every `/api/kai/analyze` request
+
+- **Zero-Knowledge**: Personal holdings and profiles are only ever decrypted in the client's memory
+- **Audit Trail**: Every analysis logged to `consent_audit` table with token reference
+
+### Regulatory Compliance (SEC/FINRA)
+
+#### Audit Trail for SEC Requirements
+
+| SEC Requirement | Hushh Implementation |
+|----------------|---------------------|
+| **Recordkeeping** | Every Kai analysis logged to `consent_audit` with:<br/>- user_id<br/>- timestamp<br/>- ticker analyzed<br/>- VAULT_OWNER token used<br/>- decision card generated |
+| **User Consent** | Explicit token-based consent for each analysis operation |
+| **Fiduciary Duty** | Token system provides cryptographic proof of authorization |
+| **Audit Access** | `consent_audit` table exportable for regulatory review |
+| **Retention** | 2-year retention (SEC Rule 17a-4 compliance) |
+
+#### VAULT_OWNER Token as Proof of Consent
+
+Traditional robo-advisors use **implied consent** (user agreement buried in TOS).
+
+**Hushh Kai uses cryptographic consent:**
+
+```typescript
+// Frontend: app/dashboard/kai/analysis/page.tsx
+if (!vaultOwnerToken) {
+  toast.error("Session expired. Please unlock vault again.");
+  return;  // Hard stop - no analysis without token
+}
+
+// Every analysis requires fresh token validation
+const analysis = await analyzeFundamental({
+  user_id: user.uid,
+  ticker: targetTicker,
+  token: vaultOwnerToken,  // Cryptographic proof
+  // ...
+});
+```
+
+**Backend validation:**
+```python
+# consent-protocol/api/routes/kai.py
+@router.post("/analyze")
+async def analyze_ticker(request: AnalyzeRequest):
+    # Validate VAULT_OWNER token before analysis
+    token = request.token
+    validate_vault_owner_token(token, request.user_id)
+    
+    # Log to audit trail
+    await consent_db.insert_event(
+        action="ANALYSIS_REQUESTED",
+        user_id=request.user_id,
+        token_id=token,
+        metadata={"ticker": request.ticker}
+    )
+    
+    # Perform analysis
+    # ...
+```
+
+**Audit Trail Export for Regulators:**
+
+```sql
+-- Generate complete Kai usage report
+SELECT 
+    timestamp,
+    action,
+    metadata->>'ticker' as ticker_analyzed,
+    metadata->>'decision' as recommendation,
+    token_id
+FROM consent_audit
+WHERE user_id = 'user123' 
+  AND agent_id = 'agent_kai'
+ORDER BY timestamp DESC;
+```
+
+This provides:
+- ✅ **Proof of consent** for each analysis
+- ✅ **Complete audit trail** with timestamps
+- ✅ **Token-based authorization** (not implied)
+- ✅ **Regulatory export capability**
+
+#### Comparison: Kai vs Traditional Robo-Advisors
+
+| Aspect | Traditional Robo-Advisor | Agent Kai |
+|--------|-------------------------|-----------|
+| **Consent Mechanism** | Implied (TOS checkbox) | Cryptographic tokens |
+| **Audit Trail** | Internal logs (not user-accessible) | `consent_audit` table (exportable) |
+| **Access Control** | Session-based (stateful) | Token-based (stateless, verifiable) |
+| **Regulatory Review** | Request logs from company | User exports own audit trail |
+| **Proof of Authorization** | "User agreed to TOS" | Cryptographic token signature |
 
 ---
 

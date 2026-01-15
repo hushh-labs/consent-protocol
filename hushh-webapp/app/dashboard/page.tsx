@@ -9,13 +9,14 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/lib/morphy-ux/morphy";
 import { ConsentStatusBar } from "@/components/consent/status-bar";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
 import { useVault } from "@/lib/vault/vault-context";
+import { HushhIdentity, HushhVault } from "@/lib/capacitor";
 import {
   TrendingUp,
   UserCheck,
@@ -213,11 +214,34 @@ function DomainListItem({
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { getVaultKey } = useVault();
+  const { getVaultKey, vaultOwnerToken, vaultKey } = useVault();
   const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
+  const [domainStatus, setDomainStatus] = useState({
+    totalActive: 0,
+    total: 3,
+  });
   const [activeConsentsCount, setActiveConsentsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
+
+  // Decrypt encrypted payload helper
+  const decryptPayload = useCallback(
+    async (payload: { ciphertext: string; iv: string; tag: string }) => {
+      if (!vaultKey) throw new Error("No vault key");
+      const result = await HushhVault.decryptData({
+        keyHex: vaultKey,
+        payload: {
+          ciphertext: payload.ciphertext,
+          iv: payload.iv,
+          tag: payload.tag,
+          encoding: "base64",
+          algorithm: "aes-256-gcm",
+        },
+      });
+      return result.plaintext;
+    },
+    [vaultKey]
+  );
 
   // Auth & Vault protection
   useEffect(() => {
@@ -236,64 +260,87 @@ export default function DashboardPage() {
     setIsLocked(false);
   };
 
-  // Fetch data counts for each domain
+  // Fetch vault status and active consents
   useEffect(() => {
-    async function loadDataCounts() {
-      if (!user) {
+    async function loadStatus() {
+      if (!user || !vaultOwnerToken) {
         setLoading(false);
         return;
       }
 
-      const vaultKey = getVaultKey();
-      if (!vaultKey) {
+      const currentVaultKey = getVaultKey();
+      if (!currentVaultKey) {
         setLoading(false);
         return;
       }
 
       try {
-        const [foodRes, profRes, activeRes] = await Promise.all([
-          ApiService.getFoodPreferences(user.uid),
-          ApiService.getProfessionalProfile(user.uid),
+        // Fetch status and active consents in parallel
+        const [statusRes, activeRes] = await Promise.all([
+          ApiService.getVaultStatus(user.uid, vaultOwnerToken),
           ApiService.getActiveConsents(user.uid),
         ]);
 
         const counts: Record<string, number> = {};
 
-        if (foodRes.ok) {
-          const data = await foodRes.json();
-          const prefs = data.preferences || {};
-          counts.food = Object.keys(prefs).filter((k) => prefs[k]).length;
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setDomainStatus({
+            totalActive: statusData.totalActive,
+            total: statusData.total,
+          });
+
+          // Set individual domain counts for badges
+          if (statusData.domains?.food?.fieldCount) {
+            counts.food = statusData.domains.food.fieldCount;
+          }
+          if (statusData.domains?.professional?.fieldCount) {
+            counts.professional = statusData.domains.professional.fieldCount;
+          }
         }
 
-        if (profRes.ok) {
-          const data = await profRes.json();
-          const prefs = data.preferences || {};
-          counts.professional = Object.keys(prefs).filter(
-            (k) => prefs[k]
-          ).length;
+        // Fetch encrypted investor profile and decrypt to count holdings
+        try {
+          const encrypted = await HushhIdentity.getEncryptedProfile({
+            vaultOwnerToken,
+          });
+          if (encrypted?.profile_data) {
+            const plaintext = await decryptPayload(encrypted.profile_data);
+            const profile = JSON.parse(plaintext);
+            // Count holdings from decrypted profile
+            const holdingsCount = Array.isArray(profile.top_holdings)
+              ? profile.top_holdings.length
+              : 0;
+            counts.investor = holdingsCount;
+          }
+        } catch (profileError: any) {
+          // User hasn't confirmed identity yet (404) or other error
+          console.log(
+            "[Dashboard] No investor profile found:",
+            profileError?.message
+          );
+          counts.investor = 0;
         }
+
+        setDataCounts(counts);
 
         if (activeRes.ok) {
           const data = await activeRes.json();
           setActiveConsentsCount((data.active || []).length);
         }
-
-        setDataCounts(counts);
       } catch (error) {
-        console.error("Failed to load data counts:", error);
+        console.error("Failed to load vault status:", error);
       } finally {
         setLoading(false);
       }
     }
 
-    loadDataCounts();
-  }, [user, getVaultKey]);
+    loadStatus();
+  }, [user, vaultOwnerToken, getVaultKey, decryptPayload]);
 
   // Calculate totals
-  const totalDomains = DATA_DOMAINS.filter((d) => d.status === "active").length;
-  const activeDomains = Object.keys(dataCounts).filter(
-    (k) => (dataCounts[k] ?? 0) > 0
-  ).length;
+  const totalDomains = domainStatus.total;
+  const activeDomains = domainStatus.totalActive;
   const totalDataPoints = Object.values(dataCounts).reduce((a, b) => a + b, 0);
 
   // Separate active and coming soon domains
@@ -307,9 +354,9 @@ export default function DashboardPage() {
 
       {/* Header - Minimal */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">
+        {/* <h1 className="text-2xl font-bold">
           <span className="hushh-gradient-text">Dashboard</span>
-        </h1>
+        </h1> */}
         <p className="text-sm text-muted-foreground">
           Your encrypted data vault • {activeDomains}/{totalDomains} domains
           active

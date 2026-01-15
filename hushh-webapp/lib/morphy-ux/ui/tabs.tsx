@@ -65,7 +65,7 @@ function TabsTrigger({
       data-slot="morphy-tabs-trigger"
       className={cn(
         // Base styles
-        "relative overflow-hidden inline-flex h-[calc(100%-4px)] flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-200",
+        "relative overflow-hidden inline-flex h-[calc(100%-4px)] flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-200 cursor-pointer",
         // Default state
         "text-muted-foreground",
         // Hover state (M3: 8% state layer)
