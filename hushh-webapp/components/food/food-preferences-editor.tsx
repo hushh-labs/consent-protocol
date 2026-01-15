@@ -125,19 +125,17 @@ export function FoodPreferencesEditor({
         );
       }
 
-      // Store each field individually (backend expects one field at a time)
+      // Store each field individually via platform-aware routing
+      // Web: /api/vault/food → Python /api/food/preferences/store
+      // Native: HushhVault plugin → Python /api/food/preferences/store
       for (const [fieldName, encrypted] of Object.entries(encryptedFields)) {
-        const response = await fetch("/api/vault/food", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            fieldName,
-            ciphertext: encrypted.ciphertext,
-            iv: encrypted.iv,
-            tag: encrypted.tag,
-            consentToken: vaultOwnerToken,
-          }),
+        const response = await ApiService.storeFoodPreference({
+          userId,
+          fieldName,
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          tag: encrypted.tag,
+          consentToken: vaultOwnerToken,
         });
 
         if (!response.ok) {

@@ -58,7 +58,7 @@ function getScopeDataEndpoint(scope: string): string | null {
 // ============================================================================
 
 export function useConsentActions(options: UseConsentActionsOptions = {}) {
-  const { vaultKey } = useVault();
+  const { vaultKey, getVaultOwnerToken } = useVault();
   const { onActionComplete } = options;
 
   // Track request status: ID -> "pending" | "handling" | "handled"
@@ -155,11 +155,19 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
           console.log("[NativeDebug] Fetching scope data for:", consent.scope);
 
           try {
+            // Get vault owner token for authenticated requests
+            const vaultOwnerToken = getVaultOwnerToken();
+            
+            if (!vaultOwnerToken) {
+              console.error("[NativeDebug] No vault owner token available");
+              throw new Error("Vault owner token required");
+            }
+            
             // Scope mapping to ApiService methods
             if (consent.scope.includes("food")) {
-              dataResponse = await ApiService.getFoodPreferences(userId);
+              dataResponse = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
             } else if (consent.scope.includes("professional")) {
-              dataResponse = await ApiService.getProfessionalProfile(userId);
+              dataResponse = await ApiService.getProfessionalProfile(userId, vaultOwnerToken);
             } else if (consent.scope.includes("finance")) {
               // TODO: Implement getFinanceProfile in ApiService
               // For now, fall back to null or handle error
