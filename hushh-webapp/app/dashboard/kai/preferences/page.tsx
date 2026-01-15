@@ -125,10 +125,7 @@ export default function KaiPreferencesPage() {
   const [resettingIdentity, setResettingIdentity] = useState(false);
   const [resettingKai, setResettingKai] = useState(false);
 
-  // Runtime settings (draft when editing)
-  const [draftRiskProfile, setDraftRiskProfile] = useState<
-    "conservative" | "balanced" | "aggressive" | ""
-  >("");
+  // Processing mode draft (risk comes from profile now)
   const [draftProcessingMode, setDraftProcessingMode] = useState<
     "on_device" | "hybrid" | ""
   >("");
@@ -191,13 +188,7 @@ export default function KaiPreferencesPage() {
           nextPrefs.processingMode = plaintext;
       }
       setKaiPrefs(nextPrefs);
-      setDraftRiskProfile(
-        (nextPrefs.riskProfile as any) === "conservative" ||
-          (nextPrefs.riskProfile as any) === "balanced" ||
-          (nextPrefs.riskProfile as any) === "aggressive"
-          ? (nextPrefs.riskProfile as any)
-          : ""
-      );
+      // Processing mode only (risk comes from profile now)
       setDraftProcessingMode(
         (nextPrefs.processingMode as any) === "on_device" ||
           (nextPrefs.processingMode as any) === "hybrid"
@@ -343,23 +334,13 @@ export default function KaiPreferencesPage() {
 
     setSavingAll(true);
     try {
-      // 1) Save runtime prefs (encrypted rows)
-      if (draftRiskProfile && draftProcessingMode) {
-        const encRisk = await HushhVault.encryptData({
-          keyHex: vaultKey,
-          plaintext: draftRiskProfile,
-        });
+      // 1) Save processing mode only (risk comes from profile's risk_tolerance)
+      if (draftProcessingMode) {
         const encMode = await HushhVault.encryptData({
           keyHex: vaultKey,
           plaintext: draftProcessingMode,
         });
         await storePreferences(user.uid, [
-          {
-            field_name: "kai_risk_profile",
-            ciphertext: encRisk.ciphertext,
-            iv: encRisk.iv,
-            tag: encRisk.tag,
-          },
           {
             field_name: "kai_processing_mode",
             ciphertext: encMode.ciphertext,
@@ -368,7 +349,7 @@ export default function KaiPreferencesPage() {
           },
         ]);
         setKaiPrefs({
-          riskProfile: draftRiskProfile,
+          riskProfile: null, // No longer stored separately
           processingMode: draftProcessingMode,
         });
       }
@@ -423,7 +404,6 @@ export default function KaiPreferencesPage() {
     vaultOwnerToken,
     editingProfile,
     selectedProfile,
-    draftRiskProfile,
     draftProcessingMode,
   ]);
 
@@ -508,20 +488,12 @@ export default function KaiPreferencesPage() {
   }, [isEditing, editingProfile, profile]);
 
   const displayKaiPrefs = useMemo(() => {
-    if (isEditing) {
-      return {
-        riskProfile: draftRiskProfile || kaiPrefs.riskProfile,
-        processingMode: draftProcessingMode || kaiPrefs.processingMode,
-      };
-    }
-    return kaiPrefs;
-  }, [
-    isEditing,
-    draftRiskProfile,
-    draftProcessingMode,
-    kaiPrefs.riskProfile,
-    kaiPrefs.processingMode,
-  ]);
+    // Risk now comes from profile, only processing mode is tracked separately
+    return {
+      riskProfile: null, // Deprecated - use displayProfile.risk_tolerance
+      processingMode: draftProcessingMode || kaiPrefs.processingMode,
+    };
+  }, [draftProcessingMode, kaiPrefs.processingMode]);
 
   const holdingsChartData = useMemo(() => {
     const list = (displayProfile as any)?.top_holdings || [];
@@ -878,74 +850,25 @@ export default function KaiPreferencesPage() {
               {/* Preferences Editor (Always visible) */}
               {displayProfile && !showProfileSearch && (
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
-                  {/* Kai Runtime Settings */}
-                  {isEditing ? (
-                    <Card variant="muted" effect="glass" showRipple={false}>
-                      <CardContent className="p-3 space-y-2">
-                        <div className="text-xs text-muted-foreground">
-                          Kai runtime settings
-                        </div>
-                        <div className="space-y-2">
-                          <div className="space-y-1">
-                            <div className="text-[10px] text-muted-foreground">
-                              Risk profile
-                            </div>
-                            <Select
-                              value={draftRiskProfile}
-                              onValueChange={(v: any) => setDraftRiskProfile(v)}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="conservative">
-                                  conservative
-                                </SelectItem>
-                                <SelectItem value="balanced">
-                                  balanced
-                                </SelectItem>
-                                <SelectItem value="aggressive">
-                                  aggressive
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="text-[10px] text-muted-foreground">
-                              Processing (Coming Soon)
-                            </div>
-                            <Select value="hybrid" disabled>
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="hybrid" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="hybrid">hybrid</SelectItem>
-                                <SelectItem value="on_device">
-                                  on_device
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <Card variant="muted" effect="glass" showRipple={false}>
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-2">
-                          Kai runtime
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary">
-                            risk:{displayKaiPrefs.riskProfile || "—"}
-                          </Badge>
-                          <Badge variant="secondary">
-                            mode:{displayKaiPrefs.processingMode || "hybrid"}
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                  {/* Kai Runtime Settings - Processing Mode Only (Risk comes from profile) */}
+                  <Card variant="muted" effect="glass" showRipple={false}>
+                    <CardContent className="p-3">
+                      <div className="text-xs text-muted-foreground mb-2">
+                        Kai runtime
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="secondary">
+                          risk:{displayProfile?.risk_tolerance || "balanced"}
+                        </Badge>
+                        <Badge variant="secondary">
+                          mode:hybrid
+                        </Badge>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-2">
+                        Risk is derived from your profile&apos;s risk tolerance setting in Prefs tab
+                      </p>
+                    </CardContent>
+                  </Card>
 
                   {/* Main Profile Editor (Read-only or Editable) */}
                   <div className={isEditing ? "opacity-100" : "opacity-90"}>
