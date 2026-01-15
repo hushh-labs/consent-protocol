@@ -485,7 +485,7 @@ function PortfolioDNAContent({
         </div>
 
         {holdingsChartData.length > 0 && (
-          <div className="h-40 w-full mb-4">
+          <div className="h-40 w-full mb-4 [&_svg]:outline-none **:outline-none">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={holdingsChartData}>
                 <XAxis
@@ -493,17 +493,20 @@ function PortfolioDNAContent({
                   fontSize={10}
                   tickLine={false}
                   axisLine={false}
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
                 />
                 <YAxis hide />
                 <Tooltip
                   contentStyle={{
-                    background: "rgba(0,0,0,0.8)",
-                    border: "none",
-                    borderRadius: "10px",
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
                     fontSize: "12px",
+                    color: "hsl(var(--popover-foreground))",
                   }}
-                  itemStyle={{ color: "#fff" }}
-                  cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                  labelStyle={{ color: "hsl(var(--popover-foreground))" }}
+                  itemStyle={{ color: "hsl(var(--popover-foreground))" }}
+                  cursor={{ fill: "hsl(var(--muted)/0.1)" }}
                 />
                 <Bar
                   dataKey="value"
@@ -594,17 +597,19 @@ function PortfolioDNAContent({
         </div>
 
         {sectorChartData.length > 0 && (
-          <div className="h-44 w-full mb-4">
+          <div className="h-44 w-full mb-4 [&_svg]:outline-none **:outline-none">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Tooltip
                   contentStyle={{
-                    background: "rgba(0,0,0,0.8)",
-                    border: "none",
-                    borderRadius: "10px",
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
                     fontSize: "12px",
+                    color: "hsl(var(--popover-foreground))",
                   }}
-                  itemStyle={{ color: "#fff" }}
+                  labelStyle={{ color: "hsl(var(--popover-foreground))" }}
+                  itemStyle={{ color: "hsl(var(--popover-foreground))" }}
                 />
                 <Pie
                   data={sectorChartData}
