@@ -6,6 +6,7 @@ CONSENT-FIRST ARCHITECTURE:
 - All endpoints require VAULT_OWNER consent token
 - No authentication bypasses
 - Uniform validation across all agents
+- Revocation checked against both in-memory and DB
 """
 
 import logging
@@ -13,7 +14,7 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from hushh_mcp.consent.token import validate_token
+from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
 import consent_db
 
@@ -27,14 +28,15 @@ async def get_pool():
     return await consent_db.get_pool()
 
 
-def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
+async def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
     """
-    Validate VAULT_OWNER consent token.
+    Validate VAULT_OWNER consent token with DB revocation check.
     
     Checks:
     1. Token is valid (signature, expiry)
     2. Token has VAULT_OWNER scope
     3. Token userId matches requested userId
+    4. Token is not revoked (in-memory AND database)
     
     Raises HTTPException if validation fails.
     """
@@ -44,8 +46,8 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
             detail="Missing consent token. Vault owner must provide VAULT_OWNER token."
         )
     
-    # Validate token
-    valid, reason, token_obj = validate_token(consent_token)
+    # Validate token with DB revocation check for cross-instance consistency
+    valid, reason, token_obj = await validate_token_with_db(consent_token)
     
     if not valid:
         logger.warning(f"Invalid consent token: {reason}")
@@ -93,8 +95,8 @@ async def get_professional_data(request: Request):
         if not user_id:
             raise HTTPException(status_code=400, detail="userId is required")
         
-        # Validate VAULT_OWNER token
-        validate_vault_owner_token(consent_token, user_id)
+        # Validate VAULT_OWNER token (async - checks DB for revocation)
+        await validate_vault_owner_token(consent_token, user_id)
         
         # Fetch encrypted preferences from vault_professional table
         pool = await get_pool()
@@ -163,8 +165,8 @@ async def store_professional_data(request: Request):
                 detail="Missing required fields: userId, fieldName, ciphertext, iv, tag"
             )
         
-        # Validate VAULT_OWNER token
-        validate_vault_owner_token(consent_token, user_id)
+        # Validate VAULT_OWNER token (async - checks DB for revocation)
+        await validate_vault_owner_token(consent_token, user_id)
         
         import time
         now_ms = int(time.time() * 1000)
