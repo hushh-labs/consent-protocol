@@ -354,9 +354,9 @@ export default function DashboardPage() {
 
       {/* Header - Minimal */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">
+        {/* <h1 className="text-2xl font-bold">
           <span className="hushh-gradient-text">Dashboard</span>
-        </h1>
+        </h1> */}
         <p className="text-sm text-muted-foreground">
           Your encrypted data vault • {activeDomains}/{totalDomains} domains
           active
