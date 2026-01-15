@@ -131,14 +131,20 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         className={cn(
           "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-[border-color,box-shadow,background-color] duration-200",
-          // Theme-aware background for non-glass effects
-          effect === "glass" ? "" : "bg-white/80 dark:bg-gray-900/40",
+          // Theme-aware background based on variant
+          variant === "muted"
+            ? "bg-gray-50/80 dark:bg-background/40 border-border/50"
+            : effect === "glass"
+            ? ""
+            : "bg-white/80 dark:bg-gray-900/40",
           // Conditional backdrop blur based on effect - 6px for performance (4x faster than 12px)
           effect === "fade" ? "!backdrop-blur-none" : "backdrop-blur-[6px]",
           variantStyles,
           showRipple ? "overflow-hidden" : "",
           showRipple
             ? "!border-transparent hover:!border-[var(--morphy-primary-start)]"
+            : variant === "muted"
+            ? ""
             : "!border-transparent",
           className
         )}

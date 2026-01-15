@@ -921,10 +921,9 @@ function BackgroundContent({
       </div>
 
       <Card
-        variant="none"
+        variant="muted"
         effect="glass"
         showRipple={false}
-        className="border-0"
       >
         <CardContent className="p-4 space-y-4">
           <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
@@ -956,7 +955,9 @@ function BackgroundContent({
                 <Input
                   type="date"
                   value={(value.last_13f_date as any) || ""}
-                  onChange={(e) => onChange({ ...value, last_13f_date: e.target.value as any })}
+                  onChange={(e) =>
+                    onChange({ ...value, last_13f_date: e.target.value as any })
+                  }
                   className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
                   disabled={readOnly}
                 />
@@ -968,7 +969,12 @@ function BackgroundContent({
                 <Input
                   type="date"
                   value={(value.last_form4_date as any) || ""}
-                  onChange={(e) => onChange({ ...value, last_form4_date: e.target.value as any })}
+                  onChange={(e) =>
+                    onChange({
+                      ...value,
+                      last_form4_date: e.target.value as any,
+                    })
+                  }
                   className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
                   disabled={readOnly}
                 />
