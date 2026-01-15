@@ -410,11 +410,11 @@ export class ApiService {
   /**
    * Get vault status (domain counts without encrypted data)
    * Requires VAULT_OWNER token
-   * 
+   *
    * Platform routing:
    * - Native: Direct backend call → /db/vault/status
    * - Web: Next.js proxy → Backend
-   * 
+   *
    * Route: GET /api/vault/status (web) or POST /db/vault/status (native)
    */
   static async getVaultStatus(
@@ -425,7 +425,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        
+
         const response = await fetch(`${API_BASE}/db/vault/status`, {
           method: "POST",
           headers: {
@@ -443,18 +443,20 @@ export class ApiService {
     }
 
     // Web: Use Next.js proxy
-    const url = `/api/vault/status?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    const url = `/api/vault/status?userId=${encodeURIComponent(
+      userId
+    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
     return apiFetch(url, { method: "GET" });
   }
 
   /**
    * Get food preferences (encrypted)
    * Requires VAULT_OWNER token for consent-first architecture
-   * 
+   *
    * Platform routing:
    * - Native: HushhVault plugin → Backend (direct)
    * - Web: Next.js proxy → Backend
-   * 
+   *
    * Route: POST /api/vault/food/preferences (web) or direct backend call (native)
    */
   static async getFoodPreferences(
@@ -465,7 +467,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        
+
         const { preferences } = await HushhVault.getFoodPreferences({
           userId,
           vaultOwnerToken,
@@ -487,7 +489,9 @@ export class ApiService {
     }
 
     // Web: Use Next.js proxy with token in query param
-    const url = `/api/vault/food/preferences?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    const url = `/api/vault/food/preferences?userId=${encodeURIComponent(
+      userId
+    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
     return apiFetch(url, { method: "GET" });
   }
 
@@ -507,7 +511,52 @@ export class ApiService {
   }
 
   /**
+   * Store single encrypted food preference field
+   *
+   * Platform routing:
+   * - Web: POST /api/vault/food → Python /api/food/preferences/store
+   * - Native: HushhVault.storePreferencesToCloud → Python /api/food/preferences/store
+   */
+  static async storeFoodPreference(data: {
+    userId: string;
+    fieldName: string;
+    ciphertext: string;
+    iv: string;
+    tag: string;
+    consentToken: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        await HushhVault.storePreferencesToCloud({
+          userId: data.userId,
+          domain: "food",
+          fieldName: data.fieldName,
+          ciphertext: data.ciphertext,
+          iv: data.iv,
+          tag: data.tag,
+          consentToken: data.consentToken,
+          authToken: authToken,
+        });
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      } catch (e: any) {
+        console.error("❌ [ApiService] Native storeFoodPreference error:", e);
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    // Web: Use Next.js proxy
+    return apiFetch("/api/vault/food", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
    * Store single encrypted food preference field (used by Chat Agent)
+   * @deprecated Use storeFoodPreference instead
    */
   static async storeEncryptedFoodPreference(data: {
     userId: string;
@@ -526,11 +575,11 @@ export class ApiService {
   /**
    * Get professional profile (encrypted)
    * Requires VAULT_OWNER token for consent-first architecture
-   * 
+   *
    * Platform routing:
    * - Native: HushhVault plugin → Backend (direct)
    * - Web: Next.js proxy → Backend
-   * 
+   *
    * Route: POST /api/vault/professional/preferences (web) or direct backend call (native)
    */
   static async getProfessionalProfile(
@@ -541,7 +590,7 @@ export class ApiService {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
-        
+
         const { preferences } = await HushhVault.getProfessionalData({
           userId,
           vaultOwnerToken,
@@ -566,7 +615,9 @@ export class ApiService {
     }
 
     // Web: Use Next.js proxy with token in query param
-    const url = `/api/vault/professional/preferences?userId=${encodeURIComponent(userId)}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
+    const url = `/api/vault/professional/preferences?userId=${encodeURIComponent(
+      userId
+    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
     return apiFetch(url, { method: "GET" });
   }
 
@@ -586,11 +637,59 @@ export class ApiService {
   }
 
   /**
+   * Store single encrypted professional preference field
+   *
+   * Platform routing:
+   * - Web: POST /api/vault/professional → Python /api/professional/preferences/store
+   * - Native: HushhVault.storePreferencesToCloud → Python /api/professional/preferences/store
+   */
+  static async storeProfessionalPreference(data: {
+    userId: string;
+    fieldName: string;
+    ciphertext: string;
+    iv: string;
+    tag: string;
+    consentToken: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        await HushhVault.storePreferencesToCloud({
+          userId: data.userId,
+          domain: "professional",
+          fieldName: data.fieldName,
+          ciphertext: data.ciphertext,
+          iv: data.iv,
+          tag: data.tag,
+          consentToken: data.consentToken,
+          authToken: authToken,
+        });
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      } catch (e: any) {
+        console.error(
+          "❌ [ApiService] Native storeProfessionalPreference error:",
+          e
+        );
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500,
+        });
+      }
+    }
+
+    // Web: Use Next.js proxy
+    return apiFetch("/api/vault/professional", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
    * Store preferences to vault (generic)
    * Route: POST /api/vault/store-preferences
    */
   static async storePreferences(data: {
     userId: string;
+    domain?: string;
     preferences: Record<string, any>;
     consentToken: string;
   }): Promise<Response> {
@@ -600,38 +699,31 @@ export class ApiService {
         const promises = [];
 
         // Iterate through all preference keys and store them individually
-        // This maps to the /db/$domain/store endpoint via the plugin
+        // This maps to the /api/$domain/preferences/store endpoint via the plugin
         for (const [key, value] of Object.entries(data.preferences)) {
-          // Value is expected to be the encrypted string JSON with {ciphertext, iv, tag}
-          // But wait, encryptData returns {ciphertext, iv, salt, ...}
-          // The plugin expects: domain, fieldName, ciphertext, iv, tag, consentTokenId
-
-          // We need to determine the 'domain' for each key.
-          // Food: dietary_restrictions, cuisine_preferences, monthly_food_budget
-          // Professional: professional_title, skills, experience_level, job_preferences
-
-          let domain = "general";
-          if (
-            [
-              "dietary_restrictions",
-              "cuisine_preferences",
-              "monthly_food_budget",
-            ].includes(key)
-          ) {
-            domain = "food";
-          } else if (
-            [
-              "professional_title",
-              "skills",
-              "experience_level",
-              "job_preferences",
-            ].includes(key)
-          ) {
-            domain = "professional";
+          // Use explicit domain if provided, otherwise auto-detect from field name
+          let domain = data.domain || "general";
+          if (!data.domain) {
+            // Auto-detect domain from field name (fallback)
+            if (
+              [
+                "dietary_restrictions",
+                "cuisine_preferences",
+                "monthly_food_budget",
+              ].includes(key)
+            ) {
+              domain = "food";
+            } else if (
+              [
+                "professional_title",
+                "skills",
+                "experience_level",
+                "job_preferences",
+              ].includes(key)
+            ) {
+              domain = "professional";
+            }
           }
-
-          // The 'value' coming from saveToVault is result of encryptData() which is { ciphertext, iv, salt, tag? }
-          // Let's verify encryptData return type.
 
           promises.push(
             HushhVault.storePreferencesToCloud({
@@ -641,7 +733,7 @@ export class ApiService {
               ciphertext: value.ciphertext,
               iv: value.iv,
               tag: value.tag || "",
-              consentTokenId: data.consentToken,
+              consentToken: data.consentToken,
               authToken: authToken,
             })
           );
