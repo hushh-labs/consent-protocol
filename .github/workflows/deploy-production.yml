@@ -32,8 +32,7 @@ jobs:
       - name: Deploy backend using Cloud Build
         run: |
           gcloud builds submit \
-            --config=deploy/backend.cloudbuild.yaml \
-            --substitutions=_IMAGE_TAG=production
+            --config=deploy/backend.cloudbuild.yaml
 
       - name: Get backend URL
         id: backend-url
