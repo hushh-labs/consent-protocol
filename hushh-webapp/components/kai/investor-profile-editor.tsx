@@ -235,109 +235,49 @@ export function InvestorProfileEditor(props: {
         onValueChange={setActiveTab}
         className="w-full"
       >
-        <TabsList className="w-full justify-between">
-          <TabsTrigger value="preference">Preference</TabsTrigger>
-          <TabsTrigger value="portfolio">Portfolio DNA</TabsTrigger>
-          <TabsTrigger value="background">Background</TabsTrigger>
+        <TabsList className="w-full justify-between text-xs">
+          <TabsTrigger value="preference" className="text-xs">Prefs</TabsTrigger>
+          <TabsTrigger value="portfolio" className="text-xs">Portfolio</TabsTrigger>
+          <TabsTrigger value="background" className="text-xs">Info</TabsTrigger>
         </TabsList>
 
         <TabsContent value="preference" className="space-y-4">
-          <div className={flat ? "space-y-4" : ""}>
-            {!flat ? (
-              <Card variant="none" effect="glass" showRipple={false}>
-                <CardHeader>
-                  <CardDescription>
-                    How Kai will tailor analysis
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PreferenceFormContent
-                    value={value}
-                    onChange={onChange}
-                    safeAum={safeAum}
-                    styleInput={styleInput}
-                    setStyleInput={setStyleInput}
-                    readOnly={readOnly}
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-6 pt-2">
-                <PreferenceFormContent
-                  value={value}
-                  onChange={onChange}
-                  safeAum={safeAum}
-                  styleInput={styleInput}
-                  setStyleInput={setStyleInput}
-                  readOnly={readOnly}
-                />
-              </div>
-            )}
-          </div>
+          <PreferenceFormContent
+            value={value}
+            onChange={onChange}
+            safeAum={safeAum}
+            styleInput={styleInput}
+            setStyleInput={setStyleInput}
+            readOnly={readOnly}
+          />
         </TabsContent>
 
         <TabsContent value="portfolio" className="space-y-3">
-          {!flat ? (
-            <Card variant="none" effect="glass" showRipple={false}>
-              <PortfolioDNAContent
-                value={value}
-                onChange={onChange}
-                holdingsRows={holdingsRows}
-                setHoldingsRows={setHoldingsRows}
-                holdingsChartData={holdingsChartData}
-                sectorRows={sectorRows}
-                setSectorRows={setSectorRows}
-                sectorChartData={sectorChartData}
-                buysInput={buysInput}
-                setBuysInput={setBuysInput}
-                sellsInput={sellsInput}
-                setSellsInput={setSellsInput}
-                applyStructured={applyStructured}
-                readOnly={readOnly}
-              />
-            </Card>
-          ) : (
-            <div className="pt-2">
-              <PortfolioDNAContent
-                value={value}
-                onChange={onChange}
-                holdingsRows={holdingsRows}
-                setHoldingsRows={setHoldingsRows}
-                holdingsChartData={holdingsChartData}
-                sectorRows={sectorRows}
-                setSectorRows={setSectorRows}
-                sectorChartData={sectorChartData}
-                buysInput={buysInput}
-                setBuysInput={setBuysInput}
-                sellsInput={sellsInput}
-                setSellsInput={setSellsInput}
-                applyStructured={applyStructured}
-                readOnly={readOnly}
-              />
-            </div>
-          )}
+          <PortfolioDNAContent
+            value={value}
+            onChange={onChange}
+            holdingsRows={holdingsRows}
+            setHoldingsRows={setHoldingsRows}
+            holdingsChartData={holdingsChartData}
+            sectorRows={sectorRows}
+            setSectorRows={setSectorRows}
+            sectorChartData={sectorChartData}
+            buysInput={buysInput}
+            setBuysInput={setBuysInput}
+            sellsInput={sellsInput}
+            setSellsInput={setSellsInput}
+            applyStructured={applyStructured}
+            readOnly={readOnly}
+          />
         </TabsContent>
 
         <TabsContent value="background" className="space-y-3">
-          {!flat ? (
-            <Card variant="none" effect="glass" showRipple={false}>
-              <BackgroundContent
-                value={value}
-                onChange={onChange}
-                readOnlyProvenance={readOnlyProvenance}
-                readOnly={readOnly}
-              />
-            </Card>
-          ) : (
-            <div className="pt-2">
-              <BackgroundContent
-                value={value}
-                onChange={onChange}
-                readOnlyProvenance={readOnlyProvenance}
-                readOnly={readOnly}
-              />
-            </div>
-          )}
+          <BackgroundContent
+            value={value}
+            onChange={onChange}
+            readOnlyProvenance={readOnlyProvenance}
+            readOnly={readOnly}
+          />
         </TabsContent>
       </Tabs>
     </div>
