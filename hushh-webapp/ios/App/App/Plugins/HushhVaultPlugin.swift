@@ -300,7 +300,7 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
         let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
         
         // Use new token-enforced endpoint
-        let urlStr = "\(backendUrl)/api/vault/\(domain)/preferences"
+        let urlStr = "\(backendUrl)/api/\(domain)/preferences"
         
         // Send token in body for validation
         let body: [String: Any] = [

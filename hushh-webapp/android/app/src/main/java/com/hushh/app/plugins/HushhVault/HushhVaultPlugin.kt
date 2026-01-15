@@ -406,7 +406,7 @@ class HushhVaultPlugin : Plugin() {
         val backendUrl = getBackendUrl(call)
         
         // Use new token-enforced endpoint
-        val url = "$backendUrl/api/vault/food/preferences"
+        val url = "$backendUrl/api/food/preferences"
 
         Log.d(TAG, "🍽️ [getFoodPreferences] Fetching with token from: $url")
 
@@ -484,7 +484,7 @@ class HushhVaultPlugin : Plugin() {
         val backendUrl = getBackendUrl(call)
         
         // Use new token-enforced endpoint
-        val url = "$backendUrl/api/vault/professional/preferences"
+        val url = "$backendUrl/api/professional/preferences"
 
         Log.d(TAG, "💼 [getProfessionalData] Fetching with token from: $url")
 

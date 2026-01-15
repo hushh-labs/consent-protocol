@@ -333,7 +333,7 @@ export interface HushhVaultPlugin {
     ciphertext: string;
     iv: string;
     tag: string;
-    consentTokenId: string;
+    consentToken: string;
     authToken?: string;
   }): Promise<{ success: boolean }>;
 
