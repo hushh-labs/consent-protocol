@@ -10,7 +10,7 @@ body {
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --radius: 2.35rem;
+  --radius: 1.5rem;
   --transition-duration-normal: 600ms;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
