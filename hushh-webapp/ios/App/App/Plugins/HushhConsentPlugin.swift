@@ -133,11 +133,21 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         let body: [String: Any] = ["userId": userId, "scope": scope]
         
+        print("🔒 [\(TAG)] Revoking consent for scope: \(scope)")
+        
         performRequest(url: "\(backendUrl)/api/consent/revoke", body: body, authToken: authToken) { result, error in
             if let error = error {
                 call.reject("Backend rejected revoke: \(error)")
             } else {
-                call.resolve(["success": true])
+                // Extract lockVault flag from backend response
+                let lockVault = (result as? [String: Any])?["lockVault"] as? Bool ?? false
+                
+                print("🔒 [\(self.TAG)] Revoke success, lockVault: \(lockVault)")
+                
+                call.resolve([
+                    "success": true,
+                    "lockVault": lockVault
+                ])
             }
         }
     }

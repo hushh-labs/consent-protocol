@@ -244,7 +244,7 @@ function AppAuditLog({
                   return (
                     <div
                       key={trailId}
-                      className={`border-l-4 ${statusColor} pl-4 py-3 mb-3 rounded-r-lg bg-muted/20`}
+                      className={`border-l-4 ${statusColor} px-4 py-3 mb-3 bg-muted/20`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <Badge variant="outline">
