@@ -624,8 +624,8 @@ export default function KaiPreferencesPage() {
             className="border-0 overflow-hidden"
           >
             <CardContent className="p-4 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 space-y-1">
                   <div className="text-xs text-muted-foreground">
                     VIP profile (baseline)
                   </div>
@@ -650,53 +650,55 @@ export default function KaiPreferencesPage() {
                   )}
                 </div>
 
-                {isEditing && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="none"
-                      effect="glass"
-                      size="sm"
-                      showRipple
-                      onClick={() => setShowProfileSearch(true)}
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      {profile ? "Change" : "Select VIP"}
-                    </Button>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="none"
-                            effect="glass"
-                            size="icon-sm"
-                            onClick={() => {
-                              handleResetIdentity();
-                              setIsManualSetup(false);
-                              setEditingProfile(null);
-                              setIsEditing(false);
-                            }}
-                            disabled={!profile || resettingIdentity}
-                            className="text-red-500"
-                            showRipple
-                          >
-                            {resettingIdentity ? (
-                              <HushhLoader variant="compact" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            Unlink this investor profile. Your Kai risk
-                            preferences remain saved.
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+                {isEditing && profile && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="none"
+                          effect="glass"
+                          size="icon-sm"
+                          onClick={() => {
+                            handleResetIdentity();
+                            setIsManualSetup(false);
+                            setEditingProfile(null);
+                            setIsEditing(false);
+                          }}
+                          disabled={resettingIdentity}
+                          className="text-red-500"
+                          showRipple
+                        >
+                          {resettingIdentity ? (
+                            <HushhLoader variant="compact" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          Unlink this investor profile. Your Kai risk
+                          preferences remain saved.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
               </div>
+
+              {isEditing && (
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="sm"
+                  showRipple
+                  onClick={() => setShowProfileSearch(true)}
+                  className="w-full"
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  {profile ? "Change VIP Profile" : "Select VIP Profile"}
+                </Button>
+              )}
 
               {showProfileSearch && isEditing && (
                 <div className="mt-4 space-y-4">
@@ -734,7 +736,7 @@ export default function KaiPreferencesPage() {
                               key={m.id}
                               onClick={() => handleSelectProfile(m)}
                               disabled={loadingProfile}
-                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm"
+                              className="w-full p-3 rounded-xl border border-border/50 bg-background/40 text-left text-sm hover:border-primary/50 transition-colors"
                             >
                               <div className="font-medium">{m.name}</div>
                               <div className="text-xs text-muted-foreground">
@@ -748,11 +750,18 @@ export default function KaiPreferencesPage() {
 
                   {selectedProfile && editingProfile ? (
                     <div className="space-y-3">
-                      <div className="rounded-xl border border-border/50 bg-background/40 p-3 text-xs text-muted-foreground">
-                        This will copy the public VIP profile into your
-                        encrypted vault. You can edit any fields before
-                        confirming.
-                      </div>
+                      <Card
+                        variant="none"
+                        effect="glass"
+                        showRipple={false}
+                        className="border-0"
+                      >
+                        <CardContent className="p-3 text-xs text-muted-foreground">
+                          This will copy the public VIP profile into your
+                          encrypted vault. You can edit any fields before
+                          confirming.
+                        </CardContent>
+                      </Card>
                       <InvestorProfileEditor
                         value={editingProfile}
                         onChange={setEditingProfile}
@@ -822,21 +831,23 @@ export default function KaiPreferencesPage() {
                         </Button>
                       </div>
 
-                      <div className="space-y-1 max-h-56 overflow-y-auto">
-                        {searchResults.map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => handleSelectProfile(m)}
-                            disabled={loadingProfile}
-                            className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm"
-                          >
-                            <div className="font-medium">{m.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {m.firm || "—"}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      {searchResults.length > 0 && (
+                        <div className="space-y-1 max-h-56 overflow-y-auto">
+                          {searchResults.map((m) => (
+                            <button
+                              key={m.id}
+                              onClick={() => handleSelectProfile(m)}
+                              disabled={loadingProfile}
+                              className="w-full p-2 rounded-lg border border-border/50 bg-background/40 text-left text-sm hover:border-primary/50 transition-colors"
+                            >
+                              <div className="font-medium">{m.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {m.firm || "—"}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="text-xs text-muted-foreground">
                         Tip: pick the closest match, then fine-tune in Edit
@@ -878,7 +889,7 @@ export default function KaiPreferencesPage() {
                         <div className="text-xs text-muted-foreground">
                           Kai runtime settings
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
                           <div className="space-y-1">
                             <div className="text-[10px] text-muted-foreground">
                               Risk profile
@@ -894,7 +905,9 @@ export default function KaiPreferencesPage() {
                                 <SelectItem value="conservative">
                                   conservative
                                 </SelectItem>
-                                <SelectItem value="balanced">balanced</SelectItem>
+                                <SelectItem value="balanced">
+                                  balanced
+                                </SelectItem>
                                 <SelectItem value="aggressive">
                                   aggressive
                                 </SelectItem>
@@ -903,22 +916,15 @@ export default function KaiPreferencesPage() {
                           </div>
                           <div className="space-y-1">
                             <div className="text-[10px] text-muted-foreground">
-                              Processing
+                              Processing (Coming Soon)
                             </div>
-                            <Select
-                              value={draftProcessingMode}
-                              onValueChange={(v: any) =>
-                                setDraftProcessingMode(v)
-                              }
-                            >
+                            <Select value="hybrid" disabled>
                               <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select" />
+                                <SelectValue placeholder="hybrid" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="hybrid">hybrid</SelectItem>
-                                <SelectItem value="on_device">
-                                  on_device
-                                </SelectItem>
+                                <SelectItem value="on_device">on_device</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -941,7 +947,7 @@ export default function KaiPreferencesPage() {
                             risk:{displayKaiPrefs.riskProfile || "—"}
                           </Badge>
                           <Badge variant="secondary">
-                            mode:{displayKaiPrefs.processingMode || "—"}
+                            mode:{displayKaiPrefs.processingMode || "hybrid"}
                           </Badge>
                         </div>
                       </CardContent>
