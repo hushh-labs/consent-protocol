@@ -236,9 +236,15 @@ export function InvestorProfileEditor(props: {
         className="w-full"
       >
         <TabsList className="w-full justify-between text-xs">
-          <TabsTrigger value="preference" className="text-xs">Prefs</TabsTrigger>
-          <TabsTrigger value="portfolio" className="text-xs">Portfolio</TabsTrigger>
-          <TabsTrigger value="background" className="text-xs">Info</TabsTrigger>
+          <TabsTrigger value="preference" className="text-xs">
+            Prefs
+          </TabsTrigger>
+          <TabsTrigger value="portfolio" className="text-xs">
+            Portfolio
+          </TabsTrigger>
+          <TabsTrigger value="background" className="text-xs">
+            Info
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="preference" className="space-y-4">
@@ -871,7 +877,7 @@ function BackgroundContent({
           value={value.biography || ""}
           onChange={(e) => onChange({ ...value, biography: e.target.value })}
           disabled={readOnly}
-          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-100 disabled:cursor-default"
+          className="w-full min-h-24 rounded-lg border border-border/50 bg-background/40 p-5 text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-100 disabled:cursor-default"
           placeholder="Investing philosophy, track record, etc."
         />
       </div>
@@ -914,52 +920,63 @@ function BackgroundContent({
         )}
       </div>
 
-      <div className="pt-4 border-t border-border/20">
-        <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-3">
-          Provenance Data
-        </h4>
-        <div className="p-4 rounded-xl border border-border/50 bg-background/30 space-y-4">
-          <div className="space-y-1">
-            <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-              Data Sources
-            </div>
-            <Input
-              value={listToCsv((value.data_sources as any) || null)}
-              onChange={(e) => {
-                if (readOnlyProvenance) return;
-                onChange({
-                  ...value,
-                  data_sources: csvToList(e.target.value),
-                });
-              }}
-              className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-              disabled={readOnlyProvenance}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+      <Card
+        variant="none"
+        effect="glass"
+        showRipple={false}
+        className="border-0"
+      >
+        <CardContent className="p-4 space-y-4">
+          <h4 className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
+            Data Provenance
+          </h4>
+          <div className="space-y-3">
             <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-                13F Date
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                Data Sources
               </div>
               <Input
-                value={(value.last_13f_date as any) || "N/A"}
-                className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-                disabled
+                value={listToCsv((value.data_sources as any) || null)}
+                onChange={(e) => {
+                  onChange({
+                    ...value,
+                    data_sources: csvToList(e.target.value),
+                  });
+                }}
+                placeholder="SEC EDGAR, Form 13F, Form 4"
+                className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                disabled={readOnly}
               />
             </div>
-            <div className="space-y-1">
-              <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-60">
-                Form 4 Date
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                  13F Date
+                </div>
+                <Input
+                  type="date"
+                  value={(value.last_13f_date as any) || ""}
+                  onChange={(e) => onChange({ ...value, last_13f_date: e.target.value as any })}
+                  className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                  disabled={readOnly}
+                />
               </div>
-              <Input
-                value={(value.last_form4_date as any) || "N/A"}
-                className="h-9 text-xs font-mono bg-transparent border-0 p-0 shadow-none focus-visible:ring-0"
-                disabled
-              />
+              <div className="space-y-1">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest opacity-60">
+                  Form 4 Date
+                </div>
+                <Input
+                  type="date"
+                  value={(value.last_form4_date as any) || ""}
+                  onChange={(e) => onChange({ ...value, last_form4_date: e.target.value as any })}
+                  className="h-9 text-xs bg-background/40 border border-border/50 rounded-lg px-2 shadow-none disabled:opacity-100 disabled:cursor-default"
+                  disabled={readOnly}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
