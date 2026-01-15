@@ -347,7 +347,7 @@ export default function KaiOnboarding() {
   // ============================================================================
 
   return (
-    <div className="p-6 flex items-center justify-center w-full min-h-[calc(100dvh-120px)] relative">
+    <div className="p-6 flex items-start justify-center w-full min-h-[calc(100dvh-120px)] relative pt-6">
       {/* 
           Standard Design System Background is 'morphy-app-bg' 
           No extra blob divs required.
@@ -358,7 +358,7 @@ export default function KaiOnboarding() {
           <StepIndicator currentStep={state.step} />
         )}
 
-        <div className="mt-8 transition-all duration-500 ease-in-out">
+        <div className="transition-all duration-500 ease-in-out">
           {state.step === "investor_detect" && vaultKey && vaultOwnerToken && (
             <InvestorDetectStep
               onConfirm={handleInvestorConfirm}
