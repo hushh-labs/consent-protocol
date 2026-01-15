@@ -880,11 +880,7 @@ export default function KaiPreferencesPage() {
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
                   {/* Kai Runtime Settings */}
                   {isEditing ? (
-                    <Card
-                      variant="muted"
-                      effect="glass"
-                      showRipple={false}
-                    >
+                    <Card variant="muted" effect="glass" showRipple={false}>
                       <CardContent className="p-3 space-y-2">
                         <div className="text-xs text-muted-foreground">
                           Kai runtime settings
@@ -934,11 +930,7 @@ export default function KaiPreferencesPage() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <Card
-                      variant="muted"
-                      effect="glass"
-                      showRipple={false}
-                    >
+                    <Card variant="muted" effect="glass" showRipple={false}>
                       <CardContent className="p-3">
                         <div className="text-xs text-muted-foreground mb-2">
                           Kai runtime
