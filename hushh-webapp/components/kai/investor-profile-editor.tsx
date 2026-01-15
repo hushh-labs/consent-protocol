@@ -15,17 +15,13 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
+import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 import {
   Card,
@@ -122,21 +118,14 @@ function listToCsv(list: string[] | null | undefined): string {
   return list?.length ? list.join(", ") : "";
 }
 
-// Custom tooltip component for charts that uses theme colors
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload || !payload.length) return null;
-  return (
-    <div className="bg-popover text-popover-foreground border border-border rounded-md shadow-md px-3 py-2 text-sm">
-      {label && <div className="font-semibold mb-1">{label}</div>}
-      {payload.map((entry: any, idx: number) => (
-        <div key={idx} className="flex items-center gap-2">
-          <span className="font-medium">{entry.name}:</span>
-          <span>{entry.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+// Chart configurations for shadcn charts
+const holdingsChartConfig = {
+  value: { label: "Weight %", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
+const sectorChartConfig = {
+  value: { label: "Allocation %", color: "var(--chart-2)" },
+} satisfies ChartConfig;
 
 function csvToList(raw: string): string[] | null {
   const items = raw
@@ -257,11 +246,6 @@ export function InvestorProfileEditor(props: {
 
   const [activeTab, setActiveTab] = useState("preference");
 
-  // Get actual foreground color from CSS variable for charts
-  const chartColor = typeof window !== "undefined"
-    ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim()})`
-    : "hsl(0 0% 20%)"; // fallback
-
   return (
     <div className="space-y-6 pb-2">
       <Tabs
@@ -307,7 +291,6 @@ export function InvestorProfileEditor(props: {
             setSellsInput={setSellsInput}
             applyStructured={applyStructured}
             readOnly={readOnly}
-            chartColor={chartColor}
           />
         </TabsContent>
 
@@ -467,7 +450,6 @@ function PortfolioDNAContent({
   setSellsInput,
   applyStructured,
   readOnly = false,
-  chartColor,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
@@ -483,7 +465,6 @@ function PortfolioDNAContent({
   setSellsInput: (v: string) => void;
   applyStructured: () => void;
   readOnly?: boolean;
-  chartColor: string;
 }) {
   return (
     <div className="space-y-6">
@@ -509,31 +490,26 @@ function PortfolioDNAContent({
         </div>
 
         {holdingsChartData.length > 0 && (
-          <div className="h-40 w-full mb-4 [&_svg]:outline-none **:outline-none">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={holdingsChartData}>
-                <XAxis
-                  dataKey="ticker"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: "hsl(var(--muted-foreground))" }}
-                />
-                <YAxis hide />
-                <Tooltip
-                  content={<CustomTooltip />}
-                  cursor={{ fill: "transparent" }}
-                />
-                <Bar
-                  dataKey="value"
-                  radius={[6, 6, 6, 6]}
-                  fill={chartColor}
-                  opacity={0.7}
-                  activeBar={{ fill: chartColor, opacity: 0.9 }}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartContainer
+            config={holdingsChartConfig}
+            className="h-40 w-full mb-4"
+          >
+            <BarChart data={holdingsChartData}>
+              <XAxis
+                dataKey="ticker"
+                fontSize={10}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis hide />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar
+                dataKey="value"
+                radius={[6, 6, 6, 6]}
+                fill="var(--color-value)"
+              />
+            </BarChart>
+          </ChartContainer>
         )}
 
         <div className="space-y-2">
@@ -614,29 +590,23 @@ function PortfolioDNAContent({
         </div>
 
         {sectorChartData.length > 0 && (
-          <div className="h-44 w-full mb-4 [&_svg]:outline-none **:outline-none">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Tooltip content={<CustomTooltip />} />
-                <Pie
-                  data={sectorChartData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={42}
-                  outerRadius={72}
-                  paddingAngle={2}
-                >
-                  {sectorChartData.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={chartColor}
-                      fillOpacity={0.25 + (i % 6) * 0.1}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <ChartContainer
+            config={sectorChartConfig}
+            className="h-44 w-full mb-4"
+          >
+            <PieChart>
+              <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+              <Pie
+                data={sectorChartData}
+                dataKey="value"
+                nameKey="name"
+                innerRadius={42}
+                outerRadius={72}
+                paddingAngle={2}
+                fill="var(--color-value)"
+              />
+            </PieChart>
+          </ChartContainer>
         )}
 
         <div className="space-y-2">

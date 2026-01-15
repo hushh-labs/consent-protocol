@@ -199,7 +199,7 @@ export interface HushhConsentPlugin {
     userId: string;
     scope: string;
     authToken?: string;
-  }): Promise<{ success: boolean }>;
+  }): Promise<{ success: boolean; lockVault?: boolean }>;
 }
 
 export const HushhConsent = registerPlugin<HushhConsentPlugin>("HushhConsent", {
