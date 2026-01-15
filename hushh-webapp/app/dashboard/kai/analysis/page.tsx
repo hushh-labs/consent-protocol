@@ -10,13 +10,22 @@ import {
   Bar,
   ComposedChart,
   Line,
+  LineChart as RechartsLineChart,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   Legend,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
 } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import {
   Search,
   Brain,
@@ -39,6 +48,7 @@ import {
   Scale,
   ShieldCheck,
   Terminal,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -106,6 +116,49 @@ interface LocalAnalyzeResponse {
 
 const QUICK_TICKERS = ["NVDA", "AAPL", "MSFT", "TSLA"];
 
+// Helper to format preference badges in a user-friendly way
+const formatPreferenceBadge = (key: string, value: string | string[]) => {
+  const labels: Record<string, string> = {
+    conservative: "🛡️ Conservative",
+    moderate: "⚖️ Balanced",
+    aggressive: "🚀 Growth-Focused",
+    hybrid: "🤖 AI-Powered",
+    on_device: "📱 Private Mode",
+  };
+
+  if (key === "risk") {
+    return labels[value as string] || value;
+  }
+  if (key === "mode") {
+    return labels[value as string] || value;
+  }
+  if (key === "style" && Array.isArray(value)) {
+    return `📊 ${value.join(" · ")}`;
+  }
+  if (key === "style") {
+    return `📊 ${value}`;
+  }
+  return value;
+};
+
+// Chart configurations for shadcn charts
+const revenueTrendConfig = {
+  value: { label: "Revenue ($B)", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
+const netIncomeTrendConfig = {
+  value: { label: "Net Income ($B)", color: "var(--chart-2)" },
+} satisfies ChartConfig;
+
+const cashFlowConfig = {
+  ocf: { label: "OCF ($B)", color: "var(--chart-3)" },
+  rnd: { label: "R&D ($B)", color: "var(--chart-4)" },
+} satisfies ChartConfig;
+
+const radarConfig = {
+  value: { label: "Score", color: "var(--chart-1)" },
+} satisfies ChartConfig;
+
 export default function KaiAnalysis() {
   const router = useRouter();
   const { user } = useAuth();
@@ -115,10 +168,53 @@ export default function KaiAnalysis() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
   const [result, setResult] = useState<LocalAnalyzeResponse | null>(null);
-  const [inputsUsed, setInputsUsed] = useState<string[]>([]);
+  const [userPreferences, setUserPreferences] = useState<{
+    riskProfile: string;
+    processingMode: string;
+    investmentStyle: string[];
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scorecardRef = useRef<HTMLDivElement>(null);
+
+  // Load user preferences on mount
+  useEffect(() => {
+    const loadPreferences = async () => {
+      if (!user || !isVaultUnlocked || !vaultKey || !vaultOwnerToken) return;
+
+      try {
+        const encryptedProfile = await import(
+          "@/lib/services/kai-service"
+        ).then((m) => m.getEncryptedProfile(vaultOwnerToken));
+
+        if (encryptedProfile.profile_data) {
+          const profileJson = await decryptData(
+            {
+              ciphertext: encryptedProfile.profile_data.ciphertext,
+              iv: encryptedProfile.profile_data.iv,
+              tag: encryptedProfile.profile_data.tag,
+              encoding: "base64",
+              algorithm: "aes-256-gcm",
+            },
+            vaultKey
+          );
+          const profileObj = JSON.parse(profileJson);
+
+          setUserPreferences({
+            riskProfile: profileObj.risk_tolerance || "moderate",
+            processingMode: "hybrid",
+            investmentStyle: Array.isArray(profileObj.investment_style)
+              ? profileObj.investment_style
+              : [],
+          });
+        }
+      } catch (error) {
+        console.error("[Kai] Failed to load preferences:", error);
+      }
+    };
+
+    loadPreferences();
+  }, [user, isVaultUnlocked, vaultKey, vaultOwnerToken]);
 
   // Check consent on mount
   useEffect(() => {
@@ -193,8 +289,19 @@ export default function KaiAnalysis() {
 
       // 4. Load Kai runtime prefs (decrypted) for analysis parameters
       const { preferences } = await getPreferences(user.uid);
+      // Risk profile now comes from profile's risk_tolerance (not separate encrypted pref)
       let riskProfile: "conservative" | "balanced" | "aggressive" = "balanced";
       let processingMode: "on_device" | "hybrid" = "hybrid";
+
+      // Map profile's risk_tolerance to orchestrator's risk_profile
+      const profileRisk = decryptedContext?.risk_tolerance?.toLowerCase();
+      if (
+        profileRisk === "conservative" ||
+        profileRisk === "balanced" ||
+        profileRisk === "aggressive"
+      ) {
+        riskProfile = profileRisk;
+      }
 
       const decryptKaiPref = async (pref: any): Promise<string | null> => {
         if (!pref?.ciphertext || !pref?.iv || !pref?.tag) return null;
@@ -210,15 +317,10 @@ export default function KaiAnalysis() {
         );
       };
 
+      // Only load processing_mode from preferences (risk comes from profile)
       for (const pref of preferences || []) {
         const plaintext = await decryptKaiPref(pref);
         if (!plaintext) continue;
-        if (pref.field_name === "kai_risk_profile") {
-          const v = plaintext as any;
-          if (v === "conservative" || v === "balanced" || v === "aggressive") {
-            riskProfile = v;
-          }
-        }
         if (pref.field_name === "kai_processing_mode") {
           const v = plaintext as any;
           if (v === "on_device" || v === "hybrid") {
@@ -226,20 +328,6 @@ export default function KaiAnalysis() {
           }
         }
       }
-
-      setInputsUsed(
-        [
-          `risk:${riskProfile}`,
-          `mode:${processingMode}`,
-          decryptedContext?.risk_tolerance
-            ? `profile_risk:${decryptedContext.risk_tolerance}`
-            : "",
-          Array.isArray(decryptedContext?.investment_style) &&
-          decryptedContext.investment_style.length
-            ? `style:${decryptedContext.investment_style.join("/")}`
-            : "",
-        ].filter(Boolean)
-      );
 
       // 5. Call Fundamental Agent with Decrypted Context
       const analysisResponse = await analyzeFundamental({
@@ -281,7 +369,7 @@ export default function KaiAnalysis() {
       {/* Background Glow */}
       <div className="fixed inset-0 opacity-30 pointer-events-none" />
 
-      <div className="relative max-w-7xl mx-auto px-6">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
         {/* Terminal Header */}
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
           <div className="space-y-1 text-center md:text-left">
@@ -343,27 +431,38 @@ export default function KaiAnalysis() {
           </form>
         </header>
 
+        {/* User Preferences Display - Always Visible */}
+        {userPreferences && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            <Badge variant="secondary" className="text-xs px-3 py-1">
+              {formatPreferenceBadge("risk", userPreferences.riskProfile)}
+            </Badge>
+            <Badge variant="secondary" className="text-xs px-3 py-1">
+              {formatPreferenceBadge("mode", userPreferences.processingMode)}
+            </Badge>
+            {userPreferences.investmentStyle.length > 0 && (
+              <Badge variant="secondary" className="text-xs px-3 py-1">
+                {formatPreferenceBadge(
+                  "style",
+                  userPreferences.investmentStyle
+                )}
+              </Badge>
+            )}
+          </div>
+        )}
+
         {result ? (
           <div
-            className="space-y-8 animate-in slide-in-from-bottom-5 duration-700"
+            className="space-y-6 sm:space-y-8 animate-in slide-in-from-bottom-5 duration-700"
             ref={scorecardRef}
           >
-            {inputsUsed.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {inputsUsed.map((t) => (
-                  <Badge key={t} variant="secondary">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            )}
             {/* 1. TOP LEVEL DECISION CARD */}
-            <div className="grid lg:grid-cols-12 gap-6">
+            <div className="grid lg:grid-cols-12 gap-4 sm:gap-6">
               <Card
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="lg:col-span-8 p-8 relative overflow-hidden flex flex-col justify-between min-h-[300px]"
+                className="lg:col-span-8 p-6 sm:p-8 relative overflow-hidden flex flex-col justify-between min-h-[280px] sm:min-h-[300px]"
               >
                 <div className="absolute top-0 right-0 p-12 opacity-[0.04] text-foreground pointer-events-none">
                   <Terminal className="h-64 w-64" />
@@ -434,8 +533,8 @@ export default function KaiAnalysis() {
                 </div>
 
                 {/* KPI Ribbon */}
-                <div className="grid grid-cols-4 gap-4 mt-8 pt-6 border-t border-border/30">
-                  <div className="text-center md:text-left">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-border/30">
+                  <div className="text-center sm:text-left">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                       Revenue CAGR
                     </p>
@@ -446,7 +545,7 @@ export default function KaiAnalysis() {
                       %
                     </p>
                   </div>
-                  <div className="text-center md:text-left">
+                  <div className="text-center sm:text-left">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                       R&D Intensity
                     </p>
@@ -458,7 +557,7 @@ export default function KaiAnalysis() {
                       %
                     </p>
                   </div>
-                  <div className="text-center md:text-left">
+                  <div className="text-center sm:text-left">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                       Debt/Equity
                     </p>
@@ -469,7 +568,7 @@ export default function KaiAnalysis() {
                       x
                     </p>
                   </div>
-                  <div className="text-center md:text-left">
+                  <div className="text-center sm:text-left">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-1">
                       P/E Ratio
                     </p>
@@ -483,7 +582,7 @@ export default function KaiAnalysis() {
               </Card>
 
               {/* 2. TREND CHARTS */}
-              <div className="lg:col-span-4 grid gap-6 grid-rows-2">
+              <div className="lg:col-span-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
                 {/* Revenue vs Net Income Chart */}
                 <Card
                   variant="none"
@@ -497,38 +596,28 @@ export default function KaiAnalysis() {
                     </h3>
                     <LineChart className="h-3 w-3 text-primary" />
                   </div>
-                  <div className="flex-1 min-h-[140px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart
-                        data={result.raw_card.quant_metrics.revenue_trend_data}
-                      >
-                        <XAxis
-                          dataKey="year"
-                          fontSize={10}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: "rgba(0,0,0,0.8)",
-                            border: "none",
-                            borderRadius: "8px",
-                            fontSize: "12px",
-                          }}
-                          itemStyle={{ color: "#fff" }}
-                        />
-                        {/* We merge revenue and net income data for the chart */}
-                        <Bar
-                          dataKey="value"
-                          name="Revenue"
-                          fill="hsl(var(--primary))"
-                          radius={[4, 4, 0, 0]}
-                          opacity={0.6}
-                        />
-                        {/* Overlay Net Income Line need to join data properly in real app, simplified here as assumption data matches */}
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <ChartContainer
+                    config={revenueTrendConfig}
+                    className="flex-1 min-h-[140px] w-full"
+                  >
+                    <ComposedChart
+                      data={result.raw_card.quant_metrics.revenue_trend_data}
+                    >
+                      <XAxis
+                        dataKey="year"
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar
+                        dataKey="value"
+                        name="Revenue"
+                        fill="var(--color-value)"
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </ComposedChart>
+                  </ChartContainer>
                   <div className="mt-2 text-center">
                     <p className="text-[10px] text-muted-foreground">
                       Revenue Growth
@@ -574,8 +663,127 @@ export default function KaiAnalysis() {
               </div>
             </div>
 
+            {/* 2.5 ADDITIONAL TREND CHARTS */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              {/* Net Income Trend */}
+              {result.raw_card.quant_metrics.net_income_trend_data?.length >
+                0 && (
+                <Card
+                  variant="none"
+                  effect="glass"
+                  className="p-4"
+                  showRipple={false}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Net Income Trend ($B)
+                    </h3>
+                    <TrendingUp className="h-3 w-3 text-primary" />
+                  </div>
+                  <ChartContainer
+                    config={netIncomeTrendConfig}
+                    className="h-[100px] w-full"
+                  >
+                    <AreaChart
+                      data={result.raw_card.quant_metrics.net_income_trend_data}
+                    >
+                      <defs>
+                        <linearGradient
+                          id="fillNetIncome"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-value)"
+                            stopOpacity={0.8}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-value)"
+                            stopOpacity={0.1}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="year"
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Area
+                        dataKey="value"
+                        type="monotone"
+                        fill="url(#fillNetIncome)"
+                        stroke="var(--color-value)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ChartContainer>
+                </Card>
+              )}
+
+              {/* OCF vs R&D Trend */}
+              {result.raw_card.quant_metrics.ocf_trend_data?.length > 0 && (
+                <Card
+                  variant="none"
+                  effect="glass"
+                  className="p-4"
+                  showRipple={false}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Cash Flow vs R&D ($B)
+                    </h3>
+                    <DollarSign className="h-3 w-3 text-primary" />
+                  </div>
+                  <ChartContainer
+                    config={cashFlowConfig}
+                    className="h-[100px] w-full"
+                  >
+                    <RechartsLineChart
+                      data={result.raw_card.quant_metrics.ocf_trend_data.map(
+                        (d, i) => ({
+                          year: d.year,
+                          ocf: d.value,
+                          rnd:
+                            result.raw_card.quant_metrics.rnd_trend_data?.[i]
+                              ?.value || 0,
+                        })
+                      )}
+                    >
+                      <XAxis
+                        dataKey="year"
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line
+                        type="monotone"
+                        dataKey="ocf"
+                        stroke="var(--color-ocf)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="rnd"
+                        stroke="var(--color-rnd)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </RechartsLineChart>
+                  </ChartContainer>
+                </Card>
+              )}
+            </div>
+
             {/* 3. DEEP DIVE INSIGHTS */}
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="grid lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
               {/* MOAT Analysis */}
               <Card
                 variant="none"
@@ -680,25 +888,80 @@ export default function KaiAnalysis() {
                 </div>
               </Card>
 
-              {/* Valuation Placeholder (If needed) or just spacer */}
+              {/* Financial Health Radar */}
               <Card
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="p-6 border-l-4 border-l-primary/50 flex flex-col justify-center items-center text-center opacity-70 hover:opacity-100 transition-opacity"
+                className="p-6 border-l-4 border-l-primary/50"
               >
-                <BarChart3 className="h-10 w-10 text-muted-foreground mb-3" />
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  Valuation Model
-                </p>
-                <p className="text-sm font-medium mt-2">
-                  Running DCF & Comps analysis...
-                </p>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-wider">
+                    Financial Health
+                  </h3>
+                </div>
+                <ChartContainer
+                  config={radarConfig}
+                  className="h-[180px] w-full"
+                >
+                  <RadarChart
+                    data={[
+                      {
+                        metric: "FCF Margin",
+                        value: Math.min(
+                          result.raw_card.key_metrics.fundamental.fcf_margin *
+                            200,
+                          100
+                        ),
+                      },
+                      {
+                        metric: "Earnings Q",
+                        value: Math.min(
+                          result.raw_card.key_metrics.fundamental
+                            .earnings_quality * 50,
+                          100
+                        ),
+                      },
+                      {
+                        metric: "R&D Focus",
+                        value: Math.min(
+                          result.raw_card.key_metrics.fundamental
+                            .rnd_intensity * 500,
+                          100
+                        ),
+                      },
+                      {
+                        metric: "Debt Safety",
+                        value: Math.max(
+                          100 -
+                            result.raw_card.key_metrics.fundamental
+                              .debt_to_equity *
+                              50,
+                          0
+                        ),
+                      },
+                    ]}
+                  >
+                    <PolarGrid />
+                    <PolarAngleAxis dataKey="metric" fontSize={10} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Radar
+                      dataKey="value"
+                      fill="var(--color-value)"
+                      fillOpacity={0.5}
+                      stroke="var(--color-value)"
+                      strokeWidth={2}
+                    />
+                  </RadarChart>
+                </ChartContainer>
               </Card>
             </div>
 
             {/* 4. BULL vs BEAR THESIS */}
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
               <Card
                 variant="none"
                 effect="glass"

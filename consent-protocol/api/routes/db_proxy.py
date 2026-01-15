@@ -319,3 +319,136 @@ async def professional_get(request: DomainGetRequest):
         logger.error(f"professional/get error: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 
+
+# ============================================================================
+# Vault Status Endpoint (Token-Enforced Metadata)
+# ============================================================================
+
+from hushh_mcp.consent.token import validate_token
+from hushh_mcp.constants import ConsentScope
+from fastapi import Request
+
+
+def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
+    """Validate VAULT_OWNER consent token."""
+    if not consent_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing consent token. Vault owner must provide VAULT_OWNER token."
+        )
+    
+    valid, reason, token_obj = validate_token(consent_token)
+    
+    if not valid:
+        logger.warning(f"Invalid consent token: {reason}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"Invalid consent token: {reason}"
+        )
+    
+    if token_obj.scope != ConsentScope.VAULT_OWNER.value:
+        logger.warning(
+            f"Insufficient scope: {token_obj.scope} (requires {ConsentScope.VAULT_OWNER.value})"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient scope: {token_obj.scope}. VAULT_OWNER scope required."
+        )
+    
+    if token_obj.user_id != user_id:
+        logger.warning(
+            f"Token userId mismatch: {token_obj.user_id} != {user_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Token userId does not match requested userId"
+        )
+    
+    logger.info(f"✅ VAULT_OWNER token validated for {user_id}")
+
+
+@router.post("/vault/status")
+async def get_vault_status(request: Request):
+    """
+    Get status for all vault domains (optimized single query).
+    Returns metadata without encrypted data.
+    
+    Checks:
+    - Food: vault_food table (field count)
+    - Professional: vault_professional table (field count)
+    - Kai: user_investor_profiles (onboarded) + vault_kai_preferences (settings count)
+    
+    OPTIMIZED: Uses single CTE query for efficient connection pool usage.
+    """
+    try:
+        body = await request.json()
+        user_id = body.get("userId")
+        consent_token = body.get("consentToken")
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail="userId is required")
+        
+        # Validate VAULT_OWNER token
+        validate_vault_owner_token(consent_token, user_id)
+        
+        pool = await get_pool()
+        
+        # OPTIMIZED: Single query with CTEs
+        # Note: Kai preferences count includes risk_profile + processing_mode fields
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                WITH food_count AS (
+                    SELECT COUNT(*) as cnt FROM vault_food WHERE user_id = $1
+                ),
+                prof_count AS (
+                    SELECT COUNT(*) as cnt FROM vault_professional WHERE user_id = $1
+                ),
+                kai_check AS (
+                    SELECT EXISTS(SELECT 1 FROM user_investor_profiles WHERE user_id = $1) as exists
+                ),
+                kai_prefs_count AS (
+                    SELECT COUNT(*) as cnt FROM vault_kai_preferences WHERE user_id = $1
+                )
+                SELECT 
+                    (SELECT cnt FROM food_count) as food_count,
+                    (SELECT cnt FROM prof_count) as prof_count,
+                    (SELECT exists FROM kai_check) as kai_onboarded,
+                    (SELECT cnt FROM kai_prefs_count) as kai_prefs_count
+                """,
+                user_id
+            )
+        
+        food_count = row["food_count"]
+        prof_count = row["prof_count"]
+        kai_onboarded = row["kai_onboarded"]
+        kai_prefs_count = row["kai_prefs_count"]
+        
+        # Kai domain is active if either onboarded OR has preferences
+        kai_has_data = kai_onboarded or kai_prefs_count > 0
+        
+        domains = {
+            "food": {"hasData": food_count > 0, "fieldCount": food_count},
+            "professional": {"hasData": prof_count > 0, "fieldCount": prof_count},
+            "kai": {
+                "hasData": kai_has_data,
+                "onboarded": kai_onboarded,
+                "fieldCount": kai_prefs_count  # Number of Kai preference fields set
+            }
+        }
+        
+        total_active = sum(1 for d in domains.values() if d["hasData"])
+        
+        logger.info(f"✅ Vault status for {user_id}: {total_active}/3 domains active")
+        
+        return {
+            "domains": domains,
+            "totalActive": total_active,
+            "total": 3
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Vault status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

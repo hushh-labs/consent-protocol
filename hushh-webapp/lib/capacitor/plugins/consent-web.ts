@@ -107,6 +107,41 @@ export class HushhConsentWeb extends WebPlugin {
     return { revoked: data.revoked };
   }
 
+  /**
+   * Revoke consent by scope
+   * Calls backend POST /api/consent/revoke
+   * Returns { success: boolean, lockVault: boolean }
+   */
+  async revokeConsent(options: {
+    userId: string;
+    scope: string;
+    authToken?: string;
+  }): Promise<{ success: boolean; lockVault?: boolean }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/consent/revoke`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        userId: options.userId,
+        scope: options.scope,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to revoke consent");
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      lockVault: data.lockVault ?? false,
+    };
+  }
+
   async createTrustLink(options: CreateTrustLinkOptions): Promise<TrustLink> {
     const response = await fetch(`${BACKEND_URL}/api/trust/create-link`, {
       method: "POST",
