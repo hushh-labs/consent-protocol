@@ -881,10 +881,9 @@ export default function KaiPreferencesPage() {
                   {/* Kai Runtime Settings */}
                   {isEditing ? (
                     <Card
-                      variant="none"
+                      variant="muted"
                       effect="glass"
                       showRipple={false}
-                      className="border-0"
                     >
                       <CardContent className="p-3 space-y-2">
                         <div className="text-xs text-muted-foreground">
@@ -936,10 +935,9 @@ export default function KaiPreferencesPage() {
                     </Card>
                   ) : (
                     <Card
-                      variant="none"
+                      variant="muted"
                       effect="glass"
                       showRipple={false}
-                      className="border-0"
                     >
                       <CardContent className="p-3">
                         <div className="text-xs text-muted-foreground mb-2">
