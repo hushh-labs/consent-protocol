@@ -244,7 +244,7 @@ function AppAuditLog({
                   return (
                     <div
                       key={trailId}
-                      className={`border-l-4 ${statusColor} pl-4 py-3 mb-3 rounded-r-lg bg-muted/20`}
+                      className={`border-l-4 ${statusColor} px-4 py-3 mb-3 bg-muted/20`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <Badge variant="outline">
@@ -435,6 +435,18 @@ export default function ConsentsPage() {
           // Revoke - remove from active, update audit
           fetchActiveConsents(userId);
           fetchAuditLog(userId);
+
+          // If VAULT_OWNER was revoked via SSE (e.g., from another tab), lock vault
+          if (scope === "vault.owner" || scope === "VAULT_OWNER") {
+            console.log(
+              "🔒 [SSE] VAULT_OWNER revoked - dispatching lock event"
+            );
+            window.dispatchEvent(
+              new CustomEvent("vault-lock-requested", {
+                detail: { reason: "VAULT_OWNER token revoked (SSE)" },
+              })
+            );
+          }
           break;
         default:
           // Any other event - refresh all to be safe
@@ -684,7 +696,7 @@ export default function ConsentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)]">
+          <div className="p-3 rounded-xl bg-linear-to-r from-(--morphy-primary-start) to-(--morphy-primary-end)">
             <Shield className="h-6 w-6 text-white" />
           </div>
           <div>
@@ -705,10 +717,11 @@ export default function ConsentsPage() {
               toast.success("Refreshed", { duration: 1500 });
             }
           }}
-          className="flex items-center gap-2 border"
+          className="flex items-center gap-2 border p-2 md:px-4"
+          title="Refresh"
         >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
+          <RefreshCw className="h-4 w-4 shrink-0" />
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
 

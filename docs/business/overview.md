@@ -145,6 +145,28 @@ Before any agent can access your data, you see a permission prompt:
 | That you have an account | Your vault contents |
 | Nothing else             | Your data           |
 
+### Consent-First by Design (Not Just Compliance)
+
+**Traditional apps** ask for permission once, then access your data anytime:
+```
+You: "Ok, you can access my photos" [checkbox]
+App: Accesses photos 24/7 without asking again
+```
+
+**Hushh uses cryptographic consent tokens:**
+```
+You: Unlock vault → Backend issues VAULT_OWNER token (24h)
+App: Every data access validates your token
+Token expires → App must ask again
+```
+
+**Why this matters:**
+- ✅ **Auditable**: Every access logged with token validation
+- ✅ **Revocable**: Lock vault → token instantly invalid
+- ✅ **Time-Bound**: Tokens expire after 24 hours
+- ✅ **Cryptographic**: No way to fake or bypass token validation
+- ✅ **Compliance-Ready**: Export your complete access history
+
 ### If You Forget Your Passphrase
 
 When you first sign up, you get a **Recovery Key** like:
@@ -161,6 +183,8 @@ Keep this somewhere safe (write it down, save in password manager). It's your ba
 2. **On-Device Encryption**: AES-256-GCM (same as banks)
 3. **Local-First**: Data stays on your device by default
 4. **Your Control**: You can delete everything anytime
+5. **Token-Based**: All access requires your cryptographic consent
+6. **Complete Audit**: Export your access log anytime for transparency
 
 ---
 

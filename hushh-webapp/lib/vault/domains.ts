@@ -59,6 +59,10 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     readScope: "vault.read.food",
     writeScope: "vault.write.food",
     getData: async (userId, token) => {
+      if (!token) {
+        console.error("[domains] No consent token provided for food data");
+        return null;
+      }
       const res = await ApiService.getFoodPreferences(userId, token);
       if (!res.ok) return null;
       const json = await res.json();
@@ -77,6 +81,12 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     readScope: "vault.read.professional",
     writeScope: "vault.write.professional",
     getData: async (userId, token) => {
+      if (!token) {
+        console.error(
+          "[domains] No consent token provided for professional data"
+        );
+        return null;
+      }
       const res = await ApiService.getProfessionalProfile(userId, token);
       if (!res.ok) return null;
       const json = await res.json();

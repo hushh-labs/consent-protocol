@@ -13,7 +13,13 @@
   - **Web**: Next.js `app/api/**/route.ts` (proxy routes)
   - **Native**: Capacitor plugins (`hushh-webapp/lib/capacitor/**` + Swift/Kotlin)
 - **BYOK / zero-knowledge**: vault key never leaves device; backend stores ciphertext only.
-- **Consent-first**: writes require consent token; vault owner writes use **VAULT_OWNER token**.
+- **Consent-first**: writes require consent token; vault owner **reads AND writes** use **VAULT_OWNER token**.
+
+**Token Requirements (January 2026 Update):**
+- ✅ All vault data reads require VAULT_OWNER token
+- ✅ All vault data writes require VAULT_OWNER token
+- ✅ Backend validates tokens before serving encrypted data
+- ✅ No authentication bypasses (even for vault owners)
 
 ---
 
@@ -63,3 +69,131 @@ FastApi-->>KaiPage: {preferences:[...]}
   - Fails if an `app/api/**/route.ts` exists but is not declared (unless allowlisted).
   - Fails if a declared backend router prefix / route path cannot be found in the specified Python file.
   - Fails if required TS/native plugin files or method names are missing.
+
+---
+
+## 🔐 Token Requirements by Route
+
+### Vault Data Access (Requires VAULT_OWNER Token)
+
+| Route | Method | Token Required | Token Type | Validation Function | Platform Support |
+|-------|--------|---------------|------------|---------------------|------------------|
+| `/api/vault/food/preferences` | GET (web) / POST (backend) | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/food/preferences/store` | POST | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/professional/preferences` | GET (web) / POST (backend) | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/professional/preferences/store` | POST | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase ID | Firebase verify | Web, iOS, Android |
+| `/api/kai/preferences/store` | POST | ✅ Yes | VAULT_OWNER | Via VaultContext | Web, iOS, Android |
+
+### Agent Operations (Requires Agent-Scoped Tokens)
+
+| Route | Method | Token Required | Token Type | Validation Function |
+|-------|--------|---------------|------------|---------------------|
+| `/api/kai/analyze` | POST | ✅ Yes | Agent Scoped (`agent.kai.analyze`) | `validate_token(expected_scope)` |
+| `/api/kai/consent/grant` | POST | ✅ Yes | Firebase ID | Firebase verify |
+
+### Testing Token Enforcement
+
+```bash
+# Test food preferences without token - should fail with 401
+curl -X POST http://localhost:8000/api/vault/food/preferences \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test123"}'
+# Expected: {"detail": "Missing consent token..."}
+
+# Test with valid VAULT_OWNER token - should succeed
+curl -X POST http://localhost:8000/api/vault/food/preferences \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test123", "consentToken": "HCT:eyJ0eXAiOiJKV1QiLCJhbGc..."}'
+# Expected: {"domain": "food", "preferences": {...}}
+
+# Test with wrong scope token - should fail with 403
+curl -X POST http://localhost:8000/api/vault/food/preferences \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test123", "consentToken": "HCT:...agent.kai.analyze..."}'
+# Expected: {"detail": "Insufficient scope..."}
+
+# Test with expired token - should fail with 401
+curl -X POST http://localhost:8000/api/vault/food/preferences \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "test123", "consentToken": "HCT:expired_token"}'
+# Expected: {"detail": "Invalid consent token: Token expired"}
+```
+
+### Platform-Specific Token Routing
+
+#### Web Platform
+
+```typescript
+// Frontend: app/dashboard/food/page.tsx
+const vaultOwnerToken = getVaultOwnerToken();
+const response = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
+
+// ApiService: lib/services/api-service.ts
+static async getFoodPreferences(userId: string, vaultOwnerToken: string) {
+  // Web: Use Next.js proxy
+  const url = `/api/vault/food/preferences?userId=${userId}&consentToken=${vaultOwnerToken}`;
+  return fetch(url, { method: "GET" });
+}
+
+// Next.js Proxy: app/api/vault/food/route.ts
+export async function GET(request: NextRequest) {
+  const userId = searchParams.get("userId");
+  const consentToken = searchParams.get("consentToken");
+  
+  // Forward to backend as POST with token in body
+  const response = await fetch(`${PYTHON_API_URL}/api/vault/food/preferences`, {
+    method: "POST",
+    body: JSON.stringify({ userId, consentToken })
+  });
+}
+```
+
+#### Native Platform (iOS/Android)
+
+```typescript
+// Frontend: app/dashboard/food/page.tsx (SAME CODE)
+const vaultOwnerToken = getVaultOwnerToken();
+const response = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
+
+// ApiService: lib/services/api-service.ts (DETECTS PLATFORM)
+static async getFoodPreferences(userId: string, vaultOwnerToken: string) {
+  if (Capacitor.isNativePlatform()) {
+    // Native: Use plugin (bypasses Next.js)
+    const { preferences } = await HushhVault.getFoodPreferences({
+      userId,
+      vaultOwnerToken,  // Passed to native plugin
+      authToken,
+    });
+    return new Response(JSON.stringify({ preferences }));
+  }
+  // ... web implementation ...
+}
+```
+
+```swift
+// iOS Plugin: HushhVaultPlugin.swift
+@objc func getFoodPreferences(_ call: CAPPluginCall) {
+    guard let userId = call.getString("userId"),
+          let vaultOwnerToken = call.getString("vaultOwnerToken")
+    else {
+        call.reject("Missing required parameters")
+        return
+    }
+    
+    // Direct backend call with token
+    let body: [String: Any] = [
+        "userId": userId,
+        "consentToken": vaultOwnerToken
+    ]
+    
+    performRequest(
+        urlStr: "\(backendUrl)/api/vault/food/preferences",
+        method: "POST",
+        body: body,
+        call: call
+    )
+}
+```
+
+**Result:** Both web and native send `consentToken` to backend; validation is identical.

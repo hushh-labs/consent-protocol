@@ -24,15 +24,57 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     User Authentication                          │
+│                     User Authentication Flow                     │
 ├─────────────────────────────────────────────────────────────────┤
-│ Layer 1: Firebase Auth     → Identity verification (who you are)│
-│ Layer 2: Passphrase        → Knowledge verification (zero-know) │
-│ Layer 3: Firebase ID Token → Backend validates identity         │
-│ Layer 4: VAULT_OWNER Token → Master consent token (NEW!)        │
-│ Layer 5: Agent Tokens      → Scoped consent tokens              │
+│ Layer 1: Firebase Auth    → OAuth (ACCOUNT - who you are)       │
+│          Google Sign-In → Firebase ID token                     │
+│                                                                  │
+│ Layer 2: Vault Unlock     → Passphrase/Recovery (KNOWLEDGE)     │
+│          Current: Passphrase (PBKDF2) or Recovery Key           │
+│          Future: FaceID/TouchID/Passkey (passphrase fallback)   │
+│          Combined with device biometric where available         │
+│                                                                  │
+│ Layer 3: VAULT_OWNER Token → Cryptographic Consent (DATA ACCESS)│
+│          Issued after vault unlock, 24h expiry                  │
+│                                                                  │
+│ Layer 4: Agent Tokens     → Scoped Operations                   │
+│          Domain-specific, 7-day expiry                          │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Layer 2: Vault Unlock (Current Implementation)
+
+**Available Methods:**
+
+1. **Passphrase Method** (Primary - Implemented ✅)
+
+   - User-created passphrase
+   - PBKDF2 key derivation (100k iterations)
+   - Zero-knowledge (never sent to server)
+
+2. **Recovery Key Method** (Backup - Implemented ✅)
+   - 16-byte recovery key (HRK-xxxx-xxxx-xxxx-xxxx)
+   - Generated during vault creation
+   - Can unlock if passphrase forgotten
+
+**Future Methods (Planned 🔜):**
+
+3. **Passkey/WebAuthn** (Enhancement)
+
+   - PRF extension for key derivation
+   - Hardware-backed credentials
+   - Passphrase becomes fallback
+
+4. **Biometric Direct** (Enhancement)
+   - FaceID/TouchID with Keychain/Keystore
+   - Faster unlock experience
+   - Passphrase as fallback mechanism
+
+**Design Philosophy:**
+
+- Passphrase/Recovery will always be available as fallback
+- Biometric methods enhance UX but don't replace security
+- User always has non-biometric option
 
 ---
 
@@ -464,6 +506,263 @@ VAULT_OWNER token issuance works across all platforms:
 - **Android**: `android/.../HushhConsentPlugin.kt`
 - **Interface**: `lib/capacitor/index.ts`
 
+- **Android**: `android/.../HushhConsentPlugin.kt`
+- **Interface**: `lib/capacitor/index.ts`
+
+---
+
+## 🔄 VAULT_OWNER Token Lifecycle (Detailed)
+
+### Complete Lifecycle Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant VaultContext
+    participant Backend
+    participant Database
+
+    Note over User,Database: Phase 1: Token Issue/Reuse
+
+    User->>VaultContext: Unlock vault (passphrase verified)
+    VaultContext->>Backend: POST /api/consent/vault-owner-token<br/>{userId, Firebase ID token}
+    Backend->>Database: SELECT FROM active_tokens<br/>WHERE user_id AND scope=VAULT_OWNER
+
+    alt Active token exists (not expired)
+        Database-->>Backend: Return existing token
+        Backend->>Backend: Validate token signature
+        Backend-->>VaultContext: Reuse token {token, expiresAt}
+        Note over Backend: Log: Token reused
+    else No active token OR expired
+        Backend->>Backend: issue_token(userId, "self", VAULT_OWNER)
+        Backend->>Database: INSERT INTO consent_audit<br/>(CONSENT_GRANTED, token, expires_at)
+        Backend-->>VaultContext: New token {token, expiresAt}
+        Note over Backend: Log: New token issued
+    end
+
+    VaultContext->>VaultContext: Store token in memory<br/>(React state, NOT storage)
+
+    Note over User,Database: Phase 2: Token Use for Data Access
+
+    User->>VaultContext: Load food preferences
+    VaultContext->>VaultContext: token = getVaultOwnerToken()<br/>Check expiry
+    VaultContext->>Backend: POST /api/vault/food/preferences<br/>{userId, consentToken}
+    Backend->>Backend: validate_vault_owner_token()
+    Backend->>Database: Log to consent_audit<br/>(TOKEN_VALIDATED)
+    Backend->>Database: SELECT preferences FROM vault_encrypted
+    Backend-->>VaultContext: {preferences: encrypted}
+    VaultContext->>VaultContext: decryptData(preferences, vaultKey)
+    VaultContext-->>User: Show decrypted data
+
+    Note over User,Database: Phase 3: Token Expiry
+
+    Note over VaultContext: After 24 hours
+    VaultContext->>VaultContext: tokenExpiresAt < now
+    VaultContext->>VaultContext: getVaultOwnerToken() returns null
+    User->>VaultContext: Try to access data
+    VaultContext-->>User: Error: Session expired, please unlock vault
+```
+
+### Token Lifecycle States
+
+| State          | Duration | Trigger                       | Actions                                                    |
+| -------------- | -------- | ----------------------------- | ---------------------------------------------------------- |
+| **Not Issued** | -        | Initial state or after expiry | No vault access possible                                   |
+| **Active**     | 24 hours | Vault unlock                  | Stored in VaultContext memory, reusable for all operations |
+| **Expired**    | -        | After 24 hours                | Cleared from context, user must unlock vault again         |
+| **Revoked**    | -        | User logs out or locks vault  | Immediately cleared from memory                            |
+
+### Token Reuse Logic (Backend)
+
+**File:** `consent-protocol/api/routes/consent.py:277-310`
+
+```python
+# Check for existing active VAULT_OWNER token
+now_ms = int(time.time() * 1000)
+active_tokens = await consent_db.get_active_tokens(user_id)
+
+for token in active_tokens:
+    # Match scope and verify expiry
+    if token.get("scope") == ConsentScope.VAULT_OWNER.value:
+        expires_at = token.get("expires_at", 0)
+
+        # Reuse if token has > 1 hour left
+        if expires_at > now_ms + (60 * 60 * 1000):
+            candidate_token = token.get("token_id")
+
+            # Validate signature before reusing
+            is_valid, reason, payload = validate_token(
+                candidate_token,
+                ConsentScope.VAULT_OWNER
+            )
+
+            if is_valid:
+                logger.info(f"♻️ Reusing VAULT_OWNER token for {user_id}")
+                return {
+                    "token": candidate_token,
+                    "expiresAt": expires_at
+                }
+
+# No valid token found - issue new one
+token_obj = issue_token(
+    user_id=user_id,
+    agent_id="self",
+    scope=ConsentScope.VAULT_OWNER,
+    expires_in_ms=24 * 60 * 60 * 1000
+)
+```
+
+---
+
+## 🆚 Token Types Comparison
+
+| Token Type        | Scope               | Duration | Issuer                 | Use Case                     | Revocable | Example                          |
+| ----------------- | ------------------- | -------- | ---------------------- | ---------------------------- | --------- | -------------------------------- |
+| **VAULT_OWNER**   | `vault.owner`       | 24h      | Backend (user request) | User's own data operations   | Yes       | Read/write food preferences      |
+| **Agent Scoped**  | `agent.kai.analyze` | 7 days   | Backend (user consent) | AI agent operations          | Yes       | Kai analyze stock                |
+| **MCP Read-Only** | Domain-specific     | Session  | MCP Server             | External AI (Claude, Cursor) | Yes       | Read preferences for suggestions |
+| **Firebase ID**   | N/A                 | 1 hour   | Firebase               | Identity verification only   | N/A       | Backend auth header              |
+
+### When to Use Each Token
+
+```typescript
+// VAULT_OWNER: For user's own vault operations
+const response = await ApiService.getFoodPreferences(
+  userId,
+  vaultOwnerToken // Required for all vault reads/writes
+);
+
+// Agent-Scoped: For AI agent operations
+const analysis = await Kai.analyze({
+  userId,
+  ticker: "AAPL",
+  consentToken: kaiToken, // Scoped to analysis only
+});
+
+// Firebase ID: For backend identity verification
+const headers = {
+  Authorization: `Bearer ${firebaseIdToken}`,
+};
+```
+
+---
+
+## 🔐 All Data Access Requires VAULT_OWNER Token
+
+### Vault Operations Matrix
+
+| Operation                  | Endpoint                                    | Method | Token Required | Token Type   | Validation Function            |
+| -------------------------- | ------------------------------------------- | ------ | -------------- | ------------ | ------------------------------ |
+| Read food preferences      | `/api/vault/food/preferences`               | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
+| Write food preferences     | `/api/vault/food/preferences/store`         | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
+| Read professional profile  | `/api/vault/professional/preferences`       | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
+| Write professional profile | `/api/vault/professional/preferences/store` | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
+| Read Kai preferences       | `/api/kai/preferences/:userId`              | GET    | ✅ Yes         | Firebase ID  | Firebase verify                |
+| Write Kai preferences      | `/api/kai/preferences/store`                | POST   | ✅ Yes         | VAULT_OWNER  | Via VaultContext               |
+| Kai analyze stock          | `/api/kai/analyze`                          | POST   | ✅ Yes         | Agent Scoped | `validate_token()`             |
+
+### Platform Routing with Tokens
+
+#### Web Platform
+
+```
+Dashboard → ApiService → Next.js Proxy (/api/vault/food/preferences) → Backend
+                                ↓
+                    GET with token in query params
+                                ↓
+                    Proxy converts to POST with token in body
+                                ↓
+                    Backend validates VAULT_OWNER token
+```
+
+#### Native Platform (iOS/Android)
+
+```
+Dashboard → ApiService → Capacitor Plugin (HushhVault) → Backend (direct)
+                                ↓
+                    Plugin receives vaultOwnerToken parameter
+                                ↓
+                    POST /api/vault/food/preferences {userId, consentToken}
+                                ↓
+                    Backend validates VAULT_OWNER token
+```
+
+**Both paths converge at backend validation—no platform bypasses.**
+
+---
+
+## 📝 Audit Logging
+
+### What Gets Logged
+
+Every token operation is logged to the `consent_audit` table:
+
+| Event                     | Action                    | Logged Fields                                             |
+| ------------------------- | ------------------------- | --------------------------------------------------------- |
+| Token issued              | `CONSENT_GRANTED`         | user_id, agent_id, scope, token_id, expires_at, timestamp |
+| Token validated (success) | `TOKEN_VALIDATED`         | user_id, agent_id, scope, token_id, timestamp             |
+| Token validation failed   | `TOKEN_VALIDATION_FAILED` | user_id, reason, timestamp                                |
+| Token reused              | `TOKEN_REUSED`            | user_id, token_id, timestamp                              |
+| Token expired             | `TOKEN_EXPIRED`           | user_id, token_id, timestamp                              |
+
+### Audit Trail Export
+
+```python
+# Generate audit report for user (CCPA compliance)
+SELECT
+    timestamp,
+    action,
+    agent_id,
+    scope,
+    metadata
+FROM consent_audit
+WHERE user_id = 'user123'
+ORDER BY timestamp DESC;
+```
+
+### Retention Policy
+
+- **Duration**: 2 years (CCPA requirement)
+- **Immutability**: Append-only table (no updates/deletes)
+- **User Access**: Exportable via API
+- **Regulatory**: Available for compliance audits
+
+---
+
+## ⚖️ Compliance Mappings
+
+### CCPA (California Consumer Privacy Act)
+
+| CCPA Requirement     | Hushh Implementation                                          |
+| -------------------- | ------------------------------------------------------------- |
+| **Right to Know**    | User can export `consent_audit` table showing all data access |
+| **Right to Delete**  | Token revocation + vault deletion with audit trail            |
+| **Right to Opt-Out** | No data sharing without explicit consent tokens               |
+| **Proof of Consent** | Cryptographic tokens = verifiable consent                     |
+| **Access Logging**   | Every vault access logged with token validation               |
+
+### GDPR (General Data Protection Regulation)
+
+| GDPR Requirement       | Hushh Implementation                        |
+| ---------------------- | ------------------------------------------- |
+| **Lawful Basis**       | Consent tokens = explicit, informed consent |
+| **Consent Management** | Token expiry, revocation, audit trail       |
+| **Data Minimization**  | Scoped tokens limit agent access            |
+| **Right to Access**    | Export `consent_audit` + vault data         |
+| **Right to Erasure**   | Vault deletion + token revocation           |
+
+### SEC (Securities and Exchange Commission)
+
+For Agent Kai regulatory compliance:
+
+| SEC Concern        | Hushh Implementation                              |
+| ------------------ | ------------------------------------------------- |
+| **Audit Trail**    | Every Kai analysis logged with VAULT_OWNER token  |
+| **User Consent**   | Explicit token-based consent for each analysis    |
+| **Fiduciary Duty** | Token system proves data access authorization     |
+| **Recordkeeping**  | Immutable `consent_audit` table, 2-year retention |
+| **Disclosure**     | Token scopes clearly define agent capabilities    |
+
 ---
 
 ## 📡 MCP External Consent (Third-Party Agents)
@@ -555,9 +854,11 @@ async def get_food_preferences(request: Request):
 - [x] Android Kotlin plugin implemented
 - [x] Token reuse logic implemented
 - [x] Legacy routes deprecated with warnings
-- [ ] Frontend API calls updated to pass tokens
-- [ ] End-to-end testing across all platforms
+- [x] Frontend API calls updated to pass tokens (January 2026)
+- [x] End-to-end token validation tested on web/iOS/Android
+- [x] Audit logging implemented
+- [x] Compliance mappings documented
 
 ---
 
-_Version: 5.0 | Updated: January 2026 | VAULT_OWNER Token Architecture Release_
+_Version: 6.0 | Updated: January 14, 2026 | Complete VAULT_OWNER Token Lifecycle + Compliance Mappings_
