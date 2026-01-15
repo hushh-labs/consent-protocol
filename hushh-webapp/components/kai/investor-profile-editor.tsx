@@ -308,9 +308,9 @@ function PreferenceFormContent({
   readOnly?: boolean;
 }) {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-md border border-border/50 bg-background/40 p-4 shadow-sm">
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Risk tolerance
           </div>
@@ -324,7 +324,7 @@ function PreferenceFormContent({
             className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-md border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Time horizon
           </div>
@@ -338,7 +338,7 @@ function PreferenceFormContent({
             className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-md border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             Portfolio turnover
           </div>
@@ -352,7 +352,7 @@ function PreferenceFormContent({
             className="h-9 text-sm mt-1 bg-transparent border-0 px-2 focus-visible:ring-0 shadow-none font-bold placeholder:font-normal disabled:opacity-100 disabled:cursor-default"
           />
         </div>
-        <div className="rounded-md border border-border/50 bg-background/40 p-4 shadow-sm">
+        <div className="rounded-md border border-border/30 bg-white/40 dark:bg-background/40 p-4 shadow-sm">
           <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">
             AUM (B)
           </div>
