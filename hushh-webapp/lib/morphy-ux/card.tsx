@@ -133,7 +133,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           "rounded-lg border border-solid text-card-foreground shadow-[0_1px_3px_0_rgb(0_0_0_/_0.3),_0_1px_2px_-1px_rgb(0_0_0_/_0.2)] relative p-6 transition-[border-color,box-shadow,background-color] duration-200",
           // Theme-aware background based on variant
           variant === "muted"
-            ? "bg-gray-50/80 dark:bg-background/40 border-border/50"
+            ? "bg-white/60 dark:bg-background/40 border-border/30"
             : effect === "glass"
             ? ""
             : "bg-white/80 dark:bg-gray-900/40",

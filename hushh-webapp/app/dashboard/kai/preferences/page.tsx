@@ -876,7 +876,7 @@ export default function KaiPreferencesPage() {
               )}
 
               {/* Preferences Editor (Always visible) */}
-              {displayProfile && (
+              {displayProfile && !showProfileSearch && (
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
                   {/* Kai Runtime Settings */}
                   {isEditing ? (
