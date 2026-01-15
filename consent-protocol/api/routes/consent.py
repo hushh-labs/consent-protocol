@@ -354,8 +354,11 @@ async def revoke_consent(request: Request):
     User revokes an active consent token.
     
     This removes access for the app that was previously granted consent.
+    For VAULT_OWNER tokens, this effectively locks the vault.
     """
     try:
+        from hushh_mcp.consent.token import revoke_token
+        
         body = await request.json()
         userId = body.get("userId")
         scope = body.get("scope")
@@ -379,6 +382,13 @@ async def revoke_consent(request: Request):
         if not token_to_revoke:
             raise HTTPException(status_code=404, detail=f"No active consent found for scope: {scope}")
         
+        # CRITICAL: Add the actual token to in-memory revocation set
+        # This ensures validate_token() will reject it immediately
+        original_token = token_to_revoke.get("token_id")
+        if original_token and not original_token.startswith("REVOKED_"):
+            revoke_token(original_token)
+            logger.info(f"🔒 Token added to in-memory revocation set")
+        
         # Generate a NEW unique token_id for the REVOKED event
         # (Cannot reuse original token_id due to UNIQUE constraint on consent_audit table)
         import time
@@ -399,7 +409,14 @@ async def revoke_consent(request: Request):
         )
         logger.info(f"✅ REVOKED event saved to DB for scope: {scope}")
         
-        return {"status": "revoked", "message": f"Consent for {scope} has been revoked"}
+        # Return special flag for VAULT_OWNER revocation so client knows to lock vault
+        is_vault_owner = scope == "vault.owner" or scope == "VAULT_OWNER"
+        
+        return {
+            "status": "revoked", 
+            "message": f"Consent for {scope} has been revoked",
+            "lockVault": is_vault_owner  # Signal client to lock vault
+        }
     
     except HTTPException:
         raise
