@@ -257,6 +257,11 @@ export function InvestorProfileEditor(props: {
 
   const [activeTab, setActiveTab] = useState("preference");
 
+  // Get actual foreground color from CSS variable for charts
+  const chartColor = typeof window !== "undefined"
+    ? `hsl(${getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim()})`
+    : "hsl(0 0% 20%)"; // fallback
+
   return (
     <div className="space-y-6 pb-2">
       <Tabs
@@ -302,6 +307,7 @@ export function InvestorProfileEditor(props: {
             setSellsInput={setSellsInput}
             applyStructured={applyStructured}
             readOnly={readOnly}
+            chartColor={chartColor}
           />
         </TabsContent>
 
@@ -461,6 +467,7 @@ function PortfolioDNAContent({
   setSellsInput,
   applyStructured,
   readOnly = false,
+  chartColor,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
@@ -476,6 +483,7 @@ function PortfolioDNAContent({
   setSellsInput: (v: string) => void;
   applyStructured: () => void;
   readOnly?: boolean;
+  chartColor: string;
 }) {
   return (
     <div className="space-y-6">
@@ -519,9 +527,9 @@ function PortfolioDNAContent({
                 <Bar
                   dataKey="value"
                   radius={[6, 6, 6, 6]}
-                  fill="hsl(var(--foreground))"
+                  fill={chartColor}
                   opacity={0.7}
-                  activeBar={{ fill: "hsl(var(--foreground))", opacity: 0.9 }}
+                  activeBar={{ fill: chartColor, opacity: 0.9 }}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -621,7 +629,7 @@ function PortfolioDNAContent({
                   {sectorChartData.map((_, i) => (
                     <Cell
                       key={i}
-                      fill="hsl(var(--foreground))"
+                      fill={chartColor}
                       fillOpacity={0.25 + (i % 6) * 0.1}
                     />
                   ))}
