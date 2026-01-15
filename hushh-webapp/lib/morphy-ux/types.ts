@@ -7,6 +7,7 @@ import { type IconWeight } from "@phosphor-icons/react";
 // Enhanced color variant type with university-focused variants
 export type ColorVariant =
   | "none"
+  | "muted" // Darker contrast variant for better visual separation
   | "link"
   | "gradient" // Primary brand gradient
   | "blue"
@@ -77,6 +78,7 @@ export type ButtonVariant =
 
 export type CardVariant =
   | "none"
+  | "muted" // Darker contrast variant
   | "gradient"
   | "blue"
   | "blue-gradient"
