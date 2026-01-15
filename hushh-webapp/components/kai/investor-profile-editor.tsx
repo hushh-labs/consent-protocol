@@ -122,6 +122,22 @@ function listToCsv(list: string[] | null | undefined): string {
   return list?.length ? list.join(", ") : "";
 }
 
+// Custom tooltip component for charts that uses theme colors
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-popover text-popover-foreground border border-border rounded-md shadow-md px-3 py-2 text-sm">
+      {label && <div className="font-semibold mb-1">{label}</div>}
+      {payload.map((entry: any, idx: number) => (
+        <div key={idx} className="flex items-center gap-2">
+          <span className="font-medium">{entry.name}:</span>
+          <span>{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function csvToList(raw: string): string[] | null {
   const items = raw
     .split(",")
@@ -496,23 +512,13 @@ function PortfolioDNAContent({
                   tick={{ fill: "hsl(var(--muted-foreground))" }}
                 />
                 <YAxis hide />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                    color: "hsl(var(--popover-foreground))",
-                  }}
-                  labelStyle={{ color: "hsl(var(--popover-foreground))" }}
-                  itemStyle={{ color: "hsl(var(--popover-foreground))" }}
-                  cursor={{ fill: "hsl(var(--muted)/0.1)" }}
-                />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: "transparent" }} />
                 <Bar
                   dataKey="value"
                   radius={[6, 6, 6, 6]}
                   fill="hsl(var(--primary))"
                   opacity={0.7}
+                  activeBar={{ fill: "hsl(var(--primary))", opacity: 0.9 }}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -600,17 +606,7 @@ function PortfolioDNAContent({
           <div className="h-44 w-full mb-4 [&_svg]:outline-none **:outline-none">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                    color: "hsl(var(--popover-foreground))",
-                  }}
-                  labelStyle={{ color: "hsl(var(--popover-foreground))" }}
-                  itemStyle={{ color: "hsl(var(--popover-foreground))" }}
-                />
+                <Tooltip content={<CustomTooltip />} />
                 <Pie
                   data={sectorChartData}
                   dataKey="value"
