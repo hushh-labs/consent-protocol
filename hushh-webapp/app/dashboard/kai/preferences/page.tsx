@@ -851,24 +851,58 @@ export default function KaiPreferencesPage() {
               {displayProfile && !showProfileSearch && (
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
                   {/* Kai Runtime Settings - Processing Mode Only (Risk comes from profile) */}
-                  <Card variant="muted" effect="glass" showRipple={false}>
-                    <CardContent className="p-3">
-                      <div className="text-xs text-muted-foreground mb-2">
-                        Kai runtime
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary">
-                          risk:{displayProfile?.risk_tolerance || "balanced"}
-                        </Badge>
-                        <Badge variant="secondary">
-                          mode:hybrid
-                        </Badge>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-2">
-                        Risk is derived from your profile&apos;s risk tolerance setting in Prefs tab
-                      </p>
-                    </CardContent>
-                  </Card>
+                  {isEditing ? (
+                    <Card variant="muted" effect="glass" showRipple={false}>
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Kai runtime settings
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Processing mode
+                          </div>
+                          <Select
+                            value={draftProcessingMode || "hybrid"}
+                            onValueChange={(v: any) => {
+                              if (v !== "on_device") setDraftProcessingMode(v);
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="hybrid" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="hybrid">hybrid</SelectItem>
+                              <SelectItem value="on_device" disabled>
+                                on_device (Coming Soon)
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Risk is derived from profile&apos;s risk tolerance in Prefs tab
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card variant="muted" effect="glass" showRipple={false}>
+                      <CardContent className="p-3">
+                        <div className="text-xs text-muted-foreground mb-2">
+                          Kai runtime
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">
+                            risk:{displayProfile?.risk_tolerance || "balanced"}
+                          </Badge>
+                          <Badge variant="secondary">
+                            mode:{displayKaiPrefs.processingMode || "hybrid"}
+                          </Badge>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-2">
+                          Risk is derived from profile&apos;s risk tolerance in Prefs tab
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Main Profile Editor (Read-only or Editable) */}
                   <div className={isEditing ? "opacity-100" : "opacity-90"}>

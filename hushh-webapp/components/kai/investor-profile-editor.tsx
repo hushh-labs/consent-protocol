@@ -412,7 +412,10 @@ function PreferenceFormContent({
                   } else {
                     onChange({
                       ...value,
-                      investment_style: [...(value.investment_style || []), style],
+                      investment_style: [
+                        ...(value.investment_style || []),
+                        style,
+                      ],
                     });
                   }
                 }}
