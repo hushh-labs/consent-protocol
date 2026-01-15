@@ -99,6 +99,18 @@ export function VaultProvider({ children }: VaultProviderProps) {
     }
   }, [user, vaultKey, lockVault]);
 
+  // Listen for vault-lock-requested events (e.g., when VAULT_OWNER token is revoked)
+  useEffect(() => {
+    const handleLockRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<{ reason: string }>;
+      console.log(`🔒 [VaultProvider] Lock requested: ${customEvent.detail?.reason}`);
+      lockVault();
+    };
+
+    window.addEventListener("vault-lock-requested", handleLockRequest);
+    return () => window.removeEventListener("vault-lock-requested", handleLockRequest);
+  }, [lockVault]);
+
   const unlockVault = useCallback(
     (key: string, token: string, expiresAt: number) => {
       console.log(
