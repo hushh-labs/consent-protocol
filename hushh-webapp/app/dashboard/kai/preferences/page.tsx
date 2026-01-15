@@ -28,17 +28,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
@@ -886,19 +875,19 @@ export default function KaiPreferencesPage() {
                     </Card>
                   ) : (
                     <Card variant="muted" effect="glass" showRipple={false}>
-                      <CardContent className="p-3">
-                        <div className="text-xs text-muted-foreground mb-2">
-                          Kai runtime
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Kai runtime settings
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary">
-                            risk:{displayProfile?.risk_tolerance || "balanced"}
-                          </Badge>
-                          <Badge variant="secondary">
-                            mode:{displayKaiPrefs.processingMode || "hybrid"}
-                          </Badge>
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-muted-foreground">
+                            Processing mode
+                          </div>
+                          <div className="flex items-center h-9 px-3 py-2 rounded-md border border-border/50 bg-background/20 text-sm">
+                            {displayKaiPrefs.processingMode || "hybrid"}
+                          </div>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-2">
+                        <p className="text-[10px] text-muted-foreground">
                           Risk is derived from profile&apos;s risk tolerance in
                           Prefs tab
                         </p>

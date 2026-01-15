@@ -244,14 +244,21 @@ export class ApiService {
         const { HushhConsent } = await import("@/lib/capacitor");
         const authToken = await this.getFirebaseToken();
 
-        // Use new revokeConsent that calls the backend
-        await HushhConsent.revokeConsent({
+        // Use revokeConsent that calls the backend and returns lockVault flag
+        const result = await HushhConsent.revokeConsent({
           userId: data.userId,
           scope: data.scope || "",
           authToken,
         });
 
-        return new Response(JSON.stringify({ success: true }), { status: 200 });
+        // Pass through the lockVault flag from native plugin response
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            lockVault: result.lockVault ?? false 
+          }), 
+          { status: 200 }
+        );
       } catch (e: any) {
         console.error("[ApiService] Native revokeConsent error:", e);
         return new Response(e.message || "Failed", { status: 500 });
