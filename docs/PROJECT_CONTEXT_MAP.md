@@ -147,6 +147,83 @@ Follow the **Capacitor-safe 5-step workflow**:
 
 ---
 
+## ⚠️ CRITICAL RULES - READ BEFORE CODING
+
+### Rule 1: Component Network Call Ban
+
+**Components MUST NOT use `fetch()` directly.**
+
+```typescript
+// ❌ BANNED in components:
+fetch("/api/...")
+axios.get("/api/...")
+$.ajax(...)
+
+// ✅ REQUIRED in components:
+ApiService.method()
+VaultService.method()
+```
+
+**Rationale**: Native platforms have no Next.js server. Direct API calls fail silently.
+
+**Enforcement**:
+- ESLint rule: Ban `fetch()` in `/components/**` and `/app/**/page.tsx`
+- Pre-commit hook: Check for fetch violations
+- AI instruction: Flag fetch() in components as CRITICAL ERROR
+
+### Rule 2: Every Next.js API Route Needs Native Plugin
+
+When you create `app/api/{feature}/route.ts`:
+
+**Required checklist** (all 5 must exist):
+1. ✅ Next.js route: `app/api/{feature}/route.ts` (web proxy)
+2. ✅ iOS plugin: `ios/App/App/Plugins/Hushh{Feature}Plugin.swift`
+3. ✅ Android plugin: `android/.../plugins/Hushh{Feature}/Hushh{Feature}Plugin.kt`
+4. ✅ Service abstraction: `lib/services/{feature}-service.ts` (platform detector)
+5. ✅ TypeScript interface: `lib/capacitor/index.ts` (type safety)
+
+**If any is missing, the feature is INCOMPLETE and will break on native.**
+
+### Rule 3: Tri-Flow Implementation Template
+
+Every new feature that touches data follows this exact structure:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. UI Component (app/ or components/)                       │
+│    - Calls service method only                              │
+│    - NO direct fetch() allowed                              │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Service Layer (lib/services/)                            │
+│    - Detects platform: Capacitor.isNativePlatform()        │
+│    - Web: calls Next.js proxy                               │
+│    - Native: calls Capacitor plugin                         │
+└────────┬────────────────────────────────┬───────────────────┘
+         │                                │
+         │ WEB                            │ NATIVE
+         ▼                                ▼
+┌──────────────────────┐    ┌────────────────────────────────┐
+│ 3a. Next.js Proxy    │    │ 3b. Capacitor Plugin           │
+│ (app/api/route.ts)   │    │ (iOS Swift + Android Kotlin)   │
+│ - Forwards to backend│    │ - Calls backend directly       │
+└──────────┬───────────┘    └──────────┬─────────────────────┘
+           │                           │
+           └───────────┬───────────────┘
+                       ▼
+           ┌────────────────────────────┐
+           │ 4. Python Backend          │
+           │ (consent-protocol/api/)    │
+           │ - Single source of truth   │
+           └────────────────────────────┘
+```
+
+**Missing any layer = broken native experience.**
+
+---
+
 ## Quick Pointers (High Signal Files)
 
 ### Protocol / Backend
