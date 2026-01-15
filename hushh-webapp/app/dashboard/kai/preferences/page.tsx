@@ -879,7 +879,8 @@ export default function KaiPreferencesPage() {
                           </Select>
                         </div>
                         <p className="text-[10px] text-muted-foreground">
-                          Risk is derived from profile&apos;s risk tolerance in Prefs tab
+                          Risk is derived from profile&apos;s risk tolerance in
+                          Prefs tab
                         </p>
                       </CardContent>
                     </Card>
@@ -898,7 +899,8 @@ export default function KaiPreferencesPage() {
                           </Badge>
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-2">
-                          Risk is derived from profile&apos;s risk tolerance in Prefs tab
+                          Risk is derived from profile&apos;s risk tolerance in
+                          Prefs tab
                         </p>
                       </CardContent>
                     </Card>
