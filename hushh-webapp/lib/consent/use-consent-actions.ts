@@ -367,6 +367,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
 
   /**
    * Revoke an active consent
+   * For VAULT_OWNER scope, this will also lock the vault
    */
   const handleRevoke = useCallback(
     async (scope: string): Promise<void> => {
@@ -385,18 +386,40 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
           throw new Error("Failed to revoke consent");
         }
 
-        return "Consent revoked";
+        // Check if backend signals to lock vault (for VAULT_OWNER revocation)
+        const data = await response.json();
+        return data;
       })();
 
       toast.promise(promise, {
         loading: "Revoking consent...",
-        success: (data) => `🔒 ${data}`,
+        success: () => `🔒 Consent revoked`,
         error: (err) => `❌ ${err.message}`,
         duration: 3000,
       });
 
       try {
-        await promise;
+        const result = await promise;
+        
+        // If VAULT_OWNER was revoked, lock the vault
+        if (result.lockVault) {
+          // Import lockVault dynamically to avoid circular deps
+          const { removeSessionItem } = await import("@/lib/utils/session-storage");
+          
+          // Clear vault session flag
+          removeSessionItem("vault_unlocked");
+          
+          // Dispatch event so VaultContext can react
+          window.dispatchEvent(new CustomEvent("vault-lock-requested", {
+            detail: { reason: "VAULT_OWNER token revoked" }
+          }));
+          
+          toast.info("Vault locked", {
+            description: "Your VAULT_OWNER access has been revoked. Please unlock again to continue.",
+            duration: 5000,
+          });
+        }
+        
         onActionComplete?.();
       } catch (err) {
         console.error("Error revoking consent:", err);

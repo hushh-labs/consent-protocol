@@ -4,13 +4,18 @@ import hmac
 import hashlib
 import base64
 import time
+import logging
 from typing import Optional, Tuple
 
 from hushh_mcp.config import SECRET_KEY, DEFAULT_CONSENT_TOKEN_EXPIRY_MS
 from hushh_mcp.constants import CONSENT_TOKEN_PREFIX
 from hushh_mcp.types import HushhConsentToken, ConsentScope, UserID, AgentID
 
+logger = logging.getLogger(__name__)
+
 # ========== Internal Revocation Registry ==========
+# In-memory set for fast revocation checks (immediate effect)
+# Also persisted to DB for cross-instance consistency
 _revoked_tokens = set()
 
 # ========== Token Generator ==========
@@ -44,6 +49,7 @@ def validate_token(
     token_str: str,
     expected_scope: Optional[ConsentScope] = None
 ) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
+    # Check in-memory revocation first (fastest)
     if token_str in _revoked_tokens:
         return False, "Token has been revoked", None
 
@@ -86,6 +92,43 @@ def validate_token(
 
     except Exception as e:
         return False, f"Malformed token: {str(e)}", None
+
+
+async def validate_token_with_db(
+    token_str: str,
+    expected_scope: Optional[ConsentScope] = None
+) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
+    """
+    Validate token with additional database revocation check.
+    
+    Use this for critical operations where cross-instance consistency matters.
+    Falls back to in-memory check if DB is unavailable.
+    """
+    # First do the fast in-memory validation
+    valid, reason, token_obj = validate_token(token_str, expected_scope)
+    
+    if not valid:
+        return valid, reason, token_obj
+    
+    # Additional DB check for revocation status
+    # This catches tokens revoked on other Cloud Run instances
+    try:
+        import consent_db
+        if token_obj:
+            is_active = await consent_db.is_token_active(
+                token_obj.user_id, 
+                token_obj.scope
+            )
+            if not is_active:
+                # Add to in-memory set for future fast checks
+                _revoked_tokens.add(token_str)
+                logger.warning(f"Token revoked in DB but not in memory: {token_str[:30]}...")
+                return False, "Token has been revoked (DB check)", None
+    except Exception as e:
+        # Log but don't fail - in-memory check is sufficient for single instance
+        logger.warning(f"DB revocation check failed, using in-memory only: {e}")
+    
+    return valid, reason, token_obj
 
 # ========== Token Revoker ==========
 
