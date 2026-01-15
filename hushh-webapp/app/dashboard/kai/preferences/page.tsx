@@ -868,70 +868,84 @@ export default function KaiPreferencesPage() {
                 <div className="space-y-4 pt-4 animate-in fade-in duration-500">
                   {/* Kai Runtime Settings */}
                   {isEditing ? (
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3 space-y-2">
-                      <div className="text-xs text-muted-foreground">
-                        Kai runtime settings
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <div className="text-[10px] text-muted-foreground">
-                            Risk profile
-                          </div>
-                          <Select
-                            value={draftRiskProfile}
-                            onValueChange={(v: any) => setDraftRiskProfile(v)}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="conservative">
-                                conservative
-                              </SelectItem>
-                              <SelectItem value="balanced">balanced</SelectItem>
-                              <SelectItem value="aggressive">
-                                aggressive
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                    <Card
+                      variant="none"
+                      effect="glass"
+                      showRipple={false}
+                      className="border-0"
+                    >
+                      <CardContent className="p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground">
+                          Kai runtime settings
                         </div>
-                        <div className="space-y-1">
-                          <div className="text-[10px] text-muted-foreground">
-                            Processing
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <div className="text-[10px] text-muted-foreground">
+                              Risk profile
+                            </div>
+                            <Select
+                              value={draftRiskProfile}
+                              onValueChange={(v: any) => setDraftRiskProfile(v)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="conservative">
+                                  conservative
+                                </SelectItem>
+                                <SelectItem value="balanced">balanced</SelectItem>
+                                <SelectItem value="aggressive">
+                                  aggressive
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <Select
-                            value={draftProcessingMode}
-                            onValueChange={(v: any) =>
-                              setDraftProcessingMode(v)
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="hybrid">hybrid</SelectItem>
-                              <SelectItem value="on_device">
-                                on_device
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-1">
+                            <div className="text-[10px] text-muted-foreground">
+                              Processing
+                            </div>
+                            <Select
+                              value={draftProcessingMode}
+                              onValueChange={(v: any) =>
+                                setDraftProcessingMode(v)
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="hybrid">hybrid</SelectItem>
+                                <SelectItem value="on_device">
+                                  on_device
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   ) : (
-                    <div className="rounded-xl border border-border/50 bg-background/40 p-3">
-                      <div className="text-xs text-muted-foreground mb-2">
-                        Kai runtime
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="secondary">
-                          risk:{displayKaiPrefs.riskProfile || "—"}
-                        </Badge>
-                        <Badge variant="secondary">
-                          mode:{displayKaiPrefs.processingMode || "—"}
-                        </Badge>
-                      </div>
-                    </div>
+                    <Card
+                      variant="none"
+                      effect="glass"
+                      showRipple={false}
+                      className="border-0"
+                    >
+                      <CardContent className="p-3">
+                        <div className="text-xs text-muted-foreground mb-2">
+                          Kai runtime
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">
+                            risk:{displayKaiPrefs.riskProfile || "—"}
+                          </Badge>
+                          <Badge variant="secondary">
+                            mode:{displayKaiPrefs.processingMode || "—"}
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
                   )}
 
                   {/* Main Profile Editor (Read-only or Editable) */}
