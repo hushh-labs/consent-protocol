@@ -512,13 +512,16 @@ function PortfolioDNAContent({
                   tick={{ fill: "hsl(var(--muted-foreground))" }}
                 />
                 <YAxis hide />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "transparent" }} />
+                <Tooltip
+                  content={<CustomTooltip />}
+                  cursor={{ fill: "transparent" }}
+                />
                 <Bar
                   dataKey="value"
                   radius={[6, 6, 6, 6]}
-                  fill="hsl(var(--primary))"
+                  fill="hsl(var(--foreground))"
                   opacity={0.7}
-                  activeBar={{ fill: "hsl(var(--primary))", opacity: 0.9 }}
+                  activeBar={{ fill: "hsl(var(--foreground))", opacity: 0.9 }}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -618,7 +621,7 @@ function PortfolioDNAContent({
                   {sectorChartData.map((_, i) => (
                     <Cell
                       key={i}
-                      fill="hsl(var(--primary))"
+                      fill="hsl(var(--foreground))"
                       fillOpacity={0.25 + (i % 6) * 0.1}
                     />
                   ))}
