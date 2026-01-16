@@ -20,3 +20,5 @@ docs/vision/kai/index.html
 .vscode/chrome-debug
 sec_payload_aapl.json
 sec_payload_nvda.json
+# Blog drafts (personal content)
+blogs/
