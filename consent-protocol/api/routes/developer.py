@@ -14,7 +14,7 @@ import consent_db
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from shared import MOCK_USER_DATA, REGISTERED_DEVELOPERS
+from shared import REGISTERED_DEVELOPERS
 
 logger = logging.getLogger(__name__)
 
@@ -184,20 +184,12 @@ async def get_food_data(request: DataAccessRequest):
             error="Forbidden: Token user mismatch"
         )
     
-    # Get user data (in production, decrypt from vault)
-    user_data = MOCK_USER_DATA.get(request.user_id, {}).get("food")
-    
-    if not user_data:
-        return DataAccessResponse(
-            status_code=404,
-            error="No food data found for this user"
-        )
-    
-    logger.info(f"✅ Food data returned for user {request.user_id}")
-    
+    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
+    # The MCP flow uses /api/consent/data with zero-knowledge exports
+    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/food-data - use MCP tools instead")
     return DataAccessResponse(
-        status_code=200,
-        data=user_data
+        status_code=501,
+        error="This endpoint is deprecated. Use MCP tools (get_food_preferences) for data access with zero-knowledge exports."
     )
 
 
@@ -232,20 +224,12 @@ async def get_professional_data(request: DataAccessRequest):
             error="Forbidden: Token user mismatch"
         )
     
-    # Get user data (in production, decrypt from vault)
-    user_data = MOCK_USER_DATA.get(request.user_id, {}).get("professional")
-    
-    if not user_data:
-        return DataAccessResponse(
-            status_code=404,
-            error="No professional data found for this user"
-        )
-    
-    logger.info(f"✅ Professional data returned for user {request.user_id}")
-    
+    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
+    # The MCP flow uses /api/consent/data with zero-knowledge exports
+    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/professional-data - use MCP tools instead")
     return DataAccessResponse(
-        status_code=200,
-        data=user_data
+        status_code=501,
+        error="This endpoint is deprecated. Use MCP tools (get_professional_profile) for data access with zero-knowledge exports."
     )
 
 
