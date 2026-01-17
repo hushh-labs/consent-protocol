@@ -127,15 +127,18 @@ async def handle_get_food(args: dict) -> list[TextContent]:
     except Exception as e:
         logger.warning(f"⚠️ Export fetch failed: {e}")
     
-    # Fallback to demo data
+    # PRODUCTION: No fallback to demo data - fail if real data not found
     if food_data is None:
-        logger.info("📋 No export data, using demo data")
-        food_data = {
-            "dietary_restrictions": ["Vegetarian", "Gluten-Free"],
-            "favorite_cuisines": ["Italian", "Mexican", "Thai", "Japanese"],
-            "monthly_budget": 500,
-            "note": "Demo data - real vault export not found"
-        }
+        logger.warning(f"❌ No vault export data found for user={user_id}")
+        return [TextContent(type="text", text=json.dumps({
+            "status": "no_data",
+            "error": "No food preferences data found in vault",
+            "user_id": user_id,
+            "scope": "vault.read.food",
+            "consent_verified": True,
+            "message": "The user has not saved any food preferences yet, or the data export was not included with consent approval.",
+            "suggestion": "Ask the user to update their food preferences in the Hushh app and re-approve consent."
+        }))]
     
     logger.info(f"✅ Food data ACCESSED for user={user_id} (consent verified)")
     
@@ -234,25 +237,18 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
     except Exception as e:
         logger.warning(f"⚠️ Professional export fetch failed: {e}")
     
-    # Fallback/Demo data if real data retrieval failed
+    # PRODUCTION: No fallback to demo data - fail if real data not found
     if professional_data is None:
-        logger.info("📋 No professional export data, using demo data")
-        professional_data = {
-            "title": "Senior Software Engineer",
-            "company": "Tech Startup Inc.",
-            "years_experience": 7,
-            "skills": ["Python", "React", "AWS", "Machine Learning", "TypeScript", "FastAPI"],
-            "experience_level": "Senior (5-8 years)",
-            "education": "M.S. Computer Science",
-            "job_preferences": {
-                "type": ["Full-time", "Contract"],
-                "location": ["Remote", "Hybrid"],
-                "company_size": ["Startup", "Mid-size"],
-                "industries": ["AI/ML", "FinTech", "HealthTech"]
-            },
-            "certifications": ["AWS Solutions Architect", "Google Cloud Professional"],
-            "open_to_opportunities": True
-        }
+        logger.warning(f"❌ No vault export data found for user={user_id}")
+        return [TextContent(type="text", text=json.dumps({
+            "status": "no_data",
+            "error": "No professional profile data found in vault",
+            "user_id": user_id,
+            "scope": "vault.read.professional",
+            "consent_verified": True,
+            "message": "The user has not saved any professional profile yet, or the data export was not included with consent approval.",
+            "suggestion": "Ask the user to update their professional profile in the Hushh app and re-approve consent."
+        }))]
     
     logger.info(f"✅ Professional data ACCESSED for user={user_id} (consent verified)")
     
