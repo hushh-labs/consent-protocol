@@ -175,6 +175,41 @@ function LoginScreenContent() {
     }
   };
 
+  const handleAppleLogin = async () => {
+    try {
+      setError(null);
+      // signInWithApple returns the user directly
+      const authResult = await AuthService.signInWithApple();
+      const user = authResult.user;
+
+      console.log("[Login] signInWithApple returned user:", user?.uid);
+
+      if (user) {
+        // Persist user_id for downstream pages
+        localStorage.setItem("user_id", user.uid);
+        sessionStorage.setItem("user_id", user.uid);
+
+        // IMMEDIATE REDIRECT
+        console.log("[Login] Navigating to:", redirectPath);
+
+        // CRITICAL: Manually set user in context to avoid race condition
+        // where VaultLockGuard on dashboard sees 'null' before Context updates
+        setNativeUser(user);
+
+        router.push(redirectPath);
+      } else {
+        console.error("[Login] No user returned from signInWithApple");
+        setError("Login succeeded but no user returned");
+      }
+    } catch (err: any) {
+      console.error("Apple Login failed:", err);
+      // Don't show error for user cancellation
+      if (!err.message?.includes("cancelled") && !err.message?.includes("canceled")) {
+        setError(err.message || "Failed to sign in with Apple");
+      }
+    }
+  };
+
   return (
     <main className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6">
@@ -233,8 +268,8 @@ function LoginScreenContent() {
 
               <Button
                 variant="none"
-                disabled
-                className="w-full bg-black text-white border border-gray-800 h-12 rounded-xl shadow-sm transition-all opacity-80 cursor-not-allowed dark:bg-white dark:text-black"
+                className="w-full bg-black text-white hover:bg-gray-900 border border-gray-800 h-12 rounded-xl shadow-sm transition-all dark:bg-white dark:text-black dark:hover:bg-gray-100"
+                onClick={handleAppleLogin}
               >
                 <svg
                   className="w-5 h-5 mr-3"
@@ -243,7 +278,7 @@ function LoginScreenContent() {
                 >
                   <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
                 </svg>
-                Continue with Apple (Soon)
+                Continue with Apple
               </Button>
             </div>
 
