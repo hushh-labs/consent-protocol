@@ -43,7 +43,7 @@ import type {
 } from "./types";
 
 // ==================== HushhAuthPlugin ====================
-// Native iOS Google Sign-In using ASWebAuthenticationSession
+// Native iOS/Android Authentication (Google Sign-In + Sign in with Apple)
 
 export interface AuthUser {
   id: string;
@@ -55,7 +55,7 @@ export interface AuthUser {
 
 export interface HushhAuthPlugin {
   /**
-   * Sign in with Google using native iOS UI
+   * Sign in with Google using native iOS/Android UI
    * Returns ID token + access token for Firebase credential exchange
    */
   signIn(): Promise<{
@@ -65,12 +65,28 @@ export interface HushhAuthPlugin {
   }>;
 
   /**
-   * Sign out from Google (clears tokens from Keychain)
+   * Sign in with Apple using native iOS AuthenticationServices or Firebase OAuthProvider
+   * 
+   * iOS: Uses ASAuthorizationController (native Apple Sign-In sheet)
+   * Android/Web: Uses Firebase OAuthProvider (web-based OAuth flow)
+   * 
+   * Returns ID token for Firebase credential exchange
+   * Note: Apple may return hidden email (relay address) if user chose to hide it
+   */
+  signInWithApple(): Promise<{
+    idToken: string;
+    accessToken?: string;
+    rawNonce?: string;  // iOS only - needed for JS SDK sync if required
+    user: AuthUser;
+  }>;
+
+  /**
+   * Sign out from all providers (clears tokens from Keychain/Keystore)
    */
   signOut(): Promise<void>;
 
   /**
-   * Get cached ID token (from memory or Keychain)
+   * Get cached ID token (from memory or Keychain/Keystore)
    */
   getIdToken(): Promise<{ idToken: string | null }>;
 
