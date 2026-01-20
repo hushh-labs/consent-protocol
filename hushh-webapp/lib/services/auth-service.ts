@@ -2,8 +2,9 @@
  * Auth Service - Platform-Aware Authentication
  *
  * Production-grade authentication service that handles:
- * - iOS: Native Google Sign-In via @capacitor-firebase/authentication
- * - Web: Firebase signInWithPopup (unchanged behavior)
+ * - iOS: Native Google Sign-In and Sign in with Apple via HushhAuth plugin
+ * - Android: Native Google Sign-In and Firebase OAuthProvider for Apple
+ * - Web: Firebase signInWithPopup for both providers
  * - Credential sync: Native tokens synced with Firebase for consistent UIDs
  *
  * IMPORTANT: This is the single source of truth for authentication.
@@ -13,7 +14,9 @@
 import { Capacitor } from "@capacitor/core";
 import {
   GoogleAuthProvider,
+  OAuthProvider,
   signInWithCredential,
+  signInWithPopup,
   signOut as firebaseSignOut,
   User,
   onAuthStateChanged,
@@ -219,9 +222,6 @@ export class AuthService {
     );
 
     try {
-      // Import Firebase auth methods for popup sign-in
-      const { signInWithPopup } = await import("firebase/auth");
-
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
 
@@ -244,6 +244,212 @@ export class AuthService {
       };
     } catch (error) {
       console.error("❌ [AuthService] Web sign-in failed:", error);
+      throw error;
+    }
+  }
+
+  // ==================== Apple Sign-In ====================
+
+  /**
+   * Sign in with Apple using the appropriate method for the current platform.
+   *
+   * iOS: Uses native ASAuthorizationController via HushhAuth plugin
+   * Android: Uses Firebase OAuthProvider (web-based OAuth flow)
+   * Web: Uses Firebase signInWithPopup with OAuthProvider
+   *
+   * @returns Firebase User object (consistent on all platforms)
+   */
+  static async signInWithApple(): Promise<AuthResult> {
+    if (Capacitor.isNativePlatform()) {
+      return this.nativeAppleSignIn();
+    } else {
+      return this.webAppleSignIn();
+    }
+  }
+
+  /**
+   * Native iOS/Android Apple Sign-In flow using HushhAuth plugin
+   * 
+   * iOS: Uses ASAuthorizationController (native Apple Sign-In sheet)
+   * Android: Uses Firebase OAuthProvider (web-based OAuth flow)
+   * 
+   * Falls back to web auth if native plugin is not available
+   */
+  private static async nativeAppleSignIn(): Promise<AuthResult> {
+    console.log("🍎 [AuthService] Starting native Apple Sign-In via HushhAuth Plugin");
+    const toastId = toast.loading("Signing in with Apple...");
+
+    try {
+      const result = await HushhAuth.signInWithApple();
+
+      console.log("✅ [AuthService] Native Apple sign-in returned result");
+
+      if (!result.user || !result.idToken) {
+        console.error("❌ [AuthService] Invalid response from native Apple sign-in");
+        toast.error("Invalid native auth response", { id: toastId });
+        throw new Error("Invalid response from native Apple sign-in");
+      }
+
+      const idToken = result.idToken;
+      const nativeAuthUser = result.user;
+
+      console.log(
+        "✅ [AuthService] Got Apple ID token:",
+        idToken ? "YES (len: " + idToken.length + ")" : "NO"
+      );
+
+      // Sync with Firebase JS SDK if needed
+      // The native plugin already signed in to Firebase on the native layer.
+      let firebaseUser = auth.currentUser;
+
+      if (!firebaseUser) {
+        console.log("🔄 [AuthService] Syncing Apple credential with Firebase JS SDK...");
+
+        try {
+          // The native plugin already handled Firebase sign-in
+          // We just need to wait for the JS SDK to catch up
+          // For most cases, the native plugin has already signed in successfully
+          const syncPromise = new Promise<any>((resolve) => {
+            const unsubscribe = auth.onAuthStateChanged((user) => {
+              if (user) {
+                unsubscribe();
+                resolve({ user });
+              }
+            });
+            // If user doesn't appear in 3 seconds, resolve anyway
+            setTimeout(() => {
+              unsubscribe();
+              resolve({ user: null });
+            }, 3000);
+          });
+
+          const firebaseResult = await syncPromise;
+          firebaseUser = firebaseResult.user;
+          
+          console.log(
+            "✅ [AuthService] Firebase JS SDK synced, UID:",
+            firebaseUser?.uid
+          );
+        } catch (syncError) {
+          console.warn(
+            "⚠️ [AuthService] JS SDK Sync Failed/Timed Out:",
+            syncError
+          );
+          // Don't show error toast - native auth succeeded, JS sync is optional
+          console.log("⚠️ Proceeding with Native User anyway.");
+        }
+      }
+
+      // Construct final User object
+      const user = firebaseUser || this.createUserFromNativeApple(nativeAuthUser, idToken);
+
+      toast.success("Signed in successfully", { id: toastId });
+
+      return {
+        user,
+        idToken,
+        accessToken: result.accessToken,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      console.error("❌ [AuthService] nativeAppleSignIn error:", errorMessage);
+
+      // Check for user cancellation
+      if (errorMessage.includes("USER_CANCELLED") || errorMessage.includes("cancelled") || errorMessage.includes("canceled")) {
+        toast.dismiss(toastId);
+        throw new Error("Sign in cancelled");
+      }
+
+      // If native plugin not implemented, fall back to web auth
+      if (
+        errorMessage.includes("not implemented") ||
+        errorMessage.includes("not available")
+      ) {
+        console.warn(
+          "⚠️ [AuthService] Native Apple plugin not available, falling back to web auth"
+        );
+        toast.dismiss(toastId);
+        return this.webAppleSignIn();
+      }
+
+      toast.error("Sign in failed: " + errorMessage, { id: toastId });
+      throw error;
+    }
+  }
+
+  /**
+   * Create a User-like object from native Apple Sign-In user data
+   */
+  private static createUserFromNativeApple(nativeUser: any, idToken: string): User {
+    return {
+      uid: nativeUser.uid,
+      email: nativeUser.email,
+      displayName: nativeUser.displayName,
+      photoURL: nativeUser.photoUrl,
+      emailVerified: nativeUser.emailVerified ?? true,
+      isAnonymous: false,
+      metadata: {
+        creationTime: new Date().toISOString(),
+        lastSignInTime: new Date().toISOString(),
+      },
+      providerData: [
+        {
+          providerId: "apple.com",
+          uid: nativeUser.uid,
+          displayName: nativeUser.displayName,
+          email: nativeUser.email,
+          phoneNumber: null,
+          photoURL: nativeUser.photoUrl,
+        },
+      ],
+      refreshToken: "",
+      tenantId: null,
+      delete: async () => {},
+      getIdToken: async () => idToken,
+      getIdTokenResult: async () => ({
+        token: idToken,
+        claims: {},
+        authTime: "",
+        issuedAtTime: "",
+        expirationTime: "",
+        signInProvider: "apple.com",
+        signInSecondFactor: null,
+      }),
+      reload: async () => {},
+      toJSON: () => ({}),
+      phoneNumber: null,
+      providerId: "apple.com",
+    } as unknown as User;
+  }
+
+  /**
+   * Web Apple Sign-In flow
+   * Uses Firebase signInWithPopup with OAuthProvider
+   * This is ALSO the fallback for native if the native plugin fails
+   */
+  private static async webAppleSignIn(): Promise<AuthResult> {
+    console.log("🌐 [AuthService] Starting web Apple Sign-In (Firebase popup)");
+
+    try {
+      const provider = new OAuthProvider("apple.com");
+      provider.addScope("email");
+      provider.addScope("name");
+
+      const result = await signInWithPopup(auth, provider);
+      const idToken = await result.user.getIdToken();
+
+      console.log(
+        "✅ [AuthService] Apple web sign-in complete:",
+        result.user.email || "(hidden email)"
+      );
+
+      return {
+        user: result.user,
+        idToken,
+      };
+    } catch (error) {
+      console.error("❌ [AuthService] Apple web sign-in failed:", error);
       throw error;
     }
   }
