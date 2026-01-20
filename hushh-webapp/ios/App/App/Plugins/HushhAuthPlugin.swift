@@ -267,11 +267,11 @@ extension HushhAuthPlugin: ASAuthorizationControllerDelegate {
         
         print("✅ [\(TAG)] Got Apple credential for: \(appleIDCredential.email ?? "(hidden email)")")
         
-        // Exchange for Firebase credential
-        let credential = OAuthProvider.credential(
-            withProviderID: "apple.com",
-            idToken: idTokenString,
-            rawNonce: nonce
+        // Exchange for Firebase credential using Apple-specific method
+        let credential = OAuthProvider.appleCredential(
+            withIDToken: idTokenString,
+            rawNonce: nonce,
+            fullName: appleIDCredential.fullName
         )
         
         Auth.auth().signIn(with: credential) { [weak self] authResult, error in
@@ -351,6 +351,18 @@ extension HushhAuthPlugin: ASAuthorizationControllerDelegate {
                 appleSignInCall?.reject("Apple Sign-In request not handled")
             case .unknown:
                 appleSignInCall?.reject("Unknown Apple Sign-In error: \(error.localizedDescription)")
+            case .notInteractive:
+                appleSignInCall?.reject("Apple Sign-In not interactive")
+            case .matchedExcludedCredential:
+                appleSignInCall?.reject("Matched excluded credential")
+            case .credentialImport:
+                appleSignInCall?.reject("Credential import error")
+            case .credentialExport:
+                appleSignInCall?.reject("Credential export error")
+            case .preferSignInWithApple:
+                appleSignInCall?.reject("Prefer Sign in with Apple")
+            case .deviceNotConfiguredForPasskeyCreation:
+                appleSignInCall?.reject("Device not configured for passkey creation")
             @unknown default:
                 appleSignInCall?.reject("Apple Sign-In error: \(error.localizedDescription)")
             }
