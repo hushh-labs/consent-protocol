@@ -19,7 +19,8 @@ export default function ConsentsLayout({
     <VaultLockGuard>
       <ConsentSSEProvider>
         <ConsentNotificationProvider>
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          {/* Content - scroll handled by root providers */}
+          {children}
         </ConsentNotificationProvider>
       </ConsentSSEProvider>
     </VaultLockGuard>
