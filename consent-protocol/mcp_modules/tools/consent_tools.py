@@ -187,7 +187,8 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         if pending_response.status_code == 200:
                             pending_list = pending_response.json().get("pending", [])
                             for req in pending_list:
-                                if req.get("scope") == scope_api:
+                                # DB now stores dot notation scope
+                                if req.get("scope") == scope_str:
                                     request_id = req.get("id")
                                     break
                     
@@ -224,8 +225,9 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         
                         if active_response.status_code == 200:
                             active_list = active_response.json().get("active", [])
+                            # DB now stores dot notation scope
                             active_token = next(
-                                (t for t in active_list if t.get("scope") == scope_api),
+                                (t for t in active_list if t.get("scope") == scope_str),
                                 None
                             )
                             
@@ -321,8 +323,7 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     scope_str = args.get("scope")
     
-    scope_api = SCOPE_API_MAP.get(scope_str, scope_str)
-    
+    # DB now stores dot notation, so use scope_str directly
     logger.info(f"🔄 Checking consent status: user={user_id}, scope={scope_str}")
     
     try:
@@ -338,7 +339,8 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                 pending_list = pending_data.get("pending", [])
                 
                 for req in pending_list:
-                    if req.get("scope") == scope_api:
+                    # DB now stores dot notation scope
+                    if req.get("scope") == scope_str:
                         logger.info(f"⏳ Consent still pending for {scope_str}")
                         return [TextContent(type="text", text=json.dumps({
                             "status": "pending",

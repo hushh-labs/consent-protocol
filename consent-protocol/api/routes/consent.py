@@ -26,6 +26,12 @@ _consent_exports: Dict[str, Dict] = {}
 def get_scope_description(scope: str) -> str:
     """Human-readable scope descriptions."""
     descriptions = {
+        # Dot notation (canonical)
+        "vault.read.food": "Read your food preferences (dietary, cuisines, budget)",
+        "vault.read.professional": "Read your professional profile (title, skills, experience)",
+        "vault.write.food": "Write to your food preferences",
+        "vault.write.professional": "Write to your professional profile",
+        # Underscore notation (legacy fallback)
         "vault_read_food": "Read your food preferences (dietary, cuisines, budget)",
         "vault_read_professional": "Read your professional profile (title, skills, experience)",
         "vault_write_food": "Write to your food preferences",
@@ -79,12 +85,19 @@ async def approve_consent(request: Request):
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
     
-    # Issue consent token
+    # Issue consent token - map scope to ConsentScope enum
+    # Handles both underscore (legacy) and dot notation (new)
     scope_map = {
+        # Underscore notation (legacy from API)
         "vault_read_food": ConsentScope.VAULT_READ_FOOD,
         "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
         "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
         "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
+        # Dot notation (canonical)
+        "vault.read.food": ConsentScope.VAULT_READ_FOOD,
+        "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
+        "vault.write.food": ConsentScope.VAULT_WRITE_FOOD,
+        "vault.write.professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
     }
     
     consent_scope = scope_map.get(pending_request["scope"])
@@ -158,11 +171,11 @@ async def approve_consent(request: Request):
         }
         logger.info("   Stored encrypted export for token")
     
-    # Log CONSENT_GRANTED to database
+    # Log CONSENT_GRANTED to database with dot notation scope
     await consent_db.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
-        scope=pending_request["scope"],
+        scope=consent_scope.value,  # Use dot notation (e.g., "vault.read.food")
         action="CONSENT_GRANTED",
         token_id=token.token,
         request_id=requestId,

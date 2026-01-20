@@ -789,7 +789,7 @@ export default function KaiAnalysis() {
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="p-6 border-l-4 border-l-blue-500/50"
+                className="p-6 border-l-4 border-l-blue-500/50 min-w-0"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
@@ -809,7 +809,7 @@ export default function KaiAnalysis() {
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="p-6 border-l-4 border-l-purple-500/50"
+                className="p-6 border-l-4 border-l-purple-500/50 min-w-0"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
@@ -829,7 +829,7 @@ export default function KaiAnalysis() {
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="p-6 border-l-4 border-l-amber-500/50"
+                className="p-6 border-l-4 border-l-amber-500/50 min-w-0"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
@@ -845,7 +845,7 @@ export default function KaiAnalysis() {
                   </p>
 
                   {/* Interactive Metrics */}
-                  <div className="grid grid-cols-2 gap-4 mt-4 bg-background/30 p-4 rounded-xl">
+                  <div className="grid grid-cols-2 gap-4 mt-4 bg-background/30 p-4 rounded-xl w-full min-w-0">
                     <div>
                       <p className="text-[10px] font-bold uppercase text-muted-foreground">
                         OCF / Net Income
@@ -893,7 +893,7 @@ export default function KaiAnalysis() {
                 variant="none"
                 effect="glass"
                 showRipple={false}
-                className="p-6 border-l-4 border-l-primary/50"
+                className="p-6 border-l-4 border-l-primary/50 min-w-0"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">

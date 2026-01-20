@@ -50,16 +50,13 @@ export function TopAppBar({ className }: TopAppBarProps) {
       className={cn(
         // Fixed at top, full width
         "fixed top-0 left-0 right-0 z-50",
-        // Safe area padding + app bar height
-        // On native: enforce minimum 32px top padding if safe-area env is not sufficient
-        isNative
-          ? "pt-[max(env(safe-area-inset-top),32px)] h-[calc(max(env(safe-area-inset-top),32px)+48px)]"
-          : "pt-[env(safe-area-inset-top)] h-[calc(env(safe-area-inset-top)+48px)]",
+        // App bar height only (body handles safe area padding)
+        "h-[48px]",
         // Theme-aware background using CSS variable
         "bg-background",
         // Flex container for back button
-        "flex items-end pb-2 px-4",
-        className
+        "flex items-center pb-2 px-4",
+        className,
       )}
     >
       <div className="flex items-center gap-2">
@@ -107,23 +104,22 @@ export function TopAppBar({ className }: TopAppBarProps) {
 
 /**
  * TopAppBarSpacer - Smart spacer that handles top content padding
- * - Root Pages: Adds padding for Status Bar
- * - Sub Pages: Adds padding for TopAppBar + Status Bar
+ * - Landing Page: No spacer needed (body padding handles safe area)
+ * - Sub Pages: Adds padding for TopAppBar only (body handles safe area)
  */
 export function TopAppBarSpacer() {
   const { isRootLevel } = useNavigation();
 
-  // Root Level: Just clear the status bar (safe area)
-  // We use max(env, 32px) to ensure there is always SOME space on mobile
   const pathname = usePathname();
+  
+  // Landing page: No spacer needed, body padding handles safe area
   if (pathname === "/") {
-    return (
-      <div className="w-full shrink-0 transition-[height] h-[max(env(safe-area-inset-top),32px)]" />
-    );
+    return null;
   }
 
-  // Sub-pages: Clear the fixed TopAppBar (48px) + Status Bar
+  // Sub-pages: Only clear the fixed TopAppBar height (48px)
+  // Body padding already handles safe area
   return (
-    <div className="w-full shrink-0 transition-[height] h-[calc(max(env(safe-area-inset-top),32px)+20px)]" />
+    <div className="w-full shrink-0 transition-[height] h-[48px]" />
   );
 }
