@@ -14,7 +14,7 @@ import consent_db
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from shared import MOCK_USER_DATA, REGISTERED_DEVELOPERS
+from shared import REGISTERED_DEVELOPERS
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,25 @@ CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 router = APIRouter(prefix="/api/v1", tags=["Developer API"])
 
+# Map underscore API format to ConsentScope enum for dot notation conversion
+SCOPE_TO_ENUM = {
+    "vault_read_food": ConsentScope.VAULT_READ_FOOD,
+    "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
+    "vault_read_finance": ConsentScope.VAULT_READ_FINANCE,
+    "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
+    "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
+}
+
 
 def get_scope_description(scope: str) -> str:
     """Human-readable scope descriptions."""
     descriptions = {
+        # Dot notation (canonical)
+        "vault.read.food": "Read your food preferences (dietary, cuisines, budget)",
+        "vault.read.professional": "Read your professional profile (title, skills, experience)",
+        "vault.write.food": "Write to your food preferences",
+        "vault.write.professional": "Write to your professional profile",
+        # Underscore notation (legacy fallback)
         "vault_read_food": "Read your food preferences (dietary, cuisines, budget)",
         "vault_read_professional": "Read your professional profile (title, skills, experience)",
         "vault_write_food": "Write to your food preferences",
@@ -76,8 +91,12 @@ async def request_consent(request: ConsentRequest):
     if "*" not in dev_info["approved_scopes"] and request.scope not in dev_info["approved_scopes"]:
         raise HTTPException(status_code=403, detail=f"Scope '{request.scope}' not approved for this developer")
     
-    # Check if consent already granted (query database)
-    is_active = await consent_db.is_token_active(request.user_id, request.scope)
+    # Convert underscore scope to dot notation for consistent DB storage
+    scope_enum = SCOPE_TO_ENUM.get(request.scope)
+    scope_dot = scope_enum.value if scope_enum else request.scope
+    
+    # Check if consent already granted (query database with dot notation)
+    is_active = await consent_db.is_token_active(request.user_id, scope_dot)
     if is_active:
         # Fetch the active token to return it
         active_tokens = await consent_db.get_active_tokens(request.user_id)
@@ -85,7 +104,7 @@ async def request_consent(request: ConsentRequest):
         expires_at = None
         
         for t in active_tokens:
-            if t.get("scope") == request.scope:
+            if t.get("scope") == scope_dot:
                 existing_token = t.get("token_id")
                 expires_at = t.get("expires_at")
                 break
@@ -99,9 +118,9 @@ async def request_consent(request: ConsentRequest):
             )
     
     
-    # Check if request already pending (query database)
+    # Check if request already pending (query database with dot notation)
     pending = await consent_db.get_pending_requests(request.user_id)
-    pending_for_scope = [p for p in pending if p.get("scope") == request.scope]
+    pending_for_scope = [p for p in pending if p.get("scope") == scope_dot]
     if pending_for_scope:
         return ConsentResponse(
             status="pending",
@@ -115,18 +134,18 @@ async def request_consent(request: ConsentRequest):
     now_ms = int(time.time() * 1000)
     poll_timeout_at = now_ms + (CONSENT_TIMEOUT_SECONDS * 1000)
     
-    # Store in database (mandatory)
+    # Store in database with dot notation scope (mandatory)
     await consent_db.insert_event(
         user_id=request.user_id,
         agent_id=dev_info["name"],
-        scope=request.scope,
+        scope=scope_dot,
         action="REQUESTED",
         request_id=request_id,
-        scope_description=get_scope_description(request.scope),
+        scope_description=get_scope_description(scope_dot),
         poll_timeout_at=poll_timeout_at,
         metadata={"developer_token": request.developer_token, "expiry_hours": request.expiry_hours}
     )
-    logger.info(f"📋 Consent request saved to DB: {request.user_id}:{request.scope} (request_id={request_id})")
+    logger.info(f"📋 Consent request saved to DB: {request.user_id}:{scope_dot} (request_id={request_id})")
     
     return ConsentResponse(
         status="pending",
@@ -165,20 +184,12 @@ async def get_food_data(request: DataAccessRequest):
             error="Forbidden: Token user mismatch"
         )
     
-    # Get user data (in production, decrypt from vault)
-    user_data = MOCK_USER_DATA.get(request.user_id, {}).get("food")
-    
-    if not user_data:
-        return DataAccessResponse(
-            status_code=404,
-            error="No food data found for this user"
-        )
-    
-    logger.info(f"✅ Food data returned for user {request.user_id}")
-    
+    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
+    # The MCP flow uses /api/consent/data with zero-knowledge exports
+    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/food-data - use MCP tools instead")
     return DataAccessResponse(
-        status_code=200,
-        data=user_data
+        status_code=501,
+        error="This endpoint is deprecated. Use MCP tools (get_food_preferences) for data access with zero-knowledge exports."
     )
 
 
@@ -213,20 +224,12 @@ async def get_professional_data(request: DataAccessRequest):
             error="Forbidden: Token user mismatch"
         )
     
-    # Get user data (in production, decrypt from vault)
-    user_data = MOCK_USER_DATA.get(request.user_id, {}).get("professional")
-    
-    if not user_data:
-        return DataAccessResponse(
-            status_code=404,
-            error="No professional data found for this user"
-        )
-    
-    logger.info(f"✅ Professional data returned for user {request.user_id}")
-    
+    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
+    # The MCP flow uses /api/consent/data with zero-knowledge exports
+    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/professional-data - use MCP tools instead")
     return DataAccessResponse(
-        status_code=200,
-        data=user_data
+        status_code=501,
+        error="This endpoint is deprecated. Use MCP tools (get_professional_profile) for data access with zero-knowledge exports."
     )
 
 

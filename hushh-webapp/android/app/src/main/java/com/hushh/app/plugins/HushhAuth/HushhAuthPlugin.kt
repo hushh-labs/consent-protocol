@@ -19,18 +19,22 @@ import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import org.json.JSONObject
 
 /**
- * Hushh Auth Plugin - Native Android Google Sign-In
+ * Hushh Auth Plugin - Native Android Authentication
  *
- * Production-grade authentication using native Google Sign-In SDK.
+ * Production-grade authentication supporting:
+ * - Google Sign-In: Native SDK with bottom sheet UI
+ * - Apple Sign-In: Firebase OAuthProvider (web-based OAuth flow)
+ *
  * Returns credentials compatible with Firebase signInWithCredential().
  *
  * Flow:
- *   1. Native Google Sign-In UI (bottom sheet)
+ *   1. Native Sign-In UI (Google) or Web OAuth (Apple)
  *   2. Returns idToken + accessToken
- *   3. Frontend syncs with Firebase using GoogleAuthProvider.credential()
+ *   3. Frontend syncs with Firebase using appropriate credential provider
  */
 @CapacitorPlugin(name = "HushhAuth")
 class HushhAuthPlugin : Plugin() {
@@ -321,6 +325,110 @@ class HushhAuthPlugin : Plugin() {
                        loadIdTokenFromSecureStorage() != null
 
         call.resolve(JSObject().put("signedIn", signedIn))
+    }
+
+    // ==================== Apple Sign In ====================
+
+    @PluginMethod
+    fun signInWithApple(call: PluginCall) {
+        Log.d(TAG, "🍎 [HushhAuth] signInWithApple() CALLED - Using Firebase OAuthProvider")
+
+        pendingCall = call
+
+        // Android uses Firebase OAuthProvider for Apple Sign-In (web-based OAuth flow)
+        val provider = OAuthProvider.newBuilder("apple.com")
+            .setScopes(listOf("email", "name"))
+            .build()
+
+        activity.runOnUiThread {
+            // Check if there's a pending result first
+            val pendingResultTask = firebaseAuth.pendingAuthResult
+            if (pendingResultTask != null) {
+                // There's already a pending sign-in, handle it
+                pendingResultTask
+                    .addOnSuccessListener { authResult ->
+                        handleAppleSignInSuccess(authResult.user, call)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "❌ [HushhAuth] Apple sign-in pending result failed: ${e.message}")
+                        call.reject("Apple sign-in failed: ${e.message}")
+                        pendingCall = null
+                    }
+            } else {
+                // Start new sign-in flow
+                firebaseAuth.startActivityForSignInWithProvider(activity, provider)
+                    .addOnSuccessListener { authResult ->
+                        handleAppleSignInSuccess(authResult.user, call)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "❌ [HushhAuth] Apple sign-in failed: ${e.message}")
+                        
+                        // Check for user cancellation
+                        val errorMessage = e.message ?: "Unknown error"
+                        if (errorMessage.contains("canceled", ignoreCase = true) || 
+                            errorMessage.contains("cancelled", ignoreCase = true)) {
+                            call.reject("User cancelled Apple Sign-In", "USER_CANCELLED")
+                        } else {
+                            call.reject("Apple sign-in failed: $errorMessage")
+                        }
+                        pendingCall = null
+                    }
+            }
+        }
+    }
+
+    private fun handleAppleSignInSuccess(firebaseUser: FirebaseUser?, call: PluginCall) {
+        if (firebaseUser == null) {
+            call.reject("No Firebase user returned from Apple Sign-In")
+            pendingCall = null
+            return
+        }
+
+        Log.d(TAG, "✅ [HushhAuth] Apple sign-in success! UID: ${firebaseUser.uid}")
+
+        // Get Firebase ID Token
+        firebaseUser.getIdToken(true)
+            .addOnCompleteListener { tokenTask ->
+                if (tokenTask.isSuccessful) {
+                    val firebaseIdToken = tokenTask.result?.token
+                    Log.d(TAG, "✅ [HushhAuth] Got Firebase ID token from Apple sign-in: ${firebaseIdToken?.take(20)}...")
+
+                    // Build user info
+                    val authUser = AuthUser(
+                        id = firebaseUser.uid,
+                        email = firebaseUser.email ?: "",
+                        displayName = firebaseUser.displayName ?: "",
+                        photoUrl = firebaseUser.photoUrl?.toString() ?: "",
+                        emailVerified = firebaseUser.isEmailVerified
+                    )
+
+                    // Store locally
+                    currentUser = authUser
+                    currentIdToken = firebaseIdToken
+                    currentAccessToken = null  // Apple doesn't provide access token via this flow
+
+                    // Save to secure storage
+                    saveCredentialsToSecureStorage(firebaseIdToken ?: "", "", authUser)
+
+                    // Return result
+                    val response = JSObject().apply {
+                        put("idToken", firebaseIdToken)
+                        put("user", JSObject().apply {
+                            put("uid", authUser.id)
+                            put("email", authUser.email)
+                            put("displayName", authUser.displayName)
+                            put("photoUrl", authUser.photoUrl)
+                            put("emailVerified", authUser.emailVerified)
+                        })
+                    }
+
+                    call.resolve(response)
+                    Log.d(TAG, "✅ [HushhAuth] Apple sign-in call.resolve() completed with Firebase UID and Token")
+                } else {
+                    call.reject("Failed to get Firebase ID token: ${tokenTask.exception?.message}")
+                }
+                pendingCall = null
+            }
     }
 
     // ==================== Secure Storage ====================

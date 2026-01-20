@@ -28,7 +28,6 @@ import {
   CardContent,
   CardFooter,
 } from "@/lib/morphy-ux/card";
-import { Input } from "@/components/ui/input";
 import {
   IdentityService,
   InvestorMatch,
@@ -342,8 +341,9 @@ export function InvestorDetectStep({
             <div className="flex items-center gap-2 p-1.5 rounded-xl border border-border shadow-2xl transition-all focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md bg-background/40">
               <div className="flex items-center gap-3 flex-1 px-4">
                 <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name..."
+                <input
+                  type="text"
+                  placeholder="Search investor (e.g. Warren Buffett)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -384,7 +384,7 @@ export function InvestorDetectStep({
         )}
       </CardContent>
 
-      <CardFooter>
+      <CardFooter className="border-t-0">
         <Button
           variant="none"
           effect="glass"
