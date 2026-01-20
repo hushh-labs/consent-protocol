@@ -3,10 +3,14 @@
  * 
  * Web fallback for HushhAuthPlugin that uses Firebase signInWithPopup.
  * This is used on web browsers where native authentication is not available.
+ * 
+ * Supports:
+ * - Google Sign-In via GoogleAuthProvider
+ * - Apple Sign-In via OAuthProvider('apple.com')
  */
 
 import type { HushhAuthPlugin, AuthUser } from "../index";
-import { GoogleAuthProvider, signInWithPopup, signOut, User } from "firebase/auth";
+import { GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, User } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 
 export class HushhAuthWeb implements HushhAuthPlugin {
@@ -45,12 +49,48 @@ export class HushhAuthWeb implements HushhAuthPlugin {
       this.currentIdToken = idToken;
       this.currentAccessToken = accessToken;
       
-      console.log("✅ [HushhAuthWeb] Sign-in successful:", user.email);
+      console.log("✅ [HushhAuthWeb] Google Sign-in successful:", user.email);
       
       return { idToken, accessToken, user };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Sign-in failed";
-      console.error("❌ [HushhAuthWeb] Sign-in error:", message);
+      console.error("❌ [HushhAuthWeb] Google Sign-in error:", message);
+      throw error;
+    }
+  }
+
+  async signInWithApple(): Promise<{
+    idToken: string;
+    accessToken?: string;
+    rawNonce?: string;
+    user: AuthUser;
+  }> {
+    try {
+      const provider = new OAuthProvider('apple.com');
+      provider.addScope('email');
+      provider.addScope('name');
+      
+      const result = await signInWithPopup(auth, provider);
+      const idToken = await result.user.getIdToken();
+      
+      // Apple may return null email if user chose to hide it (relay address)
+      const user: AuthUser = {
+        id: result.user.uid,
+        email: result.user.email || "",
+        displayName: result.user.displayName || "",
+        photoUrl: result.user.photoURL || "",
+        emailVerified: result.user.emailVerified,
+      };
+      
+      this.currentUser = user;
+      this.currentIdToken = idToken;
+      
+      console.log("✅ [HushhAuthWeb] Apple Sign-in successful:", user.email || "(hidden email)");
+      
+      return { idToken, user };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Apple Sign-in failed";
+      console.error("❌ [HushhAuthWeb] Apple Sign-in error:", message);
       throw error;
     }
   }

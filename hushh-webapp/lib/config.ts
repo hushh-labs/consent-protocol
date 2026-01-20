@@ -27,6 +27,28 @@ export const FRONTEND_URL =
   process.env.NEXT_PUBLIC_FRONTEND_URL || "http://localhost:3000";
 
 // ============================================================================
+// APP REVIEW MODE
+// ============================================================================
+
+/**
+ * App Review Mode - enables reviewer bypass login
+ * When enabled, displays a special dialog with a dedicated reviewer test account
+ */
+export const APP_REVIEW_MODE = 
+  process.env.NEXT_PUBLIC_APP_REVIEW_MODE === "true";
+
+export const isAppReviewMode = () => APP_REVIEW_MODE;
+
+/**
+ * Reviewer test account credentials (from Secret Manager)
+ * Only used when APP_REVIEW_MODE is enabled
+ */
+export const REVIEWER_EMAIL = 
+  process.env.NEXT_PUBLIC_REVIEWER_EMAIL || "";
+export const REVIEWER_PASSWORD = 
+  process.env.NEXT_PUBLIC_REVIEWER_PASSWORD || "";
+
+// ============================================================================
 // SECURITY EVENT TYPES
 // ============================================================================
 
