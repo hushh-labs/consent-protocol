@@ -24,7 +24,7 @@ export function RootLayoutClient({
   return (
     <body
       suppressHydrationWarning
-      className={`${fontClasses} font-sans antialiased h-full flex flex-col`}
+      className={`${fontClasses} font-sans antialiased h-screen flex flex-col overflow-hidden`}
       style={{
         fontFamily: "var(--font-figtree), var(--font-quicksand), sans-serif",
       }}

@@ -262,13 +262,17 @@ html body[data-scroll-locked] {
   }
   body {
     @apply bg-background text-foreground;
-    /* Immersive: Removed padding-top to allow background to flow under status bar */
+    /* iOS safe area insets for proper spacing around notch/status bar */
+    padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     /* Safe area bottom is handled by the navbar component */
 
+    /* CRITICAL: Prevent body from scrolling - only content containers should scroll */
+    overflow: hidden;
+    height: 100vh;
+    
     scrollbar-gutter: stable;
-    overflow-x: hidden;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
     transition: background-color 200ms ease-in-out, color 200ms ease-in-out,
       border-color 200ms ease-in-out;
