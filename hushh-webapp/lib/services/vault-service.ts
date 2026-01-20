@@ -9,8 +9,8 @@ import {
 import { auth } from "@/lib/firebase/config";
 import { apiJson } from "@/lib/services/api-client";
 
-// API URL for Web to talk to Next.js Backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+// Web must call same-origin Next.js API routes (/api/*) to avoid CORS issues when
+// accessed via different Cloud Run hostnames. (Native uses plugins / backend URL.)
 
 export interface VaultData {
   encryptedVaultKey: string;
@@ -428,11 +428,7 @@ export class VaultService {
   }
 
   private static getApiUrl(path: string): string {
-    if (Capacitor.isNativePlatform()) {
-      const base = API_BASE_URL.replace(/\/$/, "");
-      const endpoint = path.replace(/^\//, "");
-      return `${base}/${endpoint}`;
-    }
+    // Always same-origin for web; native branches return early via plugins.
     return path;
   }
 }

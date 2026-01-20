@@ -63,7 +63,7 @@ The workflows automatically fetch these secrets from Google Cloud Secret Manager
 - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
 - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
 - `NEXT_PUBLIC_BACKEND_URL`
-- `NEXT_PUBLIC_API_URL`
+- (Removed) `NEXT_PUBLIC_API_URL` — web clients call same-origin `/api/*` to avoid CORS across Cloud Run hostnames
 
 ## Deployment Flow
 
