@@ -7,10 +7,11 @@ import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
 import { Shield, Lock, Key, ArrowRight, AlertCircle } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getRedirectResult } from "firebase/auth";
+import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
 
 // --- Welcome Component for First-Time Users ---
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
@@ -210,6 +211,45 @@ function LoginScreenContent() {
     }
   };
 
+  const handleReviewerLogin = async () => {
+    try {
+      setError(null);
+      console.log("[Login] Reviewer login initiated");
+
+      // Sign in with email/password using dedicated test account
+      const authResult = await signInWithEmailAndPassword(
+        auth,
+        REVIEWER_EMAIL,
+        REVIEWER_PASSWORD
+      );
+      const user = authResult.user;
+
+      console.log("[Login] Reviewer login returned user:", user?.uid);
+
+      if (user) {
+        // Persist user_id for downstream pages
+        localStorage.setItem("user_id", user.uid);
+        sessionStorage.setItem("user_id", user.uid);
+        // Mark as reviewer mode for optional UI customization
+        localStorage.setItem("hushh_reviewer_mode", "true");
+
+        // IMMEDIATE REDIRECT
+        console.log("[Login] Navigating to:", redirectPath);
+
+        // CRITICAL: Manually set user in context to avoid race condition
+        setNativeUser(user);
+
+        router.push(redirectPath);
+      } else {
+        console.error("[Login] No user returned from reviewer login");
+        setError("Reviewer login failed - no user returned");
+      }
+    } catch (err: any) {
+      console.error("Reviewer login failed:", err);
+      setError(err.message || "Failed to sign in as reviewer");
+    }
+  };
+
   return (
     <main className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-md space-y-6">
@@ -230,6 +270,16 @@ function LoginScreenContent() {
 
         {/* Main Login Content */}
         <div className="p-2 space-y-4">
+          {/* Review Mode Alert */}
+          {isAppReviewMode() && (
+            <Alert className="bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800">
+              <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertDescription className="text-amber-800 dark:text-amber-200">
+                App Review Mode Active - Reviewer test account available below
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Error Alert */}
           {error && (
             <Alert variant="destructive">
@@ -280,6 +330,18 @@ function LoginScreenContent() {
                 </svg>
                 Continue with Apple
               </Button>
+
+              {/* Reviewer Button - Only shown in APP_REVIEW_MODE */}
+              {isAppReviewMode() && (
+                <Button
+                  variant="none"
+                  className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-orange-600 text-white hover:from-amber-600 hover:via-orange-600 hover:to-orange-700 h-12 rounded-xl shadow-lg transition-all"
+                  onClick={handleReviewerLogin}
+                >
+                  <Shield className="w-5 h-5 mr-3" />
+                  Continue as Reviewer
+                </Button>
+              )}
             </div>
 
             <p className="text-center text-xs text-muted-foreground/60">
