@@ -29,7 +29,8 @@ export function Providers({ children }: ProvidersProps) {
             <Navbar />
             <TopAppBar />
             <TopAppBarSpacer />
-            <div className="pt-0 pb-24 flex-1 flex flex-col relative z-10">
+            {/* Main scroll container - applies to ALL routes */}
+            <div className="flex-1 overflow-y-auto pb-24 relative z-10">
               {children}
             </div>
             <Toaster />

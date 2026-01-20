@@ -13,7 +13,12 @@ import type {
 } from "../index";
 import { WebPlugin } from "@capacitor/core";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+/**
+ * Web API base:
+ * Always use same-origin Next.js API routes to avoid CORS issues when the app
+ * is accessed via different Cloud Run hostnames (service URL vs revision URL).
+ */
+const API_BASE_PATH = "";
 
 export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
   /**
@@ -26,7 +31,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     matches: InvestorMatch[];
   }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/identity/auto-detect`, {
+      const response = await fetch(`${API_BASE_PATH}/api/identity/auto-detect`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${options.authToken}`,
@@ -60,7 +65,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     try {
       const limit = options.limit || 10;
       const response = await fetch(
-        `${API_BASE_URL}/api/investors/search?name=${encodeURIComponent(
+        `${API_BASE_PATH}/api/investors/search?name=${encodeURIComponent(
           options.name
         )}&limit=${limit}`,
         {
@@ -87,7 +92,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
    */
   async getInvestor(options: { id: number }): Promise<InvestorProfile> {
     const response = await fetch(
-      `${API_BASE_URL}/api/investors/${options.id}`,
+      `${API_BASE_PATH}/api/investors/${options.id}`,
       {
         method: "GET",
         headers: { "Content-Type": "application/json" },
@@ -113,7 +118,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     vaultOwnerToken: string;
   }): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/identity/confirm`, {
+      const response = await fetch(`${API_BASE_PATH}/api/identity/confirm`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${options.vaultOwnerToken}`,
@@ -148,7 +153,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     vaultOwnerToken: string;
   }): Promise<IdentityStatusResult> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/identity/status`, {
+      const response = await fetch(`${API_BASE_PATH}/api/identity/status`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${options.vaultOwnerToken}`,
@@ -185,7 +190,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
     profile_data: { ciphertext: string; iv: string; tag: string };
   }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/identity/profile`, {
+      const response = await fetch(`${API_BASE_PATH}/api/identity/profile`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${options.vaultOwnerToken}`,
@@ -217,7 +222,7 @@ export class HushhIdentityWeb extends WebPlugin implements HushhIdentityPlugin {
   }): Promise<{ success: boolean }> {
     try {
       // Web contract: DELETE is proxied via /api/identity/status (see app/api/identity/status/route.ts)
-      const response = await fetch(`${API_BASE_URL}/api/identity/status`, {
+      const response = await fetch(`${API_BASE_PATH}/api/identity/status`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${options.vaultOwnerToken}`,
