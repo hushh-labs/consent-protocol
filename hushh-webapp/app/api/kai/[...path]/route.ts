@@ -62,6 +62,22 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
       body: body,
     });
 
+    // Check for SSE stream response
+    const contentType = response.headers.get("content-type");
+    if (contentType?.includes("text/event-stream")) {
+      console.log(`[Kai API] SSE stream detected, passing through`);
+      // Return SSE stream directly without parsing
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
