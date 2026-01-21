@@ -38,6 +38,14 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   const path = params.path.join("/");
   const url = `${getPythonApiUrl()}/api/kai/${path}`;
 
+  // Debug: Check if Authorization header is present
+  const authHeader = request.headers.get("authorization");
+  console.log(`[Kai API] Proxying ${request.method} ${path}`);
+  console.log(`[Kai API] Authorization header present: ${!!authHeader}`);
+  if (authHeader) {
+    console.log(`[Kai API] Auth header prefix: ${authHeader.substring(0, 30)}...`);
+  }
+
   try {
     const headers = new Headers(request.headers);
     // Remove host header to avoid confusion
