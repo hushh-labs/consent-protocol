@@ -55,6 +55,8 @@ export interface KaiPlugin {
      */
     preferencesEncrypted?: string;
     authToken?: string;
+    /** VAULT_OWNER consent token - required for secure access */
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
   /**
@@ -64,6 +66,8 @@ export interface KaiPlugin {
   getPreferences(options: {
     userId: string;
     authToken?: string;
+    /** VAULT_OWNER consent token - required for secure access */
+    vaultOwnerToken?: string;
   }): Promise<{ preferences: any[] }>;
 
   /**

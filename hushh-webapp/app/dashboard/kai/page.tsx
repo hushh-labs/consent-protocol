@@ -91,15 +91,15 @@ export default function KaiOnboarding() {
   // Check for existing preferences on mount (SKIP onboarding if found)
   useEffect(() => {
     async function checkExistingUser() {
-      if (!user?.uid || !vaultKey) {
-        // If user or vaultKey is not available yet, wait for next render
+      if (!user?.uid || !vaultKey || !vaultOwnerToken) {
+        // If user, vaultKey, or vaultOwnerToken is not available yet, wait for next render
         // This can happen if auth or vault context is still loading
         return;
       }
 
       try {
         // Fetch saved preferences from backend
-        const { preferences } = await getPreferences(user.uid);
+        const { preferences } = await getPreferences(user.uid, vaultOwnerToken);
 
         if (preferences && preferences.length > 0) {
           console.log("[Kai] Found existing preferences, auto-completing.");
@@ -175,7 +175,7 @@ export default function KaiOnboarding() {
     }
 
     checkExistingUser();
-  }, [user, router, vaultKey]); // Added vaultKey to dependencies
+  }, [user, router, vaultKey, vaultOwnerToken]); // Added vaultOwnerToken to dependencies
 
   // IMPORTANT: VAULT_OWNER token is issued during vault unlock (VaultFlow) and stored in vault-context.
   // Do not re-issue tokens here; use the single source of truth: `useVault().vaultOwnerToken`.
@@ -261,6 +261,13 @@ export default function KaiOnboarding() {
       return;
     }
 
+    // REQUIRE VAULT_OWNER token for consent protocol
+    if (!vaultOwnerToken) {
+      toast.error("Missing VAULT_OWNER token. Please re-unlock your vault.");
+      console.error("[Kai] handleProceed: vaultOwnerToken is null/undefined");
+      return;
+    }
+
     setLoading(true);
     try {
       // 1. Grant Consent (Get Token) - using native plugin
@@ -314,8 +321,8 @@ export default function KaiOnboarding() {
         },
       ];
 
-      // 3. Store in DB
-      await storePreferences(user.uid, preferences);
+      // 3. Store in DB (vaultOwnerToken is guaranteed to be non-null at this point)
+      await storePreferences(user.uid, preferences, vaultOwnerToken);
 
       // 4. Update Session Storage (for immediate use)
       sessionStorage.setItem("kai_risk_profile", state.riskProfile);
