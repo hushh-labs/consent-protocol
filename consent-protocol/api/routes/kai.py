@@ -26,6 +26,44 @@ router = APIRouter(prefix="/api/kai", tags=["kai"])
 
 
 # ============================================================================
+# CONSENT VALIDATION HELPER
+# ============================================================================
+
+async def validate_vault_owner(authorization: str, expected_user_id: str) -> None:
+    """
+    Validate VAULT_OWNER token and ensure user_id matches.
+    
+    Args:
+        authorization: Bearer token header
+        expected_user_id: The user_id that should own this token
+        
+    Raises:
+        HTTPException 401 if token invalid
+        HTTPException 403 if user_id mismatch
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, 
+            detail="Missing consent token. Call /api/consent/owner-token first."
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
+    
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+    
+    if payload.user_id != expected_user_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Token user does not match requested user"
+        )
+    
+    logger.info(f"[Kai] VAULT_OWNER validated for {expected_user_id}")
+
+
+
+# ============================================================================
 # MODELS
 # ============================================================================
 
@@ -234,7 +272,7 @@ async def analyze_ticker(
                 scope = ConsentScope("vault.owner")
                 token_obj = issue_token(
                     user_id=request.user_id,
-                    agent_id="implicit_session",
+                    agent_id="self",
                     scope=scope,
                     expires_in_ms=30000 
                 )
@@ -278,11 +316,18 @@ async def analyze_ticker(
 
 
 @router.post("/decision/store")
-async def store_decision(request: StoreDecisionRequest):
+async def store_decision(
+    request: StoreDecisionRequest,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Step 2: Store Encrypted Decision.
-    Stateless (No session_id).
+    
+    REQUIRES: VAULT_OWNER consent token.
     """
+    # Validate consent token
+    await validate_vault_owner(authorization, request.user_id)
+    
     pool = await get_pool()
     
     try:
@@ -317,10 +362,16 @@ async def get_decision_history(
     user_id: str,
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
 ):
     """
     Get decision history (metadata only).
+    
+    REQUIRES: VAULT_OWNER consent token.
     """
+    # Validate consent token
+    await validate_vault_owner(authorization, user_id)
+    
     pool = await get_pool()
     
     # Get total count
@@ -355,10 +406,14 @@ async def get_decision_history(
 
 
 @router.get("/decision/{decision_id}", response_model=EncryptedDecisionResponse)
-async def get_decision_detail(decision_id: int):
+async def get_decision_detail(
+    decision_id: int,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Get FULL Encrypted Decision Blob.
     
+    REQUIRES: VAULT_OWNER consent token.
     Client must download this and decrypt locally using Vault Key.
     """
     pool = await get_pool()
@@ -370,6 +425,17 @@ async def get_decision_detail(decision_id: int):
     
     if not row:
         raise HTTPException(status_code=404, detail="Decision not found")
+    
+    # Validate that token owner matches decision owner
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing consent token")
+    token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+    if payload.user_id != row["user_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to access this decision")
+    
     
     return EncryptedDecisionResponse(
         id=row["id"],
@@ -383,10 +449,19 @@ async def get_decision_detail(decision_id: int):
 
 
 @router.delete("/decision/{decision_id}")
-async def delete_decision(decision_id: int, user_id: str = Query(...)):
+async def delete_decision(
+    decision_id: int, 
+    user_id: str = Query(...),
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Delete a decision.
+    
+    REQUIRES: VAULT_OWNER consent token.
     """
+    # Validate consent token
+    await validate_vault_owner(authorization, user_id)
+    
     pool = await get_pool()
     
     result = await pool.execute(
@@ -419,11 +494,19 @@ class PreferencesResponse(BaseModel):
 
 
 @router.post("/preferences/store")
-async def store_preferences(request: StorePreferencesRequest):
+async def store_preferences(
+    request: StorePreferencesRequest,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Store encrypted user preferences (Risk Profile, Processing Mode).
+    
+    REQUIRES: VAULT_OWNER consent token.
     Upserts by (user_id, field_name).
     """
+    # Validate consent token
+    await validate_vault_owner(authorization, request.user_id)
+    
     pool = await get_pool()
     
     try:
@@ -460,10 +543,18 @@ async def store_preferences(request: StorePreferencesRequest):
 
 
 @router.get("/preferences/{user_id}", response_model=PreferencesResponse)
-async def get_preferences(user_id: str):
+async def get_preferences(
+    user_id: str,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Retrieve all encrypted preferences for a user.
+    
+    REQUIRES: VAULT_OWNER consent token.
     """
+    # Validate consent token
+    await validate_vault_owner(authorization, user_id)
+    
     pool = await get_pool()
     
     rows = await pool.fetch(
