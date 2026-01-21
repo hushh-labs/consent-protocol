@@ -47,14 +47,16 @@ class SentimentAgent:
         ticker: str,
         user_id: str,
         consent_token: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> SentimentInsight:
         """
-        Perform sentiment analysis using operons (lightweight orchestrator).
+        Perform sentiment analysis using Gemini + operons.
         
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
             user_id: User ID for audit logging
             consent_token: Consent token for news API access
+            context: Optional user context for personalization
             
         Returns:
             SentimentInsight with analysis results
@@ -69,8 +71,48 @@ class SentimentAgent:
         except PermissionError as e:
             logger.error(f"[Sentiment] News access denied: {e}")
             raise
+        except Exception as e:
+            logger.warning(f"[Sentiment] News fetch failed: {e}, using empty list")
+            news_articles = []
         
-        # Operon 2: Analyze sentiment (with consent check)
+        # Operon 2: Gemini Deep Sentiment Analysis
+        from hushh_mcp.config import GOOGLE_API_KEY
+        from hushh_mcp.operons.kai.llm import analyze_sentiment_with_gemini
+        
+        gemini_analysis = None
+        if GOOGLE_API_KEY and self.processing_mode == "hybrid" and consent_token:
+            try:
+                gemini_analysis = await analyze_sentiment_with_gemini(
+                    ticker=ticker,
+                    user_id=user_id,
+                    consent_token=consent_token,
+                    news_articles=news_articles,
+                    user_context=context
+                )
+            except Exception as e:
+                logger.warning(f"[Sentiment] Gemini analysis failed: {e}. Falling back to deterministic.")
+        
+        # Use Gemini results if available
+        if gemini_analysis and "error" not in gemini_analysis:
+            logger.info(f"[Sentiment] Using Gemini analysis for {ticker}")
+            return SentimentInsight(
+                summary=gemini_analysis.get("summary", f"Sentiment analysis for {ticker}"),
+                sentiment_score=gemini_analysis.get("sentiment_score", 0.0),
+                key_catalysts=gemini_analysis.get("key_catalysts", []),
+                confidence=gemini_analysis.get("confidence", 0.7),
+                recommendation=gemini_analysis.get("recommendation", "neutral"),
+                news_highlights=[
+                    {
+                        "title": a.get("title", ""),
+                        "source": a.get("source", {}).get("name", "Unknown"),
+                        "date": a.get("publishedAt", "")[:10] if a.get("publishedAt") else ""
+                    }
+                    for a in news_articles[:3]
+                ],
+                sources=["Gemini Sentiment Analysis"] + [a.get("source", {}).get("name", "Unknown") for a in news_articles[:3]],
+            )
+        
+        # Fallback: Deterministic analysis
         from hushh_mcp.operons.kai.analysis import analyze_sentiment
         
         analysis = analyze_sentiment(
@@ -91,7 +133,7 @@ class SentimentAgent:
                 {
                     "title": a.get("title", ""),
                     "source": a.get("source", {}).get("name", "Unknown"),
-                    "date": a.get("publishedAt", "")[:10]
+                    "date": a.get("publishedAt", "")[:10] if a.get("publishedAt") else ""
                 }
                 for a in news_articles[:3]
             ],
