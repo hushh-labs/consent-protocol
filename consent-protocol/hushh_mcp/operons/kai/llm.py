@@ -218,3 +218,200 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
             "error": str(e),
             "fallback": True
         }
+
+
+async def analyze_sentiment_with_gemini(
+    ticker: str,
+    user_id: UserID,
+    consent_token: str,
+    news_articles: List[Dict[str, Any]],
+    user_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Operon: Sentiment analysis using Gemini-2.0-flash.
+    
+    Analyzes news articles and market sentiment for investment signals.
+    """
+    # 1. Validate Consent
+    valid, reason, token = validate_token(
+        consent_token,
+        ConsentScope("agent.kai.analyze")
+    )
+    
+    if not valid:
+        logger.error(f"[Gemini Sentiment] Permission denied: {reason}")
+        raise PermissionError(f"Sentiment analysis denied: {reason}")
+    
+    if not GOOGLE_API_KEY:
+        return {"error": "Gemini API key not configured", "fallback": True}
+
+    logger.info(f"[Gemini Sentiment] Analyzing sentiment for {ticker}")
+
+    # 2. Build Context from news articles
+    news_context = "\n".join([
+        f"- [{a.get('source', {}).get('name', 'Unknown')}] {a.get('title', 'No title')}: {a.get('description', '')[:200]}"
+        for a in news_articles[:10]
+    ]) if news_articles else "No recent news available."
+
+    user_risk = user_context.get("risk_tolerance", "Balanced") if user_context else "Balanced"
+
+    context = f"""
+    --- SENTIMENT ANALYSIS TERMINAL ({ticker}) ---
+    
+    [Recent News Articles]
+    {news_context}
+    
+    [Investor Profile]
+    Risk Tolerance: {user_risk}
+    """
+
+    system_instruction = """
+You are a **Market Sentiment Analyst** specializing in news-driven momentum signals.
+
+Analyze the provided news articles and assess market sentiment for this stock.
+
+### REPORT STRUCTURE (Strict JSON)
+- `summary`: (String) 1-paragraph summary of current market sentiment
+- `sentiment_score`: (Float -1.0 to 1.0) Overall sentiment (-1=very bearish, 0=neutral, 1=very bullish)
+- `key_catalysts`: (List[String]) Top 3-5 near-term catalysts or events driving sentiment
+- `momentum_signal`: (String) "positive", "neutral", or "negative" momentum
+- `confidence`: (Float 0.0-1.0)
+- `recommendation`: (String: "bullish", "neutral", "bearish")
+
+### RULES
+- Focus on actionable insights, not generic observations
+- Weight recent news more heavily
+- Identify both positive and negative signals
+- DO NOT use markdown inside JSON strings
+"""
+
+    # 3. Call Gemini
+    try:
+        model = genai.GenerativeModel("models/gemini-2.0-flash")
+        response = await asyncio.wait_for(
+            model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
+            timeout=30.0,
+        )
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:-3].strip()
+        elif text.startswith("```"):
+            text = text[3:-3].strip()
+            
+        analysis = json.loads(text)
+        logger.info(f"[Gemini Sentiment] Analysis complete for {ticker}")
+        return analysis
+
+    except asyncio.TimeoutError:
+        logger.warning(f"[Gemini Sentiment] Timed out for {ticker}")
+        return {"error": "Gemini timeout", "fallback": True}
+    except Exception as e:
+        logger.error(f"[Gemini Sentiment] Error: {e}")
+        return {"error": str(e), "fallback": True}
+
+
+async def analyze_valuation_with_gemini(
+    ticker: str,
+    user_id: UserID,
+    consent_token: str,
+    market_data: Dict[str, Any],
+    peer_data: Optional[List[Dict[str, Any]]] = None,
+    user_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Operon: Valuation analysis using Gemini-2.0-flash.
+    
+    Performs relative and intrinsic valuation analysis.
+    """
+    # 1. Validate Consent
+    valid, reason, token = validate_token(
+        consent_token,
+        ConsentScope("agent.kai.analyze")
+    )
+    
+    if not valid:
+        logger.error(f"[Gemini Valuation] Permission denied: {reason}")
+        raise PermissionError(f"Valuation analysis denied: {reason}")
+    
+    if not GOOGLE_API_KEY:
+        return {"error": "Gemini API key not configured", "fallback": True}
+
+    logger.info(f"[Gemini Valuation] Analyzing valuation for {ticker}")
+
+    # 2. Build Context
+    peer_context = "\n".join([
+        f"- {p.get('ticker', 'N/A')}: P/E={p.get('pe_ratio', 'N/A')}, Growth={p.get('growth', 'N/A')}"
+        for p in (peer_data or [])[:5]
+    ]) if peer_data else "No peer data available."
+
+    user_risk = user_context.get("risk_tolerance", "Balanced") if user_context else "Balanced"
+
+    context = f"""
+    --- VALUATION ANALYSIS TERMINAL ({ticker}) ---
+    
+    [Market Data]
+    Current Price: ${market_data.get('price', 'N/A')}
+    P/E Ratio: {market_data.get('pe_ratio', 'N/A')}
+    Forward P/E: {market_data.get('forward_pe', 'N/A')}
+    P/B Ratio: {market_data.get('pb_ratio', 'N/A')}
+    P/S Ratio: {market_data.get('ps_ratio', 'N/A')}
+    EV/EBITDA: {market_data.get('ev_ebitda', 'N/A')}
+    Market Cap: ${market_data.get('market_cap', 'N/A')}
+    Dividend Yield: {market_data.get('dividend_yield', 'N/A')}
+    52-Week Range: ${market_data.get('52w_low', 'N/A')} - ${market_data.get('52w_high', 'N/A')}
+    
+    [Peer Comparison]
+    {peer_context}
+    
+    [Investor Profile]
+    Risk Tolerance: {user_risk}
+    """
+
+    system_instruction = """
+You are a **Quantitative Valuation Analyst** at an institutional investment firm.
+
+Perform a comprehensive valuation analysis with focus on relative and intrinsic value.
+
+### REPORT STRUCTURE (Strict JSON)
+- `summary`: (String) 1-paragraph valuation assessment
+- `valuation_verdict`: (String) "undervalued", "fair", or "overvalued"
+- `valuation_metrics`: (Dict) Key metrics analyzed with values
+- `peer_ranking`: (String) How this stock ranks vs peers
+- `price_targets`: (Dict) {"conservative": X, "base_case": Y, "optimistic": Z}
+- `upside_downside`: (Dict) {"upside_pct": X, "downside_pct": Y}
+- `confidence`: (Float 0.0-1.0)
+- `recommendation`: (String: "undervalued", "fair", "overvalued")
+
+### RULES
+- Use multiple valuation methods (P/E, EV/EBITDA, DCF if possible)
+- Compare to sector averages
+- Consider growth rates when evaluating multiples
+- DO NOT use markdown inside JSON strings
+"""
+
+    # 3. Call Gemini
+    try:
+        model = genai.GenerativeModel("models/gemini-2.0-flash")
+        response = await asyncio.wait_for(
+            model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
+            timeout=30.0,
+        )
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:-3].strip()
+        elif text.startswith("```"):
+            text = text[3:-3].strip()
+            
+        analysis = json.loads(text)
+        logger.info(f"[Gemini Valuation] Analysis complete for {ticker}")
+        return analysis
+
+    except asyncio.TimeoutError:
+        logger.warning(f"[Gemini Valuation] Timed out for {ticker}")
+        return {"error": "Gemini timeout", "fallback": True}
+    except Exception as e:
+        logger.error(f"[Gemini Valuation] Error: {e}")
+        return {"error": str(e), "fallback": True}
+

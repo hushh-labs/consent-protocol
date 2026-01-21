@@ -94,12 +94,15 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     preferences?: KaiEncryptedPreference[];
     preferencesEncrypted?: string;
     authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    // Prefer vaultOwnerToken over authToken for consent protocol compliance
+    const token = options.vaultOwnerToken || options.authToken;
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
     const preferences: KaiEncryptedPreference[] | undefined =
@@ -131,7 +134,16 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
   async getPreferences(options: {
     userId: string;
     authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ preferences: any[] }> {
+    // Debug logging
+    console.log("[KaiWeb] getPreferences called with:", {
+      userId: options.userId,
+      hasAuthToken: !!options.authToken,
+      hasVaultOwnerToken: !!options.vaultOwnerToken,
+      vaultOwnerTokenPrefix: options.vaultOwnerToken?.substring(0, 20),
+    });
+
     // Safety check: This should NOT be called on native platforms
     if (typeof window !== 'undefined') {
       const Capacitor = (window as any).Capacitor;
@@ -145,16 +157,26 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    // Prefer vaultOwnerToken over authToken for consent protocol compliance
+    const token = options.vaultOwnerToken || options.authToken;
+    console.log("[KaiWeb] Using token:", token ? "YES (length=" + token.length + ")" : "NO");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`/api/kai/preferences/${options.userId}`, {
+    const url = `/api/kai/preferences/${options.userId}`;
+    console.log("[KaiWeb] Fetching:", url, "Headers:", Object.keys(headers));
+
+    const response = await fetch(url, {
       method: "GET",
       headers,
     });
 
+    console.log("[KaiWeb] Response status:", response.status);
+
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error("[KaiWeb] Error response:", errorText);
       throw new Error("Failed to get preferences");
     }
 

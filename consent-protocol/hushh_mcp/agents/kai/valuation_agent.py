@@ -47,14 +47,16 @@ class ValuationAgent:
         ticker: str,
         user_id: str,
         consent_token: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> ValuationInsight:
         """
-        Perform valuation analysis using operons (lightweight orchestrator).
+        Perform valuation analysis using Gemini + operons.
         
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL")
             user_id: User ID for audit logging
             consent_token: Consent token for market data access
+            context: Optional user context for personalization
             
         Returns:
             ValuationInsight with analysis results
@@ -70,8 +72,46 @@ class ValuationAgent:
         except PermissionError as e:
             logger.error(f"[Valuation] Market data access denied: {e}")
             raise
+        except Exception as e:
+            logger.warning(f"[Valuation] Data fetch failed: {e}, using defaults")
+            market_data = {"ticker": ticker, "price": 0.0}
+            peer_data = []
         
-        # Operon 2: Analyze valuation (with consent check)
+        # Operon 2: Gemini Deep Valuation Analysis
+        from hushh_mcp.config import GOOGLE_API_KEY
+        from hushh_mcp.operons.kai.llm import analyze_valuation_with_gemini
+        
+        gemini_analysis = None
+        if GOOGLE_API_KEY and self.processing_mode == "hybrid" and consent_token:
+            try:
+                gemini_analysis = await analyze_valuation_with_gemini(
+                    ticker=ticker,
+                    user_id=user_id,
+                    consent_token=consent_token,
+                    market_data=market_data,
+                    peer_data=peer_data,
+                    user_context=context
+                )
+            except Exception as e:
+                logger.warning(f"[Valuation] Gemini analysis failed: {e}. Falling back to deterministic.")
+        
+        # Use Gemini results if available
+        if gemini_analysis and "error" not in gemini_analysis:
+            logger.info(f"[Valuation] Using Gemini analysis for {ticker}")
+            return ValuationInsight(
+                summary=gemini_analysis.get("summary", f"Valuation analysis for {ticker}"),
+                valuation_metrics=gemini_analysis.get("valuation_metrics", {}),
+                peer_comparison={"ranking": gemini_analysis.get("peer_ranking", "N/A")},
+                confidence=gemini_analysis.get("confidence", 0.7),
+                recommendation=gemini_analysis.get("recommendation", "fair"),
+                price_targets=gemini_analysis.get("price_targets", {
+                    "current_price": market_data.get("price", 0.0),
+                    "consensus_target": 0.0,
+                }),
+                sources=["Gemini Valuation Analysis", market_data.get("source", "Market Data")],
+            )
+        
+        # Fallback: Deterministic analysis
         from hushh_mcp.operons.kai.analysis import analyze_valuation
         
         analysis = analyze_valuation(
@@ -91,7 +131,7 @@ class ValuationAgent:
             recommendation=analysis["recommendation"],
             price_targets={
                 "current_price": market_data.get("price", 0.0),
-                "consensus_target": 0.0, # Placeholder
+                "consensus_target": 0.0,
             },
             sources=[market_data.get("source", "Unknown")],
         )
