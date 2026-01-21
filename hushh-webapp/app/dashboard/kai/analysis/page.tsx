@@ -61,6 +61,7 @@ import { hasValidConsent } from "../actions";
 import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
 import { getGsap, animateOnce } from "@/lib/morphy-ux/gsap";
+import { DebateStreamView } from "@/components/kai/debate-stream-view";
 
 interface TrendDataPoint {
   year: string;
@@ -166,6 +167,7 @@ export default function KaiAnalysis() {
 
   const [ticker, setTicker] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showDebateStream, setShowDebateStream] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
   const [result, setResult] = useState<LocalAnalyzeResponse | null>(null);
   const [userPreferences, setUserPreferences] = useState<{
@@ -263,6 +265,15 @@ export default function KaiAnalysis() {
     setIsAnalyzing(true);
     setResult(null);
     if (overrideTicker) setTicker(overrideTicker);
+
+    // Use streaming mode for real-time agent visualization
+    const useStreaming = true; // TODO: Make configurable via preferences
+    if (useStreaming) {
+      setShowDebateStream(true);
+      return; // DebateStreamView modal handles the rest
+    }
+
+    // Non-streaming fallback (original implementation)
 
     try {
       // 2. Fetch Encrypted Profile (Ciphertext)
@@ -368,6 +379,39 @@ export default function KaiAnalysis() {
     >
       {/* Background Glow */}
       <div className="fixed inset-0 opacity-30 pointer-events-none" />
+
+      {/* Streaming Debate View Modal */}
+      {showDebateStream && vaultOwnerToken && user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <DebateStreamView
+              ticker={ticker}
+              userId={user.uid}
+              riskProfile={userPreferences?.riskProfile || "balanced"}
+              vaultOwnerToken={vaultOwnerToken}
+              onDecision={(decision) => {
+                // Map decision to result format
+                setResult({
+                  ticker: decision.ticker,
+                  decision: decision.decision as "buy" | "hold" | "reduce",
+                  headline: decision.final_statement,
+                  summary: decision.final_statement,
+                  confidence: decision.confidence,
+                  processing_mode: "hybrid",
+                  raw_card: {} as any,  // Streaming returns summary, not full raw_card
+                });
+                setShowDebateStream(false);
+                setIsAnalyzing(false);
+                toast.success(`Analysis complete for ${decision.ticker}`);
+              }}
+              onClose={() => {
+                setShowDebateStream(false);
+                setIsAnalyzing(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
         {/* Terminal Header */}
