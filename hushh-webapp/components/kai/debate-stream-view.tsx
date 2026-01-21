@@ -60,6 +60,7 @@ interface DebateStreamViewProps {
   ticker: string;
   userId: string;
   riskProfile?: string;
+  vaultOwnerToken: string;  // Required - passed from parent for reliable auth
   onDecision?: (decision: DecisionResult) => void;
   onClose?: () => void;
 }
@@ -68,10 +69,11 @@ export function DebateStreamView({
   ticker,
   userId,
   riskProfile = "balanced",
+  vaultOwnerToken,
   onDecision,
   onClose,
 }: DebateStreamViewProps) {
-  const { getVaultOwnerToken, isVaultUnlocked } = useVault();
+  const { isVaultUnlocked } = useVault();
   const [agents, setAgents] = useState<Record<AgentId, AgentState>>({
     fundamental: { status: "waiting" },
     sentiment: { status: "waiting" },
@@ -95,8 +97,7 @@ export function DebateStreamView({
 
   // Start SSE connection
   const startAnalysis = useCallback(async () => {
-    const token = getVaultOwnerToken();
-    if (!token) {
+    if (!vaultOwnerToken) {
       setError("Please unlock your vault first");
       return;
     }
@@ -112,9 +113,8 @@ export function DebateStreamView({
     setError(null);
     setIsComplete(false);
 
-    // Build SSE URL
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${baseUrl}/api/kai/analyze/stream?ticker=${ticker}&user_id=${userId}&risk_profile=${riskProfile}`;
+    // Build SSE URL - use Next.js proxy to forward auth headers
+    const url = `/api/kai/analyze/stream?ticker=${ticker}&user_id=${userId}&risk_profile=${riskProfile}`;
 
     // Note: EventSource doesn't support custom headers natively
     // For auth, we need to use a polyfill or pass token via query param
@@ -123,7 +123,7 @@ export function DebateStreamView({
     try {
       const response = await fetch(url, {
         headers: {
-          "Authorization": `Bearer ${token}`,
+          "Authorization": `Bearer ${vaultOwnerToken}`,
           "Accept": "text/event-stream",
         },
       });
@@ -163,7 +163,7 @@ export function DebateStreamView({
       console.error("SSE Error:", err);
       setError(err instanceof Error ? err.message : "Analysis failed");
     }
-  }, [ticker, userId, riskProfile, getVaultOwnerToken]);
+  }, [ticker, userId, riskProfile, vaultOwnerToken]);
 
   // Handle SSE events
   const handleEvent = (data: any) => {
