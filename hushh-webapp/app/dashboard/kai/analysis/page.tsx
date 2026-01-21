@@ -288,7 +288,7 @@ export default function KaiAnalysis() {
       }
 
       // 4. Load Kai runtime prefs (decrypted) for analysis parameters
-      const { preferences } = await getPreferences(user.uid);
+      const { preferences } = await getPreferences(user.uid, vaultOwnerToken);
       // Risk profile now comes from profile's risk_tolerance (not separate encrypted pref)
       let riskProfile: "conservative" | "balanced" | "aggressive" = "balanced";
       let processingMode: "on_device" | "hybrid" = "hybrid";

@@ -99,6 +99,10 @@ app.include_router(debug_firebase.router)
 # Kai investor onboarding routes (/api/kai/...)
 app.include_router(kai.router)
 
+
+# Kai SSE streaming routes (/api/kai/analyze/stream)
+from api.routes import kai_stream
+app.include_router(kai_stream.router)
 # Food agent routes (/api/food/...)
 app.include_router(food.router)
 

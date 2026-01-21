@@ -55,7 +55,7 @@ async def issue_session_token(
         
         token_obj = issue_token(
             user_id=request.userId,
-            agent_id="orchestrator",
+            agent_id="self",
             scope=scope_to_grant,
             expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
         )
@@ -95,13 +95,32 @@ async def logout_session(request: LogoutRequest):
 
 
 @router.get("/consent/history")
-async def get_consent_history(userId: str, page: int = 1, limit: int = 50):
+async def get_consent_history(
+    userId: str, 
+    page: int = 1, 
+    limit: int = 50,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Get paginated consent audit history for a user.
     
+    REQUIRES: VAULT_OWNER consent token.
     Returns all consent actions grouped by app for the Audit Log tab.
     Uses database via consent_db module for persistence.
     """
+    # Validate VAULT_OWNER token
+    from hushh_mcp.consent.token import validate_token
+    from hushh_mcp.constants import ConsentScope
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing consent token")
+    token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+    if payload.user_id != userId:
+        raise HTTPException(status_code=403, detail="Token user mismatch")
+    
     logger.info(f"📜 Fetching consent history for user: {userId}, page: {page}")
     
     try:
@@ -138,13 +157,30 @@ async def get_consent_history(userId: str, page: int = 1, limit: int = 50):
 
 
 @router.get("/consent/active")
-async def get_active_consents(userId: str):
+async def get_active_consents(
+    userId: str,
+    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+):
     """
     Get active (non-expired) consent tokens for a user.
     
+    REQUIRES: VAULT_OWNER consent token.
     Returns consents grouped by app for the Session tab.
     Uses database via consent_db module for persistence.
     """
+    # Validate VAULT_OWNER token
+    from hushh_mcp.consent.token import validate_token
+    from hushh_mcp.constants import ConsentScope
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing consent token")
+    token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+    if payload.user_id != userId:
+        raise HTTPException(status_code=403, detail="Token user mismatch")
+    
     logger.info(f"🔓 Fetching active consents for user: {userId}")
     
     try:

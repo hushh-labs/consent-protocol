@@ -100,7 +100,8 @@ export async function analyzeTicker(params: {
  */
 export async function storePreferences(
   userId: string,
-  preferences: KaiEncryptedPreference[]
+  preferences: KaiEncryptedPreference[],
+  vaultOwnerToken?: string
 ): Promise<{ success: boolean }> {
   const authToken = await getAuthToken();
 
@@ -108,6 +109,7 @@ export async function storePreferences(
     userId,
     preferences,
     authToken,
+    vaultOwnerToken,
   });
 }
 
@@ -115,7 +117,8 @@ export async function storePreferences(
  * Get Encrypted Preferences
  */
 export async function getPreferences(
-  userId: string
+  userId: string,
+  vaultOwnerToken?: string
 ): Promise<{ preferences: any[] }> {
   const isNative = Capacitor.isNativePlatform();
   console.log(
@@ -127,11 +130,13 @@ export async function getPreferences(
 
   const authToken = await getAuthToken();
   console.log("[KaiService] authToken present:", !!authToken);
+  console.log("[KaiService] vaultOwnerToken present:", !!vaultOwnerToken);
 
   try {
     const result = await Kai.getPreferences({
       userId,
       authToken,
+      vaultOwnerToken,
     });
     console.log(
       "[KaiService] getPreferences success, preferences count:",
