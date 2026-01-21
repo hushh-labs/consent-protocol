@@ -164,7 +164,7 @@ export default function KaiPreferencesPage() {
       }
 
       // Kai prefs (encrypted rows -> decrypt client-side)
-      const { preferences } = await getPreferences(user.uid);
+      const { preferences } = await getPreferences(user.uid, vaultOwnerToken);
       const nextPrefs: DecryptedKaiPrefs = {
         riskProfile: null,
         processingMode: null,
@@ -336,7 +336,7 @@ export default function KaiPreferencesPage() {
             iv: encMode.iv,
             tag: encMode.tag,
           },
-        ]);
+        ], vaultOwnerToken);
         setKaiPrefs({
           riskProfile: null, // No longer stored separately
           processingMode: draftProcessingMode,
