@@ -316,6 +316,47 @@ Kai deploys three specialized agents, each with dedicated tools, mirroring how h
 - **Creates a comprehensive audit trail**
 - **Improves decision quality**
 
+### Real-Time Streaming Visualization
+
+Kai provides a **live streaming interface** that shows the debate as it happens:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Analyzing NVDA                                                           │
+│                                                                          │
+│ [Round 1]  [Round 2]  [Decision Card]   ← Tabs always visible           │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│ 🧠 Kai is thinking...                                                    │
+│ "Analyzing SEC filings for NVDA..."                                      │
+│                                                                          │
+│ ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐           │
+│ │  🔍 Fundamental │  │  📰 Sentiment   │  │  🧮 Valuation   │           │
+│ │                 │  │                 │  │                 │           │
+│ │ "Based on the   │  │ "Market         │  │ "P/E of 45x     │           │
+│ │  10-K filing,   │  │  sentiment is   │  │  appears rich   │           │
+│ │  revenue grew   │  │  bullish due    │  │  vs peers..."   │           │
+│ │  114% YoY..."   │  │  to AI demand"  │  │                 │           │
+│ │           ▋     │  │           ▋     │  │           ▋     │           │
+│ └─────────────────┘  └─────────────────┘  └─────────────────┘           │
+│                                                                          │
+│ ← Live streaming tokens from Gemini 2.5 Flash                            │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+
+- **Persistent tabs**: Round 1, Round 2, and Decision Card tabs remain visible throughout
+- **Live token streaming**: Watch each agent's reasoning unfold in real-time
+- **Embedded KPI report**: Decision Card tab includes full analysis (Executive Summary, Bull/Bear Cases, Business Moat)
+- **Powered by Gemini 2.5 Flash**: Fast, streaming responses with advanced reasoning
+
+**Technical Implementation:**
+
+- Backend uses `generate_content(stream=True)` for real-time SSE events
+- Frontend handles `agent_token` events to display streaming text
+- `asyncio.sleep(0)` after each yield ensures event loop processes SSE in real-time
+
 ---
 
 ## 📋 The Decision Card
