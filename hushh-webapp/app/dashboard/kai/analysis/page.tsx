@@ -62,6 +62,7 @@ import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
 import { getGsap, animateOnce } from "@/lib/morphy-ux/gsap";
 import { DebateStreamView } from "@/components/kai/debate-stream-view";
+import KaiDebateInline from "@/components/kai/kai-debate-inline";
 
 interface TrendDataPoint {
   year: string;
@@ -380,39 +381,6 @@ export default function KaiAnalysis() {
       {/* Background Glow */}
       <div className="fixed inset-0 opacity-30 pointer-events-none" />
 
-      {/* Streaming Debate View Modal */}
-      {showDebateStream && vaultOwnerToken && user && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-auto">
-            <DebateStreamView
-              ticker={ticker}
-              userId={user.uid}
-              riskProfile={userPreferences?.riskProfile || "balanced"}
-              vaultOwnerToken={vaultOwnerToken}
-              onDecision={(decision) => {
-                // Map decision to result format
-                setResult({
-                  ticker: decision.ticker,
-                  decision: decision.decision as "buy" | "hold" | "reduce",
-                  headline: decision.final_statement,
-                  summary: decision.final_statement,
-                  confidence: decision.confidence,
-                  processing_mode: "hybrid",
-                  raw_card: {} as any,  // Streaming returns summary, not full raw_card
-                });
-                setShowDebateStream(false);
-                setIsAnalyzing(false);
-                toast.success(`Analysis complete for ${decision.ticker}`);
-              }}
-              onClose={() => {
-                setShowDebateStream(false);
-                setIsAnalyzing(false);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
         {/* Terminal Header */}
         <header className="flex flex-col md:flex-row items-center justify-between gap-8 py-6 border-b border-border/40 backdrop-blur-xs mb-8">
@@ -495,7 +463,41 @@ export default function KaiAnalysis() {
           </div>
         )}
 
-        {result ? (
+        {/* INLINE DEBATE VIEW - ALWAYS shows when active (tabs persist after decision) */}
+        {showDebateStream && vaultOwnerToken && user && (
+          <div className="mb-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <KaiDebateInline
+              ticker={ticker}
+              userId={user.uid}
+              riskProfile={userPreferences?.riskProfile || "balanced"}
+              vaultOwnerToken={vaultOwnerToken}
+              fullResult={result}
+              onComplete={(decision) => {
+                // Store result but KEEP debate view visible (tabs persist)
+                setResult({
+                  ticker: decision.ticker,
+                  decision: decision.decision as "buy" | "hold" | "reduce",
+                  headline: decision.final_statement,
+                  summary: decision.raw_card?.fundamental_insight?.summary || decision.final_statement,
+                  confidence: decision.confidence,
+                  processing_mode: "hybrid",
+                  raw_card: decision.raw_card || ({} as any),
+                });
+                setIsAnalyzing(false);
+                // DON'T hide - tabs stay visible, Decision Card shows full KPI report
+                toast.success(`Analysis complete for ${decision.ticker}`);
+              }}
+              onError={(error) => {
+                toast.error(error);
+                setShowDebateStream(false);
+                setIsAnalyzing(false);
+              }}
+            />
+          </div>
+        )}
+
+        {/* FULL KPI REPORT - Only shows when debate is dismissed (or for direct API results) */}
+        {result && !showDebateStream ? (
           <div
             className="space-y-6 sm:space-y-8 animate-in slide-in-from-bottom-5 duration-700"
             ref={scorecardRef}
@@ -557,7 +559,7 @@ export default function KaiAnalysis() {
                       </h3>
                       {/* Summary rendered here implies we use the fundamental insight summary */}
                       <p className="text-sm font-medium leading-relaxed text-foreground/85">
-                        {result.raw_card.fundamental_insight.summary ||
+                        {result.raw_card?.fundamental_insight?.summary ||
                           result.summary}
                       </p>
                     </div>
@@ -568,7 +570,7 @@ export default function KaiAnalysis() {
                       </h3>
                       <p className="text-sm font-medium leading-relaxed text-foreground/85 italic border-l-2 border-primary/30 pl-3">
                         "
-                        {result.raw_card.risk_persona_alignment ||
+                        {result.raw_card?.risk_persona_alignment ||
                           "Analysis aligned with your risk profile."}
                         "
                       </p>
@@ -583,9 +585,9 @@ export default function KaiAnalysis() {
                       Revenue CAGR
                     </p>
                     <p className="text-xl font-black text-foreground">
-                      {(
-                        result.raw_card.quant_metrics.revenue_cagr_3y * 100
-                      ).toFixed(1)}
+                      {result.raw_card?.quant_metrics?.revenue_cagr_3y != null
+                        ? (result.raw_card.quant_metrics.revenue_cagr_3y * 100).toFixed(1)
+                        : "--"}
                       %
                     </p>
                   </div>
@@ -594,10 +596,9 @@ export default function KaiAnalysis() {
                       R&D Intensity
                     </p>
                     <p className="text-xl font-black text-foreground">
-                      {(
-                        result.raw_card.key_metrics.fundamental.rnd_intensity *
-                        100
-                      ).toFixed(1)}
+                      {result.raw_card?.key_metrics?.fundamental?.rnd_intensity != null
+                        ? (result.raw_card.key_metrics.fundamental.rnd_intensity * 100).toFixed(1)
+                        : "--"}
                       %
                     </p>
                   </div>
@@ -606,9 +607,9 @@ export default function KaiAnalysis() {
                       Debt/Equity
                     </p>
                     <p className="text-xl font-black text-foreground">
-                      {result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(
-                        2
-                      )}
+                      {result.raw_card?.key_metrics?.fundamental?.debt_to_equity != null
+                        ? result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(2)
+                        : "--"}
                       x
                     </p>
                   </div>
@@ -617,9 +618,9 @@ export default function KaiAnalysis() {
                       P/E Ratio
                     </p>
                     <p className="text-xl font-black text-foreground">
-                      {result.raw_card.key_metrics.valuation?.pe_ratio?.toFixed(
-                        1
-                      ) || "N/A"}
+                      {result.raw_card?.key_metrics?.valuation?.pe_ratio != null
+                        ? result.raw_card.key_metrics.valuation.pe_ratio.toFixed(1)
+                        : "N/A"}
                     </p>
                   </div>
                 </div>
@@ -645,7 +646,7 @@ export default function KaiAnalysis() {
                     className="flex-1 min-h-[140px] w-full"
                   >
                     <ComposedChart
-                      data={result.raw_card.quant_metrics.revenue_trend_data}
+                      data={result.raw_card?.quant_metrics?.revenue_trend_data || []}
                     >
                       <XAxis
                         dataKey="year"
@@ -685,7 +686,7 @@ export default function KaiAnalysis() {
                   </div>
                   <div className="my-4 relative z-10">
                     <span className="text-5xl font-black text-primary drop-shadow-xl">
-                      {(result.raw_card as any).fit_score ||
+                      {(result.raw_card as any)?.fit_score ||
                         Math.round(result.confidence * 100)}
                     </span>
                     <span className="text-xl font-bold text-muted-foreground/50 ml-1">
@@ -697,7 +698,7 @@ export default function KaiAnalysis() {
                       className="h-full bg-primary transition-all duration-1000 ease-out"
                       style={{
                         width: `${
-                          (result.raw_card as any).fit_score ||
+                          (result.raw_card as any)?.fit_score ||
                           result.confidence * 100
                         }%`,
                       }}
@@ -710,7 +711,7 @@ export default function KaiAnalysis() {
             {/* 2.5 ADDITIONAL TREND CHARTS */}
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Net Income Trend */}
-              {result.raw_card.quant_metrics.net_income_trend_data?.length >
+              {result.raw_card?.quant_metrics?.net_income_trend_data?.length >
                 0 && (
                 <Card
                   variant="none"
@@ -729,7 +730,7 @@ export default function KaiAnalysis() {
                     className="h-[100px] w-full"
                   >
                     <AreaChart
-                      data={result.raw_card.quant_metrics.net_income_trend_data}
+                      data={result.raw_card?.quant_metrics?.net_income_trend_data || []}
                     >
                       <defs>
                         <linearGradient
@@ -771,7 +772,7 @@ export default function KaiAnalysis() {
               )}
 
               {/* OCF vs R&D Trend */}
-              {result.raw_card.quant_metrics.ocf_trend_data?.length > 0 && (
+              {(result.raw_card?.quant_metrics?.ocf_trend_data?.length || 0) > 0 && (
                 <Card
                   variant="none"
                   effect="glass"
@@ -789,12 +790,12 @@ export default function KaiAnalysis() {
                     className="h-[100px] w-full"
                   >
                     <RechartsLineChart
-                      data={result.raw_card.quant_metrics.ocf_trend_data.map(
+                      data={(result.raw_card?.quant_metrics?.ocf_trend_data || []).map(
                         (d, i) => ({
                           year: d.year,
                           ocf: d.value,
                           rnd:
-                            result.raw_card.quant_metrics.rnd_trend_data?.[i]
+                            result.raw_card?.quant_metrics?.rnd_trend_data?.[i]
                               ?.value || 0,
                         })
                       )}
@@ -844,7 +845,7 @@ export default function KaiAnalysis() {
                   </h3>
                 </div>
                 <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
-                  {result.raw_card.fundamental_insight.business_moat}
+                  {result.raw_card?.fundamental_insight?.business_moat || "Analysis complete. Detailed insights available with full analysis mode."}
                 </p>
               </Card>
 
@@ -864,7 +865,7 @@ export default function KaiAnalysis() {
                   </h3>
                 </div>
                 <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
-                  {result.raw_card.fundamental_insight.growth_efficiency}
+                  {result.raw_card?.fundamental_insight?.growth_efficiency || "Growth metrics evaluated during analysis."}
                 </p>
               </Card>
 
@@ -885,7 +886,7 @@ export default function KaiAnalysis() {
                 </div>
                 <div className="space-y-4">
                   <p className="text-sm leading-relaxed text-foreground/85 whitespace-pre-line">
-                    {result.raw_card.fundamental_insight.financial_resilience}
+                    {result.raw_card?.fundamental_insight?.financial_resilience || "Financial health assessed."}
                   </p>
 
                   {/* Interactive Metrics */}
@@ -896,15 +897,14 @@ export default function KaiAnalysis() {
                       </p>
                       <p
                         className={`text-lg font-black ${
-                          result.raw_card.key_metrics.fundamental
-                            .earnings_quality > 1
+                          (result.raw_card?.key_metrics?.fundamental?.earnings_quality ?? 0) > 1
                             ? "text-emerald-500"
                             : "text-amber-500"
                         }`}
                       >
-                        {result.raw_card.key_metrics.fundamental.earnings_quality.toFixed(
-                          2
-                        )}
+                        {result.raw_card?.key_metrics?.fundamental?.earnings_quality != null
+                          ? result.raw_card.key_metrics.fundamental.earnings_quality.toFixed(2)
+                          : "--"}
                         x
                       </p>
                       <p className="text-[9px] text-muted-foreground/70">
@@ -917,15 +917,14 @@ export default function KaiAnalysis() {
                       </p>
                       <p
                         className={`text-lg font-black ${
-                          result.raw_card.key_metrics.fundamental
-                            .debt_to_equity < 1.0
+                          (result.raw_card?.key_metrics?.fundamental?.debt_to_equity ?? 999) < 1.0
                             ? "text-emerald-500"
                             : "text-foreground"
                         }`}
                       >
-                        {result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(
-                          2
-                        )}
+                        {result.raw_card?.key_metrics?.fundamental?.debt_to_equity != null
+                          ? result.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(2)
+                          : "--"}
                       </p>
                     </div>
                   </div>
@@ -952,7 +951,7 @@ export default function KaiAnalysis() {
                   className="h-[180px] w-full"
                 >
                   <RadarChart
-                    data={[
+                    data={result.raw_card?.key_metrics?.fundamental ? [
                       {
                         metric: "FCF Margin",
                         value: Math.min(
@@ -987,6 +986,11 @@ export default function KaiAnalysis() {
                           0
                         ),
                       },
+                    ] : [
+                      { metric: "FCF Margin", value: 50 },
+                      { metric: "Earnings Q", value: 50 },
+                      { metric: "R&D Focus", value: 50 },
+                      { metric: "Debt Safety", value: 50 },
                     ]}
                   >
                     <PolarGrid />
@@ -1017,7 +1021,7 @@ export default function KaiAnalysis() {
                   Institutional Bull Case
                 </h3>
                 <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
-                  {result.raw_card.fundamental_insight.bull_case}
+                  {result.raw_card?.fundamental_insight?.bull_case || "Positive factors considered in analysis."}
                 </p>
               </Card>
 
@@ -1032,7 +1036,7 @@ export default function KaiAnalysis() {
                   Institutional Bear Case
                 </h3>
                 <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-line">
-                  {result.raw_card.fundamental_insight.bear_case}
+                  {result.raw_card?.fundamental_insight?.bear_case || "Risk factors considered in analysis."}
                 </p>
               </Card>
             </div>
@@ -1044,7 +1048,7 @@ export default function KaiAnalysis() {
                   <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground mr-2">
                     Sources:
                   </span>
-                  {(result.raw_card.all_sources || []).map((src, i) => (
+                  {(result.raw_card?.all_sources || []).map((src, i) => (
                     <span
                       key={i}
                       className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono border border-primary/20"

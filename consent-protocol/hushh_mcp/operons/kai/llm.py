@@ -1,8 +1,8 @@
 # hushh_mcp/operons/kai/llm.py
 
 """
-Kai LLM Operons - Powered by Gemini
-Processes financial data through Gemini-2.0-flash for deep reasoning.
+Kai LLM Operons - Powered by Gemini 2.5 Flash
+Processes financial data through Gemini-2.5-Flash for fast, intelligent analysis.
 """
 
 import logging
@@ -192,7 +192,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.0-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
         # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
@@ -287,7 +287,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.0-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -392,7 +392,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.0-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -415,3 +415,150 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
         logger.error(f"[Gemini Valuation] Error: {e}")
         return {"error": str(e), "fallback": True}
 
+
+# ============================================================================
+# STREAMING GENERATORS - Real-time Token Streaming
+# ============================================================================
+
+from typing import AsyncGenerator
+
+async def stream_gemini_response(
+    prompt: str,
+    agent_name: str = "gemini",
+    timeout: float = 60.0,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Generic streaming generator for Gemini responses.
+    
+    Yields events:
+    - {"type": "token", "text": "..."} for each token chunk
+    - {"type": "complete", "text": "full response"} when done
+    - {"type": "error", "message": "..."} on error
+    
+    Uses Gemini 2.5 Flash for fast streaming responses.
+    """
+    if not GOOGLE_API_KEY:
+        yield {"type": "error", "message": "Gemini API key not configured"}
+        return
+    
+    logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
+    
+    try:
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        
+        # Use streaming API
+        response = model.generate_content(
+            prompt,
+            stream=True,
+            generation_config=genai.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=4096,
+            )
+        )
+        
+        full_text = ""
+        
+        for chunk in response:
+            if chunk.text:
+                full_text += chunk.text
+                yield {
+                    "type": "token",
+                    "text": chunk.text,
+                    "agent": agent_name,
+                }
+                # CRITICAL: Yield control to event loop so SSE events are sent in real-time
+                await asyncio.sleep(0)
+        
+        # Yield complete event with full text
+        yield {
+            "type": "complete",
+            "text": full_text,
+            "agent": agent_name,
+        }
+        
+        logger.info(f"[Gemini Streaming] Complete for {agent_name}")
+        
+    except Exception as e:
+        logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}")
+        yield {
+            "type": "error",
+            "message": str(e),
+            "agent": agent_name,
+        }
+
+
+async def analyze_fundamental_streaming(
+    ticker: str,
+    user_id: UserID,
+    consent_token: str,
+    sec_data: Dict[str, Any],
+    market_data: Optional[Dict[str, Any]] = None,
+    quant_metrics: Optional[Dict[str, Any]] = None,
+    user_context: Optional[Dict[str, Any]] = None,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Streaming version of fundamental analysis.
+    Yields tokens in real-time as Gemini generates them.
+    """
+    # 1. Validate Consent
+    valid, reason, token = validate_token(
+        consent_token,
+        ConsentScope("agent.kai.analyze")
+    )
+    
+    if not valid:
+        yield {"type": "error", "message": f"Permission denied: {reason}"}
+        return
+    
+    if not GOOGLE_API_KEY:
+        yield {"type": "error", "message": "Gemini API key not configured"}
+        return
+
+    logger.info(f"[Fundamental Streaming] Starting for {ticker}")
+    
+    # Build context (same as non-streaming version)
+    latest_10k = sec_data.get('latest_10k', {})
+    user_context = user_context or {}
+    
+    risk = user_context.get("risk_tolerance") or "Balanced"
+    
+    context = f"""
+    --- SENIOR ANALYST TERMINAL ({ticker}) ---
+    Company: {sec_data.get('entity_name', ticker)}
+    Risk Profile: {risk}
+    
+    [Current Fundamentals]
+    Revenue: ${latest_10k.get('revenue', 0):,}
+    Net Income: ${latest_10k.get('net_income', 0):,}
+    Operating Cash Flow: ${latest_10k.get('operating_cash_flow', 0):,}
+    Free Cash Flow: ${latest_10k.get('free_cash_flow', 0):,}
+    
+    [3-Year Quant Trends]
+    Revenue Trend: {quant_metrics.get('revenue_trend_data') if quant_metrics else 'N/A'}
+    
+    --- MARKET DATA ---
+    Current Price: {market_data.get('price', 'N/A') if market_data else 'N/A'}
+    Market Cap: {market_data.get('market_cap', 'N/A') if market_data else 'N/A'}
+    """
+
+    system_instruction = """
+You are a Senior Quant Analyst performing a deep fundamental analysis.
+
+Provide your analysis in a conversational, thinking-out-loud style.
+Walk through your reasoning step by step.
+
+Cover:
+1. Business moat assessment
+2. Financial health audit  
+3. Growth efficiency review
+4. Bull case and bear case
+5. Final recommendation (buy/hold/reduce) with confidence
+
+Be specific and cite the numbers provided.
+"""
+    
+    prompt = f"{system_instruction}\n\nCONTEXT DATA:\n{context}"
+    
+    # Stream the response
+    async for event in stream_gemini_response(prompt, agent_name="fundamental"):
+        yield event
