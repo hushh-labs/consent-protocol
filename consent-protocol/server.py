@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session, db_proxy, sse, kai, food, professional
+from api.routes import health, agents, consent, developer, session, db_proxy, sse, food, professional
 from api.routes import debug_firebase
 
 # Import rate limiting
@@ -96,13 +96,12 @@ app.include_router(sse.router)
 # Dev-only debug routes (/api/_debug/...)
 app.include_router(debug_firebase.router)
 
-# Kai investor onboarding routes (/api/kai/...)
-app.include_router(kai.router)
+# Kai investor analysis routes (/api/kai/...) - NEW MODULAR STRUCTURE
+# This imports the combined router from the kai package which includes:
+# - health, consent, analyze, stream, decisions, preferences
+from api.routes.kai import router as kai_router
+app.include_router(kai_router)
 
-
-# Kai SSE streaming routes (/api/kai/analyze/stream)
-from api.routes import kai_stream
-app.include_router(kai_stream.router)
 # Food agent routes (/api/food/...)
 app.include_router(food.router)
 
