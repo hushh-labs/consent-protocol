@@ -36,7 +36,9 @@ export async function DELETE(
 
 async function proxyRequest(request: NextRequest, params: { path: string[] }) {
   const path = params.path.join("/");
-  const url = `${getPythonApiUrl()}/api/kai/${path}`;
+  // Forward query string to backend
+  const queryString = request.nextUrl.search;
+  const url = `${getPythonApiUrl()}/api/kai/${path}${queryString}`;
 
   // Debug: Check if Authorization header is present
   const authHeader = request.headers.get("authorization");

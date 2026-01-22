@@ -54,6 +54,7 @@ interface DecisionResult {
   confidence: number;
   consensus_reached: boolean;
   final_statement: string;
+  raw_card?: any; // Full KPI data from backend
 }
 
 interface DebateStreamViewProps {
