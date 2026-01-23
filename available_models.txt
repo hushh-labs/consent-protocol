@@ -21,7 +21,6 @@ models/gemini-flash-latest
 models/gemini-flash-lite-latest
 models/gemini-pro-latest
 models/gemini-2.5-flash-lite
-models/gemini-2.5-flash-image-preview
 models/gemini-2.5-flash-image
 models/gemini-2.5-flash-preview-09-2025
 models/gemini-2.5-flash-lite-preview-09-2025
