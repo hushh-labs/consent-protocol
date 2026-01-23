@@ -1,8 +1,8 @@
 # hushh_mcp/operons/kai/llm.py
 
 """
-Kai LLM Operons - Powered by Gemini 2.5 Flash
-Processes financial data through Gemini-2.5-Flash for fast, intelligent analysis.
+Kai LLM Operons - Powered by Gemini 3 Flash
+Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
 """
 
 import logging
@@ -192,7 +192,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        model = genai.GenerativeModel("models/gemini-3-flash-preview")
         # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
@@ -287,7 +287,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        model = genai.GenerativeModel("models/gemini-3-flash-preview")
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -392,7 +392,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        model = genai.GenerativeModel("models/gemini-3-flash-preview")
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -435,7 +435,7 @@ async def stream_gemini_response(
     - {"type": "complete", "text": "full response"} when done
     - {"type": "error", "message": "..."} on error
     
-    Uses Gemini 2.5 Flash for fast streaming responses.
+    Uses Gemini 3 Flash for fast streaming responses.
     """
     if not GOOGLE_API_KEY:
         yield {"type": "error", "message": "Gemini API key not configured"}
@@ -444,10 +444,11 @@ async def stream_gemini_response(
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
     
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        model = genai.GenerativeModel("models/gemini-3-flash-preview")
         
-        # Use streaming API
-        response = model.generate_content(
+        # Use streaming API (ASYNC)
+        # Prevent blocking the event loop
+        response = await model.generate_content_async(
             prompt,
             stream=True,
             generation_config=genai.GenerationConfig(
@@ -458,16 +459,24 @@ async def stream_gemini_response(
         
         full_text = ""
         
-        for chunk in response:
-            if chunk.text:
-                full_text += chunk.text
+        async for chunk in response:
+            try:
+                # Accessing chunk.text can raise if content is blocked by safety filters
+                chunk_text = chunk.text
+            except Exception as e:
+                logger.warning(f"[Gemini Streaming] Skipped blocked/empty chunk for {agent_name}: {e}")
+                continue
+
+            if chunk_text:
+                full_text += chunk_text
+                logger.debug(f"[Gemini Streaming] Yielding token for {agent_name}: {chunk_text[:20]}...")
                 yield {
                     "type": "token",
-                    "text": chunk.text,
+                    "text": chunk_text,
                     "agent": agent_name,
                 }
                 # CRITICAL: Yield control to event loop so SSE events are sent in real-time
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.01) # Explicit small delay to ensure flush
         
         # Yield complete event with full text
         yield {
