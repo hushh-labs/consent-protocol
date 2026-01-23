@@ -88,6 +88,7 @@ export function DebateStreamView({
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const hasStartedRef = useRef(false);
 
   // Auto-scroll to bottom when new content arrives
   useEffect(() => {
@@ -212,13 +213,16 @@ export function DebateStreamView({
     }
   };
 
-  // Start analysis on mount
+  // Start analysis on mount (once only)
   useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
     startAnalysis();
     return () => {
       eventSourceRef.current?.close();
     };
-  }, [startAnalysis]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, userId, riskProfile, vaultOwnerToken]);
 
   return (
     <div className="debate-stream-view">
