@@ -132,14 +132,14 @@ async def analyze_stream_generator(
             "message": f"🧠 Initializing analysis pipeline for {ticker}...",
             "tokens": ["Activating", "three", "specialist", "agents:", "Fundamental,", "Sentiment,", "and", "Valuation."]
         })
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
         
         yield create_event("kai_thinking", {
             "phase": "analysis",
             "message": f"📊 Each agent will perform deep analysis using specialized tools and data sources...",
             "tokens": ["Fundamental:", "SEC", "filings,", "financial", "ratios.", "Sentiment:", "news,", "catalysts.", "Valuation:", "P/E,", "DCF", "models."]
         })
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
         
         # Signal start of fundamental analysis
         yield create_event("agent_start", {
