@@ -21,10 +21,17 @@ import {
   Target,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Terminal,
+  ShieldCheck,
+  Rocket,
+  Wallet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card as RichCard } from "@/lib/morphy-ux/card";
+import KaiFinancialCharts from "./kai-financial-charts";
 
 // ============================================================================
 // TYPES
@@ -45,6 +52,8 @@ interface AgentData {
   sources?: string[];
   sentiment_score?: number;
   valuation_metrics?: Record<string, any>;
+
+  message?: string; // Status message from backend
 }
 
 interface RoundData {
@@ -84,6 +93,7 @@ interface KaiDebateInlineProps {
     processing_mode: string;
     raw_card?: any;
   } | null;
+  userContext?: any;
   onComplete: (result: DecisionResult) => void;
   onError?: (error: string) => void;
 }
@@ -177,9 +187,9 @@ function AgentCard({
       ) : data?.summary ? (
         <p className="text-xs text-muted-foreground line-clamp-3">{data.summary}</p>
       ) : (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          <span>Analyzing...</span>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground w-full">
+          <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+          <span className="truncate">{data?.message || "Analyzing..."}</span>
         </div>
       )}
       
@@ -305,6 +315,7 @@ export default function KaiDebateInline({
   vaultOwnerToken,
   riskProfile,
   fullResult,
+  userContext,
   onComplete,
   onError,
 }: KaiDebateInlineProps) {
@@ -320,11 +331,13 @@ export default function KaiDebateInline({
   const [currentPhase, setCurrentPhase] = useState<string>("idle");
   
   const eventSourceRef = useRef<EventSource | null>(null);
+  const hasStartedRef = useRef(false);
 
   // Handle SSE events
   const handleEvent = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data);
+      console.log("[KaiDebateInline] SSE Event received:", data);
       
       // kai_thinking event
       if (data.phase && data.message && data.tokens) {
@@ -456,16 +469,26 @@ export default function KaiDebateInline({
     setCurrentPhase("analysis");
 
     // Use Next.js proxy route (not direct backend) to support auth headers
-    const url = `/api/kai/analyze/stream?ticker=${ticker}&user_id=${userId}&risk_profile=${riskProfile}`;
+    const url = `/api/kai/analyze/stream`;
     
     try {
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${vaultOwnerToken}`,
           'Accept': 'text/event-stream',
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          ticker,
+          user_id: userId,
+          risk_profile: riskProfile,
+          context: userContext,
+        }),
       });
+
+      console.log("[KaiDebateInline] Response status:", response.status);
+      console.log("[KaiDebateInline] Content-Type:", response.headers.get('content-type'));
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -499,6 +522,7 @@ export default function KaiDebateInline({
         }
 
         buffer += decoder.decode(value, { stream: true });
+        console.log("[KaiDebateInline] Chunk received, buffer length:", buffer.length);
         
         // Process complete events (separated by double newline)
         const parts = buffer.split('\n\n');
@@ -506,7 +530,9 @@ export default function KaiDebateInline({
         
         for (const part of parts) {
           if (part.trim()) {
+            console.log("[KaiDebateInline] Processing SSE part:", part.substring(0, 100));
             const events = parseSSEEvents(part + '\n\n');
+            console.log("[KaiDebateInline] Parsed events count:", events.length);
             events.forEach(handleParsedEvent);
           }
         }
@@ -519,10 +545,13 @@ export default function KaiDebateInline({
     }
   }, [ticker, userId, vaultOwnerToken, riskProfile, handleEvent, parseSSEEvents, handleParsedEvent, onError]);
 
-  // Start on mount
+  // Start on mount (once only)
   useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
     startAnalysis();
-  }, [startAnalysis]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, userId, vaultOwnerToken, riskProfile, userContext]);
 
   // Tab config - cleaner labels without redundant numbers
   const tabs = [
@@ -566,7 +595,10 @@ export default function KaiDebateInline({
             size="sm"
             className="flex-1"
             onClick={() => setActiveTab(tab.id)}
-            disabled={tab.id === "round2" && rounds.length < 2 && !decision}
+            disabled={
+              (tab.id === "round2" && rounds.length < 2 && !decision) ||
+              (tab.id === "final" && !decision)
+            }
           >
             <span className="hidden sm:inline">{tab.label}</span>
             <span className="sm:hidden">{tab.shortLabel}</span>
@@ -593,7 +625,7 @@ export default function KaiDebateInline({
             thinkingMessages={thinkingMessages}
             agentData={agentData}
             agentStreamingText={agentStreamingText}
-            isActive={isAnalyzing && currentPhase.includes("round1")}
+            isActive={isAnalyzing && (currentPhase.includes("round1") || currentPhase === "analysis")}
           />
         )}
         
@@ -632,52 +664,79 @@ export default function KaiDebateInline({
               </Card>
             )}
 
-            {/* Final Recommendation */}
-            <Card className="border-hushh-blue/30 bg-gradient-to-br from-hushh-blue/10 to-purple-500/5">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  Final Recommendation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4 mb-4">
-                  <div className={`text-3xl font-bold uppercase ${
-                    decision.decision === "buy" ? "text-green-500" :
-                    decision.decision === "reduce" ? "text-red-500" : "text-yellow-500"
-                  }`}>
+            {/* Top Level Decision Card (Unified View) */}
+            <RichCard
+              variant="none"
+              effect="glass"
+              showRipple={false}
+              className="p-6 sm:p-8 relative overflow-hidden flex flex-col justify-between min-h-[280px] border-border/60 shadow-xl bg-gradient-to-br from-background/80 to-muted/20"
+            >
+              <div className="absolute top-0 right-0 p-12 opacity-[0.04] text-foreground pointer-events-none">
+                <Terminal className="h-64 w-64" />
+              </div>
+
+              <div className="space-y-6 relative z-10">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex items-center gap-6">
+                    <div className="h-20 w-20 glass flex items-center justify-center rounded-2xl border border-border/60 shadow-inner bg-background/50">
+                      <span className="text-4xl font-black tracking-tighter text-foreground">
+                        {fullResult?.ticker || ticker}
+                      </span>
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold tracking-tight text-foreground/90 leading-tight">
+                        {fullResult?.headline || decision.final_statement}
+                      </h2>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3" />
+                          Verified
+                        </span>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                          {fullResult?.processing_mode || "Hybrid"} Analysis
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`px-8 py-4 rounded-2xl border text-3xl font-black uppercase tracking-tighter shadow-xl backdrop-blur-md ${
+                      decision.decision === "buy"
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+                        : decision.decision === "reduce"
+                        ? "bg-red-500/10 border-red-500/20 text-red-500"
+                        : "bg-blue-500/10 border-blue-500/20 text-blue-500"
+                    }`}
+                  >
                     {decision.decision}
                   </div>
-                  <div className="flex-1">
-                    <div className="text-sm text-muted-foreground mb-1">
-                      Confidence: {Math.round(decision.confidence * 100)}%
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          decision.decision === "buy" ? "bg-green-500" :
-                          decision.decision === "reduce" ? "bg-red-500" : "bg-yellow-500"
-                        }`}
-                        style={{ width: `${decision.confidence * 100}%` }}
-                      />
-                    </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-8 pt-4">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
+                      <Brain className="h-3 w-3 text-primary" />
+                      Executive Summary
+                    </h3>
+                    <p className="text-sm font-medium leading-relaxed text-foreground/85">
+                      {fullResult?.raw_card?.fundamental_insight?.summary || decision.final_statement}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">
+                      <Target className="h-3 w-3 text-primary" />
+                      Risk Alignment
+                    </h3>
+                    <p className="text-sm font-medium leading-relaxed text-foreground/85 italic border-l-2 border-primary/30 pl-3">
+                      "
+                      {fullResult?.raw_card?.risk_persona_alignment || decision.raw_card?.risk_persona_alignment ||
+                        "Analysis aligned with your risk profile."}
+                      "
+                    </p>
                   </div>
                 </div>
-                
-                <p className="text-sm">{decision.final_statement}</p>
-                
-                {decision.dissenting_opinions && decision.dissenting_opinions.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-border/50">
-                    <p className="text-xs font-semibold text-muted-foreground mb-2">
-                      Dissenting Opinions:
-                    </p>
-                    {decision.dissenting_opinions.map((opinion, idx) => (
-                      <p key={idx} className="text-xs text-muted-foreground">{opinion}</p>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+              </div>
+            </RichCard>
 
             {/* Agent Votes */}
             {decision.agent_votes && (
@@ -691,6 +750,16 @@ export default function KaiDebateInline({
                     }`}>{vote}</p>
                   </Card>
                 ))}
+              </div>
+            )}
+
+            {/* Financial Charts Section */}
+            {(decision.raw_card?.quant_metrics || fullResult?.raw_card?.quant_metrics) && (
+              <div className="mt-6 pt-6 border-t border-border/50">
+                 <KaiFinancialCharts 
+                    quantMetrics={decision.raw_card?.quant_metrics || fullResult?.raw_card?.quant_metrics}
+                    keyMetrics={decision.raw_card?.key_metrics || fullResult?.raw_card?.key_metrics}
+                 />
               </div>
             )}
 
@@ -766,6 +835,80 @@ export default function KaiDebateInline({
                         {fullResult.raw_card.fundamental_insight.business_moat}
                       </p>
                     </CardContent>
+                  </Card>
+                )}
+
+                {/* Growth & Innovation */}
+                {fullResult?.raw_card?.fundamental_insight?.growth_efficiency && (
+                  <Card className="border-border/50 bg-card/50">
+                    <CardHeader className="pb-2">
+                       <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                         <Rocket className="w-4 h-4 text-purple-500" />
+                         Growth & Innovation
+                       </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        {fullResult.raw_card.fundamental_insight.growth_efficiency}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Capital Allocation Audit */}
+                {fullResult?.raw_card?.fundamental_insight?.financial_resilience && (
+                  <Card className="border-border/50 bg-card/50">
+                     <CardHeader className="pb-2">
+                       <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                         <Wallet className="w-4 h-4 text-amber-500" />
+                         Capital Allocation Audit
+                       </CardTitle>
+                     </CardHeader>
+                     <CardContent className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                          {fullResult.raw_card.fundamental_insight.financial_resilience}
+                        </p>
+                        
+                        {/* Interactive Metrics (Earnings Quality, Debt) */}
+                        <div className="grid grid-cols-2 gap-4 mt-4 bg-background/30 p-4 rounded-xl w-full min-w-0">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                              OCF / Net Income
+                            </p>
+                            <p
+                              className={`text-lg font-black ${
+                                (fullResult.raw_card.key_metrics?.fundamental?.earnings_quality ?? 0) > 1
+                                  ? "text-emerald-500"
+                                  : "text-amber-500"
+                              }`}
+                            >
+                              {fullResult.raw_card.key_metrics?.fundamental?.earnings_quality != null
+                                ? fullResult.raw_card.key_metrics.fundamental.earnings_quality.toFixed(2)
+                                : "--"}
+                              x
+                            </p>
+                            <p className="text-[9px] text-muted-foreground/70">
+                              Target: {">"} 1.0x
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                              Debt to Equity
+                            </p>
+                            <p
+                              className={`text-lg font-black ${
+                                (fullResult.raw_card.key_metrics?.fundamental?.debt_to_equity ?? 999) < 1.0
+                                  ? "text-emerald-500"
+                                  : "text-foreground"
+                              }`}
+                            >
+                              {fullResult.raw_card.key_metrics?.fundamental?.debt_to_equity != null
+                                ? fullResult.raw_card.key_metrics.fundamental.debt_to_equity.toFixed(2)
+                                : "--"}
+                            </p>
+                          </div>
+                        </div>
+                     </CardContent>
                   </Card>
                 )}
               </div>
