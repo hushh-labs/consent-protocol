@@ -1,4 +1,4 @@
-# HUSHH-EXPERIMENTAL
+# 🤫 Hushh WebApp
 
 > **🤫 Your Data. Your Business.**
 > Personal AI Agent Platform — consent-first, privacy-native
