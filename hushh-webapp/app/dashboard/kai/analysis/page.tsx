@@ -473,6 +473,7 @@ export default function KaiAnalysis() {
         {showDebateStream && vaultOwnerToken && user && (
           <div className="mb-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <KaiDebateInline
+              key={ticker}
               ticker={ticker}
               userId={user.uid}
               riskProfile={userPreferences?.riskProfile || "balanced"}
