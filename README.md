@@ -27,18 +27,18 @@
 
 ---
 
-## ✨ What is 🤫?
+## 🤫 What is Hushh?
 
-**🤫** is a consent-first platform where AI agents work **for you**, not against you. Every data access requires cryptographic consent tokens—no backdoors, no bypasses, complete audit trails.
+**Hushh** is a consent-first platform where AI agents work **for you**, not against you. Every data access requires cryptographic consent tokens—no backdoors, no bypasses, complete audit trails.
 
 ```
 Traditional AI:  You → Platform → (Platform owns your data)
-🤫:              You → Encrypt → Vault → Token-Gated Agents
+Hushh:           You → Encrypt → Vault → Token-Gated Agents
 ```
 
 ### Why Consent-First Matters
 
-| Traditional Apps                | 🤫                              |
+| Traditional Apps                | Hushh                           |
 | ------------------------------- | ------------------------------- |
 | Implied consent (buried in TOS) | Cryptographic consent tokens    |
 | Platform can access anytime     | Zero access without valid token |
