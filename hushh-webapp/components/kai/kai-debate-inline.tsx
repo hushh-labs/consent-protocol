@@ -462,6 +462,7 @@ export default function KaiDebateInline({
     setIsAnalyzing(true);
     setError(null);
     setAgentData({});
+    setAgentStreamingText({});
     setRounds([]);
     setThinkingMessages([]);
     setDecision(null);
