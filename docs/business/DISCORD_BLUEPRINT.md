@@ -10,6 +10,7 @@
 **Category: 🏁 START**
 
 - `#index` (Text) - Read Only. Tech Stack, Links, & Warnings.
+- `#rules` (Text) - Read Only. Community Guidelines.
 - `#manifesto` (Text) - Read Only. Core Philosophy & Vision.
 
 **Category: 🛠️ ENGINEERING**
@@ -81,6 +82,35 @@ We follow a strict **Tri-Flow Architecture**. This modular approach ensures that
 - **Chat?** -> <#general>
 
 > "Consent is not a checkbox. It's a key."
+```
+
+#### #rules
+
+**Instruction:** Pin this message.
+
+```markdown
+# 📜 Code of Conduct
+
+**1. Be Respectful**
+We are a diverse community of builders. Harassment, hate speech, or trolling will result in an immediate ban. Treat everyone with professional courtesy.
+
+**2. No Spam or Self-Promotion**
+Do not DM members with unsolicited offers. Do not shill unrelated tokens or projects.
+_Exception:_ You may share tools relevant to the Hushh ecosystem in <#builders>.
+
+**3. Stay on Topic**
+
+- **<#builders>**: Engineering, code, ML models.
+- **<#compliance>**: Legal, governance, protocol specs.
+- **<#general>**: Casual chat and welcomes.
+
+**4. Protect Privacy**
+Do not doxx yourself or others. Never share private keys or `.env` files.
+
+**5. Open Source First**
+We encourage public building. If you find a bug, please report it in <#alpha-feedback> or open a GitHub Issue.
+
+> _Violation of these rules may lead to a warning or ban at the discretion of the Maintainers._
 ```
 
 #### #manifesto
@@ -179,6 +209,7 @@ Discord allows you to group channels under **Categories**. This keeps the server
 
 1. **🏁 START** (Category)
    - `#index`
+   - `#rules`
    - `#manifesto`
 2. **🛠️ ENGINEERING** (Category)
    - `#builders`
