@@ -44,8 +44,9 @@ mcp>=0.9.0
 # 🔥 Firebase Admin SDK (Identity)
 firebase-admin>=6.2.0
 
-# 🧠 Generative AI
-google-generativeai>=0.8.0
+# 🧠 Generative AI (ADK - Agent Development Kit)
+# Using google-adk which includes google-genai SDK
+google-adk>=1.23.0
 
 # 📈 Market Data
 yfinance>=0.2.36

@@ -65,6 +65,8 @@ async def stream_agent_thinking(
     Stream Gemini 3 thinking tokens for an agent analysis.
     Yields agent_token events that the frontend can display in real-time.
     """
+    logger.info(f"[Kai Stream] Starting stream_agent_thinking for {agent_name}")
+    token_count = 0
     try:
         async for event in stream_gemini_response(
             prompt=f"""You are a {agent_name} analyst. Briefly think through your analysis approach for {ticker}.
@@ -75,13 +77,19 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
             agent_name=agent_name.lower(),
         ):
             if event.get("type") == "token":
+                token_count += 1
+                logger.info(f"[Kai Stream] Token #{token_count} for {agent_name}: {event.get('text', '')[:30]}...")
                 yield create_event("agent_token", {
                     "agent": agent_name.lower(),
                     "text": event.get("text", ""),
                     "type": "token"
                 })
+            elif event.get("type") == "error":
+                logger.error(f"[Kai Stream] Gemini error for {agent_name}: {event.get('message')}")
+            elif event.get("type") == "complete":
+                logger.info(f"[Kai Stream] Streaming complete for {agent_name}, total tokens: {token_count}")
     except Exception as e:
-        logger.warning(f"[Kai Stream] Streaming error for {agent_name}: {e}")
+        logger.error(f"[Kai Stream] Streaming error for {agent_name}: {e}", exc_info=True)
         # Non-fatal - analysis will continue without streaming
 
 
