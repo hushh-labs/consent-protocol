@@ -27,27 +27,18 @@
 
 ---
 
-## 👨‍💻 Meet the Founder
+## ✨ What is 🤫?
 
-**Manish Sainani** ([LinkedIn](https://www.linkedin.com/in/manishsainani/) | [X.com](https://x.com/manishsainani))
-_Founder & CEO, [hushh.ai](https://hushh.ai)_
-
-Manish is a former **Google Product Management Director**, where he spent 4+ years leading machine learning product initiatives. Prior to Google, he served as **Senior Director of Machine Learning Products at Splunk** and **Senior Program Manager at Microsoft**, work on Azure Machine Learning. He is the architect behind the **Consent-First** vision, dedicated to returning data sovereignty to the individual.
-
----
-
-## ✨ What is Hushh?
-
-**Hushh** is a consent-first platform where AI agents work **for you**, not against you. Every data access requires cryptographic consent tokens—no backdoors, no bypasses, complete audit trails.
+**🤫** is a consent-first platform where AI agents work **for you**, not against you. Every data access requires cryptographic consent tokens—no backdoors, no bypasses, complete audit trails.
 
 ```
 Traditional AI:  You → Platform → (Platform owns your data)
-Hushh:           You → Encrypt → Vault → Token-Gated Agents
+🤫:              You → Encrypt → Vault → Token-Gated Agents
 ```
 
 ### Why Consent-First Matters
 
-| Traditional Apps                | Hushh                           |
+| Traditional Apps                | 🤫                              |
 | ------------------------------- | ------------------------------- |
 | Implied consent (buried in TOS) | Cryptographic consent tokens    |
 | Platform can access anytime     | Zero access without valid token |
@@ -240,6 +231,15 @@ hushh-research/
 | **Android (Native)** | ✅ Production | Dashboard → Kotlin Plugin → Backend | Direct with consent tokens    |
 
 All platforms enforce identical token validation—no platform bypasses.
+
+---
+
+## 👨‍💻 Meet the Founder
+
+**Manish Sainani** ([LinkedIn](https://www.linkedin.com/in/manishsainani/) | [X.com](https://x.com/manishsainani))
+_Founder & CEO, [hushh.ai](https://hushh.ai)_
+
+Manish is a former **Google Product Management Director**, where he spent 4+ years leading machine learning product initiatives. Prior to Google, he served as **Senior Director of Machine Learning Products at Splunk** and **Senior Program Manager at Microsoft**, work on Azure Machine Learning. He is the architect behind the **Consent-First** vision, dedicated to returning data sovereignty to the individual.
 
 ---
 
