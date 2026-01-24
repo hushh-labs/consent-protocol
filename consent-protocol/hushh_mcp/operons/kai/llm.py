@@ -6,10 +6,13 @@ Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, AsyncGenerator
 import asyncio
-import google.generativeai as genai
 import json
+
+# New google.genai SDK (replaces deprecated google.generativeai)
+from google import genai
+from google.genai import types
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
@@ -18,11 +21,12 @@ from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
+# Configure Gemini Client
 # NOTE: GOOGLE_API_KEY is sanitized (trimmed) in hushh_mcp/config.py to avoid Cloud Run
 # gRPC metadata errors ("Illegal header value") caused by trailing newlines.
+_gemini_client = None
 if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
+    _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
 else:
     logger.warning("⚠️ GOOGLE_API_KEY not found. Gemini operons will be unavailable.")
 
@@ -420,8 +424,6 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 # STREAMING GENERATORS - Real-time Token Streaming
 # ============================================================================
 
-from typing import AsyncGenerator
-
 async def stream_gemini_response(
     prompt: str,
     agent_name: str = "gemini",
@@ -435,48 +437,52 @@ async def stream_gemini_response(
     - {"type": "complete", "text": "full response"} when done
     - {"type": "error", "message": "..."} on error
     
-    Uses Gemini 3 Flash for fast streaming responses.
+    Uses Gemini 3 Flash with synchronous streaming wrapped in async context.
+    This is more reliable than async iteration which may not yield correctly.
     """
-    if not GOOGLE_API_KEY:
+    if not _gemini_client:
+        logger.error("[Gemini Streaming] No client configured!")
         yield {"type": "error", "message": "Gemini API key not configured"}
         return
     
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
     
     try:
-        model = genai.GenerativeModel("models/gemini-3-flash-preview")
+        # Use synchronous streaming - more reliable than async iteration
+        config = types.GenerateContentConfig(
+            temperature=0.7,
+            max_output_tokens=4096,
+        )
         
-        # Use streaming API (ASYNC)
-        # Prevent blocking the event loop
-        response = await model.generate_content_async(
-            prompt,
-            stream=True,
-            generation_config=genai.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=4096,
-            )
+        # Call the synchronous streaming method
+        stream = _gemini_client.models.generate_content_stream(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=config,
         )
         
         full_text = ""
+        token_count = 0
         
-        async for chunk in response:
+        # Synchronous iteration in async context
+        for chunk in stream:
             try:
-                # Accessing chunk.text can raise if content is blocked by safety filters
-                chunk_text = chunk.text
+                chunk_text = chunk.text if hasattr(chunk, 'text') else ""
             except Exception as e:
-                logger.warning(f"[Gemini Streaming] Skipped blocked/empty chunk for {agent_name}: {e}")
+                logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
                 continue
 
             if chunk_text:
+                token_count += 1
                 full_text += chunk_text
-                logger.debug(f"[Gemini Streaming] Yielding token for {agent_name}: {chunk_text[:20]}...")
+                logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}: {chunk_text[:30]}...")
                 yield {
                     "type": "token",
                     "text": chunk_text,
                     "agent": agent_name,
                 }
-                # CRITICAL: Yield control to event loop so SSE events are sent in real-time
-                await asyncio.sleep(0.01) # Explicit small delay to ensure flush
+                # CRITICAL: Yield control to event loop so SSE events flush
+                await asyncio.sleep(0.005)
         
         # Yield complete event with full text
         yield {
@@ -485,10 +491,10 @@ async def stream_gemini_response(
             "agent": agent_name,
         }
         
-        logger.info(f"[Gemini Streaming] Complete for {agent_name}")
+        logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
         
     except Exception as e:
-        logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}")
+        logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
         yield {
             "type": "error",
             "message": str(e),

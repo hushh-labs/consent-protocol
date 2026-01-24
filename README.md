@@ -14,9 +14,25 @@
   <img src="https://img.shields.io/badge/Encryption-AES--256--GCM-blue?style=flat-square" alt="Encryption"/>
   <img src="https://img.shields.io/badge/Zero_Knowledge-✓-green?style=flat-square" alt="Zero Knowledge"/>
   <img src="https://img.shields.io/badge/Consent_First-✓-orange?style=flat-square" alt="Consent First"/>
-  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square" alt="Next.js"/>
-  <img src="https://img.shields.io/badge/Python-FastAPI-009688?style=flat-square" alt="FastAPI"/>
+  <br/>
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"/>
+  <img src="https://img.shields.io/badge/Capacitor-Native-1199EE?style=flat-square&logo=capacitor&logoColor=white" alt="Capacitor"/>
+  <img src="https://img.shields.io/badge/Python-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI"/>
+  <br/>
+  <img src="https://img.shields.io/badge/MLX-Apple_Silicon-000000?style=flat-square&logo=apple&logoColor=white" alt="MLX"/>
+  <img src="https://img.shields.io/badge/AI-Gemini_Nano-4E86F6?style=flat-square&logo=google&logoColor=white" alt="Gemini Nano"/>
+  <a href="https://discord.gg/fd38enfsH5"><img src="https://img.shields.io/badge/Discord-Join%20Us-7289da?style=flat-square&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
+
+---
+
+## 👨‍💻 Meet the Founder
+
+**Manish Sainani** ([LinkedIn](https://www.linkedin.com/in/manishsainani/) | [X.com](https://x.com/manishsainani))
+_Founder & CEO, [hushh.ai](https://hushh.ai)_
+
+Manish is a former **Google Product Management Director**, where he spent 4+ years leading machine learning product initiatives. Prior to Google, he served as **Senior Director of Machine Learning Products at Splunk** and **Senior Program Manager at Microsoft**, work on Azure Machine Learning. He is the architect behind the **Consent-First** vision, dedicated to returning data sovereignty to the individual.
 
 ---
 
