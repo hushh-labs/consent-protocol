@@ -42,7 +42,13 @@ requests>=2.32.4
 mcp>=0.9.0
 
 # 🔥 Firebase Admin SDK (Identity)
-firebase-admin>=6.2.0
+firebase-admin>=6.6.0  # Updated to recent stable
+
+# 🔧 Protocol Buffers & GRPC (Pinning to avoid resolution-too-deep errors)
+# These versions are known to work well with google-api-core and firebase-admin
+grpcio>=1.60.0,<1.67.0
+grpcio-status>=1.60.0,<1.67.0
+instrumentation-opentelemetry>=0.40b0 # Resolves another common conflict
 
 # 🧠 Generative AI (ADK - Agent Development Kit)
 # Using google-adk which includes google-genai SDK
