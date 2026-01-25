@@ -21,7 +21,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
       - run: npm ci
-      - run: npm run lint
+      - run: npm run check-lint
       # - run: npm run build  # Uncomment when build is stable in CI
 
   protocol-check:

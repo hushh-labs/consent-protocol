@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "check-lint": "next lint",
     "verify:routes": "node scripts/verify-route-contracts.cjs",
     "cap:build": "cross-env CAPACITOR_BUILD=true next build",
     "cap:sync": "npx cap sync",
