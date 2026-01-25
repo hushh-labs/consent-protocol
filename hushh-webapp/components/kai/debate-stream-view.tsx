@@ -9,6 +9,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useVault } from "@/lib/vault/vault-context";
+import { ApiService } from "@/lib/services/api-service";
 
 // Agent configuration
 const AGENTS = {
@@ -115,18 +116,16 @@ export function DebateStreamView({
     setError(null);
     setIsComplete(false);
 
-    // Build SSE URL - use Next.js proxy to forward auth headers
-    const url = `/api/kai/analyze/stream?ticker=${ticker}&user_id=${userId}&risk_profile=${riskProfile}`;
 
-    // Note: EventSource doesn't support custom headers natively
-    // For auth, we need to use a polyfill or pass token via query param
-    // For now, we'll use fetch with ReadableStream fallback
-    
+
+    // Build SSE URL - use Next.js proxy to forward auth headers
+    // Note: base URL is handled by ApiService internally if needed, but for relative paths it works as is.
+    const path = `/api/kai/analyze/stream?ticker=${ticker}&user_id=${userId}&risk_profile=${riskProfile}`;
+
     try {
-      const response = await fetch(url, {
+      const response = await ApiService.apiFetchStream(path, {
         headers: {
           "Authorization": `Bearer ${vaultOwnerToken}`,
-          "Accept": "text/event-stream",
         },
       });
 
