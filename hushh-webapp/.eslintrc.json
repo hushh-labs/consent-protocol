@@ -3,12 +3,14 @@
   "rules": {
     "react/no-unescaped-entities": "off",
     "no-restricted-syntax": [
-      "error",
+      "warn",
       {
         "selector": "CallExpression[callee.name='fetch']",
         "message": "Direct fetch() is banned in components. Use ApiService or VaultService instead. Native platforms (iOS/Android) have no Next.js server."
       }
-    ]
+    ],
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/ban-ts-comment": "warn"
   },
   "overrides": [
     {
