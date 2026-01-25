@@ -99,7 +99,7 @@ export default function ProfessionalProfilePage() {
       }
 
       // Try to decrypt each field if it exists
-      let profileData: ProfessionalProfile = {
+      const profileData: ProfessionalProfile = {
         professional_title: "",
         skills: [],
         experience_level: "",
