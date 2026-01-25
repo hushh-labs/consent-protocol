@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Card as RichCard } from "@/lib/morphy-ux/card";
 import KaiFinancialCharts from "./kai-financial-charts";
+import { ApiService } from "@/lib/services/api-service";
 
 // ============================================================================
 // TYPES
@@ -469,15 +470,16 @@ export default function KaiDebateInline({
     setActiveTab("round1");
     setCurrentPhase("analysis");
 
+
+
     // Use Next.js proxy route (not direct backend) to support auth headers
-    const url = `/api/kai/analyze/stream`;
+    const path = `/api/kai/analyze/stream`;
     
     try {
-      const response = await fetch(url, {
+      const response = await ApiService.apiFetchStream(path, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${vaultOwnerToken}`,
-          'Accept': 'text/event-stream',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

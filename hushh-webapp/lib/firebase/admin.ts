@@ -11,6 +11,8 @@
  */
 
 import * as admin from "firebase-admin";
+import * as fs from "fs";
+import * as path from "path";
 
 // Initialize Firebase Admin (only once)
 function initializeFirebaseAdmin() {
@@ -19,9 +21,6 @@ function initializeFirebaseAdmin() {
   }
 
   // Try to read from file first (more reliable than env variable for complex JSON)
-  const fs = require("fs");
-  const path = require("path");
-  
   const serviceAccountPath = path.join(process.cwd(), "firebase-service-account.json");
   
   if (fs.existsSync(serviceAccountPath)) {

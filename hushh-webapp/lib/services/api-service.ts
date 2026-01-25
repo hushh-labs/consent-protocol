@@ -88,6 +88,23 @@ export class ApiService {
     return apiFetch(path, options);
   }
 
+  /**
+   * Platform-aware fetch wrapper for Streaming/SSE
+   * Returns the raw Response object for stream consumption.
+   */
+  static async apiFetchStream(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<Response> {
+    return apiFetch(path, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Accept: "text/event-stream",
+      },
+    });
+  }
+
   // ==================== Auth ====================
 
   /**
@@ -173,9 +190,9 @@ export class ApiService {
         });
 
         return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e: any) {
+      } catch (e) {
         console.error("[ApiService] Native approvePendingConsent error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -216,9 +233,9 @@ export class ApiService {
         });
 
         return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e: any) {
+      } catch (e) {
         console.error("[ApiService] Native denyPendingConsent error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -259,9 +276,9 @@ export class ApiService {
           }), 
           { status: 200 }
         );
-      } catch (e: any) {
+      } catch (e) {
         console.error("[ApiService] Native revokeConsent error:", e);
-        return new Response(e.message || "Failed", { status: 500 });
+        return new Response((e as Error).message || "Failed", { status: 500 });
       }
     }
 
@@ -287,9 +304,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (e: any) {
+      } catch (e) {
         console.warn("[ApiService] Native getPendingConsents error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -315,9 +332,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (e: any) {
+      } catch (e) {
         console.warn("[ApiService] Native getActiveConsents error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -347,9 +364,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (e: any) {
+      } catch (e) {
         console.warn("[ApiService] Native getConsentHistory error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -546,9 +563,9 @@ export class ApiService {
           authToken: authToken,
         });
         return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e: any) {
+      } catch (e) {
         console.error("❌ [ApiService] Native storeFoodPreference error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -672,12 +689,12 @@ export class ApiService {
           authToken: authToken,
         });
         return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e: any) {
+      } catch (e) {
         console.error(
           "❌ [ApiService] Native storeProfessionalPreference error:",
           e
         );
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -748,9 +765,9 @@ export class ApiService {
 
         await Promise.all(promises);
         return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e: any) {
+      } catch (e) {
         console.error("❌ [ApiService] Native storePreferences error:", e);
-        return new Response(JSON.stringify({ error: e.message }), {
+        return new Response(JSON.stringify({ error: (e as Error).message }), {
           status: 500,
         });
       }
@@ -847,9 +864,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (error: any) {
+      } catch (error) {
         console.error("[ApiService] Native kaiGrantConsent error:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
           status: 500,
         });
       }
@@ -887,9 +904,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (error: any) {
+      } catch (error) {
         console.error("[ApiService] Native kaiAnalyze error:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
           status: 500,
         });
       }
@@ -927,9 +944,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (error: any) {
+      } catch (error) {
         console.error("[ApiService] Native kaiStorePreferences error:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
           status: 500,
         });
       }
@@ -960,9 +977,9 @@ export class ApiService {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      } catch (error: any) {
+      } catch (error) {
         console.error("[ApiService] Native kaiGetPreferences error:", error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
           status: 500,
         });
       }

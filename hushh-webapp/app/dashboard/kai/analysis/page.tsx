@@ -269,7 +269,7 @@ export default function KaiAnalysis() {
     if (overrideTicker) setTicker(overrideTicker);
 
     // 2. Fetch Encrypted Profile (Ciphertext)
-    let decryptedContext: any = {};
+    const decryptedContext: any = {};
     try {
       const encryptedProfile = await import("@/lib/services/kai-service").then(
         (m) => m.getEncryptedProfile(vaultOwnerToken)
