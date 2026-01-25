@@ -1,7 +1,0 @@
-# Legacy/Lib files refactoring in progress
-lib/services/api-service.ts
-lib/services/kai-service.ts
-app/api/chat/route.ts
-**/*.test.ts
-**/*.spec.ts
-scripts/
