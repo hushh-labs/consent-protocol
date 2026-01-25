@@ -27,7 +27,7 @@ export function BottomNav() {
   const { user } = useAuth();
 
   // Don't show bottom nav on login page
-  if (pathname === "/login") return null;
+
 
   // Filter items based on auth state
   const visibleItems = navItems.filter((item) => {
@@ -69,6 +69,9 @@ export function BottomNav() {
       setDashboardHref(pathname);
     }
   }, [pathname]);
+
+  // Don't show bottom nav on login page
+  if (pathname === "/login") return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">

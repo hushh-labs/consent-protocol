@@ -1,4 +1,4 @@
-/// <reference path="../../global.d.ts" />
+
 "use client";
 
 /**

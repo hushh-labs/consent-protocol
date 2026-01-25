@@ -141,6 +141,40 @@ export default function KaiPreferencesPage() {
     [vaultKey]
   );
 
+  // Derived visual state (Live Preview during edit)
+  const displayProfile = useMemo(() => {
+    return isEditing && editingProfile ? editingProfile : profile;
+  }, [isEditing, editingProfile, profile]);
+
+  const displayKaiPrefs = useMemo(() => {
+    // Risk now comes from profile, only processing mode is tracked separately
+    return {
+      riskProfile: null, // Deprecated - use displayProfile.risk_tolerance
+      processingMode: draftProcessingMode || kaiPrefs.processingMode,
+    };
+  }, [draftProcessingMode, kaiPrefs.processingMode]);
+
+  const holdingsChartData = useMemo(() => {
+    const list = (displayProfile as any)?.top_holdings || [];
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((h: any) => ({
+        ticker: String(h?.ticker ?? h?.symbol ?? "").toUpperCase(),
+        value: typeof h?.weight === "number" ? h.weight : 0,
+      }))
+      .filter((r: any) => r.ticker && Number.isFinite(r.value) && r.value > 0)
+      .slice(0, 10);
+  }, [displayProfile]);
+
+  const sectorChartData = useMemo(() => {
+    const obj = (displayProfile as any)?.sector_exposure;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
+    return Object.entries(obj as Record<string, any>)
+      .map(([name, v]) => ({ name, value: typeof v === "number" ? v : 0 }))
+      .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
+      .slice(0, 10);
+  }, [displayProfile]);
+
   const loadAll = useCallback(async () => {
     if (!user?.uid || !vaultOwnerToken) return;
     if (!vaultKey) return;
@@ -471,39 +505,7 @@ export default function KaiPreferencesPage() {
     );
   }
 
-  // Derived visual state (Live Preview during edit)
-  const displayProfile = useMemo(() => {
-    return isEditing && editingProfile ? editingProfile : profile;
-  }, [isEditing, editingProfile, profile]);
 
-  const displayKaiPrefs = useMemo(() => {
-    // Risk now comes from profile, only processing mode is tracked separately
-    return {
-      riskProfile: null, // Deprecated - use displayProfile.risk_tolerance
-      processingMode: draftProcessingMode || kaiPrefs.processingMode,
-    };
-  }, [draftProcessingMode, kaiPrefs.processingMode]);
-
-  const holdingsChartData = useMemo(() => {
-    const list = (displayProfile as any)?.top_holdings || [];
-    if (!Array.isArray(list)) return [];
-    return list
-      .map((h: any) => ({
-        ticker: String(h?.ticker ?? h?.symbol ?? "").toUpperCase(),
-        value: typeof h?.weight === "number" ? h.weight : 0,
-      }))
-      .filter((r: any) => r.ticker && Number.isFinite(r.value) && r.value > 0)
-      .slice(0, 10);
-  }, [displayProfile]);
-
-  const sectorChartData = useMemo(() => {
-    const obj = (displayProfile as any)?.sector_exposure;
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
-    return Object.entries(obj as Record<string, any>)
-      .map(([name, v]) => ({ name, value: typeof v === "number" ? v : 0 }))
-      .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
-      .slice(0, 10);
-  }, [displayProfile]);
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
