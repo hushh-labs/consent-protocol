@@ -11,8 +11,15 @@ import asyncio
 import json
 
 # New google.genai SDK (replaces deprecated google.generativeai)
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None  # type: ignore
+    types = None  # type: ignore
+    logging.warning("⚠️ google.genai not found. Kai agent will run in logic-only mode.")
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
@@ -25,10 +32,15 @@ logger = logging.getLogger(__name__)
 # NOTE: GOOGLE_API_KEY is sanitized (trimmed) in hushh_mcp/config.py to avoid Cloud Run
 # gRPC metadata errors ("Illegal header value") caused by trailing newlines.
 _gemini_client = None
-if GOOGLE_API_KEY:
-    _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
-else:
+if GEMINI_AVAILABLE and GOOGLE_API_KEY:
+    try:
+        _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini Client: {e}")
+        GEMINI_AVAILABLE = False
+elif not GOOGLE_API_KEY:
     logger.warning("⚠️ GOOGLE_API_KEY not found. Gemini operons will be unavailable.")
+
 
 async def analyze_stock_with_gemini(
     ticker: str,
@@ -56,9 +68,9 @@ async def analyze_stock_with_gemini(
         logger.error(f"[Gemini Operon] Permission denied: {reason}")
         raise PermissionError(f"Gemini analysis denied: {reason}")
     
-    if not GOOGLE_API_KEY:
+    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
         return {
-            "error": "Gemini API key not configured",
+            "error": "Gemini unavailable (Missing API Key or SDK)",
             "fallback": True
         }
 
@@ -246,8 +258,8 @@ async def analyze_sentiment_with_gemini(
         logger.error(f"[Gemini Sentiment] Permission denied: {reason}")
         raise PermissionError(f"Sentiment analysis denied: {reason}")
     
-    if not GOOGLE_API_KEY:
-        return {"error": "Gemini API key not configured", "fallback": True}
+    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
+        return {"error": "Gemini unavailable", "fallback": True}
 
     logger.info(f"[Gemini Sentiment] Analyzing sentiment for {ticker}")
 
@@ -338,8 +350,8 @@ async def analyze_valuation_with_gemini(
         logger.error(f"[Gemini Valuation] Permission denied: {reason}")
         raise PermissionError(f"Valuation analysis denied: {reason}")
     
-    if not GOOGLE_API_KEY:
-        return {"error": "Gemini API key not configured", "fallback": True}
+    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
+        return {"error": "Gemini unavailable", "fallback": True}
 
     logger.info(f"[Gemini Valuation] Analyzing valuation for {ticker}")
 
@@ -525,8 +537,8 @@ async def analyze_fundamental_streaming(
         yield {"type": "error", "message": f"Permission denied: {reason}"}
         return
     
-    if not GOOGLE_API_KEY:
-        yield {"type": "error", "message": "Gemini API key not configured"}
+    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
+        yield {"type": "error", "message": "Gemini unavailable"}
         return
 
     logger.info(f"[Fundamental Streaming] Starting for {ticker}")
