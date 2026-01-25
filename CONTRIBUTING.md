@@ -55,6 +55,8 @@ You will need:
 4.  **Implement the Tri-Flow**: Ensure your change works on Web, iOS, and Android.
 5.  **Test Locally**: Verify the change on all supported platforms (simulators/emulators).
 6.  **Submit a Pull Request**: targeted at the `main` branch.
+    - `main` is protected: PRs require approval and CI checks.
+    - `deploy-production` is protected: Only deployed via authorized workflows.
 
 ---
 
