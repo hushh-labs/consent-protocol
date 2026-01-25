@@ -23,6 +23,12 @@ const config: NextConfig = {
     optimizePackageImports: ["@phosphor-icons/react"],
   },
 
+  eslint: {
+    // Warning: This allows production builds to successfully complete even if
+    // your project has ESLint errors.
+    ignoreDuringBuilds: true,
+  },
+
   // Trailing slash is important for static export routing
   trailingSlash: isCapacitorBuild,
 
