@@ -26,9 +26,7 @@ argparse==1.4.0
 pytest==8.2.2
 
 # 🔍 Code Quality & Linting
-ruff>=0.8.0              # Fast Python linter (replaces flake8, isort)
-mypy>=1.8.0              # Type checking
-bandit>=1.7.6            # Security linting
+# 🔍 Code Quality & Linting moved to requirements-dev.txt
 
 # 🚦 Rate Limiting & Real-time
 slowapi>=0.1.9           # FastAPI rate limiting
@@ -46,13 +44,22 @@ firebase-admin>=6.6.0  # Updated to recent stable
 
 # 🔧 Protocol Buffers & GRPC (Pinning to avoid resolution-too-deep errors)
 # These versions are known to work well with google-api-core and firebase-admin
-grpcio>=1.60.0,<1.67.0
-grpcio-status>=1.60.0,<1.67.0
-instrumentation-opentelemetry>=0.40b0 # Resolves another common conflict
+# 🔧 Protocol Buffers & GRPC (Stable Protobuf 4 Set)
+# Anchoring to Protobuf 4.x to resolve conflicts between firebase-admin and google-adk
+protobuf==4.25.3
+grpcio==1.62.2
+grpcio-status==1.62.2
+google-api-core==2.17.1
+proto-plus==1.23.0
 
 # 🧠 Generative AI (ADK - Agent Development Kit)
 # Using google-adk which includes google-genai SDK
 google-adk>=1.23.0
+
+# 🛠️ Utilities
+wrapt>=1.14.0  # Required for Python 3.11+ compatibility
+rsa>=4.9
+google-auth>=2.14.1
 
 # 📈 Market Data
 yfinance>=0.2.36
