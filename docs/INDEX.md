@@ -63,11 +63,6 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 - [Architecture](technical/architecture.md) - Updated security layers
 - [Project Context Map (Canonical)](PROJECT_CONTEXT_MAP.md) - Repo topology, consent surfaces, Capacitor-safe development rules
 
-**See Also**:
-
-- Implementation Plan: `.gemini/antigravity/brain/.../implementation_plan.md`
-- Walkthrough: `.gemini/antigravity/brain/.../walkthrough.md`
-
 ---
 
 ## 🔑 Quick Links
@@ -107,14 +102,14 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 │              Hushh System Architecture                    │
 ├──────────────────────────────────────────────────────────┤
 │                                                           │
-│  On-Device AI (iOS/Android)                              │
-│  ├─ MLX (iOS) / Gemma (Android)                          │
-│  └─ Local MCP Server → SQLite Vault                      │
-│                                                           │
 │  Frontend (Next.js + Capacitor)                          │
-│  ├─ React Components                                     │
-│  ├─ Vault Context (Memory-only)                          │
+│  ├─ React 19 + Morphy-UX Components                     │
+│  ├─ Vault Context (Memory-only keys)                     │
 │  └─ Platform-aware Services                              │
+│                                                           │
+│  Native Layer (8 Capacitor Plugins)                      │
+│  ├─ HushhAuth, HushhVault, HushhConsent, etc.           │
+│  └─ Direct HTTP to Backend (bypasses Next.js proxy)     │
 │                                                           │
 │  Backend (FastAPI + HushhMCP)                            │
 │  ├─ Consent Protocol (VAULT_OWNER tokens)               │
@@ -122,7 +117,7 @@ The consent protocol has been significantly enhanced with a **consent-first arch
 │  └─ MCP Server (External AI integration)                │
 │                                                           │
 │  Storage (PostgreSQL + Cloud SQL)                        │
-│  └─ E2E Encrypted Vault                                  │
+│  └─ AES-256-GCM Encrypted Vault                         │
 │                                                           │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -184,4 +179,4 @@ When updating documentation:
 
 ---
 
-_Last Updated: January 14, 2026 | Version: 6.0 | VAULT_OWNER Token Enforcement + Compliance Refresh_
+_Last Updated: January 2026 | Version: 6.1 | Documentation Audit + Accuracy Review_

@@ -43,9 +43,8 @@ import { HushhVault } from "@/lib/capacitor";
 import {
   storePreferences,
   getPreferences,
-  grantKaiConsent,
 } from "@/lib/services/kai-service";
-import { hasValidConsent, ProcessingMode, RiskProfile } from "./actions";
+import { ProcessingMode, RiskProfile } from "./actions";
 import { InvestorDetectStep } from "@/components/kai/investor-detect-step";
 import {
   IdentityService,
@@ -130,32 +129,9 @@ export default function KaiOnboarding() {
             }
           }
 
-          // ✅ Auto-grant consent if not already granted
-          const hasConsent = await hasValidConsent("agent.kai.analyze");
-          if (!hasConsent) {
-            console.log("[Kai] Auto-granting consent for existing user...");
-            const consentResponse = await grantKaiConsent(user.uid, [
-              "vault.read.risk_profile",
-              "vault.write.decision",
-              "agent.kai.analyze",
-            ]);
-
-            // SAVE the token!
-            const storageData = {
-              tokens: {
-                "agent.kai.analyze":
-                  consentResponse.token ||
-                  (consentResponse as any).tokens?.["agent.kai.analyze"],
-              },
-              expires_at: consentResponse.expires_at,
-            };
-
-            const { Preferences } = await import("@capacitor/preferences");
-            await Preferences.set({
-              key: "kai_consent_tokens",
-              value: JSON.stringify(storageData),
-            });
-          }
+          // ✅ Vault owners use vault.owner token (master scope) - no need for separate Kai tokens
+          // This ensures audit correctly logs agent_id="self" instead of "agent_kai"
+          console.log("[Kai] Using vault.owner token (master scope satisfies all Kai scopes)");
 
           // Show Dashboard instead of auto-redirect
           // router.push("/dashboard/kai/analysis");
@@ -270,31 +246,12 @@ export default function KaiOnboarding() {
 
     setLoading(true);
     try {
-      // 1. Grant Consent (Get Token) - using native plugin
-      const consentResponse = await grantKaiConsent(user.uid, [
-        "vault.read.risk_profile",
-        "vault.write.decision",
-        "agent.kai.analyze",
-      ]);
+      // Vault owners use vault.owner token (master scope) - no separate Kai tokens needed
+      // This ensures audit correctly logs agent_id="self" instead of "agent_kai"
+      // The vault.owner token satisfies all Kai scopes via hierarchical scope validation
+      console.log("[Kai] Using vault.owner token (master scope satisfies all Kai scopes)");
 
-      console.log("[Kai] Consent granted:", consentResponse);
-
-      // Store in Preferences (mobile-compatible) instead of sessionStorage
-      const storageData = {
-        tokens: {
-          "agent.kai.analyze": consentResponse.token,
-        },
-        expires_at: consentResponse.expires_at,
-      };
-
-      // Use Capacitor Preferences for mobile compatibility
-      const { Preferences } = await import("@capacitor/preferences");
-      await Preferences.set({
-        key: "kai_consent_tokens",
-        value: JSON.stringify(storageData),
-      });
-
-      // 2. Encrypt Preferences
+      // 1. Encrypt Preferences
       const encRisk = await HushhVault.encryptData({
         keyHex: vaultKey,
         plaintext: state.riskProfile,

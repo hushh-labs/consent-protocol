@@ -11,8 +11,8 @@
 │                     Google Cloud Platform                       │
 ├──────────────────────┬─────────────────────┬───────────────────┤
 │    hushh-webapp      │  consent-protocol   │   Cloud SQL       │
-│    (Next.js 16)      │  (FastAPI/Python)   │   (PostgreSQL)    │
-│    Port: 8080        │  Port: 8000         │   hushh-vault-db  │
+│    (Next.js 15)      │  (FastAPI/Python)   │   (PostgreSQL)    │
+│    Port: 8080        │  Port: 8080         │   hushh-vault-db  │
 ├──────────────────────┼─────────────────────┼───────────────────┤
 │  Artifact Registry   │  Secret Manager     │   Cloud Build     │
 │  Docker images       │  DATABASE_URL       │   (optional)      │
@@ -33,38 +33,67 @@
 
 ---
 
-## Deployment Commands (Unified)
+## Deployment Commands
 
-**Recommended:** Use the PowerShell orchestration script. This handles Docker builds (via Cloud Build), secrets, and deployment in one step.
+### Automated Deployment (GitHub Actions)
 
-```powershell
-# From repo root
-.\deploy\deploy.ps1
+**Recommended:** Push to the `deploy` branch to trigger automated deployment via GitHub Actions.
+
+```bash
+git push origin main:deploy
 ```
 
-### Manual Steps (Reference)
+The workflow in `.github/workflows/deploy-production.yml` handles:
+1. Building Docker images via Cloud Build
+2. Deploying to Cloud Run
+3. Managing secrets
+
+### Manual Deployment (Reference)
 
 #### 1. Deploy Backend (consent-protocol)
 
-```powershell
+```bash
 cd consent-protocol
-gcloud builds submit --tag us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest .
 
-gcloud run deploy consent-protocol `
-  --image us-central1-docker.pkg.dev/hushh-pda/cloud-run-source-deploy/consent-protocol:latest `
-  --region us-central1 --allow-unauthenticated `
-  --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" `
-  --port 8000
+# Build using Cloud Build config
+gcloud builds submit --config ../deploy/backend.cloudbuild.yaml .
+
+# Or manually:
+gcloud builds submit --tag gcr.io/PROJECT_ID/consent-protocol:latest .
+
+gcloud run deploy consent-protocol \
+  --image gcr.io/PROJECT_ID/consent-protocol:latest \
+  --region us-central1 --allow-unauthenticated \
+  --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" \
+  --port 8080
 ```
 
 #### 2. Deploy Frontend (hushh-webapp)
 
-The `deploy.ps1` script automatically handles the `webapp.Dockerfile` context. Manual build requires carefully setting build args:
-
-```powershell
+```bash
 cd hushh-webapp
-# Note: deploy.ps1 copies deploy/webapp.Dockerfile here temporarily
-gcloud builds submit --config ../deploy/cloudbuild.yaml .
+
+# Build using Cloud Build config
+gcloud builds submit --config ../deploy/frontend.cloudbuild.yaml .
+
+# Or manually:
+gcloud builds submit --tag gcr.io/PROJECT_ID/hushh-webapp:latest .
+
+gcloud run deploy hushh-webapp \
+  --image gcr.io/PROJECT_ID/hushh-webapp:latest \
+  --region us-central1 --allow-unauthenticated \
+  --port 8080
+```
+
+### Deploy Directory Contents
+
+```
+deploy/
+├── backend.cloudbuild.yaml    # Backend Cloud Build config
+├── frontend.cloudbuild.yaml   # Frontend Cloud Build config
+├── .env.backend.example       # Backend env template
+├── .env.frontend.example      # Frontend env template
+└── README.md                  # Deployment instructions
 ```
 
 ---
