@@ -2,7 +2,7 @@
 
 In HushhMCP, **operons** are the core building blocks of agent intelligence. They’re small, modular, testable functions that agents can call to perform permissioned tasks.
 
-Think of them like *plugins for behavior* — compact pieces of logic that can be reused, remixed, or extended across multiple agents.
+Think of them like _plugins for behavior_ — compact pieces of logic that can be reused, remixed, or extended across multiple agents.
 
 ---
 
@@ -10,24 +10,24 @@ Think of them like *plugins for behavior* — compact pieces of logic that can b
 
 > An **operon** is a Python function (or class) that performs a specific, scoped action — such as verifying an email, parsing a receipt, calculating a score, or summarizing content.
 
-| Trait         | Description |
-|---------------|-------------|
-| Small         | Does one thing well |
-| Reusable      | Designed to be called by any agent |
-| Testable      | Should include unit tests |
-| Scope-bound   | Should enforce consent before operating |
+| Trait       | Description                             |
+| ----------- | --------------------------------------- |
+| Small       | Does one thing well                     |
+| Reusable    | Designed to be called by any agent      |
+| Testable    | Should include unit tests               |
+| Scope-bound | Should enforce consent before operating |
 
 ---
 
 ## 🛠 Operon Examples
 
-| Operon Name       | What It Does |
-|-------------------|--------------|
-| `verify_user_email()` | Checks if an email address is valid |
-| `summarize_text()`    | Summarizes a block of user-owned text |
-| `extract_receipt_data()` | Parses receipt info from an image or PDF |
-| `calculate_spending_trends()` | Analyzes user vault data for finance |
-| `generate_reply()` | Auto-generates a response to a user message |
+| Operon Name                   | What It Does                                |
+| ----------------------------- | ------------------------------------------- |
+| `verify_cuisine_type()`       | Checks if a cuisine is supported            |
+| `summarize_text()`            | Summarizes a block of user-owned text       |
+| `extract_receipt_data()`      | Parses receipt info from an image or PDF    |
+| `calculate_spending_trends()` | Analyzes user vault data for finance        |
+| `generate_reply()`            | Auto-generates a response to a user message |
 
 ---
 
@@ -47,9 +47,9 @@ For example:
 
 ```
 
-hushh\_mcp/operons/verify\_email.py
+hushh\_mcp/operons/food/preferences.py
 
-````
+```
 
 ---
 
@@ -70,7 +70,7 @@ def your_operon(input_data: str) -> dict:
     """
     # Your logic here
     return {"result": "success"}
-````
+```
 
 ---
 
@@ -93,30 +93,29 @@ def your_operon(input_data: str) -> dict:
 
 ---
 
-## 🧪 Example: `verify_user_email`
+## 🧪 Example: `verify_cuisine_type`
 
 ```python
-# hushh_mcp/operons/verify_email.py
+# hushh_mcp/operons/food/preferences.py
 
-import re
+CUISINE_TYPES = {
+    "italian", "chinese", "mexican", "indian", "thai",
+    "japanese", "french", "greek", "spanish", "american"
+}
 
-EMAIL_REGEX = re.compile(
-    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-)
-
-def verify_user_email(email: str) -> bool:
+def verify_cuisine_type(cuisine: str) -> bool:
     """
-    Validates email format.
+    Validates if a cuisine format is supported.
     """
-    if not email or not isinstance(email, str):
+    if not cuisine or not isinstance(cuisine, str):
         return False
-    return EMAIL_REGEX.match(email) is not None
+    return cuisine.lower().strip() in CUISINE_TYPES
 ```
 
 Used in:
 
 ```python
-from hushh_mcp.operons.verify_email import verify_user_email
+from hushh_mcp.operons.food.preferences import verify_cuisine_type
 ```
 
 ---
@@ -125,9 +124,9 @@ from hushh_mcp.operons.verify_email import verify_user_email
 
 🔁 If your operon is:
 
-* Modular
-* Useful
-* Reused across teams
+- Modular
+- Useful
+- Reused across teams
 
 → You’ll be considered for special rewards like cash prizes, hushhIDs, and shoutouts in the global repo.
 
@@ -135,12 +134,12 @@ from hushh_mcp.operons.verify_email import verify_user_email
 
 ## 💡 Inspiration for Operons
 
-* `summarize_text()`
-* `translate_text()`
-* `calculate_budget()`
-* `parse_booking_confirmation()`
-* `detect_fraudulent_charge()`
-* `label_transaction_category()`
+- `summarize_text()`
+- `translate_text()`
+- `calculate_budget()`
+- `parse_booking_confirmation()`
+- `detect_fraudulent_charge()`
+- `label_transaction_category()`
 
 ---
 

@@ -54,10 +54,10 @@ Every agent must include a `manifest.py` like this:
 
 ```python
 manifest = {
-    "id": "agent_finance_assistant",
-    "name": "Finance Assistant",
-    "description": "Helps user analyze expenses securely.",
-    "scopes": ["vault.read.finance", "vault.read.email"],
+    "id": "agent_professional_profile",
+    "name": "Professional Profile Agent",
+    "description": "Helps user manage career data securely.",
+    "scopes": ["vault.read.professional", "vault.write.professional"],
     "version": "0.1.0"
 }
 ```
@@ -80,8 +80,8 @@ At minimum, your `index.py` should:
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
-class FinanceAssistantAgent:
-    required_scope = ConsentScope.VAULT_READ_FINANCE
+class ProfessionalProfileAgent:
+    required_scope = ConsentScope.VAULT_READ_PROFESSIONAL
 
     def handle(self, user_id: str, token: str):
         valid, reason, parsed = validate_token(token, expected_scope=self.required_scope)
@@ -99,12 +99,12 @@ class FinanceAssistantAgent:
 
 ## 🧪 Testing Your Agent
 
-Write a `pytest` test in `tests/test_agents.py` like this:
+Write a `pytest` test in `tests/test_my_agent.py` like this:
 
 ```python
-def test_finance_agent_flow():
-    token = issue_token("user_abc", "agent_finance_assistant", "vault.read.finance")
-    agent = FinanceAssistantAgent()
+def test_professional_agent_flow():
+    token = issue_token("user_abc", "agent_professional_profile", "vault.read.professional")
+    agent = ProfessionalProfileAgent()
     result = agent.handle("user_abc", token.token)
     assert "summary" in result
 ```
@@ -117,12 +117,12 @@ def test_finance_agent_flow():
 
 **VAULT_OWNER tokens are required for all vault data reads/writes:**
 
-| Scenario | Token Type | Validation |
-|----------|------------|------------|
-| User reads their own food preferences | VAULT_OWNER | `validate_vault_owner_token()` |
-| User writes their own food preferences | VAULT_OWNER | `validate_vault_owner_token()` |
-| Agent Kai reads user's investor profile | VAULT_OWNER | `validate_vault_owner_token()` |
-| External MCP reads user data | MCP Read-Only | Agent-scoped token |
+| Scenario                                | Token Type    | Validation                     |
+| --------------------------------------- | ------------- | ------------------------------ |
+| User reads their own food preferences   | VAULT_OWNER   | `validate_vault_owner_token()` |
+| User writes their own food preferences  | VAULT_OWNER   | `validate_vault_owner_token()` |
+| Agent Kai reads user's investor profile | VAULT_OWNER   | `validate_vault_owner_token()` |
+| External MCP reads user data            | MCP Read-Only | Agent-scoped token             |
 
 ### Production Example: Food Preferences Endpoint
 
@@ -140,12 +140,12 @@ router = APIRouter(prefix="/api/vault/food", tags=["food"])
 def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
     """
     Validate VAULT_OWNER consent token.
-    
+
     Checks:
     1. Token is valid (signature, expiry)
     2. Token has VAULT_OWNER scope
     3. Token userId matches requested userId
-    
+
     Raises HTTPException if validation fails.
     """
     if not consent_token:
@@ -153,17 +153,17 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
             status_code=401,
             detail="Missing consent token. Vault owner must provide VAULT_OWNER token."
         )
-    
+
     # Validate token
     valid, reason, token_obj = validate_token(consent_token)
-    
+
     if not valid:
         logger.warning(f"Invalid consent token: {reason}")
         raise HTTPException(
             status_code=401,
             detail=f"Invalid consent token: {reason}"
         )
-    
+
     # Check scope is VAULT_OWNER
     if token_obj.scope != ConsentScope.VAULT_OWNER.value:
         logger.warning(
@@ -173,7 +173,7 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
             status_code=403,
             detail=f"Insufficient scope. VAULT_OWNER scope required."
         )
-    
+
     # Check userId matches
     if token_obj.user_id != user_id:
         logger.warning(f"Token userId mismatch: {token_obj.user_id} != {user_id}")
@@ -181,7 +181,7 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
             status_code=403,
             detail="Token userId does not match requested userId"
         )
-    
+
     logger.info(f"✅ VAULT_OWNER token validated for {user_id}")
 
 
@@ -189,45 +189,45 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
 async def get_food_preferences(request: Request):
     """
     Get food preferences for vault owner.
-    
+
     Requires VAULT_OWNER consent token for read access.
     Returns encrypted data for client-side decryption.
-    
+
     CONSENT-FIRST: All vault data reads require token validation.
     """
     try:
         body = await request.json()
         user_id = body.get("userId")
         consent_token = body.get("consentToken")
-        
+
         if not user_id or not consent_token:
             raise HTTPException(
                 status_code=400,
                 detail="userId and consentToken are required"
             )
-        
+
         # VALIDATE VAULT_OWNER TOKEN
         validate_vault_owner_token(consent_token, user_id)
-        
+
         # Fetch encrypted data from database
         pool = await get_pool()
         async with pool.acquire() as conn:
             result = await conn.fetchrow(
                 """
-                SELECT preferences 
-                FROM vault_encrypted 
+                SELECT preferences
+                FROM vault_encrypted
                 WHERE user_id = $1 AND domain = 'food'
                 """,
                 user_id
             )
-        
+
         if not result:
             logger.info(f"No food preferences found for {user_id}")
             return {"preferences": {}}
-        
+
         logger.info(f"✅ Food preferences retrieved for {user_id}")
         return {"preferences": result["preferences"]}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -243,35 +243,35 @@ async def get_food_preferences(request: Request):
 @router.post("/vault-owner-token")
 async def issue_vault_owner_token(request: Request):
     """Issue or reuse VAULT_OWNER token."""
-    
+
     # Verify Firebase ID token
     firebase_uid = verify_firebase_bearer(auth_header)
-    
+
     # Check for existing active token (TOKEN REUSE)
     now_ms = int(time.time() * 1000)
     active_tokens = await consent_db.get_active_tokens(user_id)
-    
+
     for token in active_tokens:
         if token.get("scope") == ConsentScope.VAULT_OWNER.value:
             expires_at = token.get("expires_at", 0)
-            
+
             # Reuse if token has > 1 hour left
             if expires_at > now_ms + (60 * 60 * 1000):
                 candidate_token = token.get("token_id")
-                
+
                 # Validate signature before reusing
                 is_valid, reason, payload = validate_token(
                     candidate_token,
                     ConsentScope.VAULT_OWNER
                 )
-                
+
                 if is_valid:
                     logger.info(f"♻️ Reusing VAULT_OWNER token for {user_id}")
                     return {
                         "token": candidate_token,
                         "expiresAt": expires_at
                     }
-    
+
     # No valid token - issue new one
     logger.info(f"🔑 Issuing NEW VAULT_OWNER token for {user_id}")
     token_obj = issue_token(
@@ -280,7 +280,7 @@ async def issue_vault_owner_token(request: Request):
         scope=ConsentScope.VAULT_OWNER,
         expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
     )
-    
+
     # Store in consent_audit
     await consent_db.insert_event(
         user_id=user_id,
@@ -290,7 +290,7 @@ async def issue_vault_owner_token(request: Request):
         token_id=token_obj.token,
         expires_at=token_obj.expires_at
     )
-    
+
     return {"token": token_obj.token, "expiresAt": token_obj.expires_at}
 ```
 
@@ -305,24 +305,24 @@ import { ApiService } from "@/lib/services/api-service";
 export default function FoodDashboardPage() {
   const { user } = useAuth();
   const { getVaultKey, getVaultOwnerToken, isVaultUnlocked } = useVault();
-  
+
   async function loadDashboard() {
     const userId = user?.uid;
     const vaultKey = getVaultKey();
     const vaultOwnerToken = getVaultOwnerToken();
-    
+
     // REQUIRE all three: userId, vaultKey, vaultOwnerToken
     if (!userId || !vaultKey || !vaultOwnerToken) {
       router.push("/");
       return;
     }
-    
+
     // Send VAULT_OWNER token with request
     const response = await ApiService.getFoodPreferences(
       userId,
-      vaultOwnerToken  // Required parameter
+      vaultOwnerToken, // Required parameter
     );
-    
+
     // ... decrypt and display
   }
 }
@@ -382,7 +382,7 @@ It will be disqualified — no exceptions.
 - [ ] Validates consent token using `validate_token()`
 - [ ] Enforces scope from the token
 - [ ] (Optional) Delegates trust via `create_trust_link()`
-- [ ] Agent has a test in `tests/test_agents.py`
+- [ ] Agent has a test in `tests/test_hushh_adk_foundation.py` or similar
 - [ ] Your `README.md` explains how it works and how to run it
 
 ---

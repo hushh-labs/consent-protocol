@@ -34,8 +34,8 @@ from hushh_mcp.consent.token import issue_token
 
 token_obj = issue_token(
     user_id="user_abc",
-    agent_id="agent_shopper",
-    scope="vault.read.email"
+    agent_id="agent_food_dining",
+    scope="vault.read.food"
 )
 ```
 
@@ -53,7 +53,7 @@ from hushh_mcp.consent.token import validate_token
 
 is_valid, reason, parsed_token = validate_token(
     token_str=token_obj.token,
-    expected_scope="vault.read.email"
+    expected_scope="vault.read.food"
 )
 ```
 
@@ -99,11 +99,9 @@ Defined in `hushh_mcp/constants.py`:
 
 ```python
 # Vault READ scopes
-ConsentScope.VAULT_READ_EMAIL
-ConsentScope.VAULT_READ_PHONE
+ConsentScope.VAULT_READ_FINANCE
 ConsentScope.VAULT_READ_FOOD
 ConsentScope.VAULT_READ_PROFESSIONAL
-ConsentScope.VAULT_READ_FINANCE
 ConsentScope.VAULT_READ_ALL  # Session scope
 
 # Vault WRITE scopes
@@ -112,7 +110,6 @@ ConsentScope.VAULT_WRITE_FINANCE
 ConsentScope.VAULT_WRITE_PROFESSIONAL
 
 # Agent permissioning
-ConsentScope.AGENT_IDENTITY_VERIFY
 ConsentScope.AGENT_SHOPPING_PURCHASE
 ConsentScope.AGENT_FOOD_COLLECT
 
