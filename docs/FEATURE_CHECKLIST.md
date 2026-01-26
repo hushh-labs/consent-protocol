@@ -125,9 +125,66 @@ Before marking feature as complete:
 - [ ] No `fetch()` calls in components
 - [ ] Documentation updated
 
+## Platform-Specific Features
+
+Not all features require all three platform implementations. Some features are
+intentionally platform-specific:
+
+### Web-Only Plugins
+
+| Plugin | Reason | Web Implementation |
+|--------|--------|-------------------|
+| `HushhDatabase` | Uses IndexedDB for client-side storage | `lib/capacitor/plugins/database-web.ts` |
+
+For web-only plugins:
+- Native apps use alternative storage (e.g., `HushhVault` with SQLCipher)
+- Document the limitation in the plugin file
+- Service layer should gracefully handle missing native implementation
+
+### Native-Only Features
+
+| Plugin | Reason | Native Implementation |
+|--------|--------|----------------------|
+| `HushhAgent` | On-device ML inference requires native APIs | iOS: `HushhAgentPlugin.swift`, Android: `HushhAgentPlugin.kt` |
+
+For native-only features:
+- Web implementation should be a stub that returns appropriate fallback
+- Document clearly that feature is not available on web
+- Consider showing UI message when feature is unavailable
+
+### Implementation Pattern for Platform-Specific Features
+
+```typescript
+// Service for native-only feature
+static async runLocalInference(input: string): Promise<Result> {
+  if (Capacitor.isNativePlatform()) {
+    return await HushhAgent.inference({ input });
+  }
+  
+  // Web fallback - feature not available
+  console.warn("Local inference is only available on native platforms");
+  return {
+    available: false,
+    message: "This feature requires the mobile app"
+  };
+}
+```
+
+## BYOK Security Checklist
+
+For features that handle vault data:
+
+- [ ] Encryption keys are NEVER sent to the backend
+- [ ] Use `useVault().getVaultKey()` for key access (not localStorage/sessionStorage)
+- [ ] Backend stores only ciphertext
+- [ ] Decryption happens client-side only
+- [ ] Tests use dynamically generated keys (see `TESTING.md`)
+
 ## See Also
 
 - [Project Context Map](PROJECT_CONTEXT_MAP.md) - Tri-flow architecture rules
 - [Component README](../hushh-webapp/components/README.md) - Component guidelines
 - [Route Contracts](technical/ROUTE_CONTRACTS.md) - Endpoint documentation
 - [Architecture](technical/architecture.md) - System design
+- [Testing Guide](../TESTING.md) - BYOK-compliant testing
+- [Security Policy](../SECURITY.md) - Security guidelines
