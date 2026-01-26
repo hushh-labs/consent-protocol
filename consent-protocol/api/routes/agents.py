@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from api.models import ChatRequest, ChatResponse, ValidateTokenRequest
 from hushh_mcp.agents.food_dining.agent import get_food_dining_agent
 from hushh_mcp.agents.professional_profile.agent import get_professional_agent
+from hushh_mcp.agents.kai.agent import get_kai_agent
 
 logger = logging.getLogger(__name__)
 
@@ -154,3 +155,50 @@ async def food_dining_info():
 async def professional_profile_info():
     """Get Professional Profile agent manifest info."""
     return get_professional_agent().get_agent_info()
+
+
+# ============================================================================
+# KAI FINANCIAL AGENT
+# ============================================================================
+
+@router.post("/agents/kai/chat", response_model=ChatResponse)
+async def kai_chat(request: ChatRequest):
+    """
+    Handle Kai Financial agent chat messages.
+    
+    This endpoint manages the agentic flow for:
+    - Fundamental Analysis
+    - Sentiment Analysis
+    - Valuation Analysis
+    
+    Orchestrates tools via Gemini 3 Flash.
+    """
+    logger.info(f"📈 Kai Agent: user={request.userId}, msg='{request.message[:50]}...'")
+    
+    try:
+        result = get_kai_agent().handle_message(
+            message=request.message,
+            user_id=request.userId,
+            # session_state=request.sessionState # Kai likely manages state in context/memory
+        )
+        
+        # Kai's ADK agent returns 'is_complete' when tools are done.
+        
+        return ChatResponse(
+            response=result.get("response", ""),
+            sessionState=None, # Kai uses internal ADK memory
+            needsConsent=False, # Handled via tools if needed in future
+            isComplete=result.get("is_complete", True),
+            # UI hints (Optional for Kai)
+            ui_type=None, 
+            options=[],
+        )
+    except Exception as e:
+        logger.error(f"📈 Kai Agent Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agents/kai/info")
+async def kai_info():
+    """Get Kai Financial agent manifest info."""
+    return get_kai_agent().get_agent_info()
