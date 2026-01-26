@@ -12,6 +12,7 @@ from datetime import datetime
 import logging
 
 from db.connection import get_pool
+from db.consent import log_operation
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -82,6 +83,14 @@ async def store_preferences(
     """
     await validate_vault_owner(authorization, request.user_id)
     
+    # Log operation for audit trail
+    field_names = [p.field_name for p in request.preferences]
+    await log_operation(
+        user_id=request.user_id,
+        operation="kai.preferences.write",
+        metadata={"fields": field_names}
+    )
+    
     pool = await get_pool()
     
     try:
@@ -129,6 +138,12 @@ async def get_preferences(
     """
     await validate_vault_owner(authorization, user_id)
     
+    # Log operation for audit trail
+    await log_operation(
+        user_id=user_id,
+        operation="kai.preferences.read"
+    )
+    
     pool = await get_pool()
     
     rows = await pool.fetch(
@@ -175,6 +190,12 @@ async def delete_preferences(
 
     if payload.user_id != user_id:
         raise HTTPException(status_code=403, detail="Cannot delete preferences for another user")
+
+    # Log operation for audit trail
+    await log_operation(
+        user_id=user_id,
+        operation="kai.preferences.delete"
+    )
 
     pool = await get_pool()
     result = await pool.execute(
