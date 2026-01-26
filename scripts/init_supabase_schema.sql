@@ -1,0 +1,202 @@
+-- Supabase Schema Initialization Script
+-- Generated from source database schema
+-- Run this in Supabase Dashboard SQL Editor or via psql
+
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 1. vault_keys (user authentication keys)
+CREATE TABLE IF NOT EXISTS vault_keys (
+    user_id TEXT PRIMARY KEY,
+    auth_method TEXT NOT NULL DEFAULT 'passphrase',
+    encrypted_vault_key TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    recovery_encrypted_vault_key TEXT NOT NULL,
+    recovery_salt TEXT NOT NULL,
+    recovery_iv TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT
+);
+
+-- 2. investor_profiles (public discovery layer)
+CREATE TABLE IF NOT EXISTS investor_profiles (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_normalized TEXT,
+    cik TEXT UNIQUE,
+    firm TEXT,
+    title TEXT,
+    investor_type TEXT,
+    photo_url TEXT,
+    aum_billions NUMERIC,
+    top_holdings JSONB,
+    sector_exposure JSONB,
+    investment_style TEXT[],
+    risk_tolerance TEXT,
+    time_horizon TEXT,
+    portfolio_turnover TEXT,
+    recent_buys TEXT[],
+    recent_sells TEXT[],
+    public_quotes JSONB,
+    biography TEXT,
+    education TEXT[],
+    board_memberships TEXT[],
+    peer_investors TEXT[],
+    is_insider BOOLEAN DEFAULT FALSE,
+    insider_company_ticker TEXT,
+    data_sources TEXT[],
+    last_13f_date DATE,
+    last_form4_date DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_investor_name ON investor_profiles(name);
+CREATE INDEX IF NOT EXISTS idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_investor_firm ON investor_profiles(firm);
+CREATE INDEX IF NOT EXISTS idx_investor_type ON investor_profiles(investor_type);
+CREATE INDEX IF NOT EXISTS idx_investor_style ON investor_profiles USING GIN (investment_style);
+CREATE INDEX IF NOT EXISTS idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
+
+-- 3. consent_events (consent event tracking)
+CREATE TABLE IF NOT EXISTS consent_events (
+    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id VARCHAR(128) NOT NULL,
+    request_id VARCHAR(32),
+    agent_id VARCHAR(256) NOT NULL,
+    scope VARCHAR(64) NOT NULL,
+    scope_description TEXT,
+    action VARCHAR(32) NOT NULL,
+    token_hash VARCHAR(64),
+    expires_at TIMESTAMPTZ,
+    poll_timeout_at TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 4. vault_kai (encrypted investment decisions)
+CREATE TABLE IF NOT EXISTS vault_kai (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    session_id TEXT,
+    ticker VARCHAR(10) NOT NULL,
+    decision_type VARCHAR(10) CHECK (decision_type IN ('buy', 'hold', 'reduce')),
+    decision_ciphertext TEXT NOT NULL,
+    iv VARCHAR(255) NOT NULL,
+    tag VARCHAR(255),
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    confidence_score DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_kai_user ON vault_kai(user_id);
+CREATE INDEX IF NOT EXISTS idx_vault_kai_ticker ON vault_kai(ticker);
+
+-- 5. consent_audit (consent token audit trail)
+CREATE TABLE IF NOT EXISTS consent_audit (
+    id SERIAL PRIMARY KEY,
+    token_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    action TEXT NOT NULL,
+    issued_at BIGINT NOT NULL,
+    expires_at BIGINT,
+    revoked_at BIGINT,
+    metadata JSONB,
+    token_type VARCHAR(20) DEFAULT 'consent',
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    request_id VARCHAR(32),
+    scope_description TEXT,
+    poll_timeout_at BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_consent_user ON consent_audit(user_id);
+CREATE INDEX IF NOT EXISTS idx_consent_token ON consent_audit(token_id);
+CREATE INDEX IF NOT EXISTS idx_consent_audit_created ON consent_audit(issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_consent_audit_user_action ON consent_audit(user_id, action);
+CREATE INDEX IF NOT EXISTS idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
+
+-- 6. user_investor_profiles (private vault layer)
+CREATE TABLE IF NOT EXISTS user_investor_profiles (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
+    profile_data_ciphertext TEXT,
+    profile_data_iv TEXT,
+    profile_data_tag TEXT,
+    custom_holdings_ciphertext TEXT,
+    custom_holdings_iv TEXT,
+    custom_holdings_tag TEXT,
+    preferences_ciphertext TEXT,
+    preferences_iv TEXT,
+    preferences_tag TEXT,
+    confirmed_at TIMESTAMPTZ,
+    consent_scope TEXT,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_investor_user ON user_investor_profiles(user_id);
+
+-- 7. vault_food (food & dining domain data)
+CREATE TABLE IF NOT EXISTS vault_food (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    field_name TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    consent_token_id TEXT,
+    UNIQUE(user_id, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_food_user ON vault_food(user_id);
+
+-- 8. vault_professional (professional profile domain data)
+CREATE TABLE IF NOT EXISTS vault_professional (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    field_name TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    consent_token_id TEXT,
+    UNIQUE(user_id, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_professional_user ON vault_professional(user_id);
+
+-- 9. vault_kai_preferences (encrypted user settings)
+CREATE TABLE IF NOT EXISTS vault_kai_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    field_name TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    UNIQUE(user_id, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_kai_prefs_user ON vault_kai_preferences(user_id);
+
+-- Verification: Show all created tables
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+AND table_type = 'BASE TABLE'
+ORDER BY table_name;
