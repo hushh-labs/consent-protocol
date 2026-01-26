@@ -1,15 +1,22 @@
+# hushh_mcp/agents/professional_profile/__init__.py
 """
-Professional Profile Agent - Domain Expert 💼
+Professional Profile Agent 💼
 
-Responsible for structured career data + dynamic "Other" data.
+Career profile builder.
+MIGRATED TO ADK (v2.0.0)
 """
-import logging
 
-from .agent import ProfessionalProfileAgent, get_professional_agent, handle_message
-from .manifest import AGENT_MANIFEST
+from typing import Dict, Any, Optional
+from hushh_mcp.types import UserID
+from .agent import get_professional_agent, ProfessionalProfileAgent
 
-logger = logging.getLogger(__name__)
+__all__ = ["handle_message", "ProfessionalProfileAgent", "get_professional_agent"]
 
-__all__ = ["ProfessionalProfileAgent", "get_professional_agent", "handle_message", "AGENT_MANIFEST"]
-
-logger.info("💼 Professional Profile module loaded")
+def handle_message(
+    message: str,
+    user_id: UserID,
+    session_state: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """Compatibility wrapper for the new ADK agent."""
+    agent = get_professional_agent()
+    return agent.handle_message(message, user_id, consent_token="")
