@@ -54,5 +54,43 @@ async def insert_event(
             request_id, scope_description, issued_at, expires_at, poll_timeout_at, metadata_json
         )
         event_id = row['id']
-        logger.info(f"📝 Inserted {action} event: {event_id}")
+        logger.info(f"Inserted {action} event: {event_id}")
         return event_id
+
+
+async def log_operation(
+    user_id: str,
+    operation: str,
+    target: Optional[str] = None,
+    metadata: Optional[Dict] = None
+) -> int:
+    """
+    Log an operation performed using vault.owner token.
+    
+    This provides granular audit logging for vault owner operations,
+    showing WHAT operation was performed (e.g., kai.analyze) and
+    on WHAT target (e.g., AAPL ticker).
+    
+    Args:
+        user_id: The user performing the operation
+        operation: The operation type (e.g., "kai.analyze", "kai.preferences.read")
+        target: Optional target of the operation (e.g., "AAPL" for ticker analysis)
+        metadata: Additional context to store
+    
+    Returns:
+        The event ID
+    """
+    operation_metadata = {
+        "operation": operation,
+        **({"target": target} if target else {}),
+        **(metadata or {})
+    }
+    
+    return await insert_event(
+        user_id=user_id,
+        agent_id="self",
+        scope="vault.owner",
+        action="OPERATION_PERFORMED",
+        scope_description=operation,
+        metadata=operation_metadata
+    )

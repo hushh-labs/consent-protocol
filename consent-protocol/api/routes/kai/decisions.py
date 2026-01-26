@@ -12,6 +12,7 @@ from datetime import datetime
 import logging
 
 from db.connection import get_pool
+from db.consent import log_operation
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -98,6 +99,14 @@ async def store_decision(
     """
     await validate_vault_owner(authorization, request.user_id)
     
+    # Log operation for audit trail
+    await log_operation(
+        user_id=request.user_id,
+        operation="kai.decision.store",
+        target=request.ticker,
+        metadata={"decision_type": request.decision_type, "confidence": request.confidence_score}
+    )
+    
     pool = await get_pool()
     
     try:
@@ -140,6 +149,13 @@ async def get_decision_history(
     REQUIRES: VAULT_OWNER consent token.
     """
     await validate_vault_owner(authorization, user_id)
+    
+    # Log operation for audit trail
+    await log_operation(
+        user_id=user_id,
+        operation="kai.decisions.read",
+        metadata={"limit": limit, "offset": offset}
+    )
     
     pool = await get_pool()
     
@@ -205,6 +221,14 @@ async def get_decision_detail(
     if payload.user_id != row["user_id"]:
         raise HTTPException(status_code=403, detail="Not authorized to access this decision")
     
+    # Log operation for audit trail
+    await log_operation(
+        user_id=payload.user_id,
+        operation="kai.decision.read",
+        target=row["ticker"],
+        metadata={"decision_id": decision_id}
+    )
+    
     return EncryptedDecisionResponse(
         id=row["id"],
         decision_ciphertext=row["decision_ciphertext"],
@@ -228,6 +252,13 @@ async def delete_decision(
     REQUIRES: VAULT_OWNER consent token.
     """
     await validate_vault_owner(authorization, user_id)
+    
+    # Log operation for audit trail
+    await log_operation(
+        user_id=user_id,
+        operation="kai.decision.delete",
+        metadata={"decision_id": decision_id}
+    )
     
     pool = await get_pool()
     
