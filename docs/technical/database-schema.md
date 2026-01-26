@@ -202,9 +202,35 @@ CREATE INDEX idx_vault_kai_prefs_user ON vault_kai_preferences(user_id);
 
 ---
 
+### kai_sessions
+
+Session tracking for Kai investment analysis.
+
+```sql
+CREATE TABLE kai_sessions (
+    session_id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(128) NOT NULL,
+    processing_mode VARCHAR(32) DEFAULT 'hybrid',  -- 'on_device', 'hybrid'
+    risk_profile VARCHAR(32) DEFAULT 'balanced',   -- 'conservative', 'balanced', 'aggressive'
+    legal_acknowledged BOOLEAN DEFAULT FALSE,
+    onboarding_complete BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_kai_sessions_user ON kai_sessions(user_id);
+```
+
+**Notes:**
+- `processing_mode`: Currently only 'hybrid' (cloud-based analysis) is active
+- `risk_profile`: Affects agent debate weights and decision formatting
+- `legal_acknowledged`: User has seen legal disclaimer
+
+---
+
 ### vault_kai
 
-Encrypted investment decision history (analysis results).
+Encrypted investment decision history (analysis results). References `kai_sessions` for session context.
 
 ```sql
 CREATE TABLE vault_kai (
@@ -292,6 +318,8 @@ CREATE INDEX idx_investor_name ON investor_profiles(name);
 CREATE INDEX idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops);
 CREATE INDEX idx_investor_firm ON investor_profiles(firm);
 CREATE INDEX idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
+CREATE INDEX idx_investor_type ON investor_profiles(investor_type);
+CREATE INDEX idx_investor_style ON investor_profiles USING GIN (investment_style);
 ```
 
 **Example `top_holdings` JSONB:**
