@@ -30,7 +30,7 @@ import {
 import { cn } from "@/lib/utils";
 import { encryptData } from "@/lib/vault/encrypt";
 import { ApiService } from "@/lib/services/api-service";
-import { getSessionItem } from "@/lib/utils/session-storage";
+import { useVault } from "@/lib/vault/vault-context";
 
 interface Message {
   role: "user" | "agent";
@@ -55,6 +55,9 @@ export function FoodAgentChat({
   onComplete,
   className,
 }: FoodAgentChatProps) {
+  // BYOK: Get vault key from memory-only context (not sessionStorage)
+  const { getVaultKey } = useVault();
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -161,10 +164,11 @@ export function FoodAgentChat({
 
     try {
       setIsLoading(true);
-      const vaultKey = await getSessionItem("vault_key");
+      // BYOK: Get vault key from memory-only context (secure)
+      const vaultKey = getVaultKey();
 
       if (!vaultKey) {
-        throw new Error("No vault key found");
+        throw new Error("No vault key found. Please unlock your vault first.");
       }
 
       // Encrypt and save each field

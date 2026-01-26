@@ -1,7 +1,8 @@
 # pyproject.toml - Python tooling configuration for Hushh Consent Protocol
 
 [tool.ruff]
-target-version = "py310"
+# Python 3.11 - aligned with CI and Dockerfile
+target-version = "py311"
 line-length = 100
 select = [
     "E",   # pycodestyle errors
@@ -24,7 +25,8 @@ exclude = [
 "tests/*" = ["S101"]  # Allow assert in tests
 
 [tool.mypy]
-python_version = "3.10"
+# Python 3.11 - aligned with CI and Dockerfile
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Gradual typing adoption

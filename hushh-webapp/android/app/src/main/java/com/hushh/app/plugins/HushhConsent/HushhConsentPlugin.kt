@@ -435,7 +435,8 @@ class HushhConsentPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val backendUrl = getBackendUrl(call)
-        val url = "$backendUrl/db/consent/pending"
+        // Use /api/consent/* for consistency with Next.js API routes
+        val url = "$backendUrl/api/consent/pending"
 
         Log.d(TAG, "📋 [getPending] Fetching pending consents for userId: $userId")
 
@@ -480,7 +481,8 @@ class HushhConsentPlugin : Plugin() {
 
         val authToken = call.getString("authToken")
         val backendUrl = getBackendUrl(call)
-        val url = "$backendUrl/db/consent/active"
+        // Use /api/consent/* for consistency with Next.js API routes
+        val url = "$backendUrl/api/consent/active"
 
         Log.d(TAG, "✅ [getActive] Fetching active consents for userId: $userId")
 
@@ -525,7 +527,8 @@ class HushhConsentPlugin : Plugin() {
         val limit = call.getInt("limit") ?: 20
         val authToken = call.getString("authToken")
         val backendUrl = getBackendUrl(call)
-        val url = "$backendUrl/db/consent/history"
+        // Use /api/consent/* for consistency with Next.js API routes
+        val url = "$backendUrl/api/consent/history"
 
         Log.d(TAG, "📜 [getHistory] Fetching consent history for userId: $userId")
 
