@@ -6,10 +6,7 @@ from enum import Enum
 
 class ConsentScope(str, Enum):
     # Vault READ scopes (domain-specific per Bible)
-    VAULT_READ_EMAIL = "vault.read.email"
-    VAULT_READ_PHONE = "vault.read.phone"
     VAULT_READ_FINANCE = "vault.read.finance"
-    VAULT_READ_CONTACTS = "vault.read.contacts"
     VAULT_READ_FOOD = "vault.read.food"
     VAULT_READ_PROFESSIONAL = "vault.read.professional"
     
@@ -25,7 +22,6 @@ class ConsentScope(str, Enum):
     # Agent permissioning
     AGENT_SHOPPING_PURCHASE = "agent.shopping.purchase"
     AGENT_FINANCE_ANALYZE = "agent.finance.analyze"
-    AGENT_IDENTITY_VERIFY = "agent.identity.verify"
     AGENT_SALES_OPTIMIZE = "agent.sales.optimize"
     AGENT_FOOD_COLLECT = "agent.food.collect"
 
@@ -61,7 +57,6 @@ AGENT_PORTS = {
     "agent_orchestrator": 10000,
     "agent_food_dining": 10001,
     "agent_professional_profile": 10002,
-    "agent_identity": 10003,
     "agent_shopper": 10004,
     "agent_kai": 10005,  # Kai investment analysis agent
 }
