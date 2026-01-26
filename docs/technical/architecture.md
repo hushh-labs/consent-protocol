@@ -14,6 +14,28 @@ Instead of monolithic logic, we use specialized, smaller agents coordinated by a
 - **Specialist Agents (Spokes)**: Independent, stateless ADK Agents that perform specific domains (Food, Career, Finance).
 - **Hushh Security Layer**: A wrapper around _every_ agent that enforces the Consent Protocol.
 
+### ADK Runtime Status
+
+> **Note**: The Google ADK integration uses conditional imports with fallback stubs. If ADK dependencies are unavailable at runtime, the system falls back to stub implementations that maintain API compatibility.
+
+```python
+# consent-protocol/hushh_mcp/hushh_adk/core.py
+try:
+    from google.adk import Agent
+except ImportError:
+    # Fallback stub for environments without ADK
+    class Agent:
+        def __init__(self, *args, **kwargs):
+            pass
+```
+
+This means:
+- **ADK Available**: Full agent orchestration with Gemini models
+- **ADK Unavailable**: Graceful degradation with stub agents
+- Check logs for `ADK import failed, using stubs` warning
+
+---
+
 ## 2. The Hushh ADK Standard
 
 Every agent in the system must conform to the **Hushh ADK Standard**:

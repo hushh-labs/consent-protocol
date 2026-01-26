@@ -1,11 +1,10 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Hushh-Personal_Data_Agents-blueviolet?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xMiAydjEwbTAgMHY2bTAgLTZsLTQgNG0wIC00bDQgNCIvPjwvc3ZnPg==" alt="Hushh Badge"/>
   <br/>
-  <img src="https://img.shields.io/badge/On_Device_AI-MLX_/_Gemma-purple?style=flat-square" alt="On-Device"/>
   <img src="https://img.shields.io/badge/Consent_Protocol-v1.0-success?style=flat-square" alt="Protocol"/>
   <img src="https://img.shields.io/badge/Encryption-AES--256--GCM-blue?style=flat-square" alt="Encryption"/>
   <img src="https://img.shields.io/badge/Zero_Knowledge-✓-green?style=flat-square" alt="Zero Knowledge"/>
-  <img src="https://img.shields.io/badge/Local_First-✓-orange?style=flat-square" alt="Local First"/>
+  <img src="https://img.shields.io/badge/Capacitor_8-Native-orange?style=flat-square" alt="Capacitor"/>
 </p>
 
 <h1 align="center">🤫 Hushh - Personal Data Agents</h1>
@@ -22,81 +21,92 @@
 
 **Hushh** is an open-source **Personal Data Agent (PDA)** system that fundamentally reimagines how AI interacts with your personal data:
 
-| Traditional AI                | Hushh                                |
-| ----------------------------- | ------------------------------------ |
-| 📤 Sends your data to servers | 📱 AI runs on YOUR device            |
-| 🌐 Requires internet          | ✈️ Works completely offline          |
-| 🤷 Access without permission  | ✅ Explicit consent for every action |
-| 🕵️ Platform owns your data    | 👤 YOU own your data                 |
-| 🔓 Data on their servers      | 🔒 Data encrypted on YOUR phone      |
+| Traditional AI | Hushh (Today) | Hushh Vision (Roadmap) |
+|----------------|---------------|------------------------|
+| 📤 Sends data to servers | 🔒 E2E encrypted (server can't read) | 📱 On-device AI (no cloud) |
+| 🤷 Access without permission | ✅ Consent tokens for every action | ✅ Biometric consent |
+| 🕵️ Platform owns your data | 👤 YOU own your encryption keys | 👤 Fully local vault |
+| 🔓 Plaintext on servers | 🔐 Zero-knowledge backend | 🔐 Nothing leaves device |
 
-### The Flow (On-Device)
+### Current Flow (Hybrid Cloud)
 
 ```
-You → Chat with Agent → Agent asks "Can I save this?" → You approve with FaceID →
-     Data encrypted on YOUR device → Stored in local vault → Never leaves your phone
+You → Chat with Agent → Agent asks "Can I save this?" → You approve →
+     Data encrypted CLIENT-SIDE → Stored as ciphertext on cloud → 
+     Server CANNOT decrypt (zero-knowledge)
+```
+
+### Future Flow (On-Device - Roadmap)
+
+```
+You → Chat with LOCAL Agent → Agent asks "Can I save this?" → FaceID approval →
+     Data encrypted on YOUR device → Stored in LOCAL vault → Never leaves your phone
 ```
 
 ---
 
-## 📱 On-Device AI Architecture
+## 📱 Mobile Architecture
 
-Hushh runs AI directly on your phone — no cloud required:
+Hushh uses Capacitor 8 for native iOS and Android apps:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                           ON-DEVICE AI STACK                                  │
+│                        CAPACITOR MOBILE ARCHITECTURE                          │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                               │
-│   ┌─────────────────────────────────┐  ┌─────────────────────────────────┐   │
-│   │        iOS (Apple Silicon)       │  │          Android                 │   │
-│   │  ┌────────────────────────────┐  │  │  ┌────────────────────────────┐ │   │
-│   │  │   Apple Intelligence       │  │  │  │   MediaPipe LLM API        │ │   │
-│   │  │   (iOS 18+) OR MLX Swift   │  │  │  │   + Gemma Models           │ │   │
-│   │  │   via Custom Plugin        │  │  │  │   via Custom Plugin        │ │   │
-│   │  └────────────────────────────┘  │  │  └────────────────────────────┘ │   │
-│   └─────────────────────────────────┘  └─────────────────────────────────┘   │
-│                          │                              │                     │
-│                          └──────────────┬───────────────┘                     │
-│                                         ▼                                     │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │          CAPACITOR NATIVE PLUGINS (HushhAI, HushhMCP)                │   │
+│   │                     NEXT.JS STATIC EXPORT                            │   │
 │   │                                                                      │   │
-│   │  • Bridge between WebView and native AI frameworks                  │   │
-│   │  • Consent-first tool access via HushhMCP                           │   │
-│   │  • @PluginMethod / CAPPluginMethod annotations                      │   │
+│   │  • React 19 + TailwindCSS UI                                        │   │
+│   │  • Morphy-UX glass design system                                    │   │
+│   │  • Platform-aware services (lib/services/)                          │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                         │                                     │
 │                                         ▼                                     │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                    LOCAL ENCRYPTED VAULT                             │   │
+│   │          CAPACITOR NATIVE PLUGINS (8 per platform)                   │   │
 │   │                                                                      │   │
-│   │  • SQLite with AES-256-GCM encryption                               │   │
-│   │  • Keys stored in Keychain (iOS) / Keystore (Android)               │   │
-│   │  • Data NEVER leaves device unless user opts-in to cloud sync       │   │
+│   │  HushhAuth · HushhVault · HushhConsent · HushhIdentity              │   │
+│   │  Kai · HushhSync · HushhSettings · HushhKeystore                    │   │
+│   │                                                                      │   │
+│   │  • Native HTTP calls to Python backend (bypass Next.js proxy)       │   │
+│   │  • Keychain/Keystore secure key storage                             │   │
+│   │  • FaceID/TouchID biometric authentication                          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                         │                                     │
+│                                         ▼                                     │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    PYTHON BACKEND (Cloud Run)                        │   │
+│   │                                                                      │   │
+│   │  • FastAPI with consent-first validation                            │   │
+│   │  • AES-256-GCM encrypted vault storage                              │   │
+│   │  • PostgreSQL (Cloud SQL) for production                            │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Implementation Approach
+### Platform Support
 
-| Platform    | Framework                    | Integration Method                           |
-| ----------- | ---------------------------- | -------------------------------------------- |
-| **iOS**     | Apple Intelligence (iOS 18+) | Native support, no custom model needed       |
-| **iOS**     | MLX Swift (custom models)    | Custom Capacitor plugin wrapping MLXLMCommon |
-| **Android** | MediaPipe LLM Inference API  | Custom Capacitor plugin with tasks-genai     |
-| **Both**    | `@capgo/capacitor-llm`       | Community plugin for on-device LLM           |
+| Feature | Web | iOS Native | Android Native | Status |
+|---------|-----|------------|----------------|--------|
+| **Cloud Vault (E2E Encrypted)** | ✅ | ✅ | ✅ | Live |
+| **Native Auth** | Firebase JS | HushhAuth | HushhAuth | Live |
+| **Biometric Unlock** | ❌ | ✅ FaceID/TouchID | ✅ Fingerprint | Live |
+| **Secure Key Storage** | Web Crypto | Keychain | Keystore | Live |
+| **Consent Tokens** | ✅ | ✅ | ✅ | Live |
 
-### Platform Availability
+### Roadmap: On-Device Layer
 
-| Feature                | Web | iOS Native                  | Android Native       |
-| ---------------------- | --- | --------------------------- | -------------------- |
-| **On-Device LLM**      | ❌  | ✅ Apple Intelligence / MLX | ✅ MediaPipe + Gemma |
-| **Local SQLite Vault** | ❌  | ✅                          | ✅                   |
-| **Offline Mode**       | ❌  | ✅ Full                     | ✅ Full              |
-| **Cloud Vault**        | ✅  | ✅ (opt-in)                 | ✅ (opt-in)          |
-| **Biometric Auth**     | ❌  | ✅ FaceID                   | ✅ Fingerprint       |
+| Feature | iOS | Android | Status |
+|---------|-----|---------|--------|
+| **Local SQLite Vault** | CoreData | Room | 🔜 Planned |
+| **On-Device LLM** | MLX Framework | MediaPipe + Gemma | 🔜 Planned |
+| **Local MCP Server** | HushhMCPPlugin | HushhMCPPlugin | 🔜 Planned |
+| **System AI Integration** | Apple Intelligence | Gemini Nano | 🔜 Planned |
+| **Full Offline Mode** | ✅ | ✅ | 🔜 Planned |
+
+See [Mobile Documentation](technical/mobile.md#roadmap-on-device-ai-layer) for detailed on-device AI architecture.
 
 ---
 
@@ -232,8 +242,8 @@ See [Architecture - Legal Compliance](./technical/architecture.md#legal--complia
 
 ### Prerequisites
 
-- **Node.js** 18+
-- **Python** 3.10+
+- **Node.js** 20+
+- **Python** 3.11+
 - **PostgreSQL** 14+ (for cloud mode only)
 - **Xcode 15+** (for iOS development)
 - **Android Studio** (for Android development)
@@ -269,7 +279,7 @@ cp hushh-webapp/.env.example hushh-webapp/.env.local
 ```bash
 # Terminal 1: Python API
 cd consent-protocol
-uvicorn server:app --reload --port 8000
+uvicorn server:app --reload --port 8080
 
 # Terminal 2: Next.js Frontend
 cd hushh-webapp
@@ -346,23 +356,25 @@ hushh-research/
 │   │       ├── App/
 │   │       │   ├── AppDelegate.swift        # Firebase.configure()
 │   │       │   ├── MyViewController.swift   # Plugin registration
-│   │       │   └── Plugins/                 # Native Plugins
+│   │       │   └── Plugins/                 # Native Plugins (8 total)
 │   │       │       ├── HushhAuthPlugin.swift
 │   │       │       ├── HushhVaultPlugin.swift
 │   │       │       ├── HushhConsentPlugin.swift
-│   │       │       ├── HushhAIPlugin.swift  # MLX/Apple Intelligence
+│   │       │       ├── HushhIdentityPlugin.swift
+│   │       │       ├── KaiPlugin.swift
 │   │       │       └── ...
 │   │       └── App.xcodeproj
 │   │
 │   └── 📱 android/                  # Android Native (Capacitor)
 │       └── app/src/main/
-│           ├── java/com/hushh/pda/
+│           ├── java/com/hushh/app/
 │           │   ├── MainActivity.kt          # Plugin registration
-│           │   └── plugins/                 # Native Plugins
+│           │   └── plugins/                 # Native Plugins (8 total)
 │           │       ├── HushhAuth/HushhAuthPlugin.kt
 │           │       ├── HushhVault/HushhVaultPlugin.kt
 │           │       ├── HushhConsent/HushhConsentPlugin.kt
-│           │       ├── HushhAI/HushhAIPlugin.kt  # MediaPipe+Gemma
+│           │       ├── HushhIdentity/HushhIdentityPlugin.kt
+│           │       ├── Kai/KaiPlugin.kt
 │           │       └── ...
 │           └── res/
 │
@@ -378,111 +390,22 @@ hushh-research/
 
 ---
 
-## 🔌 Native AI Plugin Architecture
+## 🔌 Native Plugins
 
-### iOS: Apple Intelligence / MLX Swift
+### 8 Capacitor Plugins (iOS + Android)
 
-```swift
-// ios/App/App/Plugins/HushhAIPlugin.swift
-import Capacitor
-import MLX        // For custom models
-import MLXLMCommon
+| Plugin | Purpose | iOS | Android |
+|--------|---------|-----|---------|
+| **HushhAuth** | Google/Apple Sign-In, Firebase | ✅ | ✅ |
+| **HushhVault** | Encryption, vault operations | ✅ | ✅ |
+| **HushhConsent** | Token management, consent flow | ✅ | ✅ |
+| **HushhIdentity** | Investor identity resolution | ✅ | ✅ |
+| **Kai** | Investment analysis agent | ✅ | ✅ |
+| **HushhSync** | Cloud synchronization | ✅ | ✅ |
+| **HushhSettings** | App preferences | ✅ | ✅ |
+| **HushhKeystore** | Secure key storage | ✅ | ✅ |
 
-@objc(HushhAIPlugin)
-public class HushhAIPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "HushhAIPlugin"
-    public let jsName = "HushhAI"
-    public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "generateResponse", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isAvailable", returnType: CAPPluginReturnPromise)
-    ]
-
-    private var model: LLMModel?
-
-    @objc func generateResponse(_ call: CAPPluginCall) {
-        guard let prompt = call.getString("prompt") else {
-            call.reject("Missing prompt")
-            return
-        }
-
-        Task {
-            // Option 1: Use Apple Intelligence (iOS 18+)
-            // Option 2: Use MLX with custom model
-            let response = try await model?.generate(prompt: prompt)
-            call.resolve(["response": response ?? ""])
-        }
-    }
-
-    @objc func isAvailable(_ call: CAPPluginCall) {
-        // Check if Apple Intelligence or MLX model is available
-        call.resolve(["available": true])
-    }
-}
-```
-
-### Android: MediaPipe + Gemma
-
-```kotlin
-// android/app/src/main/java/com/hushh/pda/plugins/HushhAI/HushhAIPlugin.kt
-package com.hushh.pda.plugins.HushhAI
-
-import com.getcapacitor.*
-import com.getcapacitor.annotation.CapacitorPlugin
-import com.google.mediapipe.tasks.genai.llminference.*
-
-@CapacitorPlugin(name = "HushhAI")
-class HushhAIPlugin : Plugin() {
-    private var llmInference: LlmInference? = null
-
-    override fun load() {
-        super.load()
-        // Model stored in app's files directory (downloaded post-install)
-        val modelPath = context.filesDir.resolve("gemma-2b-it-q4.bin").absolutePath
-
-        if (File(modelPath).exists()) {
-            val options = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(modelPath)
-                .setMaxTokens(256)
-                .build()
-            llmInference = LlmInference.createFromOptions(context, options)
-        }
-    }
-
-    @PluginMethod
-    fun generateResponse(call: PluginCall) {
-        val prompt = call.getString("prompt") ?: run {
-            call.reject("Missing prompt")
-            return
-        }
-
-        val response = llmInference?.generateResponse(prompt) ?: ""
-        val ret = JSObject()
-        ret.put("response", response)
-        call.resolve(ret)
-    }
-
-    @PluginMethod
-    fun isAvailable(call: PluginCall) {
-        val ret = JSObject()
-        ret.put("available", llmInference != null)
-        call.resolve(ret)
-    }
-}
-```
-
-### TypeScript Interface
-
-```typescript
-// lib/capacitor/index.ts
-import { registerPlugin } from "@capacitor/core";
-
-export interface HushhAIPlugin {
-  generateResponse(options: { prompt: string }): Promise<{ response: string }>;
-  isAvailable(): Promise<{ available: boolean }>;
-}
-
-export const HushhAI = registerPlugin<HushhAIPlugin>("HushhAI");
-```
+See [Mobile Documentation](technical/mobile.md) for full plugin API reference.
 
 ---
 
