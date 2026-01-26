@@ -7,6 +7,22 @@
       {
         "selector": "CallExpression[callee.name='fetch']",
         "message": "Direct fetch() is banned in components. Use ApiService or VaultService instead. Native platforms (iOS/Android) have no Next.js server."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='localStorage'][callee.property.name='getItem'][arguments.0.value='vault_key']",
+        "message": "BYOK VIOLATION: Reading vault_key from localStorage is insecure. Use useVault().getVaultKey() instead."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='sessionStorage'][callee.property.name='getItem'][arguments.0.value='vault_key']",
+        "message": "BYOK VIOLATION: Reading vault_key from sessionStorage is insecure. Use useVault().getVaultKey() instead."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='localStorage'][callee.property.name='setItem'][arguments.0.value='vault_key']",
+        "message": "BYOK VIOLATION: Storing vault_key in localStorage is insecure. Use VaultContext.unlockVault() instead."
+      },
+      {
+        "selector": "CallExpression[callee.object.name='sessionStorage'][callee.property.name='setItem'][arguments.0.value='vault_key']",
+        "message": "BYOK VIOLATION: Storing vault_key in sessionStorage is insecure. Use VaultContext.unlockVault() instead."
       }
     ],
     "@typescript-eslint/no-explicit-any": "warn",
@@ -26,6 +42,22 @@
       ],
       "rules": {
         "no-restricted-syntax": "off"
+      }
+    },
+    {
+      "files": [
+        "lib/firebase/auth-context.tsx",
+        "lib/vault/vault-context.tsx",
+        "app/logout/**/*"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "CallExpression[callee.name='fetch']",
+            "message": "Direct fetch() is banned in components. Use ApiService or VaultService instead."
+          }
+        ]
       }
     }
   ]
