@@ -49,6 +49,12 @@ interface AuthContextType {
   phoneNumber: string | null;
   // Derived state
   isAuthenticated: boolean;
+  /**
+   * @deprecated BYOK VIOLATION - Do not use. Use useVault().getVaultKey() instead.
+   * This field reads from localStorage/sessionStorage which is insecure.
+   * The vault key should ONLY be stored in memory via VaultContext.
+   * This field is kept for backward compatibility and will be removed in a future version.
+   */
   vaultKey: string | null;
   userId: string | null;
   // Methods
@@ -56,7 +62,12 @@ interface AuthContextType {
   verifyOTP: (otp: string) => Promise<User>;
   signOut: () => Promise<void>;
   checkAuth: () => Promise<void>; // Manually trigger auth check (e.g. after native login)
-  setVaultKeyLocal: (key: string | null) => void; // Helper to update vault key state
+  /**
+   * @deprecated BYOK VIOLATION - Do not use. Use VaultContext.unlockVault() instead.
+   * This method stores the vault key which should ONLY be in memory.
+   * This method is kept for backward compatibility and will be removed in a future version.
+   */
+  setVaultKeyLocal: (key: string | null) => void;
   setNativeUser: (user: User | null) => void; // Helper to manually set user state
 }
 
@@ -105,9 +116,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
    *
    * IMPORTANT: This function MUST call setLoading(false) in ALL code paths
    * to prevent VaultLockGuard from getting stuck.
+   *
+   * WARNING: LEGACY BYOK VIOLATION
+   * Reading vault_key from storage is a security anti-pattern.
+   * The vault key should ONLY be in memory via VaultContext.
+   * This code is kept for backward compatibility but consumers
+   * should use useVault().getVaultKey() instead of useAuth().vaultKey.
    */
   const checkAuth = useCallback(async () => {
     // 1. Sync State from Storage (Web/Native persistence)
+    // ⚠️ DEPRECATED: vault_key should come from VaultContext, not storage
+    // This legacy read is kept for backward compatibility only
     const storedVaultKey =
       typeof window !== "undefined"
         ? localStorage.getItem("vault_key") ||
@@ -118,6 +137,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         ? localStorage.getItem("user_id") || sessionStorage.getItem("user_id")
         : null;
 
+    // ⚠️ DEPRECATED: Use VaultContext for vault key management
     setVaultKey(storedVaultKey);
     setUserId(storedUserId);
 
@@ -189,6 +209,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
               "🔒 [AuthProvider] App backgrounded - clearing sensitive data"
             );
             setVaultKey(null);
+            // DEFENSIVE CLEANUP: Remove any legacy vault_key from storage
+            // New code should use VaultContext (memory-only) but we clean storage
+            // in case any legacy code wrote there
             localStorage.removeItem("vault_key");
             sessionStorage.removeItem("vault_key");
 
@@ -232,8 +255,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, [checkAuth]); // FIXED: Removed `user` from dependencies to prevent render loop
 
-  // Manual Vault Key Setter (for login page)
+  /**
+   * @deprecated BYOK VIOLATION - Use VaultContext.unlockVault() instead.
+   * This method is kept for backward compatibility only.
+   * New code should use the VaultContext for vault key management.
+   */
   const setVaultKeyLocal = (key: string | null) => {
+    console.warn(
+      "⚠️ DEPRECATED: setVaultKeyLocal() is a BYOK violation. Use VaultContext.unlockVault() instead."
+    );
     setVaultKey(key);
     if (key) {
       // Decide persistence based on platform? For now assuming previous logic
@@ -253,6 +283,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setVaultKey(null);
       setUserId(null);
 
+      // DEFENSIVE CLEANUP: Remove any legacy vault_key from storage
+      // New code should use VaultContext (memory-only) but we clean storage
+      // in case any legacy code wrote there
       localStorage.removeItem("vault_key");
       localStorage.removeItem("user_id");
       sessionStorage.clear();
