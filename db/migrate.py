@@ -369,9 +369,45 @@ async def run_full_migration(pool: asyncpg.Pool):
 
 async def run_consent_migration(pool: asyncpg.Pool):
     """Create all consent-related tables."""
-    print("🔐 Running consent protocol migration...")
+    print("Running consent protocol migration...")
     await create_consent_audit(pool)
-    print("✅ Consent protocol tables ready!")
+    print("Consent protocol tables ready!")
+
+
+async def run_init_migration(pool: asyncpg.Pool):
+    """
+    Initialize all tables in correct dependency order.
+    Non-destructive - uses CREATE TABLE IF NOT EXISTS.
+    Safe for first-time setup or adding missing tables.
+    """
+    print("Initializing database tables (non-destructive)...")
+    
+    # Create in dependency order
+    print("\n[1/8] Creating vault_keys (user authentication)...")
+    await create_vault_keys(pool)
+    
+    print("[2/8] Creating vault_food (food preferences domain)...")
+    await create_vault_food(pool)
+    
+    print("[3/8] Creating vault_professional (professional profile domain)...")
+    await create_vault_professional(pool)
+    
+    print("[4/8] Creating consent_audit (consent tracking)...")
+    await create_consent_audit(pool)
+    
+    print("[5/8] Creating investor_profiles (public discovery layer)...")
+    await create_investor_profiles(pool)
+    
+    print("[6/8] Creating user_investor_profiles (private vault layer)...")
+    await create_user_investor_profiles(pool)
+    
+    print("[7/8] Creating vault_kai (encrypted decisions)...")
+    await create_vault_kai(pool)
+    
+    print("[8/8] Creating vault_kai_preferences (user settings)...")
+    await create_vault_kai_preferences(pool)
+    
+    print("\nAll tables initialized successfully!")
 
 
 async def clear_table(pool: asyncpg.Pool, table_name: str):
@@ -409,13 +445,16 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python db/migrate.py --init                    # First-time setup (RECOMMENDED)
   python db/migrate.py --table consent_audit     # Create single table
   python db/migrate.py --consent                 # Create all consent tables
   python db/migrate.py --clear consent_audit     # Clear consent history
-  python db/migrate.py --full                    # Full reset (WARNING!)
+  python db/migrate.py --full                    # Full reset (WARNING: DESTRUCTIVE!)
   python db/migrate.py --status                  # Show table summary
         """
     )
+    parser.add_argument("--init", action="store_true",
+                        help="Initialize all tables in correct order (non-destructive, recommended for first-time setup)")
     parser.add_argument("--table", choices=list(TABLE_CREATORS.keys()), 
                         help="Create a specific table")
     parser.add_argument("--consent", action="store_true", 
@@ -429,7 +468,7 @@ Examples:
     
     args = parser.parse_args()
     
-    if not any([args.table, args.consent, args.full, args.clear, args.status]):
+    if not any([args.init, args.table, args.consent, args.full, args.clear, args.status]):
         parser.print_help()
         return
     
@@ -442,13 +481,27 @@ Examples:
     except:
         pass
     
-    print("🔗 Connecting to database...")
+    print("Connecting to database...")
     print(f"   URL: {display_url}")
     
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
+    # Supabase requires SSL connections
+    ssl_config = None
+    if "supabase.co" in DATABASE_URL:
+        ssl_config = "require"
+        print("   SSL: enabled (Supabase)")
+    
+    pool = await asyncpg.create_pool(
+        DATABASE_URL, 
+        min_size=1, 
+        max_size=2,
+        ssl=ssl_config
+    )
     
     try:
-        print("✅ Connected successfully!")
+        print("Connected successfully!")
+        
+        if args.init:
+            await run_init_migration(pool)
         
         if args.full:
             await run_full_migration(pool)
@@ -465,7 +518,7 @@ Examples:
         # Always show status at end
         await show_status(pool)
         
-        print("\n✅ Migration complete!")
+        print("\nMigration complete!")
         
     finally:
         await pool.close()

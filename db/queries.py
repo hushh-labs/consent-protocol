@@ -186,12 +186,15 @@ async def was_recently_denied(user_id: str, scope: str, cooldown_seconds: int = 
 
 async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
     """Get paginated audit log for a user."""
+    import json
+    
     pool = await get_pool()
     
     offset = (page - 1) * limit
     
     query = """
-        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at, request_id, poll_timeout_at
+        SELECT id, token_id, agent_id, scope, action, issued_at, expires_at, 
+               request_id, poll_timeout_at, scope_description, metadata
         FROM consent_audit
         WHERE user_id = $1
         ORDER BY issued_at DESC
@@ -206,22 +209,33 @@ async def get_audit_log(user_id: str, page: int = 1, limit: int = 50) -> Dict:
         rows = await conn.fetch(query, user_id, limit, offset)
         total = await conn.fetchval(count_query, user_id)
         
+        items = []
+        for row in rows:
+            # Parse metadata JSON if present
+            metadata = None
+            if row['metadata']:
+                try:
+                    metadata = json.loads(row['metadata']) if isinstance(row['metadata'], str) else row['metadata']
+                except (json.JSONDecodeError, TypeError):
+                    metadata = None
+            
+            items.append({
+                "id": str(row['id']),
+                "token_id": row['token_id'][:20] + "..." if row['token_id'] and len(row['token_id']) > 20 else row['token_id'] or "N/A",
+                "agent_id": row['agent_id'],
+                "scope": row['scope'],
+                "action": row['action'],
+                "issued_at": row['issued_at'],
+                "expires_at": row['expires_at'],
+                "request_id": row['request_id'],
+                "scope_description": row['scope_description'],
+                "metadata": metadata,
+                # Detect timed out: REQUESTED with poll_timeout_at in the past
+                "is_timed_out": row['action'] == 'REQUESTED' and row['poll_timeout_at'] and row['poll_timeout_at'] < now_ms,
+            })
+        
         return {
-            "items": [
-                {
-                    "id": str(row['id']),
-                    "token_id": row['token_id'][:20] + "..." if row['token_id'] and len(row['token_id']) > 20 else row['token_id'] or "N/A",
-                    "agent_id": row['agent_id'],
-                    "scope": row['scope'],
-                    "action": row['action'],
-                    "issued_at": row['issued_at'],
-                    "expires_at": row['expires_at'],
-                    "request_id": row['request_id'],
-                    # Detect timed out: REQUESTED with poll_timeout_at in the past
-                    "is_timed_out": row['action'] == 'REQUESTED' and row['poll_timeout_at'] and row['poll_timeout_at'] < now_ms,
-                }
-                for row in rows
-            ],
+            "items": items,
             "total": total,
             "page": page,
             "limit": limit,
