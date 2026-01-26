@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from db.consent import log_operation
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
@@ -471,6 +472,14 @@ async def analyze_stream(
     if payload.user_id != user_id:
         raise HTTPException(status_code=403, detail="Token user mismatch")
     
+    # Log operation for audit trail (shows what vault.owner token was used for)
+    await log_operation(
+        user_id=user_id,
+        operation="kai.analyze",
+        target=ticker,
+        metadata={"risk_profile": risk_profile, "endpoint": "stream/analyze"}
+    )
+    
     logger.info(f"[Kai Stream] SSE connection opened for {ticker} - user {user_id}")
     
     return EventSourceResponse(
@@ -516,6 +525,14 @@ async def analyze_stream_post(
     
     if payload.user_id != body.user_id:
         raise HTTPException(status_code=403, detail="Token user mismatch")
+    
+    # Log operation for audit trail (shows what vault.owner token was used for)
+    await log_operation(
+        user_id=body.user_id,
+        operation="kai.analyze",
+        target=body.ticker,
+        metadata={"risk_profile": body.risk_profile, "endpoint": "stream/analyze", "has_context": body.context is not None}
+    )
     
     return EventSourceResponse(
         analyze_stream_generator(

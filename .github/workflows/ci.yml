@@ -71,18 +71,19 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio mypy ruff
       
       - name: Lint with ruff
-        run: ruff check .
+        run: python -m ruff check .
         continue-on-error: true  # Gradual adoption
       
       - name: Type check with mypy
-        run: mypy . --ignore-missing-imports
+        run: python -m mypy . --ignore-missing-imports
         continue-on-error: true  # Gradual adoption
       
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short
         env:
           TESTING: "true"
-          SECRET_KEY: "test_secret_key_for_ci_only"
+          SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
+          VAULT_ENCRYPTION_KEY: "635ce8d8018dee8b98ec987dc2dbfb79f3658ac7a54d4cb4c6150a21cd60098f"
 
   # ============================================================================
   # Integration Check
@@ -104,5 +105,5 @@ jobs:
         working-directory: ./hushh-webapp
         run: |
           npm ci
-          npm run verify-contracts
+          npm run verify:routes
         continue-on-error: true  # Don't fail until contracts are fully defined

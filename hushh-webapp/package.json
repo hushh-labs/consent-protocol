@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check-lint": "next lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "check-lint": "eslint .",
     "verify:routes": "node scripts/verify-route-contracts.cjs",
     "cap:build": "cross-env CAPACITOR_BUILD=true next build",
     "cap:sync": "npx cap sync",
@@ -64,6 +66,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24",
     "@types/react": "^19",
