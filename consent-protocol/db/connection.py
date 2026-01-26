@@ -29,13 +29,21 @@ async def get_pool() -> asyncpg.Pool:
     """Get or create the connection pool."""
     global _pool
     if _pool is None:
-        logger.info(f"📦 Connecting to PostgreSQL...")
+        logger.info(f"Connecting to PostgreSQL...")
+        
+        # Supabase requires SSL connections
+        ssl_config = None
+        if DATABASE_URL and "supabase.co" in DATABASE_URL:
+            ssl_config = "require"
+            logger.info("SSL enabled for Supabase")
+        
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
             min_size=3,  # Increased from 2
             max_size=20,  # Increased from 10 for better scaling
             command_timeout=60,
-            max_inactive_connection_lifetime=300  # Close idle connections after 5min
+            max_inactive_connection_lifetime=300,  # Close idle connections after 5min
+            ssl=ssl_config
         )
         logger.info(
             f"✅ PostgreSQL pool created: min={_pool.get_min_size()}, "

@@ -16,6 +16,9 @@ uvicorn>=0.34.0
 # 🗃️ Database (Postgres async)
 asyncpg>=0.29.0
 
+# 🗄️ Supabase REST client (for migration)
+supabase>=2.0.0
+
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
 httpx==0.27.0
 

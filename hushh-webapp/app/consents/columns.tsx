@@ -24,6 +24,12 @@ export interface AuditLogEntry {
   issued_at: number;
   request_id: string | null;
   is_timed_out?: boolean;
+  scope_description?: string;
+  metadata?: {
+    operation?: string;
+    target?: string;
+    [key: string]: unknown;
+  };
 }
 
 // Format relative time
@@ -78,67 +84,75 @@ export const appColumns: ColumnDef<AppSummary>[] = [
   },
 ];
 
-// Scope formatting for drawer
+// Scope formatting for drawer (no emojis)
 export const formatScope = (scope: string) => {
-  const scopeMap: Record<string, { emoji: string; label: string }> = {
-    vault_read_food: { emoji: "🍽️", label: "Food Preferences" },
-    vault_read_professional: { emoji: "💼", label: "Professional Profile" },
-    vault_read_finance: { emoji: "💰", label: "Finance" },
-    "vault.read.food": { emoji: "🍽️", label: "Food Preferences" },
-    "vault.read.professional": { emoji: "💼", label: "Professional Profile" },
+  const scopeMap: Record<string, { icon: string; label: string }> = {
+    vault_read_food: { icon: "utensils", label: "Food Preferences" },
+    vault_read_professional: { icon: "briefcase", label: "Professional Profile" },
+    vault_read_finance: { icon: "wallet", label: "Finance" },
+    "vault.read.food": { icon: "utensils", label: "Food Preferences" },
+    "vault.read.professional": { icon: "briefcase", label: "Professional Profile" },
+    "vault.read.finance": { icon: "wallet", label: "Finance" },
+    "vault.owner": { icon: "crown", label: "Owner Access" },
+    "agent.kai.analyze": { icon: "line-chart", label: "Kai Analysis" },
   };
-  return scopeMap[scope] || { emoji: "🔐", label: scope.replace(/[_.]/g, " ") };
+  return scopeMap[scope] || { icon: "lock", label: scope.replace(/[_.]/g, " ") };
 };
 
-// Action formatting for drawer
+// Action formatting for drawer (no emojis)
 export const getActionInfo = (action: string, isTimedOut?: boolean) => {
   if (isTimedOut && action === "REQUESTED") {
     return {
       label: "Request Expired",
-      emoji: "⏰",
+      icon: "clock",
       className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     };
   }
 
   const actionMap: Record<
     string,
-    { label: string; emoji: string; className: string }
+    { label: string; icon: string; className: string }
   > = {
     REQUESTED: {
       label: "Access Requested",
-      emoji: "📋",
+      icon: "clipboard",
       className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
     },
     CONSENT_GRANTED: {
       label: "Access Granted",
-      emoji: "✅",
+      icon: "check",
       className: "bg-green-500/10 text-green-600 border-green-500/20",
     },
     CONSENT_DENIED: {
       label: "Access Denied",
-      emoji: "❌",
+      icon: "x",
       className: "bg-red-500/10 text-red-600 border-red-500/20",
     },
     CANCELLED: {
       label: "Request Cancelled",
-      emoji: "🚫",
+      icon: "ban",
       className: "bg-gray-500/10 text-gray-600 border-gray-500/20",
     },
     TIMED_OUT: {
       label: "Request Expired",
-      emoji: "⏰",
+      icon: "clock",
       className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     },
     REVOKED: {
       label: "Access Revoked",
-      emoji: "🔒",
+      icon: "lock",
       className: "bg-red-500/10 text-red-600 border-red-500/20",
+    },
+    OPERATION_PERFORMED: {
+      label: "Operation",
+      icon: "activity",
+      className: "bg-blue-500/10 text-blue-600 border-blue-500/20",
     },
   };
   return (
     actionMap[action] || {
       label: action,
-      emoji: "📝",
+      icon: "file-text",
       className: "bg-gray-500/10 text-gray-600",
     }
   );
