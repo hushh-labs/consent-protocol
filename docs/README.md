@@ -107,11 +107,10 @@ Hushh runs AI directly on your phone — no cloud required:
 | Agent             | Port  | Description                             | Status     |
 | ----------------- | ----- | --------------------------------------- | ---------- |
 | **Orchestrator**  | 10000 | Routes user intent to domain agents     | ✅ Active  |
-| **Agent Kai**     | 10003 | **PRIMARY** — Investment analysis       | ✅ Active  |
 | **Food & Dining** | 10001 | Dietary preferences, location favorites | ✅ Active  |
 | **Professional**  | 10002 | Skills, experience, career goals        | ✅ Active  |
-| Identity          | 10004 | Email/phone verification                | 🔧 Planned |
-| Shopping          | 10005 | Purchase preferences                    | 🔧 Planned |
+| **Shopping**      | 10004 | Purchase preferences                    | 🔧 Planned |
+| **Agent Kai**     | 10005 | **PRIMARY** — Investment analysis       | ✅ Active  |
 
 ### Primary Focus: Agent Kai
 
