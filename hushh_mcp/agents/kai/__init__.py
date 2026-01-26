@@ -1,24 +1,25 @@
+# hushh_mcp/agents/kai/__init__.py
 """
-Kai Agents Module
+Kai Financial Agent 📈
 
-Exports individual specialist agents for stock analysis:
-- FundamentalAgent: SEC filings and fundamentals
-- SentimentAgent: News and social sentiment
-- ValuationAgent: Financial metrics and pricing
-
-All agents are lightweight orchestrators that compose operons.
-Consent validation happens at the operon level.
+Advanced multi-modal financial analyst.
+MIGRATED TO ADK (v2.0.0)
 """
 
-from .fundamental_agent import FundamentalAgent, FundamentalInsight
-from .sentiment_agent import SentimentAgent, SentimentInsight
-from .valuation_agent import ValuationAgent, ValuationInsight
+from typing import Dict, Any, Optional
+from hushh_mcp.types import UserID
+from .agent import get_kai_agent, KaiAgent
 
-__all__ = [
-    "FundamentalAgent",
-    "FundamentalInsight",
-    "SentimentAgent",
-    "SentimentInsight",
-    "ValuationAgent",
-    "ValuationInsight",
-]
+__all__ = ["handle_message", "KaiAgent", "get_kai_agent"]
+
+def handle_message(
+    message: str,
+    user_id: UserID,
+    session_state: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """Compatibility wrapper for the new ADK agent."""
+    agent = get_kai_agent()
+    # Note: Kai requires consent for deep tools, but initial entry might be chat.
+    # We pass empty token; agent might prompt or fail on tool use if critical.
+    # In a real flow, Orchestrator would pass the token.
+    return agent.handle_message(message, user_id, consent_token="")
