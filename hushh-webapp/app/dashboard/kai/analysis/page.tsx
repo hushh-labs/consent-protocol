@@ -57,7 +57,6 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { Badge } from "@/components/ui/badge";
-import { hasValidConsent } from "../actions";
 import { getPreferences, analyzeFundamental } from "@/lib/services/kai-service";
 import { decryptData } from "@/lib/vault/encrypt";
 import { getGsap, animateOnce } from "@/lib/morphy-ux/gsap";
@@ -221,14 +220,14 @@ export default function KaiAnalysis() {
   }, [user, isVaultUnlocked, vaultKey, vaultOwnerToken]);
 
   // Check consent on mount
+  // Vault owners have consent via vault.owner token (master scope)
   useEffect(() => {
-    const checkConsent = async () => {
-      if (!user) return;
-      const hasTokens = await hasValidConsent("agent.kai.analyze");
-      setHasConsent(hasTokens);
-    };
-    checkConsent();
-  }, [user]);
+    // If vault owner token exists, user has consent for all Kai operations
+    // vault.owner satisfies agent.kai.analyze via hierarchical scope validation
+    if (vaultOwnerToken) {
+      setHasConsent(true);
+    }
+  }, [vaultOwnerToken]);
 
   // GSAP Entry Animation for Scorecard
   useEffect(() => {
