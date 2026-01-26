@@ -1,207 +1,79 @@
 """
-Kai Investment Analysis Agent
+Hushh Kai Financial Agent (ADK Port)
 
-Extends AgentNav with investment-specific logic.
-Demonstrates compliance with Hushh Consent Protocol.
+Advanced Financial Analyst Coordinator.
+MIGRATED TO ADK (v2.0.0)
 """
 
-from typing import Dict, Any
-from hushh_mcp.agents.agent_nav import AgentNav, AgentManifest
-from hushh_mcp.constants import ConsentScope
+import os
+import logging
+from typing import Dict, Any, Optional
+
+from hushh_mcp.hushh_adk.core import HushhAgent
+from hushh_mcp.hushh_adk.manifest import ManifestLoader
 from hushh_mcp.types import UserID
 
-# Import Kai operons
-from hushh_mcp.operons.kai.analysis import (
-    analyze_fundamentals,
-    analyze_sentiment,
-    analyze_valuation
-)
-from hushh_mcp.operons.kai.storage import (
-    store_decision_card,
-    retrieve_decision_card
+# Import tools
+from .tools import (
+    perform_fundamental_analysis,
+    perform_sentiment_analysis,
+    perform_valuation_analysis
 )
 
+logger = logging.getLogger(__name__)
 
-class KaiAgent(AgentNav):
+class KaiAgent(HushhAgent):
     """
-    Kai - Educational Investment Analysis Agent
-    
-    Provides stock analysis through 3 specialized agents:
-    - Fundamental analysis (10-K/10-Q filings)
-    - Sentiment analysis (news, social media)
-    - Valuation analysis (financial metrics)
-    
-    All analysis requires user consent via AgentNav base class.
+    Agentic Kai Financial Coordinator.
     """
     
-    def _get_manifest(self) -> AgentManifest:
-        """Define Kai agent metadata."""
-        return AgentManifest(
-            agent_id="agent_kai",
-            name="Kai Investment Analyst",
-            description="Educational stock analysis with consent-first design",
-            version="2.0.0",
-            required_scopes=[
-                ConsentScope.VAULT_READ_RISK_PROFILE,
-                ConsentScope.VAULT_WRITE_DECISION,
-                ConsentScope.AGENT_KAI_ANALYZE,
-            ]
+    def __init__(self):
+        manifest_path = os.path.join(os.path.dirname(__file__), "agent.yaml")
+        self.manifest = ManifestLoader.load(manifest_path)
+        
+        super().__init__(
+            name=self.manifest.name,
+            model=self.manifest.model,
+            system_prompt=self.manifest.system_instruction,
+            tools=[
+                perform_fundamental_analysis,
+                perform_sentiment_analysis,
+                perform_valuation_analysis
+            ],
+            required_scopes=self.manifest.required_scopes
         )
-    
-    def _handle_action(
+        
+    def handle_message(
         self,
-        action: str,
+        message: str,
         user_id: UserID,
-        consent_token: str,
-        **kwargs
+        consent_token: str = ""
     ) -> Dict[str, Any]:
         """
-        Route to appropriate Kai action.
-        
-        Called AFTER consent validation by AgentNav.
+        Agentic Entry Point.
         """
-        
-        if action == "analyze":
-            return self._analyze_stock(
-                user_id=user_id,
-                consent_token=consent_token,
-                ticker=kwargs.get("ticker"),
-                session_id=kwargs.get("session_id")
-            )
-        
-        elif action == "get_history":
-            return self._get_decision_history(
-                user_id=user_id,
-                consent_token=consent_token,
-                vault_key_hex=kwargs.get("vault_key_hex")
-            )
-        
-        else:
-            raise ValueError(f"Unknown action: {action}")
-    
-    def _analyze_stock(
-        self,
-        user_id: UserID,
-        consent_token: str,
-        ticker: str,
-        session_id: str
-    ) -> Dict[str, Any]:
-        """
-        Perform comprehensive stock analysis.
-        
-        Orchestrates:
-        1. Fundamental analysis (SEC filings)
-        2. Sentiment analysis (news/social)
-        3. Valuation analysis (metrics)
-        4. Decision aggregation
-        
-        Each operon independently validates the consent token.
-        """
-        self.logger.info(f"🔍 Analyzing {ticker} for {user_id}")
-        
-        # Step 1: Fundamental analysis
-        fundamental = analyze_fundamentals(
-            ticker=ticker,
-            user_id=user_id,
-            sec_filings=[],  # TODO: Fetch from SEC API
-            consent_token=consent_token
-        )
-        
-        # Step 2: Sentiment analysis
-        sentiment = analyze_sentiment(
-            ticker=ticker,
-            user_id=user_id,
-            news_articles=[],  # TODO: Fetch from news API
-            consent_token=consent_token
-        )
-        
-        # Step 3: Valuation analysis
-        valuation = analyze_valuation(
-            ticker=ticker,
-            user_id=user_id,
-            market_data={},  # TODO: Fetch from market data API
-            consent_token=consent_token
-        )
-        
-        # Step 4: Aggregate decision
-        decision = self._aggregate_decision(
-            fundamental, sentiment, valuation
-        )
-        
-        self.logger.info(
-            f"✅ Analysis complete for {ticker}: {decision}"
-        )
-        
-        return {
-            "ticker": ticker,
-            "decision": decision,
-            "session_id": session_id,
-            "analyses": {
-                "fundamental": fundamental,
-                "sentiment": sentiment,
-                "valuation": valuation
-            },
-            "timestamp": self._get_timestamp()
-        }
-    
-    def _aggregate_decision(
-        self,
-        fundamental: Dict,
-        sentiment: Dict,
-        valuation: Dict
-    ) -> str:
-        """
-        Aggregate recommendations from 3 agents.
-        
-        Simple voting mechanism:
-        - Each agent votes: buy, hold, or reduce
-        - Majority wins
-        """
-        votes = {
-            "buy": 0,
-            "hold": 0,
-            "reduce": 0
-        }
-        
-        for analysis in [fundamental, sentiment, valuation]:
-            vote = analysis.get("recommendation", "hold").lower()
-            if vote in votes:
-                votes[vote] += 1
-        
-        # Return majority vote
-        return max(votes, key=votes.get)
-    
-    def _get_decision_history(
-        self,
-        user_id: UserID,
-        consent_token: str,
-        vault_key_hex: str
-    ) -> Dict[str, Any]:
-        """
-        Get user's past investment decisions from vault.
-        
-        Requires vault.read.decision scope.
-        """
-        self.logger.info(f"📜 Fetching decision history for {user_id}")
-        
-        # TODO: Implement with retrieve_decision_card operon
-        # decisions = retrieve_decision_card(
-        #     user_id=user_id,
-        #     vault_key_hex=vault_key_hex,
-        #     consent_token=consent_token
-        # )
-        
-        return {
-            "decisions": [],
-            "total": 0,
-            "message": "History retrieval coming soon"
-        }
-    
-    def _get_timestamp(self) -> int:
-        """Get current Unix timestamp in milliseconds."""
-        from datetime import datetime
-        return int(datetime.now().timestamp() * 1000)
+        try:
+            # Execute ADK run
+            # Note: For long running analysis, we might want to stream or notify
+            response = self.run(message, user_id=user_id, consent_token=consent_token)
+            
+            return {
+                "response": response.text if hasattr(response, 'text') else str(response),
+                "is_complete": True 
+            }
+            
+        except Exception as e:
+            logger.error(f"KaiAgent error: {e}")
+            return {
+                "response": "I encountered an error analyzing the market data.",
+                "error": str(e)
+            }
 
+# Singleton
+_kai_agent = None
 
-# Singleton instance for API usage
-kai_agent = KaiAgent()
+def get_kai_agent():
+    global _kai_agent
+    if not _kai_agent:
+        _kai_agent = KaiAgent()
+    return _kai_agent
