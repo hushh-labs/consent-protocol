@@ -29,6 +29,15 @@ import {
   History,
   Key,
   Ban,
+  Clipboard,
+  Lock,
+  FileText,
+  Activity,
+  Utensils,
+  Briefcase,
+  Wallet,
+  Crown,
+  LineChart,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +52,6 @@ import {
   appColumns,
   AppSummary,
   AuditLogEntry,
-  formatScope,
-  getActionInfo,
 } from "./columns";
 import {
   Drawer,
@@ -97,6 +104,159 @@ interface ActiveConsent {
   expires_at: number;
   time_remaining_ms: number;
 }
+
+// ============================================================================
+// MODULE-LEVEL HELPER FUNCTIONS (used by multiple components)
+// ============================================================================
+
+// Icon renderer helper (replaces emojis)
+const renderIcon = (iconName: string, className: string = "h-4 w-4") => {
+  const iconMap: Record<string, React.ReactNode> = {
+    clipboard: <Clipboard className={className} />,
+    check: <Check className={className} />,
+    x: <X className={className} />,
+    ban: <Ban className={className} />,
+    clock: <Clock className={className} />,
+    lock: <Lock className={className} />,
+    "file-text": <FileText className={className} />,
+    activity: <Activity className={className} />,
+    utensils: <Utensils className={className} />,
+    briefcase: <Briefcase className={className} />,
+    wallet: <Wallet className={className} />,
+    crown: <Crown className={className} />,
+    "line-chart": <LineChart className={className} />,
+  };
+  return iconMap[iconName] || <FileText className={className} />;
+};
+
+// User-friendly action labels with colors (no emojis)
+const getActionInfoLocal = (
+  action: string
+): { label: string; icon: string; className: string } => {
+  const actionMap: Record<
+    string,
+    { label: string; icon: string; className: string }
+  > = {
+    REQUESTED: {
+      label: "Access Requested",
+      icon: "clipboard",
+      className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+    },
+    CONSENT_GRANTED: {
+      label: "Access Granted",
+      icon: "check",
+      className: "bg-green-500/10 text-green-600 border-green-500/20",
+    },
+    CONSENT_DENIED: {
+      label: "Access Denied",
+      icon: "x",
+      className: "bg-red-500/10 text-red-600 border-red-500/20",
+    },
+    CANCELLED: {
+      label: "Request Cancelled",
+      icon: "ban",
+      className: "bg-gray-500/10 text-gray-600 border-gray-500/20",
+    },
+    TIMED_OUT: {
+      label: "Request Expired",
+      icon: "clock",
+      className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
+    },
+    REVOKED: {
+      label: "Access Revoked",
+      icon: "lock",
+      className: "bg-red-500/10 text-red-600 border-red-500/20",
+    },
+    OPERATION_PERFORMED: {
+      label: "Operation",
+      icon: "activity",
+      className: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+    },
+  };
+  return (
+    actionMap[action] || {
+      label: action,
+      icon: "file-text",
+      className: "bg-gray-500/10 text-gray-600",
+    }
+  );
+};
+
+// Human-readable scope labels (no emojis)
+const formatScopeLocal = (
+  scope: string
+): { icon: string; label: string; description: string } => {
+  const scopeMap: Record<
+    string,
+    { icon: string; label: string; description: string }
+  > = {
+    // API format (underscores)
+    vault_read_food: {
+      icon: "utensils",
+      label: "Food Preferences",
+      description: "Dietary restrictions, cuisines, and dining budget",
+    },
+    vault_read_professional: {
+      icon: "briefcase",
+      label: "Professional Profile",
+      description: "Job title, skills, and career preferences",
+    },
+    vault_read_finance: {
+      icon: "wallet",
+      label: "Financial Data",
+      description: "Budget and spending preferences",
+    },
+    vault_write_food: {
+      icon: "utensils",
+      label: "Save Food Preferences",
+      description: "Store your dietary and cuisine preferences",
+    },
+    vault_write_professional: {
+      icon: "briefcase",
+      label: "Save Professional Profile",
+      description: "Store your career data",
+    },
+    "vault.owner": {
+      icon: "crown",
+      label: "Owner Access",
+      description: "Full control (You)",
+    },
+    // Dot format (from MCP)
+    "vault.read.food": {
+      icon: "utensils",
+      label: "Food Preferences",
+      description: "Dietary restrictions, cuisines, and dining budget",
+    },
+    "vault.read.professional": {
+      icon: "briefcase",
+      label: "Professional Profile",
+      description: "Job title, skills, and career preferences",
+    },
+    "vault.read.finance": {
+      icon: "wallet",
+      label: "Financial Data",
+      description: "Investment preferences and financial data",
+    },
+    "agent.kai.analyze": {
+      icon: "line-chart",
+      label: "Kai Analysis",
+      description: "Investment analysis operations",
+    },
+  };
+
+  return (
+    scopeMap[scope] || {
+      icon: "lock",
+      label: scope
+        .replace(/[_\.]/g, " ")
+        .replace("vault read ", "")
+        .replace("vault write ", ""),
+      description: `Access: ${scope}`,
+    }
+  );
+};
+
+// ============================================================================
 
 // AppAuditLog component - groups by app and shows Drawer for event details
 function AppAuditLog({
@@ -228,7 +388,7 @@ function AppAuditLog({
                   // Skip if no events (shouldn't happen but satisfies TypeScript)
                   if (!firstEvent || !lastEvent) return null;
 
-                  const scopeInfo = formatScope(firstEvent.scope);
+                  const scopeInfo = formatScopeLocal(firstEvent.scope);
 
                   // Status color
                   const statusColor =
@@ -247,13 +407,13 @@ function AppAuditLog({
                       className={`border-l-4 ${statusColor} px-4 py-3 mb-3 bg-muted/20`}
                     >
                       <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="outline">
-                          {scopeInfo.emoji} {scopeInfo.label}
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          {renderIcon(scopeInfo.icon)} {scopeInfo.label}
                         </Badge>
                       </div>
                       <div className="space-y-2">
                         {events.map((entry) => {
-                          const actionInfo = getActionInfo(
+                          const actionInfo = getActionInfoLocal(
                             entry.is_timed_out ? "TIMED_OUT" : entry.action
                           );
                           return (
@@ -262,10 +422,17 @@ function AppAuditLog({
                               className="flex items-center justify-between text-sm"
                             >
                               <span className="flex items-center gap-2">
-                                <span>{actionInfo.emoji}</span>
+                                {renderIcon(actionInfo.icon)}
                                 <span className="font-medium">
                                   {actionInfo.label}
                                 </span>
+                                {/* Show operation details for vault.owner operations */}
+                                {entry.action === "OPERATION_PERFORMED" && (entry.scope_description || entry.metadata?.operation) && (
+                                  <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                    {entry.scope_description || entry.metadata?.operation}
+                                    {entry.metadata?.target && ` → ${entry.metadata.target}`}
+                                  </span>
+                                )}
                               </span>
                               <span className="text-xs text-muted-foreground">
                                 {formatDate(entry.issued_at)}
@@ -575,118 +742,6 @@ export default function ConsentsPage() {
     return "bg-gray-500/10 text-gray-600 border-gray-500/20";
   };
 
-  // User-friendly action labels with colors
-  const getActionInfo = (
-    action: string
-  ): { label: string; emoji: string; className: string } => {
-    const actionMap: Record<
-      string,
-      { label: string; emoji: string; className: string }
-    > = {
-      REQUESTED: {
-        label: "Access Requested",
-        emoji: "📋",
-        className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-      },
-      CONSENT_GRANTED: {
-        label: "Access Granted",
-        emoji: "✅",
-        className: "bg-green-500/10 text-green-600 border-green-500/20",
-      },
-      CONSENT_DENIED: {
-        label: "Access Denied",
-        emoji: "❌",
-        className: "bg-red-500/10 text-red-600 border-red-500/20",
-      },
-      CANCELLED: {
-        label: "Request Cancelled",
-        emoji: "🚫",
-        className: "bg-gray-500/10 text-gray-600 border-gray-500/20",
-      },
-      TIMED_OUT: {
-        label: "Request Expired",
-        emoji: "⏰",
-        className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-      },
-      REVOKED: {
-        label: "Access Revoked",
-        emoji: "🔒",
-        className: "bg-red-500/10 text-red-600 border-red-500/20",
-      },
-    };
-    return (
-      actionMap[action] || {
-        label: action,
-        emoji: "📝",
-        className: "bg-gray-500/10 text-gray-600",
-      }
-    );
-  };
-
-  // Human-readable scope labels with emojis
-  const formatScope = (
-    scope: string
-  ): { emoji: string; label: string; description: string } => {
-    const scopeMap: Record<
-      string,
-      { emoji: string; label: string; description: string }
-    > = {
-      // API format (underscores)
-      vault_read_food: {
-        emoji: "🍽️",
-        label: "Food Preferences",
-        description: "Dietary restrictions, cuisines, and dining budget",
-      },
-      vault_read_professional: {
-        emoji: "💼",
-        label: "Professional Profile",
-        description: "Job title, skills, and career preferences",
-      },
-      vault_read_finance: {
-        emoji: "💰",
-        label: "Financial Data",
-        description: "Budget and spending preferences",
-      },
-      vault_write_food: {
-        emoji: "🍽️",
-        label: "Save Food Preferences",
-        description: "Store your dietary and cuisine preferences",
-      },
-      vault_write_professional: {
-        emoji: "💼",
-        label: "Save Professional Profile",
-        description: "Store your career data",
-      },
-      "vault.owner": {
-        emoji: "👑",
-        label: "Owner Access",
-        description: "Full control (You)",
-      },
-      // Dot format (from MCP)
-      "vault.read.food": {
-        emoji: "🍽️",
-        label: "Food Preferences",
-        description: "Dietary restrictions, cuisines, and dining budget",
-      },
-      "vault.read.professional": {
-        emoji: "💼",
-        label: "Professional Profile",
-        description: "Job title, skills, and career preferences",
-      },
-    };
-
-    return (
-      scopeMap[scope] || {
-        emoji: "🔐",
-        label: scope
-          .replace(/[_\.]/g, " ")
-          .replace("vault read ", "")
-          .replace("vault write ", ""),
-        description: `Access: ${scope}`,
-      }
-    );
-  };
-
   if (loading) {
     return <HushhLoader label="Loading consents..." />;
   }
@@ -786,9 +841,9 @@ export default function ConsentsPage() {
                         {new Date(request.requestedAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <Badge className={getScopeColor(request.scope)}>
-                      {formatScope(request.scope).emoji}{" "}
-                      {formatScope(request.scope).label}
+                    <Badge className={`${getScopeColor(request.scope)} flex items-center gap-1`}>
+                      {renderIcon(formatScopeLocal(request.scope).icon)}
+                      {formatScopeLocal(request.scope).label}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -797,7 +852,7 @@ export default function ConsentsPage() {
                     <p className="text-sm font-medium">Requesting access to:</p>
                     <p className="text-sm text-muted-foreground mt-1">
                       {request.scopeDescription ||
-                        formatScope(request.scope).description}
+                        formatScopeLocal(request.scope).description}
                     </p>
                   </div>
 
@@ -852,9 +907,9 @@ export default function ConsentsPage() {
                       Authenticated via verified request
                     </p>
                   </div>
-                  <Badge className={getScopeColor(session.scope)}>
-                    {formatScope(session.scope).emoji}{" "}
-                    {formatScope(session.scope).label}
+                  <Badge className={`${getScopeColor(session.scope)} flex items-center gap-1`}>
+                    {renderIcon(formatScopeLocal(session.scope).icon)}
+                    {formatScopeLocal(session.scope).label}
                   </Badge>
                 </div>
               </CardHeader>
@@ -888,7 +943,7 @@ export default function ConsentsPage() {
           {activeConsents.length > 0 ? (
             <div className="space-y-4">
               {activeConsents.map((consent, index) => {
-                const scopeInfo = formatScope(consent.scope);
+                const scopeInfo = formatScopeLocal(consent.scope);
                 const timeRemaining = consent.expires_at
                   ? getTimeRemaining(consent.expires_at)
                   : "N/A";
@@ -909,8 +964,8 @@ export default function ConsentsPage() {
                             {consent.developer || "External Developer"}
                           </p>
                         </div>
-                        <Badge className={getScopeColor(consent.scope)}>
-                          {scopeInfo.emoji} {scopeInfo.label}
+                        <Badge className={`${getScopeColor(consent.scope)} flex items-center gap-1`}>
+                          {renderIcon(scopeInfo.icon)} {scopeInfo.label}
                         </Badge>
                       </div>
                     </CardHeader>
