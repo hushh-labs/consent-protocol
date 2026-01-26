@@ -22,3 +22,18 @@ sec_payload_aapl.json
 sec_payload_nvda.json
 # Blog drafts (personal content)
 blogs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+Pipfile.lock
+
+# System
+.DS_Store
+Thumbs.db
