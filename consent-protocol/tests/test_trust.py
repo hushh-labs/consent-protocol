@@ -13,8 +13,8 @@ from hushh_mcp.constants import ConsentScope
 USER_ID = "user_nyx"
 DELEGATOR = "agent_identity"
 DELEGATEE = "agent_shopper"
-SCOPE_VALID = ConsentScope.VAULT_READ_EMAIL
-SCOPE_INVALID = ConsentScope.VAULT_READ_PHONE
+SCOPE_VALID = ConsentScope.VAULT_READ_FOOD
+SCOPE_INVALID = ConsentScope.VAULT_READ_FINANCE
 
 
 def test_create_and_verify_trust_link():
