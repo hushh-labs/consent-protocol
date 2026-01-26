@@ -53,7 +53,7 @@ FastApi-->>KaiPage: {preferences:[...]}
 2. **Web**: add Next.js proxy route under `hushh-webapp/app/api/.../route.ts` (web only).
 3. **Native**: add Capacitor plugin method in:
    - iOS: `hushh-webapp/ios/App/App/Plugins/*Plugin.swift`
-   - Android: `hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/**`
+   - Android: `hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/**`
 4. **TS plugin interface**: add/align in `hushh-webapp/lib/capacitor/**`.
 5. **Service method**: expose a single method in `hushh-webapp/lib/services/**` (pages call this only).
 6. **Route contract**: add it to `hushh-webapp/route-contracts.json`.
@@ -76,14 +76,17 @@ FastApi-->>KaiPage: {preferences:[...]}
 
 ### Vault Data Access (Requires VAULT_OWNER Token)
 
-| Route | Method | Token Required | Token Type | Validation Function | Platform Support |
-|-------|--------|---------------|------------|---------------------|------------------|
-| `/api/vault/food/preferences` | GET (web) / POST (backend) | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/food/preferences/store` | POST | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/professional/preferences` | GET (web) / POST (backend) | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/professional/preferences/store` | POST | ✅ Yes | VAULT_OWNER | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase ID | Firebase verify | Web, iOS, Android |
-| `/api/kai/preferences/store` | POST | ✅ Yes | VAULT_OWNER | Via VaultContext | Web, iOS, Android |
+| Web Route | Backend Route | Method | Token Required | Validation Function | Platform Support |
+|-----------|---------------|--------|---------------|---------------------|------------------|
+| `/api/vault/food/preferences` | `/api/food/preferences` | GET (web) / POST (backend) | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/food` | `/api/food/preferences/store` | POST | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/professional/preferences` | `/api/professional/preferences` | GET (web) / POST (backend) | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/professional` | `/api/professional/preferences/store` | POST | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
+| `/api/vault/status` | `/db/vault/status` | GET (web) / POST (backend) | ✅ Yes | Session token | Web, iOS, Android |
+| `/api/kai/preferences/:userId` | `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase verify | Web, iOS, Android |
+
+> Note: Web routes use GET with query params; backend routes use POST with JSON body.
+> Native plugins call backend routes directly.
 
 ### Agent Operations (Requires Agent-Scoped Tokens)
 

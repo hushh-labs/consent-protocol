@@ -33,25 +33,33 @@ import { BreadcrumbLink } from "@/components/ui/breadcrumb";
 
 ### Button (PRIMARY INTERACTIVE ELEMENT)
 
-```tsx
-import { Button } from "@/components/ui/button";
+**Import from Morphy-UX** for variants and effects (not stock shadcn/ui):
 
-// ✅ CORRECT - Use Button with showRipple
+```tsx
+import { Button } from "@/lib/morphy-ux/button";
+
+// ✅ CORRECT - Use Morphy-UX Button with showRipple
 <Button
-  variant="gradient" // "none" | "link" | "gradient" | "blue" | "purple" | "green" | "orange" | "metallic"
+  variant="gradient" // "none" | "link" | "gradient" | "blue" | "purple" | "green" | "orange" | "metallic" | "blue-gradient" | "yellow" | "multi"
   effect="glass" // "fill" | "glass" | "fade"
   showRipple // Ripple on CLICK only
   size="lg" // "sm" | "default" | "lg" | "xl"
 >
   Action
 </Button>;
+
+// Note: Stock shadcn/ui Button is at @/components/ui/button (no variants/effects)
 ```
 
 ### Card
 
-```tsx
-import { Card, CardTitle, CardDescription } from "@/components/ui/card";
+**Import from Morphy-UX** for variants and effects:
 
+```tsx
+import { Card } from "@/lib/morphy-ux/card";
+import { CardContent, CardTitle, CardDescription } from "@/components/ui/card";
+
+// ✅ CORRECT - Use Morphy-UX Card for glass/ripple effects
 <Card
   variant="none"
   effect="glass"
@@ -60,6 +68,8 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 >
   <CardContent>...</CardContent>
 </Card>;
+
+// Note: CardContent, CardTitle, etc. still come from @/components/ui/card
 ```
 
 ### VaultFlow (Authentication)
@@ -100,8 +110,8 @@ import { VaultFlow } from "@/components/vault/vault-flow";
 
 | Mode  | Ripple Color                    |
 | ----- | ------------------------------- |
-| Light | `--morphy-primary-start` (Blue) |
-| Dark  | `--morphy-primary-start` (Blue) |
+| Light | `--morphy-primary-start` (Pink) |
+| Dark  | `--morphy-primary-start` (Pink) |
 
 ---
 
@@ -124,37 +134,33 @@ import { VaultFlow } from "@/components/vault/vault-flow";
 
 ## 4. Glass Classes (globals.css)
 
-| Class                | Usage                  |
-| -------------------- | ---------------------- |
-| `.glass`             | Standard frosted glass |
-| `.glass-subtle`      | Lighter glass          |
-| `.glass-prominent`   | Heavy glass (sidebars) |
-| `.glass-interactive` | With hover refraction  |
-| `.card-glass`        | Card with glass        |
-| `.nav-glass`         | Navigation bar         |
+| Class                | Usage                          | Status |
+| -------------------- | ------------------------------ | ------ |
+| `.glass-interactive` | Glass with hover effects       | Active |
+| `.glass-performant`  | GPU-optimized glass layer      | Active |
+
+> Note: Use the `effect="glass"` prop on Morphy-UX components (Button, Card) for glassmorphism effects, rather than CSS classes directly.
 
 ---
 
 ## 5. Colors (CSS Variables) - HUSHH BRAND
 
-| Token                   | Value     | Usage          |
-| ----------------------- | --------- | -------------- |
-| `--color-hushh-blue`    | `#0071e3` | Primary CTAs   |
-| `--color-hushh-emerald` | `#10b981` | Secondary      |
-| `--color-hushh-teal`    | `#0d7590` | Tertiary       |
-| `--color-hushh-navy`    | `#13405d` | Dark accents   |
-| `--color-background`    | `#FAFAFA` | Page bg        |
-| `--color-success`       | `#10b981` | Success states |
-| `--color-info`          | `#0071e3` | Info states    |
+| Token                | Value     | Usage          |
+| -------------------- | --------- | -------------- |
+| `--color-background` | `#FAFAFA` | Page bg        |
+| `--fadeGrey`         | `#e5e7eb` | Subtle borders |
 
 ### Morphy-UX Gradients (CSS Variables)
 
-| Token                      | Light Mode         | Dark Mode          |
-| -------------------------- | ------------------ | ------------------ |
-| `--morphy-primary-start`   | `#0071e3` (Blue)   | `#0071e3` (Blue)   |
-| `--morphy-primary-end`     | `#bb62fc` (Purple) | `#bb62fc` (Purple) |
-| `--morphy-secondary-start` | `#0071e3` (Blue)   | `#0071e3` (Blue)   |
-| `--morphy-secondary-end`   | `#bb62fc` (Purple) | `#bb62fc` (Purple) |
+| Token                      | Light Mode           | Dark Mode            |
+| -------------------------- | -------------------- | -------------------- |
+| `--morphy-primary-start`   | `#e91e63` (Pink)     | `#e91e63` (Pink)     |
+| `--morphy-primary-end`     | `#9c27b0` (Purple)   | `#9c27b0` (Purple)   |
+| `--morphy-secondary-start` | `#c0c0c0` (Silver)   | `#e91e63` (Pink)     |
+| `--morphy-secondary-end`   | `#e8e8e8` (Silver)   | `#9c27b0` (Purple)   |
+
+> Note: The pink/purple gradient is used for primary CTAs and branding. 
+> Additional color tokens are defined in `lib/morphy-ux/tokens/colors.ts`.
 
 ### Background Gradient Classes
 
@@ -266,4 +272,4 @@ import { Shield, Lock } from "lucide-react";
 
 ---
 
-_Version: 5.1 | Updated 2026-01-03 | VaultFlow & Mobile Layouts_
+_Version: 5.2 | Updated January 2026 | Fixed import paths and color tokens_

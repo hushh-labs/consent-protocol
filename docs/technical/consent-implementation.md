@@ -647,19 +647,131 @@ const headers = {
 
 ---
 
+## 📋 Complete Scope Reference
+
+All consent scopes defined in `hushh_mcp/constants.py`:
+
+### Master Scope
+
+| Scope | Value | Description |
+|-------|-------|-------------|
+| **VAULT_OWNER** | `vault.owner` | Master scope - satisfies ANY other scope. Granted only to vault owner via BYOK login. Never granted to external agents. |
+
+### Vault Read Scopes
+
+| Scope | Value | Description |
+|-------|-------|-------------|
+| **VAULT_READ_FOOD** | `vault.read.food` | Read dietary preferences, cuisines, budget |
+| **VAULT_READ_PROFESSIONAL** | `vault.read.professional` | Read career profile, skills, preferences |
+| **VAULT_READ_FINANCE** | `vault.read.finance` | Read ALL financial data (risk profile, decisions, preferences) |
+
+### Vault Write Scopes
+
+| Scope | Value | Description |
+|-------|-------|-------------|
+| **VAULT_WRITE_FOOD** | `vault.write.food` | Save dietary preferences |
+| **VAULT_WRITE_PROFESSIONAL** | `vault.write.professional` | Save career profile data |
+| **VAULT_WRITE_FINANCE** | `vault.write.finance` | Save ALL financial data (risk profile, decisions, preferences) |
+
+### Agent Operation Scopes
+
+| Scope | Value | Description | Agent |
+|-------|-------|-------------|-------|
+| **AGENT_KAI_ANALYZE** | `agent.kai.analyze` | Perform investment analysis (SEC data, sentiment, valuation) | Kai |
+| **AGENT_FOOD_COLLECT** | `agent.food.collect` | Collect dietary preferences via conversation | Food & Dining |
+| **AGENT_FINANCE_ANALYZE** | `agent.finance.analyze` | General financial analysis | Generic |
+| **AGENT_SHOPPING_PURCHASE** | `agent.shopping.purchase` | Execute purchases (planned) | Shopping |
+
+### Scope Hierarchy
+
+```
+vault.owner (Master)
+    └── Satisfies ALL other scopes
+        ├── vault.read.*
+        ├── vault.write.*
+        └── agent.*
+```
+
+**Important**: When `vault.owner` token is validated against any scope (e.g., `agent.kai.analyze`), validation passes. This allows vault owners to use all their own agents without separate tokens.
+
+### Kai Agent Scope Model (Simplified)
+
+Kai uses only **3 core scopes**:
+
+| Scope | Purpose | Used By |
+|-------|---------|---------|
+| `vault.read.finance` | Read all financial data (risk profile, decisions, preferences) | All Kai tools |
+| `vault.write.finance` | Write all financial data (decisions, preferences) | Decision storage |
+| `agent.kai.analyze` | Execute analysis operations | External agents only |
+
+**Vault owners** use their `vault.owner` token which satisfies all three scopes.
+**External agents** must request `agent.kai.analyze` scope explicitly.
+
+### Per-Agent Scope Requirements
+
+**Kai Agent** (`agents/kai/agent.yaml`):
+- `vault.read.finance` - Read risk profile, decision history, preferences
+- `vault.write.finance` - Store analysis decisions
+- `agent.kai.analyze` - For external agent delegation only
+
+**Food & Dining Agent** (`agents/food_dining/agent.yaml`):
+- `vault.read.food` - Read preferences
+- `vault.read.finance` - Analyze spending
+- `vault.write.food` - Save preferences
+
+**Professional Agent** (`agents/professional_profile/agent.yaml`):
+- `vault.read.professional` - Read profile
+- `vault.write.professional` - Save profile
+
+---
+
+## 📊 Audit Logging Behavior
+
+The `consent_audit` table correctly tracks WHO is accessing data:
+
+### Vault Owner vs External Agent
+
+| User Type | agent_id | scope | When |
+|-----------|----------|-------|------|
+| **Vault Owner** | `self` | `vault.owner` | Owner accesses their own Kai |
+| **External Agent** | `agent_kai` | `agent.kai.analyze` | Third-party agent accesses via delegation |
+
+### Correct Audit Flow for Kai
+
+**When vault owner clicks "Analyze AAPL":**
+```
+1. Frontend checks vaultOwnerToken (from VaultContext)
+2. Analysis uses vault.owner token directly
+3. Backend validates vault.owner scope
+4. Audit logs: agent_id="self", scope="vault.owner"
+```
+
+**When external agent requests analysis:**
+```
+1. External agent requests agent.kai.analyze token
+2. User approves consent request
+3. Backend issues agent.kai.analyze token
+4. Audit logs: agent_id="agent_kai", scope="agent.kai.analyze"
+```
+
+This ensures compliance audit trails correctly identify vault owners vs delegated agents
+
+---
+
 ## 🔐 All Data Access Requires VAULT_OWNER Token
 
 ### Vault Operations Matrix
 
-| Operation                  | Endpoint                                    | Method | Token Required | Token Type   | Validation Function            |
-| -------------------------- | ------------------------------------------- | ------ | -------------- | ------------ | ------------------------------ |
-| Read food preferences      | `/api/vault/food/preferences`               | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
-| Write food preferences     | `/api/vault/food/preferences/store`         | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
-| Read professional profile  | `/api/vault/professional/preferences`       | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
-| Write professional profile | `/api/vault/professional/preferences/store` | POST   | ✅ Yes         | VAULT_OWNER  | `validate_vault_owner_token()` |
-| Read Kai preferences       | `/api/kai/preferences/:userId`              | GET    | ✅ Yes         | Firebase ID  | Firebase verify                |
-| Write Kai preferences      | `/api/kai/preferences/store`                | POST   | ✅ Yes         | VAULT_OWNER  | Via VaultContext               |
-| Kai analyze stock          | `/api/kai/analyze`                          | POST   | ✅ Yes         | Agent Scoped | `validate_token()`             |
+| Operation | Web Route | Backend Route | Method | Token Required | Token Type |
+|-----------|-----------|---------------|--------|----------------|------------|
+| Read food preferences | `/api/vault/food/preferences` | `/api/food/preferences` | GET→POST | ✅ Yes | VAULT_OWNER |
+| Write food preferences | `/api/vault/food` | `/api/food/preferences/store` | POST | ✅ Yes | VAULT_OWNER |
+| Read professional profile | `/api/vault/professional/preferences` | `/api/professional/preferences` | GET→POST | ✅ Yes | VAULT_OWNER |
+| Write professional profile | `/api/vault/professional` | `/api/professional/preferences/store` | POST | ✅ Yes | VAULT_OWNER |
+| Read Kai preferences | `/api/kai/preferences/:userId` | `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase ID |
+| Kai analyze stock | `/api/kai/analyze` | `/api/kai/analyze` | POST | ✅ Yes | Agent Scoped |
+
+> Note: Web routes use GET with query params; backend routes use POST with JSON body containing `userId` and `consentToken`. Native plugins call backend routes directly.
 
 ### Platform Routing with Tokens
 
