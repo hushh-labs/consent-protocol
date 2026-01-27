@@ -32,7 +32,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db.connection import get_pool
+from hushh_mcp.services.vault_db import VaultDBService
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +121,17 @@ async def vault_check(request: VaultCheckRequest):
     The iOS app handles all consent protocol logic locally.
     """
     try:
-        pool = await get_pool()
+        # Use service layer (even though this endpoint is deprecated)
+        service = VaultDBService()
+        supabase = service.get_supabase()
+        response = supabase.table("vault_keys")\
+            .select("user_id")\
+            .eq("user_id", request.userId)\
+            .limit(1)\
+            .execute()
         
-        async with pool.acquire() as conn:
-            result = await conn.fetchval(
-                "SELECT 1 FROM vault_keys WHERE user_id = $1",
-                request.userId
-            )
-        
-        return VaultCheckResponse(hasVault=result is not None)
+        has_vault = len(response.data) > 0 if response.data else False
+        return VaultCheckResponse(hasVault=has_vault)
     
     except Exception as e:
         logger.error(f"vault/check error: {e}")
@@ -144,29 +147,27 @@ async def vault_get(request: VaultGetRequest):
     Decryption happens locally on iOS.
     """
     try:
-        pool = await get_pool()
+        # Use service layer (even though this endpoint is deprecated)
+        service = VaultDBService()
+        supabase = service.get_supabase()
+        response = supabase.table("vault_keys")\
+            .select("auth_method,encrypted_vault_key,salt,iv,recovery_encrypted_vault_key,recovery_salt,recovery_iv")\
+            .eq("user_id", request.userId)\
+            .limit(1)\
+            .execute()
         
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT auth_method, encrypted_vault_key, salt, iv,
-                       recovery_encrypted_vault_key, recovery_salt, recovery_iv
-                FROM vault_keys WHERE user_id = $1
-                """,
-                request.userId
-            )
-        
-        if not row:
+        if not response.data or len(response.data) == 0:
             raise HTTPException(status_code=404, detail="Vault not found")
         
+        row = response.data[0]
         return VaultKeyData(
-            authMethod=row["auth_method"],
-            encryptedVaultKey=row["encrypted_vault_key"],
-            salt=row["salt"],
-            iv=row["iv"],
-            recoveryEncryptedVaultKey=row["recovery_encrypted_vault_key"],
-            recoverySalt=row["recovery_salt"],
-            recoveryIv=row["recovery_iv"]
+            authMethod=row.get("auth_method"),
+            encryptedVaultKey=row.get("encrypted_vault_key"),
+            salt=row.get("salt"),
+            iv=row.get("iv"),
+            recoveryEncryptedVaultKey=row.get("recovery_encrypted_vault_key"),
+            recoverySalt=row.get("recovery_salt"),
+            recoveryIv=row.get("recovery_iv")
         )
     
     except HTTPException:
@@ -185,37 +186,29 @@ async def vault_setup(request: VaultSetupRequest):
     This just stores the encrypted blob in the database.
     """
     try:
-        pool = await get_pool()
+        # Use service layer (even though this endpoint is deprecated)
+        from datetime import datetime
+        service = VaultDBService()
+        supabase = service.get_supabase()
         
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO vault_keys (
-                    user_id, auth_method,
-                    encrypted_vault_key, salt, iv,
-                    recovery_encrypted_vault_key, recovery_salt, recovery_iv,
-                    created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CAST(EXTRACT(EPOCH FROM NOW()) * 1000 AS BIGINT))
-                ON CONFLICT (user_id) DO UPDATE SET
-                    auth_method = EXCLUDED.auth_method,
-                    encrypted_vault_key = EXCLUDED.encrypted_vault_key,
-                    salt = EXCLUDED.salt,
-                    iv = EXCLUDED.iv,
-                    recovery_encrypted_vault_key = EXCLUDED.recovery_encrypted_vault_key,
-                    recovery_salt = EXCLUDED.recovery_salt,
-                    recovery_iv = EXCLUDED.recovery_iv,
-                    updated_at = CAST(EXTRACT(EPOCH FROM NOW()) * 1000 AS BIGINT)
-                """,
-                request.userId,
-                request.authMethod,
-                request.encryptedVaultKey,
-                request.salt,
-                request.iv,
-                request.recoveryEncryptedVaultKey,
-                request.recoverySalt,
-                request.recoveryIv
-            )
+        now_ms = int(datetime.now().timestamp() * 1000)
+        data = {
+            "user_id": request.userId,
+            "auth_method": request.authMethod,
+            "encrypted_vault_key": request.encryptedVaultKey,
+            "salt": request.salt,
+            "iv": request.iv,
+            "recovery_encrypted_vault_key": request.recoveryEncryptedVaultKey,
+            "recovery_salt": request.recoverySalt,
+            "recovery_iv": request.recoveryIv,
+            "created_at": now_ms,
+            "updated_at": now_ms
+        }
+        
+        supabase.table("vault_keys").upsert(
+            data,
+            on_conflict="user_id"
+        ).execute()
         
         logger.info(f"Vault setup for user {request.userId[:8]}...")
         return SuccessResponse(success=True)
@@ -247,28 +240,27 @@ async def food_get(request: DomainGetRequest):
     Data is still encrypted - decryption happens on the client.
     """
     try:
-        pool = await get_pool()
+        # ⚠️ DEPRECATED: This endpoint lacks authentication
+        # Use /api/food/preferences instead which requires VAULT_OWNER token
+        # Use service layer for consistency (even though deprecated)
+        service = VaultDBService()
+        supabase = service.get_supabase()
+        response = supabase.table("vault_food")\
+            .select("field_name,ciphertext,iv,tag,algorithm")\
+            .eq("user_id", request.userId)\
+            .execute()
         
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT field_name, ciphertext, iv, tag, algorithm
-                FROM vault_food WHERE user_id = $1
-                """,
-                request.userId
-            )
-        
-        if not rows:
+        if not response.data or len(response.data) == 0:
             return DomainPreferencesResponse(domain="food", preferences=None)
         
         # Build preferences object from rows
         preferences = {}
-        for row in rows:
-            preferences[row["field_name"]] = {
-                "ciphertext": row["ciphertext"],
-                "iv": row["iv"],
-                "tag": row["tag"],
-                "algorithm": row["algorithm"] or "aes-256-gcm",
+        for row in response.data:
+            preferences[row.get("field_name")] = {
+                "ciphertext": row.get("ciphertext"),
+                "iv": row.get("iv"),
+                "tag": row.get("tag"),
+                "algorithm": row.get("algorithm") or "aes-256-gcm",
                 "encoding": "base64"
             }
         
@@ -288,28 +280,27 @@ async def professional_get(request: DomainGetRequest):
     Data is still encrypted - decryption happens on the client.
     """
     try:
-        pool = await get_pool()
+        # ⚠️ DEPRECATED: This endpoint lacks authentication
+        # Use /api/professional/preferences instead which requires VAULT_OWNER token
+        # Use service layer for consistency (even though deprecated)
+        service = VaultDBService()
+        supabase = service.get_supabase()
+        response = supabase.table("vault_professional")\
+            .select("field_name,ciphertext,iv,tag,algorithm")\
+            .eq("user_id", request.userId)\
+            .execute()
         
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT field_name, ciphertext, iv, tag, algorithm
-                FROM vault_professional WHERE user_id = $1
-                """,
-                request.userId
-            )
-        
-        if not rows:
+        if not response.data or len(response.data) == 0:
             return DomainPreferencesResponse(domain="professional", preferences=None)
         
         # Build preferences object from rows
         preferences = {}
-        for row in rows:
-            preferences[row["field_name"]] = {
-                "ciphertext": row["ciphertext"],
-                "iv": row["iv"],
-                "tag": row["tag"],
-                "algorithm": row["algorithm"] or "aes-256-gcm",
+        for row in response.data:
+            preferences[row.get("field_name")] = {
+                "ciphertext": row.get("ciphertext"),
+                "iv": row.get("iv"),
+                "tag": row.get("tag"),
+                "algorithm": row.get("algorithm") or "aes-256-gcm",
                 "encoding": "base64"
             }
         
@@ -391,38 +382,38 @@ async def get_vault_status(request: Request):
         # Validate VAULT_OWNER token
         validate_vault_owner_token(consent_token, user_id)
         
-        pool = await get_pool()
+        # Use service layer - Supabase doesn't support CTEs, so we'll make separate queries
+        service = VaultDBService()
+        supabase = service.get_supabase()
         
-        # OPTIMIZED: Single query with CTEs
-        # Note: Kai preferences count includes risk_profile + processing_mode fields
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                WITH food_count AS (
-                    SELECT COUNT(*) as cnt FROM vault_food WHERE user_id = $1
-                ),
-                prof_count AS (
-                    SELECT COUNT(*) as cnt FROM vault_professional WHERE user_id = $1
-                ),
-                kai_check AS (
-                    SELECT EXISTS(SELECT 1 FROM user_investor_profiles WHERE user_id = $1) as exists
-                ),
-                kai_prefs_count AS (
-                    SELECT COUNT(*) as cnt FROM vault_kai_preferences WHERE user_id = $1
-                )
-                SELECT 
-                    (SELECT cnt FROM food_count) as food_count,
-                    (SELECT cnt FROM prof_count) as prof_count,
-                    (SELECT exists FROM kai_check) as kai_onboarded,
-                    (SELECT cnt FROM kai_prefs_count) as kai_prefs_count
-                """,
-                user_id
-            )
+        # Get counts for each domain
+        food_response = supabase.table("vault_food")\
+            .select("user_id", count="exact")\
+            .eq("user_id", user_id)\
+            .limit(0)\
+            .execute()
+        food_count = food_response.count if hasattr(food_response, 'count') and food_response.count is not None else 0
         
-        food_count = row["food_count"]
-        prof_count = row["prof_count"]
-        kai_onboarded = row["kai_onboarded"]
-        kai_prefs_count = row["kai_prefs_count"]
+        prof_response = supabase.table("vault_professional")\
+            .select("user_id", count="exact")\
+            .eq("user_id", user_id)\
+            .limit(0)\
+            .execute()
+        prof_count = prof_response.count if hasattr(prof_response, 'count') and prof_response.count is not None else 0
+        
+        kai_check_response = supabase.table("user_investor_profiles")\
+            .select("user_id")\
+            .eq("user_id", user_id)\
+            .limit(1)\
+            .execute()
+        kai_onboarded = len(kai_check_response.data) > 0 if kai_check_response.data else False
+        
+        kai_prefs_response = supabase.table("vault_kai_preferences")\
+            .select("user_id", count="exact")\
+            .eq("user_id", user_id)\
+            .limit(0)\
+            .execute()
+        kai_prefs_count = kai_prefs_response.count if hasattr(kai_prefs_response, 'count') and kai_prefs_response.count is not None else 0
         
         # Kai domain is active if either onboarded OR has preferences
         kai_has_data = kai_onboarded or kai_prefs_count > 0
