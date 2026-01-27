@@ -55,8 +55,14 @@ pip install -r requirements.txt
 ### Backend (consent-protocol/.env)
 
 ```bash
-# PostgreSQL Connection
-DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
+# ⚠️ DEPRECATED: DATABASE_URL is no longer used for application database access
+# All database operations now use Supabase REST API through service layer
+# This is kept only for schema creation scripts (db/migrate.py) which need asyncpg for DDL
+# DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
+
+# Supabase REST API (REQUIRED for application database access)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-service-role-key
 
 # Secret Key (for HMAC token signing)
 SECRET_KEY=your-secret-key-here
@@ -94,9 +100,36 @@ DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
 
 ## 3. Database Setup
 
-### Option A: Cloud SQL (Production-like)
+### Supabase Setup (Current - Recommended)
+
+Hushh now uses **Supabase REST API** for all database operations through a service layer architecture.
+
+1. **Create Supabase Project**:
+   - Go to https://supabase.com
+   - Create a new project
+   - Note your `SUPABASE_URL` and `SUPABASE_KEY` (service role key)
+
+2. **Initialize Schema**:
+   - Use Supabase Dashboard SQL Editor
+   - Run schema from `consent-protocol/scripts/init_supabase_schema.sql`
+   - Or use migration scripts if migrating from existing database
+
+3. **Configure Environment**:
+   - Set `SUPABASE_URL` and `SUPABASE_KEY` in `consent-protocol/.env`
+   - See `.env` example above
+
+**Architecture:**
+- All database access goes through service layer (`VaultDBService`, `ConsentDBService`, `InvestorDBService`)
+- Service layer validates consent tokens before database operations
+- No direct database access from API routes
+
+See `docs/technical/database-service-layer.md` for detailed architecture.
+
+### Option A: Cloud SQL (Legacy - Deprecated)
 
 ```bash
+# ⚠️ DEPRECATED: Cloud SQL Proxy is no longer used for application database access
+# Only needed for schema creation scripts if using asyncpg for DDL
 # Install Cloud SQL Proxy
 # Windows: Download cloud-sql-proxy.exe
 # macOS: brew install cloud-sql-proxy

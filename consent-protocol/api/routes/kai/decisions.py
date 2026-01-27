@@ -11,8 +11,9 @@ from typing import Optional, List, Dict
 from datetime import datetime
 import logging
 
-from db.connection import get_pool
-from db.consent import log_operation
+from hushh_mcp.services.vault_db import VaultDBService, ConsentValidationError
+from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.types import EncryptedPayload
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -100,24 +101,33 @@ async def store_decision(
     await validate_vault_owner(authorization, request.user_id)
     
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=request.user_id,
         operation="kai.decision.store",
         target=request.ticker,
         metadata={"decision_type": request.decision_type, "confidence": request.confidence_score}
     )
     
-    pool = await get_pool()
+    # vault_kai has a different structure - it has plaintext metadata (ticker, decision_type, confidence_score)
+    # and encrypted decision_ciphertext. We need a special handler.
+    # Use service layer to access Supabase (service validates consent via token validation above)
+    service = VaultDBService()
+    supabase = service.get_supabase()
     
     try:
-        await pool.execute(
-            """
-            INSERT INTO vault_kai (
-                user_id, ticker, decision_type,
-                decision_ciphertext, iv, tag, 
-                confidence_score, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            """,
+        data = {
+            "user_id": request.user_id,
+            "ticker": request.ticker,
+            "decision_type": request.decision_type,
+            "decision_ciphertext": request.decision_ciphertext,
+            "iv": request.iv,
+            "tag": request.tag or "",
+            "confidence_score": request.confidence_score,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        supabase.table("vault_kai").insert(data).execute()
             request.user_id,
             request.ticker,
             request.decision_type,
@@ -151,40 +161,53 @@ async def get_decision_history(
     await validate_vault_owner(authorization, user_id)
     
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=user_id,
         operation="kai.decisions.read",
         metadata={"limit": limit, "offset": offset}
     )
     
-    pool = await get_pool()
+    # Use service layer to access Supabase
+    service = VaultDBService()
+    supabase = service.get_supabase()
     
     # Get total count
-    count_row = await pool.fetchrow(
-        "SELECT COUNT(*) as total FROM vault_kai WHERE user_id = $1",
-        user_id
-    )
-    total = count_row["total"]
+    count_response = supabase.table("vault_kai")\
+        .select("id", count="exact")\
+        .eq("user_id", user_id)\
+        .limit(0)\
+        .execute()
     
-    rows = await pool.fetch(
-        """
-        SELECT id, ticker, decision_type, confidence_score, created_at
-        FROM vault_kai
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2 OFFSET $3
-        """,
-        user_id, limit, offset
-    )
+    total = 0
+    if hasattr(count_response, 'count') and count_response.count is not None:
+        total = count_response.count
+    
+    # Get paginated results
+    response = supabase.table("vault_kai")\
+        .select("id,ticker,decision_type,confidence_score,created_at")\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=True)\
+        .range(offset, offset + limit - 1)\
+        .execute()
+    
+    rows = response.data or []
     
     decisions = []
     for row in rows:
+        # Handle created_at - might be string or datetime
+        created_at = row.get("created_at")
+        if isinstance(created_at, str):
+            created_at_str = created_at
+        else:
+            created_at_str = created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at)
+        
         decisions.append({
-            "id": row["id"],
-            "ticker": row["ticker"],
-            "decision": row["decision_type"],
-            "confidence": float(row["confidence_score"]) if row["confidence_score"] else 0.0,
-            "created_at": row["created_at"].isoformat(),
+            "id": row.get("id"),
+            "ticker": row.get("ticker"),
+            "decision": row.get("decision_type"),
+            "confidence": float(row.get("confidence_score", 0)) if row.get("confidence_score") else 0.0,
+            "created_at": created_at_str,
         })
     
     return DecisionHistoryResponse(decisions=decisions, total=total)
@@ -201,42 +224,57 @@ async def get_decision_detail(
     REQUIRES: VAULT_OWNER consent token.
     Client must download this and decrypt locally using Vault Key.
     """
-    pool = await get_pool()
-    
-    row = await pool.fetchrow(
-        "SELECT * FROM vault_kai WHERE id = $1",
-        decision_id
-    )
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Decision not found")
-    
-    # Validate that token owner matches decision owner
+    # Validate token first
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing consent token")
     token = authorization.replace("Bearer ", "")
     valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
     if not valid or not payload:
         raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
-    if payload.user_id != row["user_id"]:
+    
+    # Use service layer to access Supabase
+    service = VaultDBService()
+    supabase = service.get_supabase()
+    
+    response = supabase.table("vault_kai")\
+        .select("*")\
+        .eq("id", decision_id)\
+        .limit(1)\
+        .execute()
+    
+    if not response.data or len(response.data) == 0:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    
+    row = response.data[0]
+    
+    # Validate that token owner matches decision owner
+    if payload.user_id != row.get("user_id"):
         raise HTTPException(status_code=403, detail="Not authorized to access this decision")
     
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=payload.user_id,
         operation="kai.decision.read",
-        target=row["ticker"],
+        target=row.get("ticker"),
         metadata={"decision_id": decision_id}
     )
     
+    # Handle created_at format
+    created_at = row.get("created_at")
+    if isinstance(created_at, str):
+        created_at_str = created_at
+    else:
+        created_at_str = created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at)
+    
     return EncryptedDecisionResponse(
-        id=row["id"],
-        decision_ciphertext=row["decision_ciphertext"],
-        iv=row["iv"],
-        tag=row["tag"] or "",
-        created_at=row["created_at"].isoformat(),
-        user_id=row["user_id"],
-        ticker=row["ticker"]
+        id=row.get("id"),
+        decision_ciphertext=row.get("decision_ciphertext"),
+        iv=row.get("iv"),
+        tag=row.get("tag") or "",
+        created_at=created_at_str,
+        user_id=row.get("user_id"),
+        ticker=row.get("ticker")
     )
 
 
@@ -254,18 +292,27 @@ async def delete_decision(
     await validate_vault_owner(authorization, user_id)
     
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=user_id,
         operation="kai.decision.delete",
         metadata={"decision_id": decision_id}
     )
     
-    pool = await get_pool()
+    # Use service layer to access Supabase
+    service = VaultDBService()
+    supabase = service.get_supabase()
     
-    result = await pool.execute(
-        "DELETE FROM vault_kai WHERE id = $1 AND user_id = $2",
-        decision_id, user_id
-    )
+    response = supabase.table("vault_kai")\
+        .delete()\
+        .eq("id", decision_id)\
+        .eq("user_id", user_id)\
+        .execute()
+    
+    # Check if anything was deleted
+    deleted_count = len(response.data) if response.data else 0
+    if deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Decision not found or not authorized")
     
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Decision not found or not authorized")

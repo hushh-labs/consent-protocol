@@ -4,9 +4,19 @@ Service Layer
 =============
 
 Unified service layer for agent-mediated database access.
-All vault operations should go through these services.
+All database operations should go through these services.
+
+CONSENT-FIRST ARCHITECTURE:
+    All services validate consent tokens before database access.
+    API routes should use these services, never access database directly.
 """
 
 from .vault_db import VaultDBService
+from .consent_db import ConsentDBService
+from .investor_db import InvestorDBService
 
-__all__ = ["VaultDBService"]
+__all__ = [
+    "VaultDBService",
+    "ConsentDBService", 
+    "InvestorDBService"
+]

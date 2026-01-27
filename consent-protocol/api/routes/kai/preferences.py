@@ -11,8 +11,9 @@ from typing import Optional, List
 from datetime import datetime
 import logging
 
-from db.connection import get_pool
-from db.consent import log_operation
+from hushh_mcp.services.vault_db import VaultDBService, ConsentValidationError
+from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.types import EncryptedPayload
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -84,20 +85,39 @@ async def store_preferences(
     await validate_vault_owner(authorization, request.user_id)
     
     # Log operation for audit trail
+    consent_service = ConsentDBService()
     field_names = [p.field_name for p in request.preferences]
-    await log_operation(
+    await consent_service.log_operation(
         user_id=request.user_id,
         operation="kai.preferences.write",
         metadata={"fields": field_names}
     )
     
-    pool = await get_pool()
-    
+    # Use VaultDBService to store preferences
+    service = VaultDBService()
     try:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for pref in request.preferences:
-                    await conn.execute(
+        # Convert to EncryptedPayload format
+        fields = {}
+        for pref in request.preferences:
+            fields[pref.field_name] = EncryptedPayload(
+                ciphertext=pref.ciphertext,
+                iv=pref.iv,
+                tag=pref.tag or "",
+                algorithm="aes-256-gcm",
+                encoding="base64"
+            )
+        
+        # Get consent token from authorization header
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing consent token")
+        consent_token = authorization.replace("Bearer ", "")
+        
+        await service.store_encrypted_fields(
+            user_id=request.user_id,
+            domain="kai_preferences",
+            fields=fields,
+            consent_token=consent_token
+        )
                         """
                         INSERT INTO vault_kai_preferences (
                             user_id, field_name, ciphertext, iv, tag, updated_at, created_at
@@ -139,29 +159,38 @@ async def get_preferences(
     await validate_vault_owner(authorization, user_id)
     
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=user_id,
         operation="kai.preferences.read"
     )
     
-    pool = await get_pool()
+    # Use VaultDBService to get preferences
+    service = VaultDBService()
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing consent token")
+    consent_token = authorization.replace("Bearer ", "")
     
-    rows = await pool.fetch(
-        """
-        SELECT field_name, ciphertext, iv, tag
-        FROM vault_kai_preferences
-        WHERE user_id = $1
-        """,
-        user_id
-    )
+    try:
+        encrypted_fields = await service.get_encrypted_fields(
+            user_id=user_id,
+            domain="kai_preferences",
+            consent_token=consent_token,
+            field_names=None
+        )
+    except ConsentValidationError as e:
+        raise HTTPException(
+            status_code=401 if e.reason in ["missing_token", "invalid_token"] else 403,
+            detail=str(e)
+        )
     
     prefs = []
-    for row in rows:
+    for field_name, payload in encrypted_fields.items():
         prefs.append(EncryptedPreference(
-            field_name=row["field_name"],
-            ciphertext=row["ciphertext"],
-            iv=row["iv"],
-            tag=row["tag"] or ""
+            field_name=field_name,
+            ciphertext=payload.ciphertext,
+            iv=payload.iv,
+            tag=payload.tag or ""
         ))
     
     return PreferencesResponse(preferences=prefs)
@@ -192,15 +221,29 @@ async def delete_preferences(
         raise HTTPException(status_code=403, detail="Cannot delete preferences for another user")
 
     # Log operation for audit trail
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=user_id,
         operation="kai.preferences.delete"
     )
 
-    pool = await get_pool()
-    result = await pool.execute(
-        "DELETE FROM vault_kai_preferences WHERE user_id = $1",
-        user_id
-    )
+    # Use VaultDBService to delete preferences
+    service = VaultDBService()
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    consent_token = authorization.replace("Bearer ", "")
+    
+    try:
+        deleted_count = await service.delete_encrypted_fields(
+            user_id=user_id,
+            domain="kai_preferences",
+            consent_token=consent_token,
+            field_names=None  # Delete all
+        )
+    except ConsentValidationError as e:
+        raise HTTPException(
+            status_code=401 if e.reason in ["missing_token", "invalid_token"] else 403,
+            detail=str(e)
+        )
 
-    return {"success": True, "result": result}
+    return {"success": True, "deleted_count": deleted_count}
