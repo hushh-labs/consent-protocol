@@ -22,7 +22,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from db.connection import get_pool
+from hushh_mcp.services.investor_db import InvestorDBService
 
 logger = logging.getLogger(__name__)
 
@@ -111,42 +111,12 @@ async def search_investors(
     
     Example: /api/investors/search?name=Warren+Buffett
     """
-    pool = await get_pool()
+    # Use service layer (no consent required for public investor data)
+    service = InvestorDBService()
+    results = await service.search_investors(name=name, limit=limit)
     
-    # Normalize search term
-    name_normalized = re.sub(r'\s+', '', name.lower())
-    
-    query = """
-        SELECT 
-            id, name, firm, title, investor_type, aum_billions, investment_style,
-            similarity(name, $1) as similarity_score
-        FROM investor_profiles
-        WHERE 
-            name ILIKE $2
-            OR name % $1
-            OR name_normalized ILIKE $3
-        ORDER BY similarity_score DESC, aum_billions DESC NULLS LAST
-        LIMIT $4
-    """
-    
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(query, name, f"%{name}%", f"%{name_normalized}%", limit)
-        
-        results = []
-        for row in rows:
-            results.append({
-                "id": row["id"],
-                "name": row["name"],
-                "firm": row["firm"],
-                "title": row["title"],
-                "investor_type": row["investor_type"],
-                "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
-                "investment_style": row["investment_style"],
-                "similarity_score": round(float(row["similarity_score"]), 3) if row["similarity_score"] else 0
-            })
-        
-        logger.info(f"🔍 Search '{name}' returned {len(results)} results")
-        return results
+    logger.info(f"🔍 Search '{name}' returned {len(results)} results")
+    return results
 
 
 @router.get("/{investor_id}", response_model=InvestorProfile)
@@ -157,46 +127,18 @@ async def get_investor(investor_id: int):
     Returns complete public profile including holdings, quotes, biography.
     Used after user selects from search results to show full preview.
     """
-    pool = await get_pool()
-    
-    query = """
-        SELECT * FROM investor_profiles WHERE id = $1
-    """
+    # Use service layer (no consent required for public investor data)
+    service = InvestorDBService()
     
     try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(query, investor_id)
-            
-            if not row:
-                raise HTTPException(status_code=404, detail="Investor not found")
-            
-            logger.info(f"📥 Retrieved investor {investor_id}: {row['name']}")
-            
-            return {
-                "id": row["id"],
-                "name": row["name"],
-                "cik": row.get("cik"),
-                "firm": row.get("firm"),
-                "title": row.get("title"),
-                "investor_type": row.get("investor_type"),
-                "photo_url": row.get("photo_url"),
-                "aum_billions": float(row["aum_billions"]) if row.get("aum_billions") else None,
-                "top_holdings": json.loads(row["top_holdings"]) if row.get("top_holdings") and isinstance(row["top_holdings"], str) else row.get("top_holdings"),
-                "sector_exposure": json.loads(row["sector_exposure"]) if row.get("sector_exposure") and isinstance(row["sector_exposure"], str) else row.get("sector_exposure"),
-                "investment_style": row.get("investment_style"),
-                "risk_tolerance": row.get("risk_tolerance"),
-                "time_horizon": row.get("time_horizon"),
-                "portfolio_turnover": row.get("portfolio_turnover"),
-                "recent_buys": row.get("recent_buys"),
-                "recent_sells": row.get("recent_sells"),
-                "public_quotes": json.loads(row["public_quotes"]) if row.get("public_quotes") and isinstance(row["public_quotes"], str) else row.get("public_quotes"),
-                "biography": row.get("biography"),
-                "education": row.get("education"),
-                "board_memberships": row.get("board_memberships"),
-                "peer_investors": row.get("peer_investors"),
-                "is_insider": row.get("is_insider") if row.get("is_insider") is not None else False,
-                "insider_company_ticker": row.get("insider_company_ticker")
-            }
+        profile = await service.get_investor_by_id(investor_id)
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="Investor not found")
+        
+        logger.info(f"📥 Retrieved investor {investor_id}: {profile['name']}")
+        return profile
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -207,40 +149,14 @@ async def get_investor(investor_id: int):
 @router.get("/cik/{cik}", response_model=InvestorProfile)
 async def get_investor_by_cik(cik: str):
     """Get investor profile by SEC CIK number."""
-    pool = await get_pool()
+    # Use service layer (no consent required for public investor data)
+    service = InvestorDBService()
+    profile = await service.get_investor_by_cik(cik)
     
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM investor_profiles WHERE cik = $1", cik)
-        
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Investor with CIK {cik} not found")
-        
-        # Same return as get_investor
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "cik": row["cik"],
-            "firm": row["firm"],
-            "title": row["title"],
-            "investor_type": row["investor_type"],
-            "photo_url": row["photo_url"],
-            "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
-            "top_holdings": json.loads(row["top_holdings"]) if row["top_holdings"] and isinstance(row["top_holdings"], str) else row.get("top_holdings"),
-            "sector_exposure": json.loads(row["sector_exposure"]) if row["sector_exposure"] and isinstance(row["sector_exposure"], str) else row.get("sector_exposure"),
-            "investment_style": row["investment_style"],
-            "risk_tolerance": row["risk_tolerance"],
-            "time_horizon": row["time_horizon"],
-            "portfolio_turnover": row["portfolio_turnover"],
-            "recent_buys": row["recent_buys"],
-            "recent_sells": row["recent_sells"],
-            "public_quotes": json.loads(row["public_quotes"]) if row["public_quotes"] and isinstance(row["public_quotes"], str) else row.get("public_quotes"),
-            "biography": row["biography"],
-            "education": row["education"],
-            "board_memberships": row["board_memberships"],
-            "peer_investors": row["peer_investors"],
-            "is_insider": row["is_insider"] if row["is_insider"] is not None else False,
-            "insider_company_ticker": row["insider_company_ticker"]
-        }
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Investor with CIK {cik} not found")
+    
+    return profile
 
 
 # ============================================================================
@@ -254,12 +170,68 @@ async def create_investor(investor: InvestorCreateRequest):
     
     Admin endpoint for data ingestion from SEC EDGAR, etc.
     """
-    pool = await get_pool()
+    # Use service layer - admin endpoint but use Supabase for consistency
+    service = InvestorDBService()
+    supabase = service.get_supabase()
     
     # Normalize name for search
     name_normalized = re.sub(r'\s+', '', investor.name.lower())
     
-    async with pool.acquire() as conn:
+    from datetime import datetime
+    now_iso = datetime.now().isoformat()
+    
+    # Prepare data for Supabase
+    data = {
+        "name": investor.name,
+        "name_normalized": name_normalized,
+        "cik": investor.cik,
+        "firm": investor.firm,
+        "title": investor.title,
+        "investor_type": investor.investor_type or "fund_manager",
+        "aum_billions": investor.aum_billions,
+        "top_holdings": json.dumps(investor.top_holdings) if investor.top_holdings else None,
+        "sector_exposure": json.dumps(investor.sector_exposure) if investor.sector_exposure else None,
+        "investment_style": investor.investment_style,
+        "risk_tolerance": investor.risk_tolerance,
+        "time_horizon": investor.time_horizon,
+        "portfolio_turnover": investor.portfolio_turnover,
+        "recent_buys": investor.recent_buys,
+        "recent_sells": investor.recent_sells,
+        "public_quotes": json.dumps(investor.public_quotes) if investor.public_quotes else None,
+        "biography": investor.biography,
+        "education": investor.education,
+        "board_memberships": investor.board_memberships,
+        "peer_investors": investor.peer_investors,
+        "is_insider": investor.is_insider or False,
+        "insider_company_ticker": investor.insider_company_ticker,
+        "updated_at": now_iso
+    }
+    
+    # Remove None values
+    data = {k: v for k, v in data.items() if v is not None}
+    
+    try:
+        # Upsert by CIK if provided
+        if investor.cik:
+            response = supabase.table("investor_profiles").upsert(
+                data,
+                on_conflict="cik"
+            ).execute()
+        else:
+            # Insert new (no CIK) - remove cik from data
+            data_no_cik = {k: v for k, v in data.items() if k != "cik"}
+            response = supabase.table("investor_profiles").insert(data_no_cik).execute()
+        
+        # Extract ID from response
+        if response.data and len(response.data) > 0:
+            result = response.data[0].get("id")
+            logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result})")
+            return {"id": result, "name": investor.name, "status": "created"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create investor profile")
+    except Exception as e:
+        logger.error(f"Error creating investor: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
         # Upsert by CIK if provided, otherwise insert
         if investor.cik:
             query = """
@@ -366,18 +338,11 @@ async def bulk_create_investors(investors: List[InvestorCreateRequest]):
 @router.get("/stats")
 async def get_stats():
     """Get statistics about investor profiles."""
-    pool = await get_pool()
+    # Use service layer
+    service = InvestorDBService()
+    stats = await service.get_investor_stats()
     
-    async with pool.acquire() as conn:
-        total = await conn.fetchval("SELECT COUNT(*) FROM investor_profiles")
-        by_type = await conn.fetch("""
-            SELECT investor_type, COUNT(*) as count 
-            FROM investor_profiles 
-            WHERE investor_type IS NOT NULL
-            GROUP BY investor_type
-        """)
-        
-        return {
-            "total_profiles": total,
-            "by_type": {row["investor_type"]: row["count"] for row in by_type}
-        }
+    return {
+        "total_profiles": stats.get("total", 0),
+        "by_type": stats.get("by_type", {})
+    }
