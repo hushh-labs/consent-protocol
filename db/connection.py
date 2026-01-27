@@ -1,6 +1,22 @@
 # db/connection.py
 """
 Database connection pool management.
+
+⚠️ DEPRECATED ⚠️
+This module is deprecated and will be removed in a future version.
+All database operations should now use Supabase REST API through service layer.
+
+Migration:
+- Old: from db.connection import get_pool
+- New: Use service layer (VaultDBService, ConsentDBService, InvestorDBService)
+
+This file is kept temporarily for:
+- Schema creation scripts (db/migrate.py) which still need asyncpg for DDL
+- Legacy code that hasn't been migrated yet
+
+DO NOT use this in:
+- API routes (use service layer instead)
+- Service layer (use db.supabase_client instead)
 """
 
 import os
