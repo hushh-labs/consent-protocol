@@ -56,19 +56,22 @@ async def consent_event_generator(
                 logger.info(f"SSE client disconnected: {user_id}")
                 break
             
-            from db.connection import get_pool
-            pool = await get_pool()
+            from hushh_mcp.services.consent_db import ConsentDBService
+            service = ConsentDBService()
             
             # Query for events that happened AFTER this connection started
-            recent_events = await pool.fetch("""
-                SELECT token_id, request_id, action, scope, agent_id, issued_at
-                FROM consent_audit
-                WHERE user_id = $1 
-                AND action IN ('REQUESTED', 'CONSENT_GRANTED', 'CONSENT_DENIED', 'REVOKED')
-                AND issued_at > $2
-                ORDER BY issued_at DESC
-                LIMIT 10
-            """, user_id, connection_start_ms)
+            # Use Supabase through service layer
+            supabase = service.get_supabase()
+            response = supabase.table("consent_audit")\
+                .select("token_id,request_id,action,scope,agent_id,issued_at")\
+                .eq("user_id", user_id)\
+                .in_("action", ["REQUESTED", "CONSENT_GRANTED", "CONSENT_DENIED", "REVOKED"])\
+                .gt("issued_at", connection_start_ms)\
+                .order("issued_at", desc=True)\
+                .limit(10)\
+                .execute()
+            
+            recent_events = response.data or []
             
             for event in recent_events:
                 # Use request_id as primary event key (more stable than auto-generated token_id)
@@ -160,17 +163,20 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
             if await request.is_disconnected():
                 break
             
-            from db.connection import get_pool
-            pool = await get_pool()
+            from hushh_mcp.services.consent_db import ConsentDBService
+            service = ConsentDBService()
+            supabase = service.get_supabase()
             
-            result = await pool.fetchrow("""
-                SELECT action, scope, agent_id, issued_at
-                FROM consent_audit
-                WHERE user_id = $1 AND request_id = $2
-                AND action IN ('CONSENT_GRANTED', 'CONSENT_DENIED')
-                ORDER BY issued_at DESC
-                LIMIT 1
-            """, user_id, request_id)
+            response = supabase.table("consent_audit")\
+                .select("action,scope,agent_id,issued_at")\
+                .eq("user_id", user_id)\
+                .eq("request_id", request_id)\
+                .in_("action", ["CONSENT_GRANTED", "CONSENT_DENIED"])\
+                .order("issued_at", desc=True)\
+                .limit(1)\
+                .execute()
+            
+            result = response.data[0] if response.data and len(response.data) > 0 else None
             
             if result:
                 yield {

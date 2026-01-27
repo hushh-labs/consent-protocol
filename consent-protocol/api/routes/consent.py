@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-import consent_db
+from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 from api.utils.firebase_auth import verify_firebase_bearer
@@ -53,9 +53,10 @@ class CancelConsentRequest(BaseModel):
 async def get_pending_consents(userId: str):
     """
     Get all pending consent requests for a user.
-    Uses database via consent_db module for persistence.
+    Uses ConsentDBService for database access.
     """
-    pending_from_db = await consent_db.get_pending_requests(userId)
+    service = ConsentDBService()
+    pending_from_db = await service.get_pending_requests(userId)
     logger.info(f"📋 Found {len(pending_from_db)} pending requests in DB for {userId}")
     return {"pending": pending_from_db}
 
@@ -80,7 +81,8 @@ async def approve_consent(request: Request):
     logger.info(f"   Export data present: {bool(encryptedData)}")
     
     # Get pending request from database
-    pending_request = await consent_db.get_pending_by_request_id(userId, requestId)
+    service = ConsentDBService()
+    pending_request = await service.get_pending_by_request_id(userId, requestId)
     
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
@@ -113,7 +115,8 @@ async def approve_consent(request: Request):
     # Before issuing a NEW token, check if a valid token for this scope/agent already exists.
     # This prevents duplication and ensures a clean audit log.
     
-    active_tokens = await consent_db.get_active_tokens(userId)
+    service = ConsentDBService()
+    active_tokens = await service.get_active_tokens(userId)
     existing_token = None
     
     # 1. Filter active tokens for the requested scope and agent
@@ -172,7 +175,8 @@ async def approve_consent(request: Request):
         logger.info("   Stored encrypted export for token")
     
     # Log CONSENT_GRANTED to database with dot notation scope
-    await consent_db.insert_event(
+    service = ConsentDBService()
+    await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
         scope=consent_scope.value,  # Use dot notation (e.g., "vault.read.food")
@@ -201,13 +205,14 @@ async def deny_consent(userId: str, requestId: str):
     logger.info(f"❌ User {userId} denying consent request {requestId}")
     
     # Get pending request from database
-    pending_request = await consent_db.get_pending_by_request_id(userId, requestId)
+    service = ConsentDBService()
+    pending_request = await service.get_pending_by_request_id(userId, requestId)
     
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
     
     # Log CONSENT_DENIED to database
-    await consent_db.insert_event(
+    await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
         scope=pending_request["scope"],
@@ -229,11 +234,12 @@ async def cancel_consent(payload: CancelConsentRequest):
     """
     logger.info(f"🛑 User {payload.userId} cancelling consent request {payload.requestId}")
 
-    pending_request = await consent_db.get_pending_by_request_id(payload.userId, payload.requestId)
+    service = ConsentDBService()
+    pending_request = await service.get_pending_by_request_id(payload.userId, payload.requestId)
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
 
-    await consent_db.insert_event(
+    await service.insert_event(
         user_id=payload.userId,
         agent_id=pending_request["developer"],
         scope=pending_request["scope"],
@@ -289,7 +295,8 @@ async def issue_vault_owner_token(request: Request):
         
         # Check for existing active VAULT_OWNER token in DB
         now_ms = int(time.time() * 1000)
-        active_tokens = await consent_db.get_active_tokens(user_id)
+        service = ConsentDBService()
+        active_tokens = await service.get_active_tokens(user_id)
         
         for t in active_tokens:
             # Match scope = vault.owner and agent = self
@@ -335,7 +342,8 @@ async def issue_vault_owner_token(request: Request):
         )
         
         # Store in consent_audit (CONSENT_GRANTED for get_active_tokens() compatibility)
-        await consent_db.insert_event(
+        service = ConsentDBService()
+        await service.insert_event(
             user_id=user_id,
             agent_id="self",
             scope="vault.owner",
@@ -382,7 +390,8 @@ async def revoke_consent(request: Request):
         logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
         
         # Get the active token for this scope
-        active_tokens = await consent_db.get_active_tokens(userId)
+        service = ConsentDBService()
+    active_tokens = await service.get_active_tokens(userId)
         logger.info(f"📋 Found {len(active_tokens)} active tokens for user")
         
         token_to_revoke = None
@@ -412,7 +421,8 @@ async def revoke_consent(request: Request):
         logger.info(f"🔒 Revoking - new token_id: {revoke_token_id}, agent: {agent_id}, request_id: {request_id}")
         
         # Log REVOKED event to database (link to original request_id for trail)
-        await consent_db.insert_event(
+        service = ConsentDBService()
+        await service.insert_event(
             user_id=userId,
             agent_id=agent_id,
             scope=scope,
