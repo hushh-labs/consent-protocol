@@ -39,11 +39,11 @@ async def seed_investors(json_path: str):
     investors = data.get("investors", [])
     print(f"📊 Found {len(investors)} investor profiles")
     
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=2)
+    # Use Supabase REST API
+    supabase = get_supabase()
     
     try:
-        async with pool.acquire() as conn:
-            for inv in investors:
+        for inv in investors:
                 name = inv.get("name")
                 name_normalized = re.sub(r'\s+', '', name.lower()) if name else None
                 cik = inv.get("cik")

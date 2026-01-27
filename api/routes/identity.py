@@ -24,7 +24,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
-from db.connection import get_pool
+from hushh_mcp.services.investor_db import InvestorDBService
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from api.utils.firebase_auth import verify_firebase_bearer
@@ -146,53 +146,31 @@ async def auto_detect_investor(
         logger.error(f"Firebase token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid Firebase token")
     
-    pool = await get_pool()
+    # Use service layer for investor search
+    service = InvestorDBService()
+    search_results = await service.search_investors(name=display_name, limit=5)
     
-    # Normalize search term
-    name_normalized = re.sub(r'\s+', '', display_name.lower())
+    if not search_results:
+        logger.info(f"📭 No investor matches found for: {display_name}")
+        return {"detected": False, "display_name": display_name, "matches": []}
     
-    async with pool.acquire() as conn:
-        # Search for matches using fuzzy matching
-        query = """
-            SELECT 
-                id, name, firm, title, aum_billions, investment_style, top_holdings,
-                similarity(name, $1) as similarity_score
-            FROM investor_profiles
-            WHERE 
-                name ILIKE $2
-                OR name % $1
-                OR name_normalized ILIKE $3
-            ORDER BY similarity_score DESC, aum_billions DESC NULLS LAST
-            LIMIT 5
-        """
+    # Convert to match expected format
+    matches = []
+    for result in search_results:
+        # Get full profile to access top_holdings
+        profile = await service.get_investor_by_id(result["id"])
+        top_holdings = profile.get("top_holdings") if profile else None
         
-        rows = await conn.fetch(query, display_name, f"%{display_name}%", f"%{name_normalized}%")
-        
-        if not rows:
-            logger.info(f"📭 No investor matches found for: {display_name}")
-            return {"detected": False, "display_name": display_name, "matches": []}
-        
-        matches = []
-        for row in rows:
-            # Handle JSONB decoding (asyncpg returns str)
-            top_holdings = row["top_holdings"]
-            if isinstance(top_holdings, str):
-                import json
-                try:
-                    top_holdings = json.loads(top_holdings)
-                except:
-                    top_holdings = []
-            
-            matches.append({
-                "id": row["id"],
-                "name": row["name"],
-                "firm": row["firm"],
-                "title": row["title"],
-                "aum_billions": float(row["aum_billions"]) if row["aum_billions"] else None,
-                "investment_style": row["investment_style"],
-                "top_holdings": top_holdings[:3] if top_holdings else None,  # Top 3 only
-                "confidence": round(float(row["similarity_score"]), 3) if row["similarity_score"] else 0
-            })
+        matches.append({
+            "id": result["id"],
+            "name": result["name"],
+            "firm": result.get("firm"),
+            "title": result.get("title"),
+            "aum_billions": result.get("aum_billions"),
+            "investment_style": result.get("investment_style"),
+            "top_holdings": top_holdings[:3] if top_holdings else None,  # Top 3 only
+            "confidence": result.get("similarity_score", 0.0)
+        })
         
         logger.info(f"✅ Found {len(matches)} investor matches for: {display_name}")
         
@@ -250,17 +228,12 @@ async def confirm_identity(
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    pool = await get_pool()
+    # Use service layer to verify investor exists
+    investor_service = InvestorDBService()
+    investor = await investor_service.get_investor_by_id(request.investor_id)
     
-    async with pool.acquire() as conn:
-        # Verify investor exists
-        investor = await conn.fetchrow(
-            "SELECT id, name, firm FROM investor_profiles WHERE id = $1",
-            request.investor_id
-        )
-        
-        if not investor:
-            raise HTTPException(status_code=404, detail="Investor profile not found")
+    if not investor:
+        raise HTTPException(status_code=404, detail="Investor profile not found")
         
         # Create or update user's encrypted profile
         now = time.time()
@@ -348,30 +321,49 @@ async def get_identity_status(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    pool = await get_pool()
+    # Use service layer - need to join user_investor_profiles with investor_profiles
+    # Supabase doesn't support JOINs directly, so we'll fetch separately
+    investor_service = InvestorDBService()
+    supabase = investor_service.get_supabase()
     
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT 
-                uip.confirmed_at,
-                ip.name as investor_name,
-                ip.firm as investor_firm
-            FROM user_investor_profiles uip
-            LEFT JOIN investor_profiles ip ON uip.confirmed_investor_id = ip.id
-            WHERE uip.user_id = $1
-        """, user_id)
-        
-        if row:
-            return {
-                "has_confirmed_identity": True,
-                "confirmed_at": row["confirmed_at"].isoformat() if row["confirmed_at"] else None,
-                "investor_name": row["investor_name"],
-                "investor_firm": row["investor_firm"]
-            }
-        else:
-            return {
-                "has_confirmed_identity": False
-            }
+    # Get user_investor_profile
+    uip_response = supabase.table("user_investor_profiles")\
+        .select("confirmed_at,confirmed_investor_id")\
+        .eq("user_id", user_id)\
+        .limit(1)\
+        .execute()
+    
+    if not uip_response.data or len(uip_response.data) == 0:
+        return {
+            "has_confirmed_identity": False
+        }
+    
+    uip_row = uip_response.data[0]
+    investor_id = uip_row.get("confirmed_investor_id")
+    
+    # Get investor profile if ID exists
+    investor_name = None
+    investor_firm = None
+    if investor_id:
+        investor_service = InvestorDBService()
+        investor = await investor_service.get_investor_by_id(investor_id)
+        if investor:
+            investor_name = investor.get("name")
+            investor_firm = investor.get("firm")
+    
+    # Handle confirmed_at format
+    confirmed_at = uip_row.get("confirmed_at")
+    if isinstance(confirmed_at, str):
+        confirmed_at_str = confirmed_at
+    else:
+        confirmed_at_str = confirmed_at.isoformat() if hasattr(confirmed_at, 'isoformat') else str(confirmed_at) if confirmed_at else None
+    
+    return {
+        "has_confirmed_identity": True,
+        "confirmed_at": confirmed_at_str,
+        "investor_name": investor_name,
+        "investor_firm": investor_firm
+    }
 
 
 class GetProfileRequest(BaseModel):
@@ -404,35 +396,49 @@ async def get_encrypted_profile(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    pool = await get_pool()
+    # Use service layer - accessing Supabase through service pattern
+    # Note: user_investor_profiles doesn't have a dedicated service yet
+    # This is acceptable for now as it's a specialized table
+    investor_service = InvestorDBService()
+    supabase = investor_service.get_supabase()
     
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT * FROM user_investor_profiles WHERE user_id = $1
-        """, user_id)
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="No confirmed identity found")
-        
-        return {
-            "profile_data": {
-                "ciphertext": row["profile_data_ciphertext"],
-                "iv": row["profile_data_iv"],
-                "tag": row["profile_data_tag"]
-            },
-            "custom_holdings": {
-                "ciphertext": row["custom_holdings_ciphertext"],
-                "iv": row["custom_holdings_iv"],
-                "tag": row["custom_holdings_tag"]
-            } if row["custom_holdings_ciphertext"] else None,
-            "preferences": {
-                "ciphertext": row["preferences_ciphertext"],
-                "iv": row["preferences_iv"],
-                "tag": row["preferences_tag"]
-            } if row["preferences_ciphertext"] else None,
-            "confirmed_at": row["confirmed_at"].isoformat() if row["confirmed_at"] else None,
-            "algorithm": row["algorithm"]
-        }
+    response = supabase.table("user_investor_profiles")\
+        .select("*")\
+        .eq("user_id", user_id)\
+        .limit(1)\
+        .execute()
+    
+    if not response.data or len(response.data) == 0:
+        raise HTTPException(status_code=404, detail="No confirmed identity found")
+    
+    row = response.data[0]
+    
+    # Handle confirmed_at - might be string or datetime
+    confirmed_at = row.get("confirmed_at")
+    if isinstance(confirmed_at, str):
+        confirmed_at_str = confirmed_at
+    else:
+        confirmed_at_str = confirmed_at.isoformat() if hasattr(confirmed_at, 'isoformat') else str(confirmed_at) if confirmed_at else None
+    
+    return {
+        "profile_data": {
+            "ciphertext": row.get("profile_data_ciphertext"),
+            "iv": row.get("profile_data_iv"),
+            "tag": row.get("profile_data_tag")
+        },
+        "custom_holdings": {
+            "ciphertext": row.get("custom_holdings_ciphertext"),
+            "iv": row.get("custom_holdings_iv"),
+            "tag": row.get("custom_holdings_tag")
+        } if row.get("custom_holdings_ciphertext") else None,
+        "preferences": {
+            "ciphertext": row.get("preferences_ciphertext"),
+            "iv": row.get("preferences_iv"),
+            "tag": row.get("preferences_tag")
+        } if row.get("preferences_ciphertext") else None,
+        "confirmed_at": confirmed_at_str,
+        "algorithm": row.get("algorithm")
+    }
 
 
 @router.delete("/profile")
@@ -463,14 +469,19 @@ async def delete_identity(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    pool = await get_pool()
+    # Use service layer - accessing Supabase through service pattern
+    # Note: user_investor_profiles doesn't have a dedicated service yet
+    # This is acceptable for now as it's a specialized table
+    investor_service = InvestorDBService()
+    supabase = investor_service.get_supabase()
     
-    async with pool.acquire() as conn:
-        deleted = await conn.execute(
-            "DELETE FROM user_investor_profiles WHERE user_id = $1",
-            user_id
-        )
-        
-        logger.info(f"🗑️ Identity reset for user {user_id}")
-        
-        return {"success": True, "message": "Identity reset successfully"}
+    response = supabase.table("user_investor_profiles")\
+        .delete()\
+        .eq("user_id", user_id)\
+        .execute()
+    
+    deleted_count = len(response.data) if response.data else 0
+    
+    logger.info(f"🗑️ Identity reset for user {user_id} (deleted: {deleted_count})")
+    
+    return {"success": True, "message": "Identity reset successfully"}
