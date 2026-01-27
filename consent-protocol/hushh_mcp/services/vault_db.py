@@ -54,7 +54,7 @@ DOMAIN_TABLES = {
     "food": "vault_food",
     "professional": "vault_professional",
     "kai_preferences": "vault_kai_preferences",
-    "kai_decisions": "vault_kai_decisions",
+    "kai_decisions": "vault_kai",  # Note: vault_kai stores decisions with metadata
 }
 
 # Domain to scope mapping
@@ -89,14 +89,23 @@ class VaultDBService:
     """
     
     def __init__(self):
-        self._pool = None
+        self._supabase = None
     
-    async def _get_pool(self):
-        """Get or create database connection pool."""
-        if self._pool is None:
-            import consent_db
-            self._pool = await consent_db.get_pool()
-        return self._pool
+    def _get_supabase(self):
+        """Get Supabase client (only service layer has access)."""
+        if self._supabase is None:
+            from db.supabase_client import get_supabase
+            self._supabase = get_supabase()
+        return self._supabase
+    
+    def get_supabase(self):
+        """
+        Public method to get Supabase client.
+        
+        ⚠️ WARNING: This should only be called from within service layer methods.
+        API routes should use service methods, not call this directly.
+        """
+        return self._get_supabase()
     
     async def _validate_consent(
         self,
@@ -165,18 +174,15 @@ class VaultDBService:
     ) -> None:
         """Log operation to audit trail."""
         try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO consent_audit (user_id, action, scope, details, timestamp)
-                    VALUES ($1, $2, $3, $4, NOW())
-                    """,
-                    user_id,
-                    action,
-                    f"vault.{domain}",
-                    str(details) if details else None
-                )
+            supabase = self._get_supabase()
+            supabase.table("consent_audit").insert({
+                "user_id": user_id,
+                "action": action,
+                "scope": f"vault.{domain}",
+                "scope_description": str(details) if details else None,
+                "issued_at": int(datetime.now().timestamp() * 1000),
+                "agent_id": "vault_service"
+            }).execute()
         except Exception as e:
             # Don't fail the operation if audit logging fails
             logger.error(f"Failed to log audit: {e}")
@@ -219,27 +225,19 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            if field_names:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT field_name, ciphertext, iv, tag, algorithm
-                    FROM {table}
-                    WHERE user_id = $1 AND field_name = ANY($2)
-                    """,
-                    user_id,
-                    field_names
-                )
-            else:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT field_name, ciphertext, iv, tag, algorithm
-                    FROM {table}
-                    WHERE user_id = $1
-                    """,
-                    user_id
-                )
+        supabase = self._get_supabase()
+        
+        # Build Supabase query
+        query = supabase.table(table).select("field_name,ciphertext,iv,tag,algorithm").eq("user_id", user_id)
+        
+        if field_names:
+            # Supabase doesn't support ANY() directly, so we use .in_() for array matching
+            # Or filter in Python if needed
+            response = query.execute()
+            rows = [row for row in response.data if row.get("field_name") in field_names]
+        else:
+            response = query.execute()
+            rows = response.data
         
         # Build result dictionary
         result = {}
@@ -248,7 +246,7 @@ class VaultDBService:
                 ciphertext=row["ciphertext"],
                 iv=row["iv"],
                 tag=row["tag"],
-                algorithm=row["algorithm"] or "aes-256-gcm",
+                algorithm=row.get("algorithm") or "aes-256-gcm",
                 encoding="base64"
             )
         
@@ -304,28 +302,23 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            # Upsert - insert or update on conflict
-            await conn.execute(
-                f"""
-                INSERT INTO {table} (user_id, field_name, ciphertext, iv, tag, algorithm, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                ON CONFLICT (user_id, field_name)
-                DO UPDATE SET
-                    ciphertext = EXCLUDED.ciphertext,
-                    iv = EXCLUDED.iv,
-                    tag = EXCLUDED.tag,
-                    algorithm = EXCLUDED.algorithm,
-                    updated_at = NOW()
-                """,
-                user_id,
-                field_name,
-                payload.ciphertext,
-                payload.iv,
-                payload.tag,
-                payload.algorithm
-            )
+        supabase = self._get_supabase()
+        
+        # Upsert using Supabase (handles ON CONFLICT automatically)
+        data = {
+            "user_id": user_id,
+            "field_name": field_name,
+            "ciphertext": payload.ciphertext,
+            "iv": payload.iv,
+            "tag": payload.tag,
+            "algorithm": payload.algorithm,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        supabase.table(table).upsert(
+            data,
+            on_conflict="user_id,field_name"
+        ).execute()
         
         logger.info(f"✅ Stored {field_name} in {domain} for {user_id}")
         
@@ -373,32 +366,29 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        stored_count = 0
-        pool = await self._get_pool()
+        supabase = self._get_supabase()
         
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for field_name, payload in fields.items():
-                    await conn.execute(
-                        f"""
-                        INSERT INTO {table} (user_id, field_name, ciphertext, iv, tag, algorithm, updated_at)
-                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                        ON CONFLICT (user_id, field_name)
-                        DO UPDATE SET
-                            ciphertext = EXCLUDED.ciphertext,
-                            iv = EXCLUDED.iv,
-                            tag = EXCLUDED.tag,
-                            algorithm = EXCLUDED.algorithm,
-                            updated_at = NOW()
-                        """,
-                        user_id,
-                        field_name,
-                        payload.ciphertext,
-                        payload.iv,
-                        payload.tag,
-                        payload.algorithm
-                    )
-                    stored_count += 1
+        # Batch upsert using Supabase (no transactions, but atomic per batch)
+        data = [
+            {
+                "user_id": user_id,
+                "field_name": field_name,
+                "ciphertext": payload.ciphertext,
+                "iv": payload.iv,
+                "tag": payload.tag,
+                "algorithm": payload.algorithm,
+                "updated_at": datetime.now().isoformat()
+            }
+            for field_name, payload in fields.items()
+        ]
+        
+        # Supabase handles batch upsert
+        supabase.table(table).upsert(
+            data,
+            on_conflict="user_id,field_name"
+        ).execute()
+        
+        stored_count = len(data)
         
         logger.info(f"✅ Stored {stored_count} fields in {domain} for {user_id}")
         
@@ -450,28 +440,24 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            if field_names:
-                result = await conn.execute(
-                    f"""
-                    DELETE FROM {table}
-                    WHERE user_id = $1 AND field_name = ANY($2)
-                    """,
-                    user_id,
-                    field_names
-                )
-            else:
-                result = await conn.execute(
-                    f"""
-                    DELETE FROM {table}
-                    WHERE user_id = $1
-                    """,
-                    user_id
-                )
+        supabase = self._get_supabase()
         
-        # Parse "DELETE n" result
-        deleted_count = int(result.split()[-1]) if result else 0
+        if field_names:
+            # Delete specific fields - need to delete each one
+            deleted_count = 0
+            for field_name in field_names:
+                response = supabase.table(table).delete().eq("user_id", user_id).eq("field_name", field_name).execute()
+                # Count deleted rows from response
+                if response.data:
+                    deleted_count += len(response.data)
+                else:
+                    # If no data returned, assume 1 if no error
+                    deleted_count += 1
+        else:
+            # Delete all fields for user
+            response = supabase.table(table).delete().eq("user_id", user_id).execute()
+            # Supabase returns deleted data, count it
+            deleted_count = len(response.data) if response.data else 0
         
         logger.info(f"✅ Deleted {deleted_count} fields from {domain} for {user_id}")
         
@@ -504,17 +490,17 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            count = await conn.fetchval(
-                f"""
-                SELECT COUNT(*) FROM {table}
-                WHERE user_id = $1
-                """,
-                user_id
-            )
+        supabase = self._get_supabase()
         
-        return count > 0
+        # Check if any rows exist
+        response = supabase.table(table).select("user_id", count="exact").eq("user_id", user_id).limit(1).execute()
+        
+        # Check if count is available or if data exists
+        if hasattr(response, 'count') and response.count is not None:
+            return response.count > 0
+        elif response.data:
+            return len(response.data) > 0
+        return False
     
     async def get_field_names(
         self,
@@ -538,14 +524,8 @@ class VaultDBService:
         if not table:
             raise ValueError(f"Unknown domain: {domain}")
         
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
-                SELECT field_name FROM {table}
-                WHERE user_id = $1
-                """,
-                user_id
-            )
+        supabase = self._get_supabase()
         
-        return [row["field_name"] for row in rows]
+        response = supabase.table(table).select("field_name").eq("user_id", user_id).execute()
+        
+        return [row["field_name"] for row in response.data]

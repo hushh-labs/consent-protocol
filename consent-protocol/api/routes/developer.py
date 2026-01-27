@@ -10,7 +10,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-import consent_db
+from hushh_mcp.services.consent_db import ConsentDBService
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
@@ -96,10 +96,11 @@ async def request_consent(request: ConsentRequest):
     scope_dot = scope_enum.value if scope_enum else request.scope
     
     # Check if consent already granted (query database with dot notation)
-    is_active = await consent_db.is_token_active(request.user_id, scope_dot)
+    service = ConsentDBService()
+    is_active = await service.is_token_active(request.user_id, scope_dot)
     if is_active:
         # Fetch the active token to return it
-        active_tokens = await consent_db.get_active_tokens(request.user_id)
+        active_tokens = await service.get_active_tokens(request.user_id)
         existing_token = None
         expires_at = None
         
@@ -119,7 +120,8 @@ async def request_consent(request: ConsentRequest):
     
     
     # Check if request already pending (query database with dot notation)
-    pending = await consent_db.get_pending_requests(request.user_id)
+    service = ConsentDBService()
+    pending = await service.get_pending_requests(request.user_id)
     pending_for_scope = [p for p in pending if p.get("scope") == scope_dot]
     if pending_for_scope:
         return ConsentResponse(
@@ -135,7 +137,8 @@ async def request_consent(request: ConsentRequest):
     poll_timeout_at = now_ms + (CONSENT_TIMEOUT_SECONDS * 1000)
     
     # Store in database with dot notation scope (mandatory)
-    await consent_db.insert_event(
+    service = ConsentDBService()
+    await service.insert_event(
         user_id=request.user_id,
         agent_id=dev_info["name"],
         scope=scope_dot,

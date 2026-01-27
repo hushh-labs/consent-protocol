@@ -10,12 +10,13 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Google Cloud Platform                       │
 ├──────────────────────┬─────────────────────┬───────────────────┤
-│    hushh-webapp      │  consent-protocol   │   Cloud SQL       │
+│    hushh-webapp      │  consent-protocol   │   Supabase        │
 │    (Next.js 15)      │  (FastAPI/Python)   │   (PostgreSQL)    │
-│    Port: 8080        │  Port: 8080         │   hushh-vault-db  │
+│    Port: 8080        │  Port: 8080         │   REST API        │
 ├──────────────────────┼─────────────────────┼───────────────────┤
 │  Artifact Registry   │  Secret Manager     │   Cloud Build     │
-│  Docker images       │  DATABASE_URL       │   (optional)      │
+│  Docker images       │  SUPABASE_URL       │   (optional)      │
+│                      │  SUPABASE_KEY       │                   │
 │                      │  SECRET_KEY         │                   │
 │                      │  VAULT_ENCRYPTION_  │                   │
 │                      │  KEY                │                   │
@@ -64,7 +65,7 @@ gcloud builds submit --tag gcr.io/PROJECT_ID/consent-protocol:latest .
 gcloud run deploy consent-protocol \
   --image gcr.io/PROJECT_ID/consent-protocol:latest \
   --region us-central1 --allow-unauthenticated \
-  --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" \
+  --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" \
   --port 8080
 ```
 

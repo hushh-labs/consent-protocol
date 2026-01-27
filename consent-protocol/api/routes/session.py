@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
-import consent_db
+from hushh_mcp.services.consent_db import ConsentDBService
 from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
 from api.utils.firebase_auth import verify_firebase_bearer
 
@@ -124,7 +124,8 @@ async def get_consent_history(
     logger.info(f"📜 Fetching consent history for user: {userId}, page: {page}")
     
     try:
-        result = await consent_db.get_audit_log(userId, page, limit)
+        service = ConsentDBService()
+        result = await service.get_audit_log(userId, page, limit)
         
         # Group by agent_id for frontend display
         grouped = {}
@@ -184,7 +185,8 @@ async def get_active_consents(
     logger.info(f"🔓 Fetching active consents for user: {userId}")
     
     try:
-        active_tokens = await consent_db.get_active_tokens(userId)
+        service = ConsentDBService()
+        active_tokens = await service.get_active_tokens(userId)
         
         # Group by developer/app
         grouped = {}
