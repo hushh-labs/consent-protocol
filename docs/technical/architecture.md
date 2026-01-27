@@ -96,7 +96,33 @@ hushh_mcp/
 └── data/               # Static Datasets (restaurants.json)
 ```
 
-## 6. Security & Compliance
+## 6. Database Service Layer Architecture
+
+Hushh uses a **consent-first service layer** for all database operations. All database access goes through service classes that validate consent tokens before performing any operations.
+
+### Service Layer Components
+
+- **VaultDBService** (`hushh_mcp/services/vault_db.py`) - Vault operations (food, professional, kai)
+- **ConsentDBService** (`hushh_mcp/services/consent_db.py`) - Consent management (pending requests, active tokens, audit log)
+- **InvestorDBService** (`hushh_mcp/services/investor_db.py`) - Investor profile operations (public data)
+
+### Architecture Flow
+
+```
+API Route → Service Layer (validates consent) → Supabase Client → Database
+```
+
+**Key Principle:** API routes MUST use service layer methods, never access database directly.
+
+### Database Technology
+
+- **Supabase REST API** - All application database operations use Supabase REST API client
+- **PostgreSQL** - Database backend (managed by Supabase)
+- **asyncpg** - Deprecated, only used for schema creation scripts (DDL)
+
+See `docs/technical/database-service-layer.md` for detailed architecture.
+
+## 7. Security & Compliance
 
 - **Zero-Trust Tools**: Tools verify consent _again_, even if the Agent has it.
 - **Manifest Truth**: Permissions are defined in `yaml`, not code.

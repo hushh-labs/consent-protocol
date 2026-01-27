@@ -1,15 +1,31 @@
 # Cloud SQL to Supabase Migration Instructions
 
-## Prerequisites
+> **Status**: Migration Complete (January 2026)
+> **Architecture**: All application database access now uses Supabase REST API through service layer
 
-1. **Cloud SQL Proxy running** on port 5432
+## Migration Complete
+
+The migration from asyncpg (Cloud SQL) to Supabase REST API has been completed. All API routes now use the service layer architecture:
+
+- **VaultDBService** - Vault operations
+- **ConsentDBService** - Consent management
+- **InvestorDBService** - Investor profiles
+
+See `docs/technical/database-service-layer.md` for architecture details.
+
+## Prerequisites (For Data Migration Only)
+
+If you need to migrate data from an existing Cloud SQL database:
+
+1. **Cloud SQL Proxy running** on port 5432 (for source database)
    ```bash
    ./cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db --port 5432
    ```
 
 2. **Environment variables set** in `consent-protocol/.env`:
-   - `SUPABASE_URL=https://fsvekkslfzjzscyibjil.supabase.co`
-   - `SUPABASE_KEY=SB_SECRET_PLACEHOLDER`
+   - `SUPABASE_URL=https://your-project.supabase.co`
+   - `SUPABASE_KEY=your-supabase-service-role-key`
+   - `SOURCE_DATABASE_URL=postgresql://user:password@127.0.0.1:5432/hushh_vault` (for migration script only)
 
 ## Step 1: Initialize Supabase Schema
 
