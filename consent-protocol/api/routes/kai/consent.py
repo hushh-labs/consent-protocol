@@ -11,7 +11,7 @@ from typing import List, Dict
 import uuid
 import logging
 
-from db.connection import get_pool
+from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
 
@@ -51,7 +51,7 @@ async def grant_consent(request: GrantConsentRequest):
     Stateless: Issues tokens for the requested user_id and scopes.
     Does not rely on a pre-existing session.
     """
-    pool = await get_pool()
+    service = ConsentDBService()
     
     tokens = {}
     consent_id = f"kai_consent_{uuid.uuid4().hex[:16]}"
@@ -68,20 +68,15 @@ async def grant_consent(request: GrantConsentRequest):
             tokens[scope_str] = token.token
             last_token_issued = token
             
-            # Log to consent_audit
-            await pool.execute(
-                """
-                INSERT INTO consent_audit (
-                    token_id, user_id, agent_id, scope, action, issued_at, expires_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """,
-                token.token[:32],
-                request.user_id,
-                "agent_kai",
-                scope_str,
-                "granted",
-                token.issued_at,
-                token.expires_at,
+            # Log to consent_audit using service layer
+            await service.insert_event(
+                user_id=request.user_id,
+                agent_id="agent_kai",
+                scope=scope_str,
+                action="CONSENT_GRANTED",  # Use standard action name
+                token_id=token.token[:32],  # Store truncated token ID
+                expires_at=token.expires_at,
+                issued_at=token.issued_at
             )
             
         except Exception as e:
