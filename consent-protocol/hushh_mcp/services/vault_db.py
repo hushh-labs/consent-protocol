@@ -92,20 +92,11 @@ class VaultDBService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (only service layer has access)."""
+        """Get Supabase client (private - ONLY for internal service use)."""
         if self._supabase is None:
             from db.supabase_client import get_supabase
             self._supabase = get_supabase()
         return self._supabase
-    
-    def get_supabase(self):
-        """
-        Public method to get Supabase client.
-        
-        ⚠️ WARNING: This should only be called from within service layer methods.
-        API routes should use service methods, not call this directly.
-        """
-        return self._get_supabase()
     
     async def _validate_consent(
         self,
@@ -529,3 +520,56 @@ class VaultDBService:
         response = supabase.table(table).select("field_name").eq("user_id", user_id).execute()
         
         return [row["field_name"] for row in response.data]
+    
+    # =========================================================================
+    # DEPRECATED Methods (for backwards compatibility only)
+    # =========================================================================
+    
+    async def _get_domain_preferences_deprecated(
+        self,
+        user_id: str,
+        domain: str
+    ) -> Dict[str, Dict[str, str]]:
+        """
+        ⚠️ DEPRECATED: Get domain preferences WITHOUT consent validation.
+        
+        WARNING: This method exists ONLY for backwards compatibility with
+        legacy mobile app routes that lack proper authentication.
+        
+        DO NOT use this method in new code. Use get_encrypted_fields() instead.
+        
+        This method will be REMOVED when the deprecated /db/ routes are removed.
+        """
+        import warnings
+        warnings.warn(
+            "Using deprecated _get_domain_preferences_deprecated without consent validation",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        table = DOMAIN_TABLES.get(domain)
+        if not table:
+            return {}
+        
+        supabase = self._get_supabase()
+        
+        response = supabase.table(table)\
+            .select("field_name,ciphertext,iv,tag,algorithm")\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        if not response.data:
+            return {}
+        
+        preferences = {}
+        for row in response.data:
+            preferences[row.get("field_name")] = {
+                "ciphertext": row.get("ciphertext"),
+                "iv": row.get("iv"),
+                "tag": row.get("tag"),
+                "algorithm": row.get("algorithm") or "aes-256-gcm",
+                "encoding": "base64"
+            }
+        
+        logger.warning(f"⚠️ DEPRECATED: Unauthenticated access to {domain} for {user_id}")
+        return preferences
