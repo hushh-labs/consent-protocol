@@ -170,9 +170,10 @@ async def create_investor(investor: InvestorCreateRequest):
     
     Admin endpoint for data ingestion from SEC EDGAR, etc.
     """
-    # Use service layer - admin endpoint but use Supabase for consistency
+    import re
+    
+    # Use service layer
     service = InvestorDBService()
-    supabase = service.get_supabase()
     
     # Normalize name for search
     name_normalized = re.sub(r'\s+', '', investor.name.lower())
@@ -180,7 +181,7 @@ async def create_investor(investor: InvestorCreateRequest):
     from datetime import datetime
     now_iso = datetime.now().isoformat()
     
-    # Prepare data for Supabase
+    # Prepare data
     data = {
         "name": investor.name,
         "name_normalized": name_normalized,
@@ -211,111 +212,15 @@ async def create_investor(investor: InvestorCreateRequest):
     data = {k: v for k, v in data.items() if v is not None}
     
     try:
-        # Upsert by CIK if provided
-        if investor.cik:
-            response = supabase.table("investor_profiles").upsert(
-                data,
-                on_conflict="cik"
-            ).execute()
-        else:
-            # Insert new (no CIK) - remove cik from data
-            data_no_cik = {k: v for k, v in data.items() if k != "cik"}
-            response = supabase.table("investor_profiles").insert(data_no_cik).execute()
+        # Use service method
+        result = await service.upsert_investor(data, upsert_key="cik" if investor.cik else None)
         
-        # Extract ID from response
-        if response.data and len(response.data) > 0:
-            result = response.data[0].get("id")
-            logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result})")
-            return {"id": result, "name": investor.name, "status": "created"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create investor profile")
+        logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result.get('id')})")
+        return {"id": result.get("id"), "name": investor.name, "status": "created"}
+        
     except Exception as e:
         logger.error(f"Error creating investor: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-        # Upsert by CIK if provided, otherwise insert
-        if investor.cik:
-            query = """
-                INSERT INTO investor_profiles (
-                    name, name_normalized, cik, firm, title, investor_type,
-                    aum_billions, top_holdings, sector_exposure,
-                    investment_style, risk_tolerance, time_horizon, portfolio_turnover,
-                    recent_buys, recent_sells, public_quotes, biography,
-                    education, board_memberships, peer_investors,
-                    is_insider, insider_company_ticker, updated_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW()
-                )
-                ON CONFLICT (cik) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    name_normalized = EXCLUDED.name_normalized,
-                    firm = EXCLUDED.firm,
-                    title = EXCLUDED.title,
-                    investor_type = EXCLUDED.investor_type,
-                    aum_billions = EXCLUDED.aum_billions,
-                    top_holdings = EXCLUDED.top_holdings,
-                    sector_exposure = EXCLUDED.sector_exposure,
-                    investment_style = EXCLUDED.investment_style,
-                    risk_tolerance = EXCLUDED.risk_tolerance,
-                    time_horizon = EXCLUDED.time_horizon,
-                    portfolio_turnover = EXCLUDED.portfolio_turnover,
-                    recent_buys = EXCLUDED.recent_buys,
-                    recent_sells = EXCLUDED.recent_sells,
-                    public_quotes = EXCLUDED.public_quotes,
-                    biography = EXCLUDED.biography,
-                    education = EXCLUDED.education,
-                    board_memberships = EXCLUDED.board_memberships,
-                    peer_investors = EXCLUDED.peer_investors,
-                    is_insider = EXCLUDED.is_insider,
-                    insider_company_ticker = EXCLUDED.insider_company_ticker,
-                    updated_at = NOW()
-                RETURNING id
-            """
-        else:
-            query = """
-                INSERT INTO investor_profiles (
-                    name, name_normalized, cik, firm, title, investor_type,
-                    aum_billions, top_holdings, sector_exposure,
-                    investment_style, risk_tolerance, time_horizon, portfolio_turnover,
-                    recent_buys, recent_sells, public_quotes, biography,
-                    education, board_memberships, peer_investors,
-                    is_insider, insider_company_ticker
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22
-                )
-                RETURNING id
-            """
-        
-        result = await conn.fetchval(
-            query,
-            investor.name,
-            name_normalized,
-            investor.cik,
-            investor.firm,
-            investor.title,
-            investor.investor_type,
-            investor.aum_billions,
-            json.dumps(investor.top_holdings) if investor.top_holdings else None,
-            json.dumps(investor.sector_exposure) if investor.sector_exposure else None,
-            investor.investment_style,
-            investor.risk_tolerance,
-            investor.time_horizon,
-            investor.portfolio_turnover,
-            investor.recent_buys,
-            investor.recent_sells,
-            json.dumps(investor.public_quotes) if investor.public_quotes else None,
-            investor.biography,
-            investor.education,
-            investor.board_memberships,
-            investor.peer_investors,
-            investor.is_insider,
-            investor.insider_company_ticker
-        )
-        
-        logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result})")
-        
-        return {"id": result, "name": investor.name, "status": "created"}
 
 
 @router.post("/bulk", status_code=201)

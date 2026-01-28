@@ -18,13 +18,13 @@ Privacy architecture:
 """
 
 import logging
-import time
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
 from hushh_mcp.services.investor_db import InvestorDBService
+from hushh_mcp.services.user_investor_profile_db import UserInvestorProfileService
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from api.utils.firebase_auth import verify_firebase_bearer
@@ -234,63 +234,36 @@ async def confirm_identity(
     
     if not investor:
         raise HTTPException(status_code=404, detail="Investor profile not found")
-        
-        # Create or update user's encrypted profile
-        now = time.time()
-        
-        result = await conn.fetchval("""
-            INSERT INTO user_investor_profiles (
-                user_id,
-                confirmed_investor_id,
-                profile_data_ciphertext,
-                profile_data_iv,
-                profile_data_tag,
-                custom_holdings_ciphertext,
-                custom_holdings_iv,
-                custom_holdings_tag,
-                preferences_ciphertext,
-                preferences_iv,
-                preferences_tag,
-                confirmed_at,
-                consent_scope
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), 'vault.owner'
-            )
-            ON CONFLICT (user_id) DO UPDATE SET
-                confirmed_investor_id = EXCLUDED.confirmed_investor_id,
-                profile_data_ciphertext = EXCLUDED.profile_data_ciphertext,
-                profile_data_iv = EXCLUDED.profile_data_iv,
-                profile_data_tag = EXCLUDED.profile_data_tag,
-                custom_holdings_ciphertext = EXCLUDED.custom_holdings_ciphertext,
-                custom_holdings_iv = EXCLUDED.custom_holdings_iv,
-                custom_holdings_tag = EXCLUDED.custom_holdings_tag,
-                preferences_ciphertext = EXCLUDED.preferences_ciphertext,
-                preferences_iv = EXCLUDED.preferences_iv,
-                preferences_tag = EXCLUDED.preferences_tag,
-                confirmed_at = NOW(),
-                updated_at = NOW()
-            RETURNING id
-        """,
-            user_id,
-            request.investor_id,
-            request.profile_data_ciphertext,
-            request.profile_data_iv,
-            request.profile_data_tag,
-            request.custom_holdings_ciphertext,
-            request.custom_holdings_iv,
-            request.custom_holdings_tag,
-            request.preferences_ciphertext,
-            request.preferences_iv,
-            request.preferences_tag
+    
+    # Use UserInvestorProfileService to create/update the encrypted profile
+    profile_service = UserInvestorProfileService()
+    
+    try:
+        result = await profile_service.create_or_update_profile(
+            token=token,
+            investor_id=request.investor_id,
+            profile_data_ciphertext=request.profile_data_ciphertext,
+            profile_data_iv=request.profile_data_iv,
+            profile_data_tag=request.profile_data_tag,
+            custom_holdings_ciphertext=request.custom_holdings_ciphertext,
+            custom_holdings_iv=request.custom_holdings_iv,
+            custom_holdings_tag=request.custom_holdings_tag,
+            preferences_ciphertext=request.preferences_ciphertext,
+            preferences_iv=request.preferences_iv,
+            preferences_tag=request.preferences_tag
         )
         
-        logger.info(f"✅ Identity confirmed: {user_id} → {investor['name']} ({investor['firm']})")
+        logger.info(f"✅ Identity confirmed: {user_id} → {investor['name']} ({investor.get('firm', 'N/A')})")
         
         return {
             "success": True,
             "message": f"Identity confirmed as {investor['name']}",
-            "user_investor_profile_id": result
+            "user_investor_profile_id": result.get("id") if result else None
         }
+        
+    except Exception as e:
+        logger.error(f"Failed to confirm identity: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to confirm identity: {str(e)}")
 
 
 @router.get("/status", response_model=IdentityStatus)
@@ -321,49 +294,15 @@ async def get_identity_status(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # Use service layer - need to join user_investor_profiles with investor_profiles
-    # Supabase doesn't support JOINs directly, so we'll fetch separately
-    investor_service = InvestorDBService()
-    supabase = investor_service.get_supabase()
+    # Use service layer for user_investor_profiles operations
+    profile_service = UserInvestorProfileService()
     
-    # Get user_investor_profile
-    uip_response = supabase.table("user_investor_profiles")\
-        .select("confirmed_at,confirmed_investor_id")\
-        .eq("user_id", user_id)\
-        .limit(1)\
-        .execute()
-    
-    if not uip_response.data or len(uip_response.data) == 0:
-        return {
-            "has_confirmed_identity": False
-        }
-    
-    uip_row = uip_response.data[0]
-    investor_id = uip_row.get("confirmed_investor_id")
-    
-    # Get investor profile if ID exists
-    investor_name = None
-    investor_firm = None
-    if investor_id:
-        investor_service = InvestorDBService()
-        investor = await investor_service.get_investor_by_id(investor_id)
-        if investor:
-            investor_name = investor.get("name")
-            investor_firm = investor.get("firm")
-    
-    # Handle confirmed_at format
-    confirmed_at = uip_row.get("confirmed_at")
-    if isinstance(confirmed_at, str):
-        confirmed_at_str = confirmed_at
-    else:
-        confirmed_at_str = confirmed_at.isoformat() if hasattr(confirmed_at, 'isoformat') else str(confirmed_at) if confirmed_at else None
-    
-    return {
-        "has_confirmed_identity": True,
-        "confirmed_at": confirmed_at_str,
-        "investor_name": investor_name,
-        "investor_firm": investor_firm
-    }
+    try:
+        status = await profile_service.get_status(token)
+        return status
+    except Exception as e:
+        logger.error(f"Error getting identity status: {e}")
+        return {"has_confirmed_identity": False}
 
 
 class GetProfileRequest(BaseModel):
@@ -396,49 +335,15 @@ async def get_encrypted_profile(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # Use service layer - accessing Supabase through service pattern
-    # Note: user_investor_profiles doesn't have a dedicated service yet
-    # This is acceptable for now as it's a specialized table
-    investor_service = InvestorDBService()
-    supabase = investor_service.get_supabase()
+    # Use service layer for user_investor_profiles operations
+    profile_service = UserInvestorProfileService()
     
-    response = supabase.table("user_investor_profiles")\
-        .select("*")\
-        .eq("user_id", user_id)\
-        .limit(1)\
-        .execute()
+    profile = await profile_service.get_profile(token)
     
-    if not response.data or len(response.data) == 0:
+    if not profile:
         raise HTTPException(status_code=404, detail="No confirmed identity found")
     
-    row = response.data[0]
-    
-    # Handle confirmed_at - might be string or datetime
-    confirmed_at = row.get("confirmed_at")
-    if isinstance(confirmed_at, str):
-        confirmed_at_str = confirmed_at
-    else:
-        confirmed_at_str = confirmed_at.isoformat() if hasattr(confirmed_at, 'isoformat') else str(confirmed_at) if confirmed_at else None
-    
-    return {
-        "profile_data": {
-            "ciphertext": row.get("profile_data_ciphertext"),
-            "iv": row.get("profile_data_iv"),
-            "tag": row.get("profile_data_tag")
-        },
-        "custom_holdings": {
-            "ciphertext": row.get("custom_holdings_ciphertext"),
-            "iv": row.get("custom_holdings_iv"),
-            "tag": row.get("custom_holdings_tag")
-        } if row.get("custom_holdings_ciphertext") else None,
-        "preferences": {
-            "ciphertext": row.get("preferences_ciphertext"),
-            "iv": row.get("preferences_iv"),
-            "tag": row.get("preferences_tag")
-        } if row.get("preferences_ciphertext") else None,
-        "confirmed_at": confirmed_at_str,
-        "algorithm": row.get("algorithm")
-    }
+    return profile
 
 
 @router.delete("/profile")
@@ -469,19 +374,11 @@ async def delete_identity(
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # Use service layer - accessing Supabase through service pattern
-    # Note: user_investor_profiles doesn't have a dedicated service yet
-    # This is acceptable for now as it's a specialized table
-    investor_service = InvestorDBService()
-    supabase = investor_service.get_supabase()
+    # Use service layer for user_investor_profiles operations
+    profile_service = UserInvestorProfileService()
     
-    response = supabase.table("user_investor_profiles")\
-        .delete()\
-        .eq("user_id", user_id)\
-        .execute()
+    await profile_service.delete_profile(token)
     
-    deleted_count = len(response.data) if response.data else 0
-    
-    logger.info(f"🗑️ Identity reset for user {user_id} (deleted: {deleted_count})")
+    logger.info(f"🗑️ Identity reset for user {user_id}")
     
     return {"success": True, "message": "Identity reset successfully"}
