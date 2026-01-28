@@ -51,19 +51,10 @@ class ConsentDBService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (only service layer has access)."""
+        """Get Supabase client (private - ONLY for internal service use)."""
         if self._supabase is None:
             self._supabase = get_supabase()
         return self._supabase
-    
-    def get_supabase(self):
-        """
-        Public method to get Supabase client.
-        
-        ⚠️ WARNING: This should only be called from within service layer methods.
-        API routes should use service methods, not call this directly.
-        """
-        return self._get_supabase()
     
     # =========================================================================
     # Pending Requests
@@ -437,3 +428,67 @@ class ConsentDBService:
             scope_description=operation,
             metadata=operation_metadata
         )
+    
+    # =========================================================================
+    # SSE Event Helpers
+    # =========================================================================
+    
+    async def get_recent_consent_events(
+        self,
+        user_id: str,
+        after_timestamp_ms: int,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Get recent consent events after a timestamp for SSE streaming.
+        
+        Args:
+            user_id: The user ID
+            after_timestamp_ms: Only get events after this timestamp (ms)
+            limit: Maximum events to return
+            
+        Returns:
+            List of consent events
+        """
+        supabase = self._get_supabase()
+        
+        response = supabase.table("consent_audit")\
+            .select("token_id,request_id,action,scope,agent_id,issued_at")\
+            .eq("user_id", user_id)\
+            .in_("action", ["REQUESTED", "CONSENT_GRANTED", "CONSENT_DENIED", "REVOKED"])\
+            .gt("issued_at", after_timestamp_ms)\
+            .order("issued_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        return response.data or []
+    
+    async def get_resolved_request(
+        self,
+        user_id: str,
+        request_id: str
+    ) -> Optional[Dict]:
+        """
+        Check if a specific consent request has been resolved.
+        
+        Args:
+            user_id: The user ID
+            request_id: The request ID to check
+            
+        Returns:
+            Resolution event if found, None otherwise
+        """
+        supabase = self._get_supabase()
+        
+        response = supabase.table("consent_audit")\
+            .select("action,scope,agent_id,issued_at")\
+            .eq("user_id", user_id)\
+            .eq("request_id", request_id)\
+            .in_("action", ["CONSENT_GRANTED", "CONSENT_DENIED"])\
+            .order("issued_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
