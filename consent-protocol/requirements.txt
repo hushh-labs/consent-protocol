@@ -27,6 +27,7 @@ argparse==1.4.0
 
 # 🧪 Testing
 pytest==8.2.2
+pytest-asyncio>=0.23.0  # Required for async test support
 
 # 🔍 Code Quality & Linting
 # 🔍 Code Quality & Linting moved to requirements-dev.txt

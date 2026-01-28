@@ -49,18 +49,21 @@ async def get_preferences():
 Unified database service for agent-mediated vault access.
 
 **Responsibilities:**
+
 - Validate consent tokens before all operations
 - Store and retrieve encrypted vault data
 - Handle vault operations for all domains (food, professional, kai_preferences, kai_decisions)
 - Log audit events
 
 **Domains Supported:**
+
 - `food` → `vault_food` table
 - `professional` → `vault_professional` table
 - `kai_preferences` → `vault_kai_preferences` table
 - `kai_decisions` → `vault_kai` table
 
 **Key Methods:**
+
 - `get_encrypted_fields()` - Retrieve encrypted fields (requires read consent)
 - `store_encrypted_field()` - Store single encrypted field (requires write consent)
 - `store_encrypted_fields()` - Batch store encrypted fields (requires write consent)
@@ -73,12 +76,14 @@ Unified database service for agent-mediated vault access.
 Service layer for consent-related database operations.
 
 **Responsibilities:**
+
 - Manage pending consent requests
 - Track active consent tokens
 - Maintain consent audit log
 - Insert consent events
 
 **Key Methods:**
+
 - `get_pending_requests()` - Get pending consent requests for a user
 - `get_active_tokens()` - Get active (non-expired) consent tokens
 - `is_token_active()` - Check if token is active for a scope
@@ -92,17 +97,72 @@ Service layer for consent-related database operations.
 Service layer for investor profile database operations.
 
 **Responsibilities:**
+
 - Search investor profiles (public data, no consent required)
 - Retrieve investor profiles by ID or CIK
 - Provide investor statistics
 
 **Key Methods:**
+
 - `search_investors()` - Search investors by name (fuzzy matching)
 - `get_investor_by_id()` - Get full investor profile by ID
 - `get_investor_by_cik()` - Get investor profile by SEC CIK
 - `get_investor_stats()` - Get aggregate statistics
+- `upsert_investor()` - Create/update investor profile (admin only)
 
 **Note:** Investor search operations are public (no consent required) as they only access public investor profile data from SEC filings.
+
+### 4. VaultKeysService (`hushh_mcp/services/vault_keys_service.py`)
+
+Service layer for vault key management operations.
+
+**Responsibilities:**
+
+- Check vault existence
+- Retrieve vault key data for unlock
+- Setup new vault with encryption keys
+- Get multi-domain vault status
+
+**Key Methods:**
+
+- `check_vault_exists()` - Check if user has a vault
+- `get_vault_key()` - Retrieve vault key data (for unlock flow)
+- `setup_vault()` - Create new vault with encrypted keys
+- `get_vault_status()` - Get status across all vault domains
+
+### 5. KaiDecisionsService (`hushh_mcp/services/kai_decisions_service.py`)
+
+Service layer for Kai investment decision storage.
+
+**Responsibilities:**
+
+- Store encrypted investment decisions
+- Retrieve user's decision history
+- Delete decisions
+
+**Key Methods:**
+
+- `store_decision()` - Store encrypted decision (requires VAULT_OWNER)
+- `get_decisions()` - Get paginated decisions (requires VAULT_OWNER)
+- `get_decision_by_id()` - Get single decision (requires VAULT_OWNER)
+- `delete_decision()` - Delete decision (requires VAULT_OWNER)
+
+### 6. UserInvestorProfileService (`hushh_mcp/services/user_investor_profile_db.py`)
+
+Service layer for user identity profiles (encrypted investor identity).
+
+**Responsibilities:**
+
+- Create/update encrypted user profiles
+- Retrieve profile status
+- Delete profiles
+
+**Key Methods:**
+
+- `create_or_update_profile()` - Store encrypted identity
+- `get_status()` - Check if profile exists
+- `get_profile()` - Retrieve encrypted profile
+- `delete_profile()` - Delete user profile
 
 ## Supabase Client Access
 
@@ -111,11 +171,13 @@ Service layer for investor profile database operations.
 The Supabase client is a **PRIVATE MODULE** that should ONLY be imported by service layer files.
 
 **Access Rules:**
+
 - ✅ Service classes (`VaultDBService`, `ConsentDBService`, `InvestorDBService`)
 - ❌ API routes (forbidden - use service layer instead)
 - ❌ Direct imports in route files (forbidden)
 
 **Initialization:**
+
 ```python
 from db.supabase_client import get_supabase
 
@@ -124,6 +186,7 @@ supabase = get_supabase()
 ```
 
 **Environment Variables Required:**
+
 - `SUPABASE_URL` - Your Supabase project URL
 - `SUPABASE_KEY` - Your Supabase service role key (secret)
 
@@ -132,6 +195,7 @@ supabase = get_supabase()
 ### What Changed
 
 **Before (asyncpg):**
+
 ```python
 from db.connection import get_pool
 
@@ -141,6 +205,7 @@ async with pool.acquire() as conn:
 ```
 
 **After (Supabase REST API):**
+
 ```python
 from hushh_mcp.services.vault_db import VaultDBService
 
@@ -188,7 +253,7 @@ async def get_preferences(request: Request):
     body = await request.json()
     user_id = body.get("userId")
     consent_token = body.get("consentToken")
-    
+
     # Use service layer (validates consent internally)
     service = VaultDBService()
     try:
@@ -202,7 +267,7 @@ async def get_preferences(request: Request):
             status_code=401 if e.reason in ["missing_token", "invalid_token"] else 403,
             detail=str(e)
         )
-    
+
     return {"preferences": data}
 ```
 
@@ -211,6 +276,7 @@ async def get_preferences(request: Request):
 The `db/connection.py` module (asyncpg) is **deprecated** and will be removed in a future version.
 
 **Current Status:**
+
 - Marked as deprecated with warnings
 - Kept temporarily for schema creation scripts (`db/migrate.py`) which need asyncpg for DDL
 - **DO NOT use** in:
