@@ -33,11 +33,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from hushh_mcp.services.vault_db import VaultDBService
-from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.vault_keys_service import VaultKeysService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/db", tags=["Database Proxy"])
+router = APIRouter(prefix="/db", tags=["Database Proxy (DEPRECATED)"])
 
 
 # ============================================================================
@@ -117,20 +117,11 @@ async def vault_check(request: VaultCheckRequest):
     """
     Check if a vault exists for the user.
     
-    This is a minimal SQL operation - no logic, just database check.
-    The iOS app handles all consent protocol logic locally.
+    ⚠️ DEPRECATED: Use modern vault endpoints instead.
     """
     try:
-        # Use service layer (even though this endpoint is deprecated)
-        service = VaultDBService()
-        supabase = service.get_supabase()
-        response = supabase.table("vault_keys")\
-            .select("user_id")\
-            .eq("user_id", request.userId)\
-            .limit(1)\
-            .execute()
-        
-        has_vault = len(response.data) > 0 if response.data else False
+        service = VaultKeysService()
+        has_vault = await service.check_vault_exists(request.userId)
         return VaultCheckResponse(hasVault=has_vault)
     
     except Exception as e:
@@ -143,31 +134,23 @@ async def vault_get(request: VaultGetRequest):
     """
     Get encrypted vault key data for the user.
     
-    Returns the encrypted vault key (still encrypted with user's passphrase).
-    Decryption happens locally on iOS.
+    ⚠️ DEPRECATED: Use modern vault endpoints instead.
     """
     try:
-        # Use service layer (even though this endpoint is deprecated)
-        service = VaultDBService()
-        supabase = service.get_supabase()
-        response = supabase.table("vault_keys")\
-            .select("auth_method,encrypted_vault_key,salt,iv,recovery_encrypted_vault_key,recovery_salt,recovery_iv")\
-            .eq("user_id", request.userId)\
-            .limit(1)\
-            .execute()
+        service = VaultKeysService()
+        vault_data = await service.get_vault_key(request.userId)
         
-        if not response.data or len(response.data) == 0:
+        if not vault_data:
             raise HTTPException(status_code=404, detail="Vault not found")
         
-        row = response.data[0]
         return VaultKeyData(
-            authMethod=row.get("auth_method"),
-            encryptedVaultKey=row.get("encrypted_vault_key"),
-            salt=row.get("salt"),
-            iv=row.get("iv"),
-            recoveryEncryptedVaultKey=row.get("recovery_encrypted_vault_key"),
-            recoverySalt=row.get("recovery_salt"),
-            recoveryIv=row.get("recovery_iv")
+            authMethod=vault_data["authMethod"],
+            encryptedVaultKey=vault_data["encryptedVaultKey"],
+            salt=vault_data["salt"],
+            iv=vault_data["iv"],
+            recoveryEncryptedVaultKey=vault_data["recoveryEncryptedVaultKey"],
+            recoverySalt=vault_data["recoverySalt"],
+            recoveryIv=vault_data["recoveryIv"]
         )
     
     except HTTPException:
@@ -182,35 +165,20 @@ async def vault_setup(request: VaultSetupRequest):
     """
     Store encrypted vault key data.
     
-    The vault key is already encrypted locally on iOS with the user's passphrase.
-    This just stores the encrypted blob in the database.
+    ⚠️ DEPRECATED: Use modern vault endpoints instead.
     """
     try:
-        # Use service layer (even though this endpoint is deprecated)
-        from datetime import datetime
-        service = VaultDBService()
-        supabase = service.get_supabase()
-        
-        now_ms = int(datetime.now().timestamp() * 1000)
-        data = {
-            "user_id": request.userId,
-            "auth_method": request.authMethod,
-            "encrypted_vault_key": request.encryptedVaultKey,
-            "salt": request.salt,
-            "iv": request.iv,
-            "recovery_encrypted_vault_key": request.recoveryEncryptedVaultKey,
-            "recovery_salt": request.recoverySalt,
-            "recovery_iv": request.recoveryIv,
-            "created_at": now_ms,
-            "updated_at": now_ms
-        }
-        
-        supabase.table("vault_keys").upsert(
-            data,
-            on_conflict="user_id"
-        ).execute()
-        
-        logger.info(f"Vault setup for user {request.userId[:8]}...")
+        service = VaultKeysService()
+        await service.setup_vault(
+            user_id=request.userId,
+            auth_method=request.authMethod,
+            encrypted_vault_key=request.encryptedVaultKey,
+            salt=request.salt,
+            iv=request.iv,
+            recovery_encrypted_vault_key=request.recoveryEncryptedVaultKey,
+            recovery_salt=request.recoverySalt,
+            recovery_iv=request.recoveryIv
+        )
         return SuccessResponse(success=True)
     
     except Exception as e:
@@ -236,35 +204,13 @@ async def food_get(request: DomainGetRequest):
     """
     Get all food preferences for the user.
     
-    Returns encrypted data from vault_food table.
-    Data is still encrypted - decryption happens on the client.
+    ⚠️ DEPRECATED: This endpoint lacks authentication!
+    Use /api/food/preferences instead which requires VAULT_OWNER token.
     """
     try:
-        # ⚠️ DEPRECATED: This endpoint lacks authentication
-        # Use /api/food/preferences instead which requires VAULT_OWNER token
-        # Use service layer for consistency (even though deprecated)
         service = VaultDBService()
-        supabase = service.get_supabase()
-        response = supabase.table("vault_food")\
-            .select("field_name,ciphertext,iv,tag,algorithm")\
-            .eq("user_id", request.userId)\
-            .execute()
-        
-        if not response.data or len(response.data) == 0:
-            return DomainPreferencesResponse(domain="food", preferences=None)
-        
-        # Build preferences object from rows
-        preferences = {}
-        for row in response.data:
-            preferences[row.get("field_name")] = {
-                "ciphertext": row.get("ciphertext"),
-                "iv": row.get("iv"),
-                "tag": row.get("tag"),
-                "algorithm": row.get("algorithm") or "aes-256-gcm",
-                "encoding": "base64"
-            }
-        
-        return DomainPreferencesResponse(domain="food", preferences=preferences)
+        preferences = await service._get_domain_preferences_deprecated(request.userId, "food")
+        return DomainPreferencesResponse(domain="food", preferences=preferences if preferences else None)
     
     except Exception as e:
         logger.error(f"food/get error: {e}")
@@ -276,35 +222,13 @@ async def professional_get(request: DomainGetRequest):
     """
     Get all professional data for the user.
     
-    Returns encrypted data from vault_professional table.
-    Data is still encrypted - decryption happens on the client.
+    ⚠️ DEPRECATED: This endpoint lacks authentication!
+    Use /api/professional/preferences instead which requires VAULT_OWNER token.
     """
     try:
-        # ⚠️ DEPRECATED: This endpoint lacks authentication
-        # Use /api/professional/preferences instead which requires VAULT_OWNER token
-        # Use service layer for consistency (even though deprecated)
         service = VaultDBService()
-        supabase = service.get_supabase()
-        response = supabase.table("vault_professional")\
-            .select("field_name,ciphertext,iv,tag,algorithm")\
-            .eq("user_id", request.userId)\
-            .execute()
-        
-        if not response.data or len(response.data) == 0:
-            return DomainPreferencesResponse(domain="professional", preferences=None)
-        
-        # Build preferences object from rows
-        preferences = {}
-        for row in response.data:
-            preferences[row.get("field_name")] = {
-                "ciphertext": row.get("ciphertext"),
-                "iv": row.get("iv"),
-                "tag": row.get("tag"),
-                "algorithm": row.get("algorithm") or "aes-256-gcm",
-                "encoding": "base64"
-            }
-        
-        return DomainPreferencesResponse(domain="professional", preferences=preferences)
+        preferences = await service._get_domain_preferences_deprecated(request.userId, "professional")
+        return DomainPreferencesResponse(domain="professional", preferences=preferences if preferences else None)
     
     except Exception as e:
         logger.error(f"professional/get error: {e}")
@@ -361,15 +285,10 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
 @router.post("/vault/status")
 async def get_vault_status(request: Request):
     """
-    Get status for all vault domains (optimized single query).
+    Get status for all vault domains.
     Returns metadata without encrypted data.
     
-    Checks:
-    - Food: vault_food table (field count)
-    - Professional: vault_professional table (field count)
-    - Kai: user_investor_profiles (onboarded) + vault_kai_preferences (settings count)
-    
-    OPTIMIZED: Uses single CTE query for efficient connection pool usage.
+    Requires VAULT_OWNER token.
     """
     try:
         body = await request.json()
@@ -379,65 +298,15 @@ async def get_vault_status(request: Request):
         if not user_id:
             raise HTTPException(status_code=400, detail="userId is required")
         
-        # Validate VAULT_OWNER token
-        validate_vault_owner_token(consent_token, user_id)
+        # Use VaultKeysService (handles consent validation internally)
+        service = VaultKeysService()
+        status = await service.get_vault_status(user_id, consent_token)
         
-        # Use service layer - Supabase doesn't support CTEs, so we'll make separate queries
-        service = VaultDBService()
-        supabase = service.get_supabase()
-        
-        # Get counts for each domain
-        food_response = supabase.table("vault_food")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        food_count = food_response.count if hasattr(food_response, 'count') and food_response.count is not None else 0
-        
-        prof_response = supabase.table("vault_professional")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        prof_count = prof_response.count if hasattr(prof_response, 'count') and prof_response.count is not None else 0
-        
-        kai_check_response = supabase.table("user_investor_profiles")\
-            .select("user_id")\
-            .eq("user_id", user_id)\
-            .limit(1)\
-            .execute()
-        kai_onboarded = len(kai_check_response.data) > 0 if kai_check_response.data else False
-        
-        kai_prefs_response = supabase.table("vault_kai_preferences")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        kai_prefs_count = kai_prefs_response.count if hasattr(kai_prefs_response, 'count') and kai_prefs_response.count is not None else 0
-        
-        # Kai domain is active if either onboarded OR has preferences
-        kai_has_data = kai_onboarded or kai_prefs_count > 0
-        
-        domains = {
-            "food": {"hasData": food_count > 0, "fieldCount": food_count},
-            "professional": {"hasData": prof_count > 0, "fieldCount": prof_count},
-            "kai": {
-                "hasData": kai_has_data,
-                "onboarded": kai_onboarded,
-                "fieldCount": kai_prefs_count  # Number of Kai preference fields set
-            }
-        }
-        
-        total_active = sum(1 for d in domains.values() if d["hasData"])
-        
-        logger.info(f"✅ Vault status for {user_id}: {total_active}/3 domains active")
-        
-        return {
-            "domains": domains,
-            "totalActive": total_active,
-            "total": 3
-        }
+        return status
     
+    except ValueError as e:
+        # Consent validation errors
+        raise HTTPException(status_code=401, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
