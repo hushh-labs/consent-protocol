@@ -30,19 +30,10 @@ class InvestorDBService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (only service layer has access)."""
+        """Get Supabase client (private - ONLY for internal service use)."""
         if self._supabase is None:
             self._supabase = get_supabase()
         return self._supabase
-    
-    def get_supabase(self):
-        """
-        Public method to get Supabase client.
-        
-        ⚠️ WARNING: This should only be called from within service layer methods.
-        API routes should use service methods, not call this directly.
-        """
-        return self._get_supabase()
     
     async def search_investors(self, name: str, limit: int = 10) -> List[Dict]:
         """
@@ -310,3 +301,40 @@ class InvestorDBService:
             "total": total,
             "by_type": by_type
         }
+    
+    async def upsert_investor(
+        self,
+        data: Dict[str, Any],
+        upsert_key: Optional[str] = "cik"
+    ) -> Dict[str, Any]:
+        """
+        Create or update an investor profile.
+        
+        Args:
+            data: Investor data dictionary
+            upsert_key: Field to use for conflict detection (default: "cik")
+            
+        Returns:
+            Created/updated investor record
+        """
+        supabase = self._get_supabase()
+        
+        try:
+            if upsert_key and data.get(upsert_key):
+                response = supabase.table("investor_profiles").upsert(
+                    data,
+                    on_conflict=upsert_key
+                ).execute()
+            else:
+                # Remove None key if present
+                clean_data = {k: v for k, v in data.items() if k != upsert_key or v is not None}
+                response = supabase.table("investor_profiles").insert(clean_data).execute()
+            
+            if response.data and len(response.data) > 0:
+                return response.data[0]
+            
+            raise Exception("Failed to upsert investor profile")
+            
+        except Exception as e:
+            logger.error(f"Error upserting investor: {e}")
+            raise

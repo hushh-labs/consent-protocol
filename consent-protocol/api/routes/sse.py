@@ -59,19 +59,12 @@ async def consent_event_generator(
             from hushh_mcp.services.consent_db import ConsentDBService
             service = ConsentDBService()
             
-            # Query for events that happened AFTER this connection started
-            # Use Supabase through service layer
-            supabase = service.get_supabase()
-            response = supabase.table("consent_audit")\
-                .select("token_id,request_id,action,scope,agent_id,issued_at")\
-                .eq("user_id", user_id)\
-                .in_("action", ["REQUESTED", "CONSENT_GRANTED", "CONSENT_DENIED", "REVOKED"])\
-                .gt("issued_at", connection_start_ms)\
-                .order("issued_at", desc=True)\
-                .limit(10)\
-                .execute()
-            
-            recent_events = response.data or []
+            # Use service method for consent event retrieval
+            recent_events = await service.get_recent_consent_events(
+                user_id=user_id,
+                after_timestamp_ms=connection_start_ms,
+                limit=10
+            )
             
             for event in recent_events:
                 # Use request_id as primary event key (more stable than auto-generated token_id)
@@ -165,18 +158,9 @@ async def poll_specific_request(user_id: str, request_id: str, request: Request)
             
             from hushh_mcp.services.consent_db import ConsentDBService
             service = ConsentDBService()
-            supabase = service.get_supabase()
             
-            response = supabase.table("consent_audit")\
-                .select("action,scope,agent_id,issued_at")\
-                .eq("user_id", user_id)\
-                .eq("request_id", request_id)\
-                .in_("action", ["CONSENT_GRANTED", "CONSENT_DENIED"])\
-                .order("issued_at", desc=True)\
-                .limit(1)\
-                .execute()
-            
-            result = response.data[0] if response.data and len(response.data) > 0 else None
+            # Use service method to check for resolution
+            result = await service.get_resolved_request(user_id, request_id)
             
             if result:
                 yield {
