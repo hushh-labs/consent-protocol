@@ -227,3 +227,7 @@ class SentimentAgent:
         # - Normalize to -1.0 to 1.0 scale
         
         return 0.0
+
+
+# Export default instance
+sentiment_agent = SentimentAgent()

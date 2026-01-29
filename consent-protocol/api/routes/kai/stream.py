@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from db.consent import log_operation
+from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
@@ -473,7 +473,8 @@ async def analyze_stream(
         raise HTTPException(status_code=403, detail="Token user mismatch")
     
     # Log operation for audit trail (shows what vault.owner token was used for)
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=user_id,
         operation="kai.analyze",
         target=ticker,
@@ -527,7 +528,8 @@ async def analyze_stream_post(
         raise HTTPException(status_code=403, detail="Token user mismatch")
     
     # Log operation for audit trail (shows what vault.owner token was used for)
-    await log_operation(
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
         user_id=body.user_id,
         operation="kai.analyze",
         target=body.ticker,

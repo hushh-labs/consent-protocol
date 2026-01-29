@@ -31,19 +31,33 @@ logger = logging.getLogger(__name__)
 # Database connection pool (singleton)
 _pool: Optional[asyncpg.Pool] = None
 
-# Database URL from environment (REQUIRED - no hardcoded fallback for security)
+# Database URL from environment (optional now - we use Supabase REST API)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Warn if DATABASE_URL is not set, but don't error at import time
+# since we've migrated to Supabase REST API (error is deferred to get_pool())
 if not DATABASE_URL:
-    raise EnvironmentError(
-        "DATABASE_URL environment variable is required. "
-        "Set it in .env or as an environment variable."
+    logger.warning(
+        "⚠️ DATABASE_URL not set. Legacy asyncpg pool will not be available. "
+        "This is expected if using Supabase REST API (the new architecture)."
     )
 
 
 async def get_pool() -> asyncpg.Pool:
-    """Get or create the connection pool."""
+    """Get or create the connection pool.
+    
+    ⚠️ DEPRECATED: This is only for legacy code. New code should use
+    the service layer with Supabase REST API instead.
+    """
     global _pool
+    
+    # Guard: Raise error if DATABASE_URL not configured
+    if not DATABASE_URL:
+        raise EnvironmentError(
+            "DATABASE_URL is required for legacy asyncpg pool. "
+            "If using Supabase REST API, use service layer instead of db.get_pool()."
+        )
+    
     if _pool is None:
         logger.info(f"Connecting to PostgreSQL...")
         

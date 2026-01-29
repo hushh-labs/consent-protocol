@@ -249,3 +249,7 @@ class ValuationAgent:
         # - Assess valuation premium/discount
         
         return {}
+
+
+# Export default instance
+valuation_agent = ValuationAgent()
