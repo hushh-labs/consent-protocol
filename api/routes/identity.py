@@ -240,7 +240,7 @@ async def confirm_identity(
     
     try:
         result = await profile_service.create_or_update_profile(
-            token=token,
+            consent_token=token,
             investor_id=request.investor_id,
             profile_data_ciphertext=request.profile_data_ciphertext,
             profile_data_iv=request.profile_data_iv,
@@ -258,7 +258,7 @@ async def confirm_identity(
         return {
             "success": True,
             "message": f"Identity confirmed as {investor['name']}",
-            "user_investor_profile_id": result.get("id") if result else None
+            "user_investor_profile_id": result if result else None
         }
         
     except Exception as e:
