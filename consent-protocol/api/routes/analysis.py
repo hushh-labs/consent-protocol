@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException, Body, Header
 from pydantic import BaseModel
 from typing import Dict, Any
 
-from hushh_mcp.agents.fundamental import FundamentalAgent, AnalysisReport, MarketMetrics
+from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent, FundamentalInsight
+# AnalysisReport alias for backward compatibility or clarity if needed
+AnalysisReport = FundamentalInsight 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
