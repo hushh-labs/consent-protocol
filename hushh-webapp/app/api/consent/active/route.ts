@@ -27,9 +27,22 @@ export async function GET(request: NextRequest) {
 
     console.log(`[API] Fetching active consents for user: ${userId}`);
 
+    const authorization = request.headers.get("Authorization");
+
+    // 2. Call Backend with GET (forwarding Authorization)
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+    if (authorization) {
+      headers["Authorization"] = authorization;
+    }
+
     const response = await fetch(
       `${BACKEND_URL}/api/consent/active?userId=${userId}`,
-      { method: "GET" }
+      { 
+        method: "GET",
+        headers
+      }
     );
 
     if (!response.ok) {

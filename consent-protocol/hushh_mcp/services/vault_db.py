@@ -296,6 +296,7 @@ class VaultDBService:
         supabase = self._get_supabase()
         
         # Upsert using Supabase (handles ON CONFLICT automatically)
+        timestamp = int(datetime.now().timestamp() * 1000)
         data = {
             "user_id": user_id,
             "field_name": field_name,
@@ -303,7 +304,8 @@ class VaultDBService:
             "iv": payload.iv,
             "tag": payload.tag,
             "algorithm": payload.algorithm,
-            "updated_at": datetime.now().isoformat()
+            "created_at": timestamp, # Required for new rows
+            "updated_at": timestamp
         }
         
         supabase.table(table).upsert(
@@ -360,6 +362,7 @@ class VaultDBService:
         supabase = self._get_supabase()
         
         # Batch upsert using Supabase (no transactions, but atomic per batch)
+        timestamp = int(datetime.now().timestamp() * 1000)
         data = [
             {
                 "user_id": user_id,
@@ -368,7 +371,8 @@ class VaultDBService:
                 "iv": payload.iv,
                 "tag": payload.tag,
                 "algorithm": payload.algorithm,
-                "updated_at": datetime.now().isoformat()
+                "created_at": timestamp, # Required for new rows (schema has no default)
+                "updated_at": timestamp
             }
             for field_name, payload in fields.items()
         ]

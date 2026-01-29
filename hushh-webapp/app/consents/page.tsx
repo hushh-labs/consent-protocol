@@ -465,7 +465,7 @@ import * as React from "react";
 
 export default function ConsentsPage() {
   const searchParams = useSearchParams();
-  const { vaultKey, isVaultUnlocked } = useVault();
+  const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -516,9 +516,10 @@ export default function ConsentsPage() {
     }
   }, []);
 
-  const fetchActiveConsents = useCallback(async (uid: string) => {
+  const fetchActiveConsents = useCallback(async (uid: string, token: string) => {
+    if (!token) return;
     try {
-      const response = await ApiService.getActiveConsents(uid);
+      const response = await ApiService.getActiveConsents(uid, token);
       if (response.ok) {
         const data = await response.json();
         setActiveConsents(data.active || []);
@@ -540,11 +541,13 @@ export default function ConsentsPage() {
       if (uid) {
         setUserId(uid);
 
-        // Initial fetch
+        // Initial fetch - use token from storage or context
+        const effectiveToken = token || vaultOwnerToken || "";
+        
         Promise.all([
           fetchPendingConsents(uid),
           fetchAuditLog(uid),
-          fetchActiveConsents(uid),
+          ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken)] : []),
         ]).finally(() => {
           setLoading(false);
         });
@@ -563,7 +566,7 @@ export default function ConsentsPage() {
       }
     }
     initSession();
-  }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents]);
+  }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents, vaultOwnerToken]);
 
   // =========================================================================
   // SSE: React to consent events via unified context (no duplicate connection)
@@ -574,6 +577,10 @@ export default function ConsentsPage() {
     if (!lastEvent || !userId) return;
 
     const { action, request_id, scope } = lastEvent;
+    
+    // Use token from session state or vault context
+    const effectiveToken = session?.token || vaultOwnerToken || "";
+
     console.log(
       `📡 [ConsentsPage] SSE event: ${action} for ${request_id} (${scope})`
     );
@@ -589,7 +596,7 @@ export default function ConsentsPage() {
         case "CONSENT_GRANTED":
           // Approval - pending → active, update all
           fetchPendingConsents(userId);
-          fetchActiveConsents(userId);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
           fetchAuditLog(userId);
           break;
         case "CONSENT_DENIED":
@@ -600,7 +607,7 @@ export default function ConsentsPage() {
           break;
         case "REVOKED":
           // Revoke - remove from active, update audit
-          fetchActiveConsents(userId);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
           fetchAuditLog(userId);
 
           // If VAULT_OWNER was revoked via SSE (e.g., from another tab), lock vault
@@ -618,7 +625,7 @@ export default function ConsentsPage() {
         default:
           // Any other event - refresh all to be safe
           fetchPendingConsents(userId);
-          fetchActiveConsents(userId);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
           fetchAuditLog(userId);
       }
     }, 300);
@@ -631,6 +638,8 @@ export default function ConsentsPage() {
     fetchPendingConsents,
     fetchAuditLog,
     fetchActiveConsents,
+    session?.token,
+    vaultOwnerToken
   ]);
 
   // =========================================================================
@@ -647,10 +656,11 @@ export default function ConsentsPage() {
       );
 
       if (!userId) return;
+      const effectiveToken = session?.token || vaultOwnerToken || "";
 
       // Refresh all tables after action
       fetchPendingConsents(userId);
-      fetchActiveConsents(userId);
+      if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
       fetchAuditLog(userId);
     };
 
@@ -660,20 +670,27 @@ export default function ConsentsPage() {
         "consent-action-complete",
         handleConsentAction
       );
-  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog]);
+  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog, session?.token, vaultOwnerToken]);
 
   // =========================================================================
   // Unified Actions Hook (Native Compatible)
   // =========================================================================
   const refreshAll = useCallback(() => {
     if (userId) {
-      Promise.all([
+      const effectiveToken = session?.token || vaultOwnerToken || "";
+      const promises: Promise<any>[] = [
         fetchPendingConsents(userId),
-        fetchActiveConsents(userId),
         fetchAuditLog(userId),
-      ]);
+      ];
+      
+      if (effectiveToken) {
+        promises.push(fetchActiveConsents(userId, effectiveToken));
+      }
+      
+      Promise.all(promises);
     }
-  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog]);
+  }, [userId, fetchPendingConsents, fetchActiveConsents, fetchAuditLog, session?.token, vaultOwnerToken]);
+
 
   const {
     handleApprove: hookApprove,

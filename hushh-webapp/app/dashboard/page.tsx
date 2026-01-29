@@ -278,7 +278,7 @@ export default function DashboardPage() {
         // Fetch status and active consents in parallel
         const [statusRes, activeRes] = await Promise.all([
           ApiService.getVaultStatus(user.uid, vaultOwnerToken),
-          ApiService.getActiveConsents(user.uid),
+          ApiService.getActiveConsents(user.uid, vaultOwnerToken),
         ]);
 
         const counts: Record<string, number> = {};
