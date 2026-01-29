@@ -118,25 +118,6 @@ async def store_preferences(
             fields=fields,
             consent_token=consent_token
         )
-                        """
-                        INSERT INTO vault_kai_preferences (
-                            user_id, field_name, ciphertext, iv, tag, updated_at, created_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (user_id, field_name) 
-                        DO UPDATE SET 
-                            ciphertext = EXCLUDED.ciphertext,
-                            iv = EXCLUDED.iv,
-                            tag = EXCLUDED.tag,
-                            updated_at = EXCLUDED.updated_at
-                        """,
-                        request.user_id,
-                        pref.field_name,
-                        pref.ciphertext,
-                        pref.iv,
-                        pref.tag,
-                        int(datetime.now().timestamp()),
-                        int(datetime.now().timestamp())
-                    )
         
         logger.info(f"[Kai] Stored {len(request.preferences)} encrypted preferences for {request.user_id}")
         return {"success": True}

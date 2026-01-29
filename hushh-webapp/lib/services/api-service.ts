@@ -320,7 +320,7 @@ export class ApiService {
    * Get active consents
    * Route: GET /api/consent/active?userId=xxx
    */
-  static async getActiveConsents(userId: string): Promise<Response> {
+  static async getActiveConsents(userId: string, token?: string): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
         const authToken = await this.getFirebaseToken();
@@ -339,7 +339,16 @@ export class ApiService {
         });
       }
     }
-    return apiFetch(`/api/consent/active?userId=${encodeURIComponent(userId)}`);
+    
+    // Web: Pass token in Authorization header if available
+    const options: RequestInit = {};
+    if (token) {
+      options.headers = {
+        Authorization: `Bearer ${token}`
+      };
+    }
+    
+    return apiFetch(`/api/consent/active?userId=${encodeURIComponent(userId)}`, options);
   }
 
   /**
