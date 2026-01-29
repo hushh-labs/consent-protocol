@@ -391,7 +391,7 @@ async def revoke_consent(request: Request):
         
         # Get the active token for this scope
         service = ConsentDBService()
-    active_tokens = await service.get_active_tokens(userId)
+        active_tokens = await service.get_active_tokens(userId)
         logger.info(f"📋 Found {len(active_tokens)} active tokens for user")
         
         token_to_revoke = None
