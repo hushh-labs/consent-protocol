@@ -122,12 +122,11 @@ class KaiDecisionsService:
             "user_id": user_id,
             "ticker": ticker,
             "decision_type": decision_type,
-            "payload_ciphertext": payload_ciphertext,
-            "payload_iv": payload_iv,
-            "payload_tag": payload_tag,
+            "decision_ciphertext": payload_ciphertext,
+            "iv": payload_iv,
+            "tag": payload_tag,
             "metadata": metadata,
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat()
+            "created_at": now.isoformat()
         }
         
         response = supabase.table("vault_kai").insert(data).execute()
@@ -180,13 +179,12 @@ class KaiDecisionsService:
                 "ticker": row.get("ticker"),
                 "decisionType": row.get("decision_type"),
                 "payload": {
-                    "ciphertext": row.get("payload_ciphertext"),
-                    "iv": row.get("payload_iv"),
-                    "tag": row.get("payload_tag")
+                    "ciphertext": row.get("decision_ciphertext"),
+                    "iv": row.get("iv"),
+                    "tag": row.get("tag")
                 },
                 "metadata": row.get("metadata"),
-                "createdAt": row.get("created_at"),
-                "updatedAt": row.get("updated_at")
+                "createdAt": row.get("created_at")
             })
         
         logger.debug(f"Retrieved {len(decisions)} decisions for user {user_id}")
@@ -229,13 +227,12 @@ class KaiDecisionsService:
             "ticker": row.get("ticker"),
             "decisionType": row.get("decision_type"),
             "payload": {
-                "ciphertext": row.get("payload_ciphertext"),
-                "iv": row.get("payload_iv"),
-                "tag": row.get("payload_tag")
+                "ciphertext": row.get("decision_ciphertext"),
+                "iv": row.get("iv"),
+                "tag": row.get("tag")
             },
             "metadata": row.get("metadata"),
-            "createdAt": row.get("created_at"),
-            "updatedAt": row.get("updated_at")
+            "createdAt": row.get("created_at")
         }
     
     async def delete_decision(
