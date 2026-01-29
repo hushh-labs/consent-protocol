@@ -203,12 +203,18 @@ export default function KaiPreferencesPage() {
         riskProfile: null,
         processingMode: null,
       };
+      
+      let manualProfileJson: string | null = null;
+
       for (const pref of preferences || []) {
         const plaintext = await decryptPayload(pref);
         if (pref.field_name === "kai_risk_profile")
           nextPrefs.riskProfile = plaintext;
         if (pref.field_name === "kai_processing_mode")
           nextPrefs.processingMode = plaintext;
+        if (pref.field_name === "kai_manual_profile") {
+          manualProfileJson = plaintext;
+        }
       }
       setKaiPrefs(nextPrefs);
       // Processing mode only (risk comes from profile now)
@@ -218,6 +224,19 @@ export default function KaiPreferencesPage() {
           ? (nextPrefs.processingMode as any)
           : ""
       );
+      
+      // If we didn't find a confirmed identity/VIP profile, check for a manual one
+      if (profileNotFound && manualProfileJson) {
+          try {
+              const manualProfile = JSON.parse(manualProfileJson);
+              setProfile(manualProfile);
+              setProfileNotFound(false);
+              // We don't necessarily set isManualSetup=true because we want to show it as the active profile
+              // But we could if we want to default to edit mode. For now, treating it as a valid profile is enough.
+          } catch (e) {
+              console.error("[KaiPreferences] Failed to parse manual profile", e);
+          }
+      }
 
       // Auto-detect suggestions (low friction)
       const auto = await IdentityService.autoDetect();
@@ -228,7 +247,7 @@ export default function KaiPreferencesPage() {
     } finally {
       setLoading(false);
     }
-  }, [decryptPayload, user?.uid, vaultKey, vaultOwnerToken]);
+  }, [decryptPayload, user?.uid, vaultKey, vaultOwnerToken, profileNotFound]);
 
   useEffect(() => {
     if (!canLoad) return;
@@ -377,8 +396,9 @@ export default function KaiPreferencesPage() {
         });
       }
 
-      // 2) Save investor profile metrics (encrypted blob) - ONLY if linked to VIP
+      // 2) Save investor profile metrics (encrypted blob)
       if (!isManual) {
+        // ... (existing VIP logic) ...
         const encrypted = await HushhVault.encryptData({
           keyHex: vaultKey,
           plaintext: JSON.stringify({
@@ -405,11 +425,35 @@ export default function KaiPreferencesPage() {
         }
         setProfile(editingProfile as InvestorProfile);
       } else {
-        // Manual mode: we don't save the blob to DB, but we keep it in local state
-        // or we could warn the user. For now, let's just toast.
-        toast.info(
-          "Runtime preferences saved. Link a VIP to save portfolio DNA."
+        // Manual mode: Encrypt and store as a generic preference field
+        // This ensures Supabase persistence even without a public VIP link.
+        const manualProfileData = JSON.stringify({
+          ...editingProfile,
+          profile_version: 2,
+          last_edited_at: new Date().toISOString(),
+          confirmed_investor_id: 0, // Explicitly 0 for manual
+        });
+
+        const encrypted = await HushhVault.encryptData({
+          keyHex: vaultKey,
+          plaintext: manualProfileData,
+        });
+
+        await storePreferences(
+            user.uid,
+            [
+              {
+                field_name: "kai_manual_profile",
+                ciphertext: encrypted.ciphertext,
+                iv: encrypted.iv,
+                tag: encrypted.tag,
+              }
+            ],
+            vaultOwnerToken
         );
+        
+        // Update local state to reflect saved data
+        setProfile(editingProfile as InvestorProfile);
       }
 
       toast.success("Preferences saved");
