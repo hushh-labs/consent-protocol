@@ -5,17 +5,17 @@ Kai Preferences Endpoints
 Handles encrypted user preferences for Kai (risk profile, processing mode).
 """
 
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
 import logging
+from typing import List, Optional
 
-from hushh_mcp.services.vault_db import VaultDBService, ConsentValidationError
-from hushh_mcp.services.consent_db import ConsentDBService
-from hushh_mcp.types import EncryptedPayload
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.vault_db import ConsentValidationError, VaultDBService
+from hushh_mcp.types import EncryptedPayload
 
 logger = logging.getLogger(__name__)
 

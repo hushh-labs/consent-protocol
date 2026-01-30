@@ -5,9 +5,9 @@ Advanced Financial Analyst Coordinator.
 MIGRATED TO ADK (v2.0.0)
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any, Dict
 
 from hushh_mcp.hushh_adk.core import HushhAgent
 from hushh_mcp.hushh_adk.manifest import ManifestLoader
@@ -17,7 +17,7 @@ from hushh_mcp.types import UserID
 from .tools import (
     perform_fundamental_analysis,
     perform_sentiment_analysis,
-    perform_valuation_analysis
+    perform_valuation_analysis,
 )
 
 logger = logging.getLogger(__name__)

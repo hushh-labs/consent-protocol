@@ -7,13 +7,13 @@ Write operons for storing food preferences in the vault with consent validation.
 These operons are the building blocks for the agentic data collection flow.
 """
 
-from typing import Dict, Any
 import json
+from typing import Any, Dict
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.vault.encrypt import encrypt_data
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.types import UserID, EncryptedPayload
+from hushh_mcp.types import EncryptedPayload, UserID
+from hushh_mcp.vault.encrypt import encrypt_data
 
 
 def store_dietary_restrictions(

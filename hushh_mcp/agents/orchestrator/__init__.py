@@ -7,13 +7,11 @@ The central routing agent for user requests.
 MIGRATED TO ADK (v2.0.0)
 """
 
-import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 from hushh_mcp.types import UserID
-from .agent import get_orchestrator, OrchestratorAgent
 
-logger = logging.getLogger(__name__)
+from .agent import OrchestratorAgent, get_orchestrator
 
 # Re-export for compatibility
 __all__ = ["handle_user_message", "OrchestratorAgent"]

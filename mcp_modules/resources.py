@@ -4,7 +4,9 @@ MCP Resources (informational endpoints).
 """
 
 import json
+
 from mcp.types import Resource
+
 from mcp_modules.config import SERVER_INFO
 
 
