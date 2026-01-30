@@ -29,9 +29,11 @@ Security (BROKEN - DO NOT USE):
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from hushh_mcp.consent.token import validate_token
+from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.vault_db import VaultDBService
 from hushh_mcp.services.vault_keys_service import VaultKeysService
 
@@ -238,10 +240,6 @@ async def professional_get(request: DomainGetRequest):
 # ============================================================================
 # Vault Status Endpoint (Token-Enforced Metadata)
 # ============================================================================
-
-from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
-from fastapi import Request
 
 
 def validate_vault_owner_token(consent_token: str, user_id: str) -> None:

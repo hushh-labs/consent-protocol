@@ -46,7 +46,7 @@ async def consent_event_generator(
     notified_event_ids = set()
     
     # Heartbeat tracking
-    last_heartbeat = 0
+    last_heartbeat: float = 0.0
     HEARTBEAT_INTERVAL = 30  # seconds
     
     try:

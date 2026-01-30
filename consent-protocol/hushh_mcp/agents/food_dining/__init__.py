@@ -6,9 +6,11 @@ A consent-first agent for dining recommendations.
 MIGRATED TO ADK (v2.0.0)
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from hushh_mcp.types import UserID
-from .agent import get_food_dining_agent, FoodDiningAgent
+
+from .agent import FoodDiningAgent, get_food_dining_agent
 
 __all__ = ["handle_message", "FoodDiningAgent", "get_food_dining_agent"]
 

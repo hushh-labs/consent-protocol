@@ -6,28 +6,40 @@ Modular architecture with routes organized in api/routes/ directory.
 Run with: uvicorn server:app --reload --port 8000
 """
 
-from dotenv import load_dotenv
+import logging
 import os
+import time
+
+from dotenv import load_dotenv
 
 # Load .env file before any other imports that might depend on it
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'), override=True)
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
-import logging
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import route modules
-from api.routes import health, agents, consent, developer, session, db_proxy, sse, food, professional
-from api.routes import debug_firebase
-
 # Import rate limiting
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from api.middlewares.rate_limit import limiter
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+
+from api.middlewares.rate_limit import limiter  # noqa: E402
+from api.routes import (  # noqa: E402
+    agents,
+    consent,
+    db_proxy,
+    debug_firebase,
+    developer,
+    food,
+    health,
+    professional,
+    session,
+    sse,
+)
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -99,7 +111,8 @@ app.include_router(debug_firebase.router)
 # Kai investor analysis routes (/api/kai/...) - NEW MODULAR STRUCTURE
 # This imports the combined router from the kai package which includes:
 # - health, consent, analyze, stream, decisions, preferences
-from api.routes.kai import router as kai_router
+from api.routes.kai import router as kai_router  # noqa: E402
+
 app.include_router(kai_router)
 
 # Food agent routes (/api/food/...)
@@ -109,15 +122,18 @@ app.include_router(food.router)
 app.include_router(professional.router)
 
 # Phase 2: Investor Profiles (Public Discovery Layer)
-from api.routes import investors
+from api.routes import investors  # noqa: E402
+
 app.include_router(investors.router)
 
 # Phase 2: Identity Resolution (Consent-then-encrypt flow)
-from api.routes import identity
+from api.routes import identity  # noqa: E402
+
 app.include_router(identity.router)
 
 # Phase 6: Fundamental Analysis Agent
-from api.routes import analysis
+from api.routes import analysis  # noqa: E402
+
 app.include_router(analysis.router)
 
 logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 ENABLED")
@@ -138,4 +154,4 @@ async def diagnostics():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104

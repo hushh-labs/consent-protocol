@@ -5,32 +5,27 @@ ADK Tools for the Food & Dining Agent.
 Wraps core business logic (Operons) with Hushh security decorators.
 """
 
-from typing import List, Dict, Any, Optional
 import json
 import os
+from typing import Any, Dict, List, Optional
 
-from hushh_mcp.hushh_adk.tools import hushh_tool
-from hushh_mcp.hushh_adk.context import HushhContext
-from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.vault.encrypt import decrypt_data
-
-# Import original logic operons
-from hushh_mcp.operons.food.dietary import (
-    validate_dietary_restrictions,
-    is_compatible_with_diet,
-    get_dietary_label
-)
-from hushh_mcp.operons.food.preferences import (
-    calculate_cuisine_match_score,
-    get_top_cuisine_matches
-)
+from hushh_mcp.hushh_adk.context import HushhContext
+from hushh_mcp.hushh_adk.tools import hushh_tool
 from hushh_mcp.operons.food.budget import (
     calculate_meal_budget,
     filter_by_price_range,
-    categorize_price_range,
-    calculate_weekly_dining_cost
 )
+
+# Import original logic operons
+from hushh_mcp.operons.food.dietary import (
+    is_compatible_with_diet,
+    validate_dietary_restrictions,
+)
+from hushh_mcp.operons.food.preferences import (
+    get_top_cuisine_matches,
+)
+
 
 def _load_restaurant_data() -> List[Dict[str, Any]]:
     """Load restaurant dataset from JSON."""

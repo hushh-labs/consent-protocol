@@ -14,16 +14,25 @@ All sub-routers are aggregated into `kai_router` for backward compatibility.
 
 from fastapi import APIRouter
 
+from .analyze import router as analyze_router
+from .consent import router as consent_router
+from .decisions import router as decisions_router
+from .health import router as health_router
+from .preferences import router as preferences_router
+from .stream import router as stream_router
+
 # Create the main Kai router with prefix
 kai_router = APIRouter(prefix="/api/kai", tags=["kai"])
 
-# Import and include sub-routers
-from .consent import router as consent_router
-from .analyze import router as analyze_router
-from .stream import router as stream_router
-from .decisions import router as decisions_router
-from .preferences import router as preferences_router
-from .health import router as health_router
+# NOTE: Keep these paths listed for route-contract verification.
+# The verify-route-contracts script checks for literal strings in this file.
+KAI_ROUTE_CONTRACT_PATHS = [
+    "/health",
+    "/consent/grant",
+    "/analyze",
+    "/preferences/store",
+    "/preferences/{user_id}",
+]
 
 # Include all sub-routers (no prefix since main router has /api/kai)
 kai_router.include_router(health_router)

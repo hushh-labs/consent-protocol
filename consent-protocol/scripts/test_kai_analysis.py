@@ -1,9 +1,9 @@
 
-import sys
-import os
 import asyncio
-import traceback
 import logging
+import os
+import sys
+import traceback
 
 # Add project root to path
 sys.path.append(os.getcwd())
@@ -11,9 +11,10 @@ sys.path.append(os.getcwd())
 # Config logging
 logging.basicConfig(level=logging.INFO)
 
-from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator
-from hushh_mcp.consent.token import issue_token
-from hushh_mcp.constants import ConsentScope
+from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator  # noqa: E402
+from hushh_mcp.consent.token import issue_token  # noqa: E402
+from hushh_mcp.constants import ConsentScope  # noqa: E402
+
 
 async def test_analysis():
     print("--- Starting Kai Analysis Test ---")
@@ -48,7 +49,7 @@ async def test_analysis():
         print(f"Decision: {decision.decision}")
         print(f"Confidence: {decision.confidence}")
         print(f"Headline: {decision.headline}")
-    except Exception as e:
+    except Exception:
         print("\n--- FAILURE ---")
         traceback.print_exc()
 

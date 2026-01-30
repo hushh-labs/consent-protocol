@@ -19,8 +19,8 @@ BYOK (Bring Your Own Key):
 """
 
 import logging
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from db.supabase_client import get_supabase
 

@@ -1,11 +1,11 @@
 # hushh_mcp/trust/link.py
 
-import hmac
 import hashlib
+import hmac
 import time
-from hushh_mcp.types import TrustLink, UserID, AgentID, ConsentScope
-from hushh_mcp.constants import TRUST_LINK_PREFIX
-from hushh_mcp.config import SECRET_KEY, DEFAULT_TRUST_LINK_EXPIRY_MS
+
+from hushh_mcp.config import DEFAULT_TRUST_LINK_EXPIRY_MS, SECRET_KEY
+from hushh_mcp.types import AgentID, ConsentScope, TrustLink, UserID
 
 # ========== TrustLink Creator ==========
 

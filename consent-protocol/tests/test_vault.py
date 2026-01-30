@@ -12,11 +12,13 @@ keys are ever used in tests.
 The `test_vault_key` fixture is automatically available from conftest.py.
 """
 
-import pytest
-import json
 import base64
-from hushh_mcp.vault.encrypt import encrypt_data, decrypt_data
+import json
+
+import pytest
+
 from hushh_mcp.types import EncryptedPayload
+from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
 
 
 def test_encrypt_decrypt_roundtrip(test_vault_key):

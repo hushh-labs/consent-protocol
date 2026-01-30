@@ -1,16 +1,15 @@
 
 import logging
+
+import uvicorn
 from flask import Flask
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from python_a2a.models.agent import AgentCard
 
 # Import WSGI Middleware from Uvicorn
 from uvicorn.middleware.wsgi import WSGIMiddleware
 
-import uvicorn
-
 from hushh_mcp.adk_bridge.kai_agent import KaiA2AServer
 from hushh_mcp.agents.kai.manifest import MANIFEST
-from python_a2a.models.agent import AgentCard
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -56,9 +55,8 @@ def create_app():
 flask_app = create_app()
 
 # Wrap in ASGI for Uvicorn
-from uvicorn.middleware.wsgi import WSGIMiddleware
 app = WSGIMiddleware(flask_app)
 
 if __name__ == "__main__":
     logger.info("Starting Kai A2A Server on Port 8001 (WSGI/ASGI)...")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8001)  # noqa: S104

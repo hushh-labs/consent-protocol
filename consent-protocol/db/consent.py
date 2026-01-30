@@ -6,7 +6,7 @@ Consent event insertion operations.
 import json
 import logging
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 from .connection import get_pool
 

@@ -4,8 +4,9 @@ Test SEC Company Facts API to see what financial data is available.
 """
 
 import asyncio
+
 import httpx
-import json
+
 
 async def test_company_facts():
     """Test SEC Company Facts API for AAPL."""

@@ -2,8 +2,8 @@
 Tests for Professional Profile Operon
 """
 
-import pytest
 from hushh_mcp.operons.professional.storage import store_professional_profile
+
 
 def test_store_professional_profile_valid():
     result = store_professional_profile(

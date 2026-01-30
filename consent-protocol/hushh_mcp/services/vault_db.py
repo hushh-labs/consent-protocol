@@ -40,12 +40,12 @@ Usage:
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
 
-from hushh_mcp.types import EncryptedPayload
 from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.types import EncryptedPayload
 
 logger = logging.getLogger(__name__)
 

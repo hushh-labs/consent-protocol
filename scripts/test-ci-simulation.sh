@@ -137,14 +137,14 @@ if command -v "$PYTHON_BIN" > /dev/null 2>&1; then
   PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
   PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
   
-  if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
-    echo "✗ [FAIL] Python $PYTHON_FULL detected (requires >= 3.11)"
+  if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 13 ]); then
+    echo "✗ [FAIL] Python $PYTHON_FULL detected (requires >= 3.13)"
     FAIL=1
-  elif [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -eq 11 ]; then
+  elif [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -eq 13 ]; then
     echo "✓ [PASS] Python $PYTHON_FULL detected (matches CI exactly)"
     PASS_COUNT=$((PASS_COUNT + 1))
   else
-    echo "⚠ [WARN] Python $PYTHON_FULL detected (CI uses 3.11)"
+    echo "⚠ [WARN] Python $PYTHON_FULL detected (CI uses 3.13)"
     WARNINGS=$((WARNINGS + 1))
     PASS_COUNT=$((PASS_COUNT + 1))  # Still passes, just warns
   fi
@@ -323,7 +323,7 @@ cd consent-protocol || { echo "✗ [FAIL] Cannot cd to consent-protocol"; FAIL=1
 
 echo "  → Installing Python dependencies (this may take a few minutes)..."
 echo "  → Progress will be shown below:"
-if $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver -r requirements.txt 2>&1 | tee /tmp/pip-install.log; then
+if $PYTHON_BIN -m pip install --progress-bar off -r requirements.txt 2>&1 | tee /tmp/pip-install.log; then
   echo "✓ [PASS] Python dependencies installed successfully"
   PASS_COUNT=$((PASS_COUNT + 1))
 else
@@ -339,7 +339,7 @@ if [ $FAIL -eq 0 ]; then
   echo "  → Installing dev dependencies..."
   if [ -f "requirements-dev.txt" ]; then
     echo "    Using requirements-dev.txt..."
-    if $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver -r requirements-dev.txt 2>&1 | tee /tmp/pip-dev.log; then
+    if $PYTHON_BIN -m pip install --progress-bar off -r requirements-dev.txt 2>&1 | tee /tmp/pip-dev.log; then
       echo "✓ [PASS] Dev dependencies installed from requirements-dev.txt"
       PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -348,7 +348,7 @@ if [ $FAIL -eq 0 ]; then
     fi
   else
     echo "    Installing dev dependencies directly..."
-    if $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver pytest pytest-cov pytest-asyncio mypy ruff 2>&1 | tee /tmp/pip-dev.log; then
+    if $PYTHON_BIN -m pip install --progress-bar off pytest pytest-cov pytest-asyncio mypy ruff 2>&1 | tee /tmp/pip-dev.log; then
       echo "✓ [PASS] Dev dependencies installed directly"
       PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -397,7 +397,7 @@ TEST_COUNT=$((TEST_COUNT + 1))
 cd consent-protocol || exit 1
 
 echo "  → Running mypy type check..."
-if $PYTHON_BIN -m mypy . --ignore-missing-imports 2>&1 | tee /tmp/mypy.log; then
+if $PYTHON_BIN -m mypy --config-file pyproject.toml --ignore-missing-imports 2>&1 | tee /tmp/mypy.log; then
   echo "✓ [PASS] Mypy type check passed"
   PASS_COUNT=$((PASS_COUNT + 1))
 else

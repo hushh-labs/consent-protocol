@@ -1,22 +1,19 @@
 
-import logging
 import asyncio
-from typing import Optional, Dict, Any, List
+import logging
 
-from python_a2a.server.a2a_server import A2AServer
+from python_a2a.models.content import ErrorContent, TextContent
 from python_a2a.models.message import Message, MessageRole
-from python_a2a.models.content import TextContent, ErrorContent
-from python_a2a.models.agent import AgentCard
+from python_a2a.server.a2a_server import A2AServer
 
 from hushh_mcp.agents.kai.debate_engine import DebateEngine
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
-from hushh_mcp.agents.kai.manifest import MANIFEST
-from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.hushh_adk.context import HushhContext
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 

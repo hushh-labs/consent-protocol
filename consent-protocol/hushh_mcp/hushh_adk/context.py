@@ -6,9 +6,9 @@ during agent execution. This avoids passing these parameters manually through
 every tool function.
 """
 
-from typing import Optional, Dict
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 # Thread-local storage for current execution context
 # This allows tools to access the active user/token without explicit arguments

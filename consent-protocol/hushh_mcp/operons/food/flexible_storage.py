@@ -7,13 +7,13 @@ Stores dynamic/custom user data with consent validation.
 Uses scope-based naming: {domain}.custom.{key}
 """
 
-from typing import Any
 import json
+from typing import Any
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.vault.encrypt import encrypt_data
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.types import UserID, EncryptedPayload
+from hushh_mcp.types import EncryptedPayload, UserID
+from hushh_mcp.vault.encrypt import encrypt_data
 
 
 def store_custom_preference(

@@ -8,13 +8,14 @@ with decryption and that keys are properly derived from user passphrases.
 These tests simulate the encryption flow without touching hushh_mcp core.
 """
 
-import pytest
-import hashlib
-import os
 import base64
+import os
+
+import pytest
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
 
 
 # Simulate the frontend key derivation (matches passphrase-key.ts)
@@ -77,7 +78,7 @@ class TestBYOKKeyDerivation:
     
     def test_key_derivation_produces_256_bit_key(self):
         """Key should be exactly 256 bits (32 bytes)."""
-        passphrase = "my_secure_passphrase_123!"
+        passphrase = "my_secure_passphrase_123!"  # noqa: S105
         salt = os.urandom(16)
         
         key = derive_vault_key(passphrase, salt)
@@ -86,7 +87,7 @@ class TestBYOKKeyDerivation:
     
     def test_same_passphrase_same_salt_produces_same_key(self):
         """Deterministic derivation with same inputs."""
-        passphrase = "test_passphrase"
+        passphrase = "test_passphrase"  # noqa: S105
         salt = b"fixed_salt_1234!"
         
         key1 = derive_vault_key(passphrase, salt)
@@ -105,7 +106,7 @@ class TestBYOKKeyDerivation:
     
     def test_different_salt_produces_different_key(self):
         """Different salt should produce different key."""
-        passphrase = "same_passphrase"
+        passphrase = "same_passphrase"  # noqa: S105
         
         key1 = derive_vault_key(passphrase, b"salt_aaaaaaaaaaa")
         key2 = derive_vault_key(passphrase, b"salt_bbbbbbbbbbb")
@@ -156,7 +157,7 @@ class TestBYOKEncryption:
         
         wrong_key = os.urandom(32)
         
-        with pytest.raises(Exception):  # AESGCM raises InvalidTag
+        with pytest.raises(InvalidTag):
             decrypt_data_aes_gcm(encrypted, wrong_key)
     
     def test_tampered_ciphertext_fails(self, vault_key):
@@ -168,7 +169,7 @@ class TestBYOKEncryption:
         tampered_cipher = bytes([tampered_cipher[0] ^ 0xFF]) + tampered_cipher[1:]
         encrypted["ciphertext"] = base64.b64encode(tampered_cipher).decode()
         
-        with pytest.raises(Exception):  # AESGCM authentication failure
+        with pytest.raises(InvalidTag):
             decrypt_data_aes_gcm(encrypted, vault_key)
     
     def test_tampered_tag_fails(self, vault_key):
@@ -180,7 +181,7 @@ class TestBYOKEncryption:
         tampered_tag = bytes([tampered_tag[0] ^ 0xFF]) + tampered_tag[1:]
         encrypted["tag"] = base64.b64encode(tampered_tag).decode()
         
-        with pytest.raises(Exception):  # AESGCM authentication failure
+        with pytest.raises(InvalidTag):
             decrypt_data_aes_gcm(encrypted, vault_key)
 
 
