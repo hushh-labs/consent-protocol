@@ -9,9 +9,9 @@ import logging
 from mcp.types import TextContent
 
 from hushh_mcp.consent.token import validate_token
+from hushh_mcp.constants import AGENT_PORTS, ConsentScope
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
-from hushh_mcp.constants import ConsentScope, AGENT_PORTS
-from hushh_mcp.types import UserID, AgentID
+from hushh_mcp.types import AgentID, UserID
 
 logger = logging.getLogger("hushh-mcp-server")
 

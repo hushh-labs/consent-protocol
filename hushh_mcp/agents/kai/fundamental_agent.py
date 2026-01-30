@@ -13,12 +13,11 @@ Key Responsibilities:
 Future: Attention Marketplace integration for premium data sources.
 """
 
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
-from hushh_mcp.tools.hushh_tools import hushh_tool
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ class FundamentalAgent(HushhAgent):
         logger.info(f"[Fundamental] Orchestrating analysis for {ticker}")
         
         # Step 1: Fetch SEC filings (operon validates consent internally)
-        from hushh_mcp.operons.kai.fetchers import fetch_sec_filings, fetch_market_data
+        from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_sec_filings
         
         try:
             sec_filings = await fetch_sec_filings(
@@ -109,8 +108,8 @@ class FundamentalAgent(HushhAgent):
         
         # Step 2: Gemini Deep Analysis (HYBRID v2)
         from hushh_mcp.config import GOOGLE_API_KEY
-        from hushh_mcp.operons.kai.llm import analyze_stock_with_gemini
         from hushh_mcp.operons.kai.calculators import calculate_quant_metrics
+        from hushh_mcp.operons.kai.llm import analyze_stock_with_gemini
         
         quant_metrics = calculate_quant_metrics(sec_filings)
         

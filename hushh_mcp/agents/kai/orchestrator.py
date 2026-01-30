@@ -12,21 +12,21 @@ This is the "conductor" that brings everything together:
 6. Encrypt and store
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime
-import logging
 import asyncio
+import logging
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
+from .config import ANALYSIS_TIMEOUT, ProcessingMode, RiskProfile
+from .debate_engine import DebateEngine
+from .decision_generator import DecisionCard, DecisionGenerator
 from .fundamental_agent import FundamentalAgent
 from .sentiment_agent import SentimentAgent
 from .valuation_agent import ValuationAgent
-from .debate_engine import DebateEngine
-from .decision_generator import DecisionGenerator, DecisionCard
-from .config import RiskProfile, ProcessingMode, ANALYSIS_TIMEOUT
 
 logger = logging.getLogger(__name__)
 

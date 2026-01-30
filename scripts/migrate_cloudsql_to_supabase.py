@@ -37,7 +37,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import asyncpg
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 # Load environment variables from .env
 load_dotenv()
@@ -167,13 +167,13 @@ async def _fetch_all_rows_asyncpg(
 ) -> List[Tuple[Any, ...]]:
     """Fetch all rows from Cloud SQL source using asyncpg."""
     col_sql = ", ".join(f'"{c}"' for c in columns)
-    rows = await conn.fetch(f'SELECT {col_sql} FROM "{table}"')
+    rows = await conn.fetch(f'SELECT {col_sql} FROM "{table}"')  # noqa: S608
     return [tuple(r[c] for c in columns) for r in rows]
 
 
 async def _row_count_asyncpg(conn: asyncpg.Connection, table: str) -> int:
     """Get row count from Cloud SQL source using asyncpg."""
-    return int(await conn.fetchval(f'SELECT COUNT(*) FROM "{table}"'))
+    return int(await conn.fetchval(f'SELECT COUNT(*) FROM "{table}"'))  # noqa: S608
 
 
 # ============================================================================
@@ -198,9 +198,9 @@ def _get_table_info_supabase(supabase: Client, table: str, source_info: TableInf
             if response_keys != expected_keys:
                 # Log warning but continue (schema might have extra columns)
                 print(f"  Warning: Column mismatch detected for {table}")
-    except Exception:
-        # Table might be empty, that's okay - we'll use source schema
-        pass
+    except Exception as exc:
+        # Table might be empty or schema check may fail; continue with source schema.
+        print(f"  Warning: could not validate columns for {table}: {exc}")
     
     # Return source info (destination should match)
     return source_info
@@ -269,7 +269,7 @@ def _upsert_rows_supabase(
     def tuple_to_dict(row: Tuple[Any, ...]) -> Dict[str, Any]:
         """Convert tuple row to dictionary with JSON-serializable values."""
         result = {}
-        for col, val in zip(table.columns, row):
+        for col, val in zip(table.columns, row, strict=True):
             try:
                 result[col] = _convert_value_for_json(val)
             except Exception as e:
@@ -412,14 +412,14 @@ async def main() -> int:
         # Test Supabase connection - try to access API (table may not exist yet)
         from postgrest.exceptions import APIError
         try:
-            response = supabase.table("vault_keys").select("user_id").limit(1).execute()
-            print(f"  Destination connection: OK (REST API accessible, table exists)")
+            supabase.table("vault_keys").select("user_id").limit(1).execute()
+            print("  Destination connection: OK (REST API accessible, table exists)")
         except APIError as api_error:
             # Table doesn't exist is OK - just verify API is accessible
             error_code = getattr(api_error, 'code', None)
             error_msg = str(api_error)
             if error_code == 'PGRST205' or "Could not find the table" in error_msg:
-                print(f"  Destination connection: OK (REST API accessible, tables not initialized yet)")
+                print("  Destination connection: OK (REST API accessible, tables not initialized yet)")
             else:
                 # Real API error (auth, permissions, etc.)
                 raise SystemExit(f"Supabase API error: {error_msg}")
@@ -499,9 +499,9 @@ async def main() -> int:
             print("DRY RUN MODE - No data will be migrated")
             print("=" * 70)
             print("\n✅ Dry run complete:")
-            print(f"  - Source connection: OK")
-            print(f"  - Destination connection: OK")
-            print(f"  - Schema verification: OK")
+            print("  - Source connection: OK")
+            print("  - Destination connection: OK")
+            print("  - Schema verification: OK")
             print(f"  - Baseline row counts recorded: {total_baseline:,} total rows")
             print("\nTo perform actual migration, run without --dry-run flag.")
             return 0

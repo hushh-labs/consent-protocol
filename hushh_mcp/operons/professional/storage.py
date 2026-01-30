@@ -4,7 +4,8 @@ Professional Profile Storage Operon
 Handles the secure processing and storage of professional profile data.
 """
 
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 
 def store_professional_profile(
     user_id: str,
