@@ -51,9 +51,9 @@ ALL 6 must exist or feature is incomplete.
 
 ### DOCUMENTATION REFERENCES
 
-- Tri-flow rules: `docs/PROJECT_CONTEXT_MAP.md`
-- Feature checklist: `docs/FEATURE_CHECKLIST.md`
-- Route contracts: `docs/technical/ROUTE_CONTRACTS.md`
+- Tri-flow rules: `docs/project_context_map.md`
+- Feature checklist: `docs/guides/feature_checklist.md`
+- Route contracts: `docs/reference/route_contracts.md`
 - Component guidelines: `hushh-webapp/components/README.md`
 
 ## ENFORCEMENT

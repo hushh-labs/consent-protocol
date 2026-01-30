@@ -3,7 +3,7 @@
 /**
  * InvestorProfileEditor (Investor Preference)
  *
- * Design-system compliant (docs/technical/frontend-design-system.md):
+ * Design-system compliant (docs/reference/frontend_design_system.md):
  * - Morphy glass surfaces + Material ripple via Morphy components
  * - No hover scale
  * - Structured editing by default

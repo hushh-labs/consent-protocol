@@ -472,15 +472,19 @@ export default function KaiDebateInline({
 
 
 
-    // Use Next.js proxy route (not direct backend) to support auth headers
-    const path = `/api/kai/analyze/stream`;
-    
+    // Use Direct Backend URL for streaming (bypasses Next.js proxy buffering)
+    const baseUrl = ApiService.getDirectBackendUrl();
+    const url = `${baseUrl}/api/kai/analyze/stream`;
+
     try {
-      const response = await ApiService.apiFetchStream(path, {
+      console.log(`[KaiDebateInline] Connecting to stream: ${url}`);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${vaultOwnerToken}`,
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
         },
         body: JSON.stringify({
           ticker,

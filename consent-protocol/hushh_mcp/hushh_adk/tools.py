@@ -30,6 +30,9 @@ def hushh_tool(scope: str, name: Optional[str] = None):
     def decorator(func: Callable):
         tool_name = name or func.__name__
         
+        # Get the original function signature for better introspection
+        sig = inspect.signature(func)
+        
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # 1. Get Active Context
@@ -65,5 +68,10 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 logger.error(f"⚠️ Tool '{tool_name}' failed: {str(e)}")
                 raise e
                 
+        # Attach metadata for ADK compatibility
+        wrapper._hushh_tool = True
+        wrapper._scope = scope
+        wrapper._name = tool_name
+        
         return wrapper
     return decorator

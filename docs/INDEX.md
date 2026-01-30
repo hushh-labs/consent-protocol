@@ -1,182 +1,172 @@
-# Hushh Documentation - Quick Reference
+# Hushh Documentation Index
 
-Welcome to the Hushh Research documentation! This index provides a comprehensive guide to all documentation resources.
-
----
-
-## 📚 Documentation Structure
-
-### Technical Documentation
-
-**Core Architecture**:
-
-- [**Architecture Overview**](technical/architecture.md) - Complete system architecture with on-device AI, consent protocol, and security design
-- [**Consent Implementation**](technical/consent-implementation.md) - ✨ **UPDATED!** Detailed VAULT_OWNER token architecture and consent flow
-
-**Implementation Guides**:
-
-- [Database Schema](technical/database-schema.md) - PostgreSQL tables and relationships
-- [Mobile Architecture](technical/mobile.md) - iOS/Android native implementations
-- [MCP Integration](technical/mcp-integration.md) - Model Context Protocol for AI agents
-- [Deployment Guide](technical/deployment.md) - Production deployment instructions
-
-**Feature Documentation**:
-
-- [Agent Kai](technical/kai.md) - Investment analysis agent with SEC compliance
-- [Developer API](technical/developer-api.md) - External developer integration
-- [Frontend Design System](technical/frontend-design-system.md) - UI/UX components
-- [Route Contracts](technical/ROUTE_CONTRACTS.md) - Web/native/backend endpoint contracts and enforcement
-
-### Business Documentation
-
-- [Business Overview](business/overview.md) - Product vision and market positioning
-- [Roadmap](business/roadmap.md) - Feature timeline and milestones
-
-### Vision & Planning
-
-- [Vision Overview](vision/README.md) - Long-term product vision
-- [Agent Navigation](vision/agent-nav/README.md) - Multi-agent navigation design
-- [Food & Dining Agent](vision/food-dining/README.md) - Food recommendation system
-- [Agent Kai Vision](vision/kai/README.md) - Investment agent vision and preparation
+> **Task-Based Navigation** — Find docs by what you want to do, not by number.  
+> **Last Updated**: January 2026 | Version: 8.0 | Task-Based Organization
 
 ---
 
-## 🆕 Recent Updates (January 2026)
+## I Want To...
 
-### VAULT_OWNER Token Architecture ✨
+### 🚀 Get Started
 
-The consent protocol has been significantly enhanced with a **consent-first architecture** that eliminates all authentication bypasses:
+| Task | Document | Description |
+|------|----------|-------------|
+| **Make my first contribution** | [Contributor Onboarding Guide](guides/contributor_onboarding.md) | Step-by-step contribution walkthrough |
+| **Set up my environment** | [Getting Started Guide](../getting_started.md) | Complete setup instructions |
+| **Understand the system** | [Project Overview](readme.md) | High-level system overview |
+| **See the big picture** | [Project Context Map](project_context_map.md) | Repo topology and tri-flow rules |
 
-**Key Changes**:
+### 🛠️ Build Features
 
-- ✅ **VAULT_OWNER tokens**: Vault owners now use consent tokens for all data access (no bypasses)
-- ✅ **Token reuse**: Active tokens are reused while valid (reduces database writes, improves performance)
-- ✅ **Unified validation**: Food, Professional, and Kai agents all validate tokens identically
-- ✅ **Platform support**: iOS Swift + Android Kotlin + Web all enforce token validation
-- ✅ **Audit trail**: Every vault access logged to `consent_audit` table for compliance
-- ✅ **Token expiry**: 24-hour VAULT_OWNER tokens, 7-day agent tokens
-- ✅ **Compliance-ready**: CCPA/GDPR/SEC audit trail with exportable logs
+| Task | Document | Description |
+|------|----------|-------------|
+| **Build a new feature** | [Feature Checklist](guides/feature_checklist.md) | Step-by-step feature development |
+| **Understand tri-flow** | [Project Context Map](project_context_map.md) | Web + iOS + Android architecture |
+| **Define API contracts** | [Route Contracts](reference/route_contracts.md) | Endpoint contracts and enforcement |
 
-**Updated Documentation**:
+### 🤖 Build Agents
 
-- [Consent Implementation](technical/consent-implementation.md) - Complete VAULT_OWNER token guide
-- [Architecture](technical/architecture.md) - Updated security layers
-- [Project Context Map (Canonical)](PROJECT_CONTEXT_MAP.md) - Repo topology, consent surfaces, Capacitor-safe development rules
+| Task | Document | Description |
+|------|----------|-------------|
+| **Build an agent** | [Agent Development Guidelines](agents/agent_development_guidelines.md) | Complete agent development guide |
+| **Use Google ADK** | [ADK Implementation](agents/adk_implementation.md) | Google ADK integration |
+| **Follow ADK standards** | [ADK Standards](agents/adk_standards.md) | 3-step agent build process |
+| **Enable A2A communication** | [A2A Implementation](agents/a2a_implementation.md) | Agent-to-Agent protocol |
+
+### 📱 Build Mobile Apps
+
+| Task | Document | Description |
+|------|----------|-------------|
+| **Develop for iOS/Android** | [Mobile Development](guides/mobile_development.md) | Capacitor plugins and native code |
+| **Understand platform routing** | [Project Context Map](project_context_map.md) | Web vs native runtime differences |
+
+### 📚 Reference Documentation
+
+| Topic | Document | Description |
+|-------|----------|-------------|
+| **System Architecture** | [Architecture](reference/architecture.md) | Complete system design |
+| **Consent Protocol** | [Consent Implementation](reference/consent_protocol.md) | VAULT_OWNER tokens and consent flow |
+| **Database Schema** | [Database Schema](reference/database_schema.md) | PostgreSQL tables and relationships |
+| **Service Layer** | [Database Service Layer](reference/database_service_layer.md) | VaultDBService, ConsentDBService |
+| **API Reference** | [Developer API](reference/developer_api.md) | External developer API |
+| **Route Contracts** | [Route Contracts](reference/route_contracts.md) | Web/native/backend contracts |
+| **MCP Integration** | [MCP Integration](reference/mcp_integration.md) | Model Context Protocol |
+| **Frontend Design** | [Frontend Design System](reference/frontend_design_system.md) | UI/UX components |
+| **User Schema** | [Base User Schema](reference/base_user_schema.md) | User schema definitions |
+| **Agent Kai** | [Kai Documentation](reference/kai.md) | Investment analysis agent |
+
+### 🚢 Deploy
+
+| Task | Document | Description |
+|------|----------|-------------|
+| **Deploy to production** | [Deployment Guide](guides/deployment.md) | Production deployment |
+| **Deployment workflows** | [Deployment Workflows](deployment_workflows.md) | CI/CD and workflows |
+
+### 💼 Business & Vision
+
+| Topic | Document | Description |
+|-------|----------|-------------|
+| **Business Overview** | [Business Overview](business/overview.md) | Product vision |
+| **Roadmap** | [Roadmap](business/roadmap.md) | Feature timeline |
+| **Vision** | [Vision Overview](vision/readme.md) | Long-term strategy |
 
 ---
 
-## 🔑 Quick Links
+## Quick Reference by Role
 
 ### For Developers
 
-| Topic                   | Link                                                             | Description                    |
-| ----------------------- | ---------------------------------------------------------------- | ------------------------------ |
-| **Getting Started**     | [README](../README.md)                                           | Setup and installation guide   |
-| **System Architecture** | [architecture.md](technical/architecture.md)                     | High-level system overview     |
-| **Consent Protocol**    | [consent-implementation.md](technical/consent-implementation.md) | Authentication and token flows |
-| **Context Map**         | [PROJECT_CONTEXT_MAP.md](PROJECT_CONTEXT_MAP.md)                 | Canonical repo + flow map      |
-| **Database**            | [database-schema.md](technical/database-schema.md)               | Schema and queries             |
-| **API Reference**       | [developer-api.md](technical/developer-api.md)                   | REST API documentation         |
+**Starting a new feature:**
+1. [Feature Checklist](guides/feature_checklist.md) — Step-by-step guide
+2. [Project Context Map](project_context_map.md) — Understand tri-flow
+3. [Route Contracts](reference/route_contracts.md) — Define API contracts
 
-### For Product & Business
+**Understanding the system:**
+1. [Architecture](reference/architecture.md) — System design
+2. [Consent Protocol](reference/consent_protocol.md) — Security model
+3. [Database Schema](reference/database_schema.md) — Data structure
 
-| Topic               | Link                                 | Description        |
-| ------------------- | ------------------------------------ | ------------------ |
-| **Business Case**   | [overview.md](business/overview.md)  | Value proposition  |
-| **Product Roadmap** | [roadmap.md](business/roadmap.md)    | Feature timeline   |
-| **Vision**          | [vision/README.md](vision/README.md) | Long-term strategy |
+**Building agents:**
+1. [Agent Development Guidelines](agents/agent_development_guidelines.md) — Complete guide
+2. [ADK Implementation](agents/adk_implementation.md) — Google ADK
+3. [A2A Implementation](agents/a2a_implementation.md) — Agent communication
 
-### For Mobile Development
+### For Mobile Developers
 
-| Topic                   | Link                                     | Description                |
-| ----------------------- | ---------------------------------------- | -------------------------- |
-| **Mobile Architecture** | [mobile.md](technical/mobile.md)         | iOS/Android implementation |
-| **Capacitor Plugins**   | [mobile.md#plugins](technical/mobile.md) | Native plugin guide        |
+1. [Mobile Development](guides/mobile_development.md) — Capacitor and plugins
+2. [Project Context Map](project_context_map.md) — Platform differences
+3. [Route Contracts](reference/route_contracts.md) — Native API contracts
 
----
+### For AI Agents
 
-## 🏗️ Architecture at a Glance
+**Semantic paths that match code references:**
+- `docs/technical/architecture.md` → [Architecture](reference/architecture.md)
+- `docs/technical/consent-implementation.md` → [Consent Protocol](reference/consent_protocol.md)
+- `docs/project_context_map.md` → [Project Context Map](project_context_map.md)
+- `docs/guides/feature_checklist.md` → [Feature Checklist](guides/feature_checklist.md)
 
-```
-┌──────────────────────────────────────────────────────────┐
-│              Hushh System Architecture                    │
-├──────────────────────────────────────────────────────────┤
-│                                                           │
-│  Frontend (Next.js + Capacitor)                          │
-│  ├─ React 19 + Morphy-UX Components                     │
-│  ├─ Vault Context (Memory-only keys)                     │
-│  └─ Platform-aware Services                              │
-│                                                           │
-│  Native Layer (8 Capacitor Plugins)                      │
-│  ├─ HushhAuth, HushhVault, HushhConsent, etc.           │
-│  └─ Direct HTTP to Backend (bypasses Next.js proxy)     │
-│                                                           │
-│  Backend (FastAPI + HushhMCP)                            │
-│  ├─ Consent Protocol (VAULT_OWNER tokens)               │
-│  ├─ Agent Endpoints (Food, Professional, Kai)           │
-│  └─ MCP Server (External AI integration)                │
-│                                                           │
-│  Storage (PostgreSQL + Cloud SQL)                        │
-│  └─ AES-256-GCM Encrypted Vault                         │
-│                                                           │
-└──────────────────────────────────────────────────────────┘
-```
+All code references work via symlinks for backward compatibility.
 
 ---
 
-## 🔒 Security Model
-
-### Four-Layer Authentication (Correct Order)
-
-1. **Firebase Auth** - Identity verification (OAuth) - **Always first**
-2. **Vault Unlock** - Passphrase or Recovery Key (zero-knowledge)
-   - Current: Passphrase-based (PBKDF2) + Recovery key
-   - Future: Passkey/FaceID/TouchID (passphrase as fallback)
-3. **VAULT_OWNER Token** - Cryptographic consent for data access (24h)
-4. **Agent Tokens** - Scoped permissions for AI operations (7 days)
-
-### Key Principles
-
-- ✅ **Consent-First**: All data access requires valid consent tokens (no exceptions)
-- ✅ **Zero-Knowledge**: Vault keys never leave device (BYOK)
-- ✅ **Memory-Only**: Vault keys stored in React Context (lost on refresh)
-- ✅ **Token Reuse**: Active tokens reused to prevent duplicates
-- ✅ **Auditable**: Complete logging of all token operations to `consent_audit`
-- ✅ **Platform-Agnostic**: Web, iOS, Android all enforce identical validation
-
----
-
-## 📖 Documentation Conventions
-
-### File Organization
+## Directory Structure
 
 ```
 docs/
-├── INDEX.md                 # This file
-├── README.md                # Main project README
-├── technical/               # Developer documentation
-├── business/                # Business documentation
-└── vision/                  # Product vision
+├── index.md                    # This file (task-based navigation)
+├── readme.md                   # Project overview
+├── project_context_map.md      # Canonical repo map
+├── deployment_workflows.md     # Deployment workflows
+│
+├── guides/                     # How-to guides
+│   ├── contributor_onboarding.md # First contribution guide
+│   ├── feature_checklist.md    # Building features
+│   ├── mobile_development.md   # Mobile/Capacitor
+│   └── deployment.md           # Deployment guide
+│
+├── reference/                  # Reference documentation
+│   ├── architecture.md         # System architecture
+│   ├── consent_protocol.md     # Consent implementation
+│   ├── database_schema.md      # Database reference
+│   ├── database_service_layer.md
+│   ├── route_contracts.md      # API contracts
+│   ├── mcp_integration.md      # MCP integration
+│   ├── developer_api.md        # External API
+│   ├── frontend_design_system.md
+│   ├── base_user_schema.md
+│   └── kai.md                  # Agent Kai
+│
+├── agents/                     # Agent development
+│   ├── adk_implementation.md
+│   ├── adk_standards.md
+│   ├── agent_development_guidelines.md
+│   └── a2a_implementation.md
+│
+├── business/                   # Business documentation
+│   ├── overview.md
+│   ├── roadmap.md
+│   ├── launch_strategy.md
+│   └── discord_blueprint.md
+│
+└── vision/                     # Product vision
+    ├── readme.md
+    ├── agent_nav/readme.md
+    ├── food_dining/readme.md
+    └── kai/readme.md
 ```
 
-### Document Status
+---
 
-- ✅ **Updated** - Reflects current implementation
-- 🚧 **In Progress** - Being actively updated
-- ⚠️ **Outdated** - Needs review
-- 📝 **Planned** - Future documentation
+## Backward Compatibility
+
+Old paths may work via symlinks if configured:
+- `docs/README.md` → `docs/readme.md`
+- `docs/PROJECT_CONTEXT_MAP.md` → `docs/project_context_map.md`
+- `docs/technical/architecture.md` → `docs/reference/architecture.md`
+- `docs/technical/consent-implementation.md` → `docs/reference/consent_protocol.md`
+
+Note: All files now use snake_case without numbers for consistency.
 
 ---
 
-## 🤝 Contributing to Documentation
-
-When updating documentation:
-
-1. **Be Specific**: Include code examples and diagrams
-2. **Version Updates**: Note version and date at bottom
-3. **Cross-Reference**: Link to related docs
-4. **Keep Current**: Update when implementation changes
-
----
-
-_Last Updated: January 2026 | Version: 6.1 | Documentation Audit + Accuracy Review_
+_Last Updated: January 2026 | Version: 8.0 | Task-Based Organization_

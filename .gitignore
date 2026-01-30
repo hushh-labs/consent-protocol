@@ -18,8 +18,10 @@ consent-protocol/.DS_Store
 .DS_Store
 docs/vision/kai/index.html
 .vscode/chrome-debug
+# Large data files (moved to data/)
 sec_payload_aapl.json
 sec_payload_nvda.json
+data/*.json
 # Blog drafts (personal content)
 blogs/
 
@@ -37,3 +39,4 @@ Pipfile.lock
 # System
 .DS_Store
 Thumbs.db
+CURSOR_TOOLS.md
