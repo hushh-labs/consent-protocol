@@ -37,12 +37,16 @@ async def validate_token_endpoint(request: ValidateTokenRequest):
             # SECURITY: Return generic message, log detailed reason server-side
             logger.warning(f"Token validation failed: {reason}")
             return {"valid": False, "reason": "Token validation failed"}
+
+        if token_obj is None:
+            logger.error("Token validation succeeded but token payload was missing")
+            return {"valid": False, "reason": "Token validation failed"}
             
         return {
             "valid": True, 
-            "user_id": token_obj.user_id,
-            "agent_id": token_obj.agent_id,
-            "scope": token_obj.scope
+            "user_id": str(token_obj.user_id),
+            "agent_id": str(token_obj.agent_id),
+            "scope": token_obj.scope.value
         }
     except Exception as e:
         # SECURITY: Never expose exception details to client (CodeQL fix)
