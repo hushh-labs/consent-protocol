@@ -783,9 +783,12 @@ export default function ConsentsPage() {
           size="sm"
           onClick={() => {
             if (userId) {
+              const effectiveToken = session?.token || vaultOwnerToken || "";
               fetchPendingConsents(userId);
               fetchAuditLog(userId);
-              fetchActiveConsents(userId);
+              if (effectiveToken) {
+                fetchActiveConsents(userId, effectiveToken);
+              }
               toast.success("Refreshed", { duration: 1500 });
             }
           }}

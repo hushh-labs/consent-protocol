@@ -10,6 +10,7 @@ import { Capacitor } from "@capacitor/core";
 import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
 import { HushhAuth, HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
+import { getDirectBackendUrl } from "@/lib/services/api-service";
 
 // ============================================================================
 // TYPES
@@ -212,4 +213,38 @@ export async function analyzeFundamental(params: {
     context: params.context, // Include decrypted investor profile context
     authToken,
   });
+}
+
+/**
+ * Stream Kai analysis (SSE) from backend.
+ *
+ * NOTE: This is intentionally implemented in the service layer so that
+ * components do not call fetch() directly, preserving Tri-Flow rules.
+ */
+export async function streamKaiAnalysis(params: {
+  userId: string;
+  ticker: string;
+  riskProfile?: string;
+  userContext?: string;
+  vaultOwnerToken: string;
+}): Promise<Response> {
+  const baseUrl = getDirectBackendUrl();
+  const url = `${baseUrl}/api/kai/analyze/stream`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.vaultOwnerToken}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      ticker: params.ticker,
+      user_id: params.userId,
+      risk_profile: params.riskProfile,
+      context: params.userContext,
+    }),
+  });
+
+  return response;
 }
