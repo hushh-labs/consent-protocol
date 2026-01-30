@@ -21,7 +21,7 @@ your contributions.
 
 Instead, please report security vulnerabilities through one of these channels:
 
-1. **Email**: security@hushh.ai
+1. **Email**: eng@hush1one.com
 2. **GitHub Security Advisories**: [Create a private advisory](https://github.com/hushh-labs/hushh-research/security/advisories/new)
 
 ### What to Include
@@ -144,7 +144,7 @@ confirmed. We recommend:
 
 For security-related questions that are not vulnerability reports:
 
-- Email: security@hushh.ai
+- Email: eng@hush1one.com
 - Discord: #security channel (for general discussions only)
 
 Thank you for helping keep Hushh and our users safe!

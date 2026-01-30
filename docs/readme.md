@@ -251,7 +251,7 @@ See [Architecture - Legal Compliance](./technical/architecture.md#legal--complia
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/hushh/hushh-research.git
+git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
 
 # Frontend + Capacitor
@@ -463,9 +463,9 @@ npx cap sync android && npx cap open android
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+2. Create your feature branch (`git checkout -b YOUR_USERNAME/feat/amazing-feature`)
 3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+4. Push to branch (`git push origin YOUR_USERNAME/feat/amazing-feature`)
 5. Open a Pull Request
 
 ---
