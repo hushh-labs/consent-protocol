@@ -5,18 +5,16 @@ Kai Decision Storage Endpoints
 Handles encrypted decision storage and retrieval.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Header
-from pydantic import BaseModel
-from typing import Optional, List, Dict
-from datetime import datetime
 import logging
+from typing import Dict, List, Optional
 
-from hushh_mcp.services.vault_db import VaultDBService, ConsentValidationError
-from hushh_mcp.services.consent_db import ConsentDBService
-from hushh_mcp.services.kai_decisions_service import KaiDecisionsService
-from hushh_mcp.types import EncryptedPayload
+from fastapi import APIRouter, Header, HTTPException, Query
+from pydantic import BaseModel
+
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.kai_decisions_service import KaiDecisionsService
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +164,7 @@ async def get_decision_history(
         decisions = await decisions_service.get_decisions(
             user_id=user_id,
             consent_token=token,
-            limit=limit
+            limit=limit,
         )
         
         # Format response
@@ -233,7 +231,7 @@ async def get_decision_detail(
             iv=decision["payload"]["iv"],
             tag=decision["payload"].get("tag", ""),
             created_at=decision.get("createdAt", ""),
-            user_id=user_id,
+            user_id=payload.user_id,
             ticker=decision["ticker"]
         )
         

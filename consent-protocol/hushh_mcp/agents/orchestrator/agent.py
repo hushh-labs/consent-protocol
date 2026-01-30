@@ -5,20 +5,15 @@ Central routing agent that uses LLM semantic understanding to delegate tasks.
 Replaces legacy regex/classifier logic.
 """
 
-import os
 import logging
-from typing import Dict, Any, Optional
+import os
+from typing import Any, Dict
 
 from hushh_mcp.hushh_adk.core import HushhAgent
 from hushh_mcp.hushh_adk.manifest import ManifestLoader
-from hushh_mcp.hushh_adk.context import HushhContext
 
 # Import tools for registration
-from .tools import (
-    delegate_to_food_agent,
-    delegate_to_professional_agent,
-    delegate_to_kai_agent
-)
+from .tools import delegate_to_food_agent, delegate_to_kai_agent, delegate_to_professional_agent
 
 logger = logging.getLogger(__name__)
 

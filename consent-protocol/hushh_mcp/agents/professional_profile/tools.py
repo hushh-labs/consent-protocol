@@ -5,16 +5,13 @@ ADK Tools for the Professional Profile Agent.
 Handles secure vault storage of career data.
 """
 
-from typing import List, Dict, Any, Optional
-import json
+from typing import Any, Dict, List
 
-from hushh_mcp.hushh_adk.tools import hushh_tool
-from hushh_mcp.hushh_adk.context import HushhContext
-from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.vault.encrypt import encrypt_data
-
+from hushh_mcp.hushh_adk.context import HushhContext
+from hushh_mcp.hushh_adk.tools import hushh_tool
 from hushh_mcp.operons.professional.storage import store_professional_profile
+
 
 @hushh_tool(scope=ConsentScope.VAULT_WRITE_PROFESSIONAL, name="save_professional_profile")
 def save_professional_profile(

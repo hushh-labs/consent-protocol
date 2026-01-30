@@ -4,14 +4,15 @@ Test with invalid ticker to ensure proper error handling.
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 sys.path.append(os.getcwd())
 
 from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
+
 
 async def test_invalid_ticker():
     print("--- Testing with Invalid Ticker ---")

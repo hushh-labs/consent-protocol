@@ -1,7 +1,8 @@
 # 🔐 Crypto + Signing
 # SECURITY: Updated from 42.0.5 to fix CVE-2024-26130 (vulnerable OpenSSL in wheels)
 cryptography>=44.0.0
-pyjwt[crypto]==2.8.0
+# >=2.10.1 for mcp 1.26; [crypto] for JWT signing
+pyjwt[crypto]>=2.10.1
 
 # 🧪 Validation (use v2 binary wheel)
 pydantic>=2.0,<3.0
@@ -17,19 +18,13 @@ uvicorn>=0.34.0
 asyncpg>=0.29.0
 
 # 🗄️ Supabase REST client (for migration)
-supabase>=2.0.0
+# Pinned to avoid resolution-too-deep with default pip resolver
+supabase==2.27.2
 
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
-httpx==0.27.0
+# >=0.27.1 for mcp 1.26; <0.29 for supabase 2.27
+httpx>=0.27.1,<0.29
 
-# 🛠️ CLI + scripting
-argparse==1.4.0
-
-# 🧪 Testing
-pytest==8.2.2
-pytest-asyncio>=0.23.0  # Required for async test support
-
-# 🔍 Code Quality & Linting
 # 🔍 Code Quality & Linting moved to requirements-dev.txt
 
 # 🚦 Rate Limiting & Real-time
@@ -41,24 +36,30 @@ sse-starlette>=2.1.0     # Server-Sent Events for consent notifications
 requests>=2.32.4
 
 # 🔌 MCP Server SDK (Model Context Protocol)
-mcp>=0.9.0
+# Pinned to avoid resolution-too-deep with default pip resolver
+mcp==1.26.0
 
 # 🔥 Firebase Admin SDK (Identity)
-firebase-admin>=6.6.0  # Updated to recent stable
+# Pinned to avoid resolution-too-deep with default pip resolver
+firebase-admin==7.1.0
 
 # 🔧 Protocol Buffers & GRPC (Pinning to avoid resolution-too-deep errors)
 # These versions are known to work well with google-api-core and firebase-admin
-# 🔧 Protocol Buffers & GRPC (Stable Protobuf 4 Set)
-# Anchoring to Protobuf 4.x to resolve conflicts between firebase-admin and google-adk
-protobuf==4.25.3
-grpcio==1.62.2
-grpcio-status==1.62.2
-google-api-core==2.17.1
-proto-plus==1.23.0
+# 🔧 Protocol Buffers & GRPC (Stable Protobuf 6 Set)
+# Anchoring to Protobuf 6.x to resolve conflicts between firebase-admin and google-adk
+# grpcio 1.76+ provides pre-built wheels for Python 3.13 (see https://pypi.org/project/grpcio/)
+# protobuf 6.x required by grpcio-status 1.76; compatible with firebase-admin and google-adk
+protobuf>=6.31.1,<7.0.0
+grpcio==1.76.0
+grpcio-status==1.76.0
+# 2.25.1+ required for protobuf 6.x; pinned to avoid resolution-too-deep
+google-api-core==2.29.0
+# proto-plus 1.24+ supports protobuf 6; pinned to avoid resolution-too-deep
+proto-plus==1.27.0
 
 # 🧠 Generative AI (ADK - Agent Development Kit)
-# Using google-adk which includes google-genai SDK
-google-adk>=1.23.0
+# Pinned to avoid resolution-too-deep with default pip resolver
+google-adk==1.23.0
 
 # 🛠️ Utilities
 wrapt>=1.14.0  # Required for Python 3.11+ compatibility

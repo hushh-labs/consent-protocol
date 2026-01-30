@@ -38,7 +38,7 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
 - Read our [Getting Started Guide](getting_started.md) to set up your development environment
 - You will need:
   - Node.js v20+
-  - Python 3.11+
+  - Python 3.13+
   - PostgreSQL
   - Xcode (for iOS)
   - Android Studio (for Android)

@@ -9,8 +9,7 @@ These are lightweight helpers used by analysis operons.
 No consent validation needed - these are just math!
 """
 
-from typing import Dict, Any, List, Tuple
-
+from typing import Any, Dict, List, Tuple
 
 # ============================================================================
 # FINANCIAL RATIO CALCULATORS
@@ -239,8 +238,6 @@ def calculate_valuation_metrics(market_data: Dict[str, Any]) -> Dict[str, float]
     pb_ratio = market_data.get("pb_ratio", 0)
     dividend_yield = market_data.get("dividend_yield", 0)
     market_cap = market_data.get("market_cap", 0)
-    price = market_data.get("price", 0)
-    
     # Calculate PS ratio if we have revenue data
     # (Would need to pass revenue from SEC data - future enhancement)
     ps_ratio = 0  # Placeholder

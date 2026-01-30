@@ -63,8 +63,8 @@ AGENT_PORTS = {
 
 # ==================== Token & Link Prefixes ====================
 
-CONSENT_TOKEN_PREFIX = "HCT"  # Hushh Consent Token
-TRUST_LINK_PREFIX = "HTL"     # Hushh Trust Link
+CONSENT_TOKEN_PREFIX = "HCT"  # noqa: S105 - Hushh Consent Token
+TRUST_LINK_PREFIX = "HTL"  # noqa: S105 - Hushh Trust Link
 AGENT_ID_PREFIX = "agent_"
 USER_ID_PREFIX = "user_"
 

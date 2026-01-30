@@ -5,11 +5,12 @@ import sys
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Force load Env if needed (though issue_token might rely on SECRET_KEY in os.environ)
+from dotenv import load_dotenv
+
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
 
-# Force load Env if needed (though issue_token might rely on SECRET_KEY in os.environ)
-from dotenv import load_dotenv
 load_dotenv(".env")
 
 try:

@@ -254,7 +254,7 @@ Tests run automatically on:
 - Pushes to `main`
 
 The CI workflow:
-1. Sets up Python 3.11 / Node.js 20
+1. Sets up Python 3.13 / Node.js 20
 2. Installs dependencies
 3. Runs linting (ruff, ESLint)
 4. Runs type checking (mypy, TypeScript)

@@ -5,15 +5,16 @@ Kai Consent Endpoints
 Handles Kai-specific consent grants for analysis operations.
 """
 
+import logging
+import uuid
+from typing import Dict, List
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict
-import uuid
-import logging
 
-from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 

@@ -20,8 +20,8 @@ Privacy Model:
 """
 
 import logging
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from db.supabase_client import get_supabase
 from hushh_mcp.consent.token import validate_token

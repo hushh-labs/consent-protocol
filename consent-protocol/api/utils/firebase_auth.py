@@ -34,7 +34,7 @@ def verify_firebase_bearer(authorization: Optional[str]) -> str:
 
         decoded = firebase_auth.verify_id_token(id_token)
         uid = decoded.get("uid")
-        if not uid:
+        if not isinstance(uid, str) or not uid:
             raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
         return uid
     except HTTPException:

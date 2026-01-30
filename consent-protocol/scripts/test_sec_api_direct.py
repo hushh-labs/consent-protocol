@@ -4,8 +4,10 @@ Test SEC EDGAR API integration directly with corrected endpoints.
 """
 
 import asyncio
-import httpx
 from datetime import datetime
+
+import httpx
+
 
 async def test_sec_api_direct():
     """Test SEC API calls directly without agent orchestrator."""
@@ -75,7 +77,7 @@ async def test_sec_api_direct():
                     break
             
             if latest_10k_idx is None:
-                print(f"   ❌ No 10-K found")
+                print("   ❌ No 10-K found")
                 return
             
             print(f"   ✅ Found 10-K at index {latest_10k_idx}")
@@ -85,7 +87,7 @@ async def test_sec_api_direct():
             # Show result
             print("\n" + "=" * 60)
             print("✅ SUCCESS - SEC API is working!")
-            print(f"Source: SEC EDGAR (Real API)")
+            print("Source: SEC EDGAR (Real API)")
             print(f"Fetched at: {datetime.utcnow().isoformat()}")
             
     except httpx.HTTPError as e:

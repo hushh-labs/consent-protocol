@@ -9,21 +9,21 @@ Enables real-time visualization of the multi-agent debate process.
 import asyncio
 import json
 import logging
-from typing import AsyncGenerator, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, AsyncGenerator, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request, Header
-from sse_starlette.sse import EventSourceResponse
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
-from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
-from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.agents.kai.debate_engine import DebateEngine
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
-from hushh_mcp.agents.kai.debate_engine import DebateEngine
+from hushh_mcp.consent.token import validate_token
+from hushh_mcp.constants import ConsentScope
 from hushh_mcp.operons.kai.llm import stream_gemini_response
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ async def analyze_stream_generator(
         
         yield create_event("kai_thinking", {
             "phase": "analysis",
-            "message": f"📊 Each agent will perform deep analysis using specialized tools and data sources...",
+            "message": "📊 Each agent will perform deep analysis using specialized tools and data sources...",
             "tokens": ["Fundamental:", "SEC", "filings,", "financial", "ratios.", "Sentiment:", "news,", "catalysts.", "Valuation:", "P/E,", "DCF", "models."]
         })
         await asyncio.sleep(0.05)

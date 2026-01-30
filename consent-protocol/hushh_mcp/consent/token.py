@@ -1,15 +1,15 @@
 # hushh_mcp/consent/token.py
 
-import hmac
-import hashlib
 import base64
-import time
+import hashlib
+import hmac
 import logging
+import time
 from typing import Optional, Tuple
 
-from hushh_mcp.config import SECRET_KEY, DEFAULT_CONSENT_TOKEN_EXPIRY_MS
+from hushh_mcp.config import DEFAULT_CONSENT_TOKEN_EXPIRY_MS, SECRET_KEY
 from hushh_mcp.constants import CONSENT_TOKEN_PREFIX
-from hushh_mcp.types import HushhConsentToken, ConsentScope, UserID, AgentID
+from hushh_mcp.types import AgentID, ConsentScope, HushhConsentToken, UserID
 
 logger = logging.getLogger(__name__)
 

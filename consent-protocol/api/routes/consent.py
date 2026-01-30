@@ -5,15 +5,15 @@ Consent management endpoints (pending, approve, deny, revoke, history, active).
 
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from hushh_mcp.services.consent_db import ConsentDBService
+from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
-from api.utils.firebase_auth import verify_firebase_bearer
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +409,7 @@ async def revoke_consent(request: Request):
         original_token = token_to_revoke.get("token_id")
         if original_token and not original_token.startswith("REVOKED_"):
             revoke_token(original_token)
-            logger.info(f"🔒 Token added to in-memory revocation set")
+            logger.info("🔒 Token added to in-memory revocation set")
         
         # Generate a NEW unique token_id for the REVOKED event
         # (Cannot reuse original token_id due to UNIQUE constraint on consent_audit table)
