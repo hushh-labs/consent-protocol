@@ -258,17 +258,24 @@ def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
             status_code=401,
             detail=f"Invalid consent token: {reason}"
         )
+
+    if token_obj is None:
+        logger.error("Consent token validated but payload missing")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid consent token: missing token payload"
+        )
     
-    if token_obj.scope != ConsentScope.VAULT_OWNER.value:
+    if token_obj.scope != ConsentScope.VAULT_OWNER:
         logger.warning(
-            f"Insufficient scope: {token_obj.scope} (requires {ConsentScope.VAULT_OWNER.value})"
+            f"Insufficient scope: {token_obj.scope.value} (requires {ConsentScope.VAULT_OWNER.value})"
         )
         raise HTTPException(
             status_code=403,
-            detail=f"Insufficient scope: {token_obj.scope}. VAULT_OWNER scope required."
+            detail=f"Insufficient scope: {token_obj.scope.value}. VAULT_OWNER scope required."
         )
     
-    if token_obj.user_id != user_id:
+    if str(token_obj.user_id) != user_id:
         logger.warning(
             f"Token userId mismatch: {token_obj.user_id} != {user_id}"
         )

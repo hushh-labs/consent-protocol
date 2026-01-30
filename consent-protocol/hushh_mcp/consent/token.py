@@ -8,15 +8,15 @@ import time
 from typing import Optional, Tuple
 
 from hushh_mcp.config import DEFAULT_CONSENT_TOKEN_EXPIRY_MS, SECRET_KEY
-from hushh_mcp.constants import CONSENT_TOKEN_PREFIX
-from hushh_mcp.types import AgentID, ConsentScope, HushhConsentToken, UserID
+from hushh_mcp.constants import CONSENT_TOKEN_PREFIX, ConsentScope
+from hushh_mcp.types import AgentID, HushhConsentToken, UserID
 
 logger = logging.getLogger(__name__)
 
 # ========== Internal Revocation Registry ==========
 # In-memory set for fast revocation checks (immediate effect)
 # Also persisted to DB for cross-instance consistency
-_revoked_tokens = set()
+_revoked_tokens: set[str] = set()
 
 # ========== Token Generator ==========
 
@@ -54,7 +54,7 @@ def validate_token(
         return False, "Token has been revoked", None
 
     try:
-        prefix, signed_part = token_str.split(":")
+        prefix, signed_part = token_str.split(":", 1)
         encoded, signature = signed_part.split(".")
 
         if prefix != CONSENT_TOKEN_PREFIX:
@@ -62,6 +62,10 @@ def validate_token(
 
         decoded = base64.urlsafe_b64decode(encoded.encode()).decode()
         user_id, agent_id, scope_str, issued_at_str, expires_at_str = decoded.split("|")
+        try:
+            scope = ConsentScope(scope_str)
+        except ValueError:
+            return False, "Invalid scope", None
 
         raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at_str}|{expires_at_str}"
         expected_sig = _sign(raw)
@@ -71,19 +75,19 @@ def validate_token(
 
         # HIERARCHICAL CHECK: VAULT_OWNER satisfies ALL scopes
         # This is the "Master Key" logic requested by the architecture.
-        is_owner = scope_str == "vault.owner" or scope_str == ConsentScope.VAULT_OWNER.value
+        is_owner = scope == ConsentScope.VAULT_OWNER
         
-        if expected_scope and not is_owner and scope_str != expected_scope.value:
-            return False, f"Scope mismatch: expected {expected_scope.value}, got {scope_str}", None
+        if expected_scope and not is_owner and scope != expected_scope:
+            return False, f"Scope mismatch: expected {expected_scope.value}, got {scope.value}", None
 
         if int(time.time() * 1000) > int(expires_at_str):
             return False, "Token expired", None
 
         token = HushhConsentToken(
             token=token_str,
-            user_id=user_id,
-            agent_id=agent_id,
-            scope=scope_str,  # can optionally convert to ConsentScope(scope_str)
+            user_id=UserID(user_id),
+            agent_id=AgentID(agent_id),
+            scope=scope,
             issued_at=int(issued_at_str),
             expires_at=int(expires_at_str),
             signature=signature
@@ -113,11 +117,13 @@ async def validate_token_with_db(
     # Additional DB check for revocation status
     # This catches tokens revoked on other Cloud Run instances
     try:
-        import consent_db
         if token_obj:
-            is_active = await consent_db.is_token_active(
-                token_obj.user_id, 
-                token_obj.scope
+            from hushh_mcp.services.consent_db import ConsentDBService
+
+            service = ConsentDBService()
+            is_active = await service.is_token_active(
+                str(token_obj.user_id),
+                token_obj.scope.value
             )
             if not is_active:
                 # Add to in-memory set for future fast checks
