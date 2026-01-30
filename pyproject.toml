@@ -40,6 +40,10 @@ files = ["api"]
 module = ["hushh_mcp.*"]
 follow_imports = "skip"
 
+[[tool.mypy.overrides]]
+module = ["hushh_mcp.consent.*", "hushh_mcp.vault.*"]
+follow_imports = "normal"
+
 [tool.bandit]
 exclude_dirs = ["tests", "__pycache__"]
 skips = ["B101"]  # Skip assert warnings
