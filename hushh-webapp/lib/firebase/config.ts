@@ -19,6 +19,15 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Log warning if running with dummy or missing config (common in CI/builds)
+if (
+  !firebaseConfig.apiKey || 
+  firebaseConfig.apiKey === "dummy-api-key" ||
+  typeof window === "undefined" // Only log on server/build time to avoid console noise in client
+) {
+  console.warn("⚠️ Firebase Config: Running with missing or dummy credentials. This is expected during CI/Builds but critical features will fail in production.");
+}
+
 // Initialize Firebase (singleton pattern for Next.js)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
