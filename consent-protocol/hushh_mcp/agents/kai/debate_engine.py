@@ -10,14 +10,16 @@ Key Responsibilities:
 - Confidence aggregation
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, AsyncGenerator
 from dataclasses import dataclass
 import logging
+import asyncio
 from datetime import datetime
 
 from .fundamental_agent import FundamentalAgent, FundamentalInsight
 from .sentiment_agent import SentimentAgent, SentimentInsight
 from .valuation_agent import ValuationAgent, ValuationInsight
+from hushh_mcp.operons.kai.llm import stream_gemini_response
 from .config import (
     DEBATE_ROUNDS,
     MIN_CONFIDENCE_THRESHOLD,
@@ -52,10 +54,11 @@ class DebateResult:
 
 class DebateEngine:
     """
-    Debate Engine - Orchestrates 3-agent discussion.
+    Debate Engine - Orchestrates 3-agent discussion with Real-Time Streaming.
     
     Implements the AlphaAgents framework:
-    - Each agent speaks at least twice
+    - Each agent speaks at least twice (A2A Debate)
+    - Real-time token streaming from Gemini 3 Flash
     - Round-robin structured debate
     - Consensus building with dissent capture
     - Weighted voting by risk profile
@@ -66,142 +69,324 @@ class DebateEngine:
         self.agent_weights = AGENT_WEIGHTS[risk_profile]
         self.rounds: List[DebateRound] = []
         
-    async def orchestrate_debate(
+        # Helper to track full text for the final result object
+        self.current_statements: Dict[str, str] = {} 
+        
+    async def orchestrate_debate_stream(
         self,
         fundamental_insight: FundamentalInsight,
         sentiment_insight: SentimentInsight,
         valuation_insight: ValuationInsight,
-    ) -> DebateResult:
+    ) -> AsyncGenerator[Dict[str, Any], DebateResult]:
         """
-        Orchestrate multi-agent debate to reach consensus.
+        Orchestrate multi-agent debate with real-time streaming.
         
-        Args:
-            fundamental_insight: Fundamental agent's analysis
-            sentiment_insight: Sentiment agent's analysis
-            valuation_insight: Valuation agent's analysis
-            
+        Yields events:
+        - round_start
+        - kai_thinking
+        - agent_start
+        - agent_token (streaming content)
+        - agent_complete
+        - debate_round
+        
         Returns:
-            DebateResult with final decision and debate transcript
+        - Final DebateResult object
         """
-        logger.info(f"[Debate] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile")
+        logger.info(f"[Debate Stream] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile")
         
-        # Round 1: Initial positions
-        round_1 = await self._conduct_round(
-            round_num=1,
-            fundamental=fundamental_insight,
-            sentiment=sentiment_insight,
-            valuation=valuation_insight,
-            context="initial_analysis",
-        )
-        self.rounds.append(round_1)
-        
-        # Round 2: Challenge and refine
-        round_2 = await self._conduct_round(
-            round_num=2,
-            fundamental=fundamental_insight,
-            sentiment=sentiment_insight,
-            valuation=valuation_insight,
-            context="challenge_positions",
-        )
-        self.rounds.append(round_2)
-        
-        # Additional rounds if no consensus
-        if DEBATE_ROUNDS > 2:
-            for round_num in range(3, DEBATE_ROUNDS + 1):
-                round_n = await self._conduct_round(
-                    round_num=round_num,
-                    fundamental=fundamental_insight,
-                    sentiment=sentiment_insight,
-                    valuation=valuation_insight,
-                    context="build_consensus",
-                )
-                self.rounds.append(round_n)
-        
-        # Calculate final decision
-        result = await self._build_consensus(
-            fundamental_insight,
-            sentiment_insight,
-            valuation_insight,
-        )
-        
-        logger.info(f"[Debate] Decision: {result.decision} (confidence: {result.confidence:.2%})")
-        
-        return result
-    
-    async def _conduct_round(
-        self,
-        round_num: int,
-        fundamental: FundamentalInsight,
-        sentiment: SentimentInsight,
-        valuation: ValuationInsight,
-        context: str,
-    ) -> DebateRound:
-        """Conduct a single round of debate."""
-        
-        logger.info(f"[Debate] Round {round_num}: {context}")
-        
-        # Generate agent statements for this round
-        statements = {
-            "fundamental": await self._generate_statement(
-                agent="fundamental",
-                insight=fundamental,
-                round_num=round_num,
-                context=context,
-            ),
-            "sentiment": await self._generate_statement(
-                agent="sentiment",
-                insight=sentiment,
-                round_num=round_num,
-                context=context,
-            ),
-            "valuation": await self._generate_statement(
-                agent="valuation",
-                insight=valuation,
-                round_num=round_num,
-                context=context,
-            ),
+        # Store insights for easy access
+        self.insights = {
+            "fundamental": fundamental_insight,
+            "sentiment": sentiment_insight,
+            "valuation": valuation_insight
         }
         
-        return DebateRound(
-            round_number=round_num,
-            agent_statements=statements,
-            timestamp=datetime.utcnow(),
-        )
-    
-    async def _generate_statement(
+        # =========================================================================
+        # ROUND 1: Initial Presentation
+        # =========================================================================
+        yield {
+            "event": "round_start", 
+            "data": {
+                "round": 1,
+                "description": "Round 1: Agents present their initial findings.",
+                "is_final_round": False
+            }
+        }
+        
+        round1_statements = {}
+        
+        # Agent 1: Fundamental
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round1",
+                "message": "Inviting Fundamental Agent to open the debate...",
+                "tokens": ["Analyzing", "SEC", "filings", "and", "growth", "metrics."]
+            }
+        }
+        async for event in self._stream_agent_turn(1, "fundamental", "initial_analysis", round1_statements):
+            yield event
+        round1_statements["fundamental"] = self.current_statements["fundamental"]
+
+        # Agent 2: Valuation
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round1",
+                "message": "Calling Valuation Agent for price analysis...",
+                "tokens": ["Evaluating", "multiples", "vs", "peers", "and", "historical", "averages."]
+            }
+        }
+        async for event in self._stream_agent_turn(1, "valuation", "initial_analysis", round1_statements):
+            yield event
+        round1_statements["valuation"] = self.current_statements["valuation"]
+
+        # Agent 3: Sentiment
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round1",
+                "message": "Checking Sentiment Agent for market pulse...",
+                "tokens": ["Scanning", "news", "flow", "and", "market", "momentum."]
+            }
+        }
+        async for event in self._stream_agent_turn(1, "sentiment", "initial_analysis", round1_statements):
+            yield event
+        round1_statements["sentiment"] = self.current_statements["sentiment"]
+
+        # Record Round 1
+        self.rounds.append(DebateRound(1, round1_statements, datetime.utcnow()))
+        yield {
+            "event": "debate_round",
+            "data": {
+                "round": 1,
+                "statements": round1_statements,
+                "context": "presenting initial findings",
+                "is_final_round": False
+            }
+        }
+
+        # =========================================================================
+        # ROUND 2: Rebuttal & Consensus Building
+        # =========================================================================
+        yield {
+            "event": "round_start",
+            "data": {
+                "round": 2,
+                "description": "Round 2: Cross-examination and position refinement.",
+                "is_final_round": True
+            }
+        }
+        
+        round2_statements = {}
+        
+        # Agent 1: Fundamental Rebuttal
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round2",
+                "message": "Fundamental Agent is reviewing peer arguments...",
+                "tokens": ["Comparing", "intrinsic", "value", "against", "marker", "sentiment."]
+            }
+        }
+        async for event in self._stream_agent_turn(2, "fundamental", "challenge_positions", round2_statements):
+            yield event
+        round2_statements["fundamental"] = self.current_statements["fundamental"]
+
+        # Agent 2: Valuation Rebuttal
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round2",
+                "message": "Valuation Agent is stress-testing assumptions...",
+                "tokens": ["Checking", "if", "fundamentals", "justify", "the", "current", "premium."]
+            }
+        }
+        async for event in self._stream_agent_turn(2, "valuation", "challenge_positions", round2_statements):
+            yield event
+        round2_statements["valuation"] = self.current_statements["valuation"]
+
+        # Agent 3: Sentiment Rebuttal
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round2",
+                "message": "Sentiment Agent is analyzing reaction risks...",
+                "tokens": ["Assessing", "potential", "volatility", "from", "conflicting", "signals."]
+            }
+        }
+        async for event in self._stream_agent_turn(2, "sentiment", "challenge_positions", round2_statements):
+            yield event
+        round2_statements["sentiment"] = self.current_statements["sentiment"]
+
+        # Record Round 2
+        self.rounds.append(DebateRound(2, round2_statements, datetime.utcnow()))
+        yield {
+            "event": "debate_round",
+            "data": {
+                "round": 2,
+                "statements": round2_statements,
+                "context": "challenging and refining positions",
+                "is_final_round": True
+            }
+        }
+
+        # =========================================================================
+        # CONSENSUS PHASE
+        # =========================================================================
+        # We don't yield the result here, the caller (stream.py) handles the final decision/yield.
+        # But we do return it for the caller to use.
+        # UPDATE: Async generators cannot return values in Python < 3.13 (or standard usage).
+        # stream.py calculates this manually, so we just finish.
+        pass
+
+    async def _stream_agent_turn(
         self,
-        agent: str,
-        insight: Any,
         round_num: int,
-        context: str,
+        agent_name: str,
+        context_type: str,
+        current_round_statements: Dict[str, str],
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream an individual agent's turn.
+        
+        1. Yields 'agent_start'
+        2. Streams 'agent_token' from Gemini
+        3. Yields 'agent_complete'
+        """
+        
+        agent_display_names = {
+            "fundamental": "Fundamental Agent",
+            "sentiment": "Sentiment Agent",
+            "valuation": "Valuation Agent"
+        }
+        
+        yield {
+            "event": "agent_start",
+            "data": {
+                "agent": agent_name,
+                "agent_name": agent_display_names.get(agent_name, agent_name),
+                "message": f"Formulating arguments for Round {round_num}..."
+            }
+        }
+        
+        # Build prompt
+        prompt = self._build_agent_prompt(
+            agent_name, 
+            round_num, 
+            context_type, 
+            self.insights[agent_name],
+            current_round_statements
+        )
+        
+        full_response = ""
+        
+        # Stream from Gemini
+        async for chunk in stream_gemini_response(prompt, agent_name=agent_name):
+            if chunk.get("type") == "token":
+                text = chunk.get("text", "")
+                full_response += text
+                yield {
+                    "event": "agent_token", 
+                    "data": {
+                        "agent": agent_name,
+                        "text": text,
+                        "type": "token"
+                    }
+                }
+            elif chunk.get("type") == "error":
+                logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
+        
+        # Fallback if empty (Gemini error or timeout)
+        if not full_response:
+            full_response = self._get_fallback_statement(agent_name, self.insights[agent_name], round_num)
+            yield {
+                "event": "agent_token", 
+                "data": {
+                    "agent": agent_name,
+                    "text": full_response,
+                    "type": "token"
+                }
+            }
+            
+        self.current_statements[agent_name] = full_response
+        
+        yield {
+            "event": "agent_complete",
+            "data": {
+                "agent": agent_name,
+                "summary": full_response, # The summary for the card IS the statement
+                "recommendation": self.insights[agent_name].recommendation,
+                "confidence": self.insights[agent_name].confidence,
+                "sentiment_score": getattr(self.insights[agent_name], 'sentiment_score', None),
+            }
+        }
+
+    def _build_agent_prompt(
+        self, 
+        agent: str, 
+        round_num: int, 
+        context_type: str, 
+        insight: Any,
+        current_round_statements: Dict[str, str]
     ) -> str:
-        """Generate an agent's statement for a debate round."""
+        """Construct a specific prompt for the agent's turn."""
         
-        # Context-based statement generation
-        if context == "initial_analysis":
-            # Round 1: Present findings
-            if agent == "fundamental":
-                return f"Based on fundamental analysis, I recommend {insight.recommendation}. {insight.summary}"
-            elif agent == "sentiment":
-                return f"Market sentiment indicates {insight.recommendation}. {insight.summary}"
-            else:  # valuation
-                return f"Valuation analysis suggests the stock is {insight.recommendation}. {insight.summary}"
+        role_desc = ""
+        if agent == "fundamental":
+            role_desc = "You are a Fundamental Analyst focused on SEC filings, moat, and cash flow."
+            details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Moat: {insight.business_moat}\n- Bull Case: {insight.bull_case}\n- Bear Case: {insight.bear_case}"
+        elif agent == "valuation":
+            role_desc = "You are a Valuation Expert focused on fair value, multiples, and DCF."
+            details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Summary: {insight.summary}"
+        else:
+            role_desc = "You are a Sentiment Analyst focused on market momentum and news catalysts."
+            details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Score: {getattr(insight, 'sentiment_score', 'N/A')}\n- Catalysts: {getattr(insight, 'key_catalysts', 'N/A')}"
+            
+        previous_context = ""
+        if round_num > 1:
+            previous_context = "Round 1 Statements (for context/rebuttal):\n"
+            for r in self.rounds:
+                for ag, stmt in r.agent_statements.items():
+                    if ag != agent:
+                        previous_context += f"- {ag}: {stmt}\n"
         
-        elif context == "challenge_positions":
-            # Round 2: Address disagreements
-            return f"After considering other perspectives, I maintain {insight.recommendation} with {insight.confidence:.0%} confidence."
+        task = ""
+        if round_num == 1:
+            task = f"State your initial position clearly in 2-3 sentences. Support it with your key metrics. Be decisive ({insight.recommendation.upper()})."
+        else:
+            task = f"Critique the positions of other agents if they differ from yours. If you agree, explain why their evidence reinforces your view. Re-affirm your {insight.recommendation.upper()} stance. Keep it to 2-3 sentences."
+            
+        prompt = f"""
+        {role_desc}
         
-        else:  # build_consensus
-            # Later rounds: Move toward consensus
-            return f"Balancing all factors, I support {insight.recommendation}."
-    
+        CONTEXT:
+        Risk Profile: {self.risk_profile}
+        {details}
+        
+        {previous_context}
+        
+        TASK:
+        {task}
+        
+        Start directly with your statement. Do not use markdown.
+        """
+        return prompt
+
+    def _get_fallback_statement(self, agent: str, insight: Any, round_num: int) -> str:
+        """Fallback dynamic templates if LLM fails."""
+        if round_num == 1:
+            return f"Based on my analysis, I recommend {insight.recommendation}. {insight.summary[:100]}..."
+        else:
+            return f"I maintain my position of {insight.recommendation} with {insight.confidence:.0%} confidence."
+
     async def _build_consensus(
         self,
         fundamental: FundamentalInsight,
         sentiment: SentimentInsight,
         valuation: ValuationInsight,
     ) -> DebateResult:
-        """Build consensus from agent insights."""
+        """Build consensus from agent insights (Unchanged logic)."""
         
         # Collect agent votes
         agent_votes = {
@@ -246,9 +431,9 @@ class DebateEngine:
     def _recommendation_to_decision(self, recommendation: str) -> DecisionType:
         """Convert agent recommendation to decision type."""
         rec = recommendation.lower()
-        if rec in ["buy", "bullish", "undervalued"]:
+        if any(x in rec for x in ["buy", "bullish", "undervalued"]):
             return "buy"
-        elif rec in ["reduce", "bearish", "overvalued"]:
+        elif any(x in rec for x in ["reduce", "bearish", "overvalued", "sell"]):
             return "reduce"
         else:
             return "hold"
@@ -262,14 +447,13 @@ class DebateEngine:
         """Calculate weighted decision based on risk profile."""
         
         # Convert recommendations to numeric scores
-        # -1 = reduce, 0 = hold, 1 = buy
         scores = {
             "fundamental": self._rec_to_score(fundamental.recommendation),
             "sentiment": self._rec_to_score(sentiment.recommendation),
             "valuation": self._rec_to_score(valuation.recommendation),
         }
         
-        # Calculate weighted average
+        # Calculate weighted score
         weighted_score = (
             scores["fundamental"] * self.agent_weights["fundamental"] +
             scores["sentiment"] * self.agent_weights["sentiment"] +
@@ -296,9 +480,9 @@ class DebateEngine:
     def _rec_to_score(self, recommendation: str) -> float:
         """Convert recommendation to numeric score."""
         rec = recommendation.lower()
-        if rec in ["buy", "bullish", "undervalued"]:
+        if any(x in rec for x in ["buy", "bullish", "undervalued"]):
             return 1.0
-        elif rec in ["reduce", "bearish", "overvalued"]:
+        elif any(x in rec for x in ["reduce", "bearish", "overvalued", "sell"]):
             return -1.0
         else:
             return 0.0

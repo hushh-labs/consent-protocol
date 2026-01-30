@@ -72,7 +72,7 @@ We follow a strict **Tri-Flow Architecture**. This modular approach ensures that
 
 - **Stack**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/) + [Capacitor 8](https://capacitorjs.com/).
 - **🚨 TRI-FLOW RULE**: Next.js API Routes (`/api/...`) are **NOT accessible** to native apps. Feature parity requires implementing native Swift/Kotlin plugins to ensure architectural integrity.
-- **Reference**: [Route Contracts & Tri-Flow Guide](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/ROUTE_CONTRACTS.md)
+- **Reference**: [Route Contracts & Tri-Flow Guide](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/06_route_contracts.md)
 
 ### 🗺️ Participation
 
@@ -136,10 +136,10 @@ We are moving towards a world where a motivated student (Middle School and up) c
 
 Start here to understand the "Why" and the "How".
 
-- **The Grand Plan**: [README.md - Vision & Roadmap](https://github.com/hushh-labs/hushh-research/blob/main/README.md)
+- **The Grand Plan**: [readme.md - Vision & Roadmap](https://github.com/hushh-labs/hushh-research/blob/main/readme.md)
 - **Agents & Operons**: [ADK A2A & AP2 Implementation](https://github.com/hushh-labs/hushh-research/blob/main/consent-protocol/docs/agents.md)
 - **MCP Standards**: [Model Context Protocol Official Site](https://modelcontextprotocol.io/)
-- **Architecture**: [System Map](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/architecture.md)
+- **Architecture**: [System Map](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/01_architecture.md)
 ```
 
 ---
