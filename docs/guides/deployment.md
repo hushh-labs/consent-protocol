@@ -103,7 +103,8 @@ deploy/
 
 | Secret                 | Description                    | Used By          |
 | ---------------------- | ------------------------------ | ---------------- |
-| `DATABASE_URL`         | Cloud SQL connection string    | hushh-webapp     |
+| `SUPABASE_URL`         | Supabase project URL           | consent-protocol |
+| `SUPABASE_KEY`         | Supabase service role key      | consent-protocol |
 | `SECRET_KEY`           | HMAC signing key (64-char hex) | consent-protocol |
 | `VAULT_ENCRYPTION_KEY` | AES-256 key (64-char hex)      | consent-protocol |
 | `BACKEND_URL`          | consent-protocol URL           | Available        |
@@ -124,24 +125,29 @@ gcloud secrets add-iam-policy-binding SECRET_NAME `
 
 ---
 
-## Database (Cloud SQL)
+## Database (Supabase)
 
-- **Instance**: `hushh-pda:us-central1:hushh-vault-db`
+Hushh uses **Supabase REST API** for all database operations through a service layer architecture.
+
+- **Service**: Supabase PostgreSQL (managed)
 - **Database**: `hushh_vault`
-- **User**: `hushh_app`
+- **Access**: Via Supabase REST API with service role key
 
-### Connection String Format
+### Connection Configuration
 
+Set these environment variables:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-supabase-service-role-key
 ```
-postgresql://hushh_app:PASSWORD@/hushh_vault?host=/cloudsql/hushh-pda:us-central1:hushh-vault-db
-```
 
-### Local Development (via Cloud SQL Proxy)
+### Local Development
 
-```powershell
-cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db
-# Then use: postgresql://hushh_app:PASSWORD@localhost:5432/hushh_vault
-```
+1. Create a Supabase project at https://supabase.com
+2. Get your `SUPABASE_URL` and `SUPABASE_KEY` from project settings
+3. Set environment variables in `consent-protocol/.env`
+4. Initialize schema using Supabase Dashboard SQL Editor or migration scripts
 
 ### Run Migrations
 
@@ -168,7 +174,7 @@ gcloud run services logs read SERVICE_NAME --region us-central1 --limit 30
 | `No module named 'asyncpg'`        | Missing dependency in requirements.txt        | Add `asyncpg>=0.29.0`          |
 | `No module named 'firebase_admin'` | Missing dependency in requirements.txt        | Add `firebase-admin>=6.2.0`    |
 | `SECRET_KEY must be 32+ chars`     | Missing secret                                | Add via Secret Manager         |
-| `SSL connection` errors            | SSL enabled for Unix socket                   | Set `ssl: false` for Cloud SQL |
+| `SSL connection` errors            | Supabase connection issue                      | Verify SUPABASE_URL and SUPABASE_KEY |
 | Empty JSON response                | Unhandled error in API route                  | Add try/catch error handling   |
 | `VAULT_READ_REJECTED` (401)        | Missing session token in production           | Ensure X-Session-Token header  |
 

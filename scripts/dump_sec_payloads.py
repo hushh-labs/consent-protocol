@@ -6,7 +6,7 @@ from datetime import datetime
 
 # Mimic the SEC fetcher headers
 HEADERS = {
-    "User-Agent": "Hushh-Research/1.0 (compliance@hushh.ai)",
+    "User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)",
     "Accept": "application/json"
 }
 

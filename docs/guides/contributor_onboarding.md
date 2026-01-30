@@ -155,12 +155,12 @@ Fix the issues above before committing.
 git checkout main
 git pull upstream main
 
-# Create feature branch
-git checkout -b feat/your-feature-name
+# Create feature branch (use format: /[username]/[type]/[type-name])
+git checkout -b YOUR_USERNAME/feat/your-feature-name
 # or
-git checkout -b fix/your-bug-fix
+git checkout -b YOUR_USERNAME/fix/your-bug-fix
 # or
-git checkout -b docs/your-doc-update
+git checkout -b YOUR_USERNAME/docs/your-doc-update
 ```
 
 ### Follow Architecture Rules
@@ -269,7 +269,7 @@ git commit -m "feat: add movie recommendation agent"
 ### Push Your Branch
 
 ```bash
-git push origin feat/your-feature-name
+git push origin YOUR_USERNAME/feat/your-feature-name
 ```
 
 ### Create PR on GitHub
@@ -328,12 +328,12 @@ git push origin feat/your-feature-name
 ```bash
 git checkout main
 git pull upstream main
-git checkout feat/your-feature-name
+git checkout YOUR_USERNAME/feat/your-feature-name
 git rebase main
 # Resolve conflicts, then:
 git add .
 git rebase --continue
-git push --force-with-lease origin feat/your-feature-name
+git push --force-with-lease origin YOUR_USERNAME/feat/your-feature-name
 ```
 
 ---
