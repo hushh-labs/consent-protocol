@@ -12,7 +12,7 @@ as they only access public investor profile data.
 import json
 import logging
 import re
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from db.supabase_client import get_supabase
 

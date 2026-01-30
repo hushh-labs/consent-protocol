@@ -7,14 +7,14 @@ Encrypted decision card storage with consent validation.
 Follows the vault pattern from food operons.
 """
 
-from typing import Dict, Any, List
 import json
 import logging
+from typing import Any, Dict, List
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.vault.encrypt import encrypt_data, decrypt_data
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.types import UserID, EncryptedPayload
+from hushh_mcp.types import EncryptedPayload, UserID
+from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def retrieve_decision_card(
         raise PermissionError(f"TrustLink validation failed: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Storage Operon] Retrieving decision for user {user_id}")
     
@@ -173,7 +173,7 @@ def retrieve_decision_history(
         raise PermissionError(f"TrustLink validation failed: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Storage Operon] Retrieving decision history for user {user_id}")
     

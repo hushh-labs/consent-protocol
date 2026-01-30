@@ -10,12 +10,11 @@ Key Responsibilities:
 - Earnings call interpretation
 """
 
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
-from hushh_mcp.tools.hushh_tools import hushh_tool
 
 logger = logging.getLogger(__name__)
 

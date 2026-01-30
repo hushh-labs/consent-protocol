@@ -6,8 +6,8 @@ Cuisine Preference Matching Operon
 Pure function to score and match cuisine preferences.
 """
 
-from typing import List, Dict
 from enum import Enum
+from typing import Dict, List
 
 
 class CuisineType(str, Enum):

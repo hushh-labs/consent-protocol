@@ -10,11 +10,10 @@ CONSENT-FIRST ARCHITECTURE:
 """
 
 import logging
-from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from hushh_mcp.services.vault_db import VaultDBService, ConsentValidationError
+from hushh_mcp.services.vault_db import ConsentValidationError, VaultDBService
 from hushh_mcp.types import EncryptedPayload
 
 logger = logging.getLogger(__name__)

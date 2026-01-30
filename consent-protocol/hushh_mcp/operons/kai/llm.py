@@ -5,10 +5,10 @@ Kai LLM Operons - Powered by Gemini 3 Flash
 Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
 """
 
-import logging
-from typing import Dict, Any, List, Optional, AsyncGenerator
 import asyncio
 import json
+import logging
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 # New google.genai SDK (replaces deprecated google.generativeai)
 try:
@@ -21,9 +21,9 @@ except ImportError:
     types = None  # type: ignore
     logging.warning("⚠️ google.genai not found. Kai agent will run in logic-only mode.")
 
+from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)

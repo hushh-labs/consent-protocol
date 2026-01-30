@@ -8,10 +8,12 @@ This serves as the robust Source of Truth for:
 3. Frontend UI Capability Flags
 """
 
-from typing import List, Optional, Dict
-from pydantic import BaseModel, Field
-import yaml
 import os
+from typing import List, Optional
+
+import yaml
+from pydantic import BaseModel, Field
+
 
 class AgentToolConfig(BaseModel):
     name: str

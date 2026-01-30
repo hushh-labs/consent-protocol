@@ -5,13 +5,13 @@ Kai Analysis Endpoint (Non-Streaming)
 Performs 3-agent investment analysis and returns complete DecisionCard.
 """
 
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, Literal
-from datetime import datetime
 import logging
+from typing import Any, Dict, Literal, Optional
 
-from hushh_mcp.consent.token import issue_token, validate_token
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
+from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
 
 logger = logging.getLogger(__name__)
@@ -141,5 +141,5 @@ async def analyze_ticker(
         logger.error(f"[Kai] Analysis failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception(f"[Kai] Unexpected error during analysis")
+        logger.exception("[Kai] Unexpected error during analysis")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

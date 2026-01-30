@@ -12,17 +12,17 @@ Pattern:
 3. Return structured result
 """
 
-from typing import Dict, Any, List
 import logging
+from typing import Any, Dict, List
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID
 
 from .calculators import (
+    assess_fundamental_health,
     calculate_financial_ratios,
     calculate_sentiment_score,
-    assess_fundamental_health,
     extract_catalysts_from_news,
 )
 
@@ -142,7 +142,7 @@ def analyze_sentiment(
         raise PermissionError(f"TrustLink validation failed: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Sentiment Operon] Analyzing {ticker} for user {user_id}")
     
@@ -215,7 +215,7 @@ def analyze_valuation(
         raise PermissionError(f"TrustLink validation failed: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Valuation Operon] Analyzing {ticker} for user {user_id}")
     

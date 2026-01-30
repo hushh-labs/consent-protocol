@@ -102,3 +102,20 @@ Examples:
 2. Verify against `docs/assumptions_audit.md` if it exists
 3. Flag assumptions with `<!-- ASSUMPTION: [description] -->` comments when uncertain
 4. Prefer local documentation references over external URLs
+
+## AI Sign-Off (Required)
+
+**CRITICAL:** Always sign off with the AI model provider used.
+
+### Git commits
+When creating or suggesting a commit, **always** append a sign-off line to the commit message body:
+```
+Signed-off-by: [AI Provider Name] <[identifier]>
+```
+Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
+
+Use the actual provider name (e.g. Cursor AI, Claude, GPT, etc.) so the project has a clear record of which model produced or assisted the change.
+
+### Responses
+When completing a task or finishing a substantive response, **always** include a one-line signature at the end with the AI model provider used, e.g.:
+`Signed-off-by: Cursor AI (Claude)`

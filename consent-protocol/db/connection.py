@@ -19,9 +19,9 @@ DO NOT use this in:
 - Service layer (use db.supabase_client instead)
 """
 
-import os
 import hashlib
 import logging
+import os
 from typing import Optional
 
 import asyncpg
@@ -59,7 +59,7 @@ async def get_pool() -> asyncpg.Pool:
         )
     
     if _pool is None:
-        logger.info(f"Connecting to PostgreSQL...")
+        logger.info("Connecting to PostgreSQL...")
         
         # Supabase requires SSL connections
         ssl_config = None

@@ -20,7 +20,7 @@ This guide covers:
 Before you start, ensure you have:
 
 - **Node.js**: v20+ ([Download](https://nodejs.org/))
-- **Python**: 3.11+ ([Download](https://www.python.org/downloads/))
+- **Python**: 3.13 ([Download](https://www.python.org/downloads/); backend targets 3.13)
 - **Git**: Latest version
 - **PostgreSQL**: Local or Cloud SQL instance
 - **Firebase Project**: For authentication (see [Getting Started](../getting_started.md))

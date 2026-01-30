@@ -1,17 +1,15 @@
 # hushh_mcp/types.py
 
-from typing import Literal, TypedDict, Optional, NewType
-from pydantic import BaseModel, Field
-from datetime import datetime
-from enum import Enum
+from typing import Literal, NewType, Optional
+
+from pydantic import BaseModel
+
+from hushh_mcp.constants import ConsentScope
 
 # ==================== Aliases ====================
 
 UserID = NewType("UserID", str)
 AgentID = NewType("AgentID", str)
-
-# Import shared scope type from constants
-from hushh_mcp.constants import ConsentScope
 
 # ==================== HushhConsentToken ====================
 

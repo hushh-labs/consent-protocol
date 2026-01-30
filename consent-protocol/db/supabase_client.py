@@ -10,11 +10,11 @@ Architecture:
   API Route → Service Layer (validates consent) → Supabase Client → Database
 """
 
-import os
 import logging
+import os
 from typing import Optional
 
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 logger = logging.getLogger(__name__)
 

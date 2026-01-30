@@ -6,7 +6,7 @@ Meal Budget Calculation Operon
 Pure functions for budget and pricing logic.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 
 def calculate_meal_budget(

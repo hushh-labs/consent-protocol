@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException
 
 from api.models import ChatRequest, ChatResponse, ValidateTokenRequest
 from hushh_mcp.agents.food_dining.agent import get_food_dining_agent
-from hushh_mcp.agents.professional_profile.agent import get_professional_agent
 from hushh_mcp.agents.kai.agent import get_kai_agent
+from hushh_mcp.agents.professional_profile.agent import get_professional_agent
 
 logger = logging.getLogger(__name__)
 

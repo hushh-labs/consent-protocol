@@ -20,7 +20,7 @@ Hushh is a **consent-first personal data agent system** with:
 ### Required
 
 - **Node.js**: v20+ (for Next.js 15)
-- **Python**: 3.11+ (for FastAPI backend)
+- **Python**: 3.13 (for FastAPI backend; grpcio 1.76+ wheels)
 - **PostgreSQL**: Cloud SQL or local instance
 - **Firebase Project**: For authentication
 
@@ -143,6 +143,8 @@ gcloud auth application-default login
 
 # macOS/Linux:
 # ./cloud-sql-proxy YOUR_PROJECT:REGION:INSTANCE --port 5432
+# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
+# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
 # Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
 ```
 

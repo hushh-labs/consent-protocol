@@ -5,8 +5,8 @@ The base class for all HUSHH-compliant agents.
 It wraps the Google ADK patterns but injects our strict security loop.
 """
 
-from typing import List, Optional, Dict, Any
 import logging
+from typing import Any, Dict, List, Optional
 
 try:
     # Try importing from google-adk if available in env
@@ -21,8 +21,8 @@ except ImportError:
     class ModelClient:
         pass
 
-from hushh_mcp.hushh_adk.context import HushhContext
 from hushh_mcp.consent.token import validate_token
+from hushh_mcp.hushh_adk.context import HushhContext
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,9 @@ class HushhAgent(LlmAgent):
         self,
         name: str,
         model: Any, # ModelClient or string
-        tools: List[Any] = [],
+        tools: Optional[List[Any]] = None,
         system_prompt: str = "",
-        required_scopes: List[str] = []
+        required_scopes: Optional[List[str]] = None
     ):
         """
         Initialize Secure Agent.
@@ -55,7 +55,8 @@ class HushhAgent(LlmAgent):
             required_scopes: List of scopes this agent MUST have to even start
         """
         self.hushh_name = name
-        self.required_scopes = required_scopes
+        self.required_scopes = required_scopes or []
+        tools = tools or []
         
         # Initialize parent ADK agent with correct parameters
         super().__init__(
@@ -69,7 +70,7 @@ class HushhAgent(LlmAgent):
         prompt: str, 
         user_id: str, 
         consent_token: str,
-        vault_keys: Dict[str, str] = {}
+        vault_keys: Optional[Dict[str, str]] = None
     ) -> Any:
         """
         Secure Execution Entry Point.
@@ -102,7 +103,11 @@ class HushhAgent(LlmAgent):
         # We start a context block. All tools called by the LLM within super().run()
         # will be able to access this context via HushhContext.current()
         
-        with HushhContext(user_id=user_id, consent_token=consent_token, vault_keys=vault_keys):
+        with HushhContext(
+            user_id=user_id,
+            consent_token=consent_token,
+            vault_keys=vault_keys or {},
+        ):
             try:
                 # 3. Delegate to ADK LlmAgent with proper parameter passing
                 response = super().run(input=prompt)
