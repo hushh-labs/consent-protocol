@@ -179,6 +179,13 @@ async def get_food_data(request: DataAccessRequest):
             status_code=403,
             error=f"Forbidden: {reason}"
         )
+
+    if token is None:
+        logger.error("Token validation succeeded but token payload was missing")
+        return DataAccessResponse(
+            status_code=500,
+            error="Token validation failed unexpectedly"
+        )
     
     # Verify token is for this user
     if token.user_id != request.user_id:
@@ -218,6 +225,13 @@ async def get_professional_data(request: DataAccessRequest):
         return DataAccessResponse(
             status_code=403,
             error=f"Forbidden: {reason}"
+        )
+
+    if token is None:
+        logger.error("Token validation succeeded but token payload was missing")
+        return DataAccessResponse(
+            status_code=500,
+            error="Token validation failed unexpectedly"
         )
     
     # Verify token is for this user
