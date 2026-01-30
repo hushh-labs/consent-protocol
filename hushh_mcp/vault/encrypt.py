@@ -1,10 +1,12 @@
 # hushh_mcp/vault/encrypt.py
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-from cryptography.exceptions import InvalidTag
-import os
 import base64
+import os
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 from hushh_mcp.types import EncryptedPayload
 
 # ==================== Constants ====================

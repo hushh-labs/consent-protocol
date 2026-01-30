@@ -9,8 +9,7 @@ while enforcing:
 
 import functools
 import logging
-import inspect
-from typing import Callable, Optional, List, Any
+from typing import Callable, Optional
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.hushh_adk.context import HushhContext
@@ -29,9 +28,6 @@ def hushh_tool(scope: str, name: Optional[str] = None):
     """
     def decorator(func: Callable):
         tool_name = name or func.__name__
-        
-        # Get the original function signature for better introspection
-        sig = inspect.signature(func)
         
         @functools.wraps(func)
         def wrapper(*args, **kwargs):

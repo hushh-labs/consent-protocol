@@ -413,7 +413,7 @@ async def run_init_migration(pool: asyncpg.Pool):
 async def clear_table(pool: asyncpg.Pool, table_name: str):
     """Clear all entries from a table."""
     print(f"🧹 Clearing {table_name} table...")
-    await pool.execute(f"TRUNCATE {table_name} RESTART IDENTITY")
+    await pool.execute(f"TRUNCATE {table_name} RESTART IDENTITY")  # noqa: S608
     print(f"✅ {table_name} cleared!")
 
 
@@ -429,9 +429,9 @@ async def show_status(pool: asyncpg.Pool):
     
     for table in TABLE_CREATORS.keys():
         try:
-            count = await pool.fetchval(f"SELECT COUNT(*) FROM {table}")
+            count = await pool.fetchval(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
             print(f"   {table}: {count} rows")
-        except:
+        except Exception:
             print(f"   {table}: (not exists)")
 
 
@@ -478,8 +478,8 @@ Examples:
         parts = DATABASE_URL.split(":")
         if len(parts) >= 3 and "@" in parts[2]:
             display_url = f"{parts[0]}:{parts[1]}:****@{parts[2].split('@')[1]}:{':'.join(parts[3:])}"
-    except:
-        pass
+    except Exception:
+        display_url = DATABASE_URL
     
     print("Connecting to database...")
     print(f"   URL: {display_url}")

@@ -1,6 +1,7 @@
 import asyncio
-import asyncpg
 import os
+
+import asyncpg
 from dotenv import load_dotenv
 
 # Load params from .env or default to local/proxy

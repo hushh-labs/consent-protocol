@@ -9,9 +9,11 @@ CRITICAL: These tests enforce our core architecture rules:
 2. All vault operations must validate consent tokens
 3. No backdoors or bypasses allowed
 """
-import subprocess
-import pytest
 import os
+import shutil
+import subprocess
+
+import pytest
 
 
 class TestServiceLayerCompliance:
@@ -24,8 +26,10 @@ class TestServiceLayerCompliance:
     
     def test_no_direct_supabase_in_routes(self):
         """API routes must use service layer, not get_supabase()."""
-        result = subprocess.run(
-            ["grep", "-r", "get_supabase()", "api/routes/"],
+        grep_path = shutil.which("grep")
+        assert grep_path, "grep not found on PATH"
+        result = subprocess.run(  # noqa: S603
+            [grep_path, "-r", "get_supabase()", "api/routes/"],
             capture_output=True,
             text=True,
             cwd=self.cwd
@@ -59,10 +63,15 @@ Violations found:
 
     def test_no_direct_db_import_in_routes(self):
         """API routes must not import db.supabase_client directly."""
-        result = subprocess.run(
-            ["grep", "-rE", 
-             r"from db\.(supabase_client|connection) import", 
-             "api/routes/"],
+        grep_path = shutil.which("grep")
+        assert grep_path, "grep not found on PATH"
+        result = subprocess.run(  # noqa: S603
+            [
+                grep_path,
+                "-rE",
+                r"from db\.(supabase_client|connection) import",
+                "api/routes/",
+            ],
             capture_output=True,
             text=True,
             cwd=self.cwd

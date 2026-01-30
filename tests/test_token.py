@@ -1,16 +1,8 @@
 # tests/test_token.py
 
-import pytest
-import time
-from hushh_mcp.consent.token import (
-    issue_token,
-    validate_token,
-    revoke_token,
-    is_token_revoked
-)
+from hushh_mcp.consent.token import is_token_revoked, issue_token, revoke_token, validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import HushhConsentToken
-
 
 USER_ID = "user_test"
 AGENT_ID = "agent_alpha"

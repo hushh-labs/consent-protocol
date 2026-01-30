@@ -2,7 +2,7 @@
 # Optimized for Google Cloud Run
 
 # Stage 1: Build dependencies
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Stage 2: Production runtime
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 

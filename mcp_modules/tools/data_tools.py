@@ -116,7 +116,7 @@ async def handle_get_food(args: dict) -> list[TextContent]:
                         plaintext = aesgcm.decrypt(iv_bytes, combined, None)
                         
                         food_data = json.loads(plaintext.decode('utf-8'))
-                        logger.info(f"✅ Successfully decrypted vault export!")
+                        logger.info("✅ Successfully decrypted vault export!")
                         
                     except Exception as e:
                         logger.error(f"❌ Decryption failed: {e}")
@@ -226,7 +226,7 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
                         plaintext = aesgcm.decrypt(iv_bytes, combined, None)
                         
                         professional_data = json.loads(plaintext.decode('utf-8'))
-                        logger.info(f"✅ Successfully decrypted professional vault export!")
+                        logger.info("✅ Successfully decrypted professional vault export!")
                         
                     except Exception as e:
                         logger.error(f"❌ Professional decryption failed: {e}")

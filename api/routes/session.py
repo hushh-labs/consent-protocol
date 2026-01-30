@@ -4,13 +4,13 @@ Session token and user management endpoints.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
-from hushh_mcp.services.consent_db import ConsentDBService
 from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
 from api.utils.firebase_auth import verify_firebase_bearer
+from hushh_mcp.services.consent_db import ConsentDBService
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ async def get_consent_history(
         result = await service.get_audit_log(userId, page, limit)
         
         # Group by agent_id for frontend display
-        grouped = {}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for item in result.get("items", []):
             agent = item.get("agent_id", "Unknown")
             if agent not in grouped:

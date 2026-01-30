@@ -10,24 +10,23 @@ Key Responsibilities:
 - Confidence aggregation
 """
 
-from typing import Dict, List, Any, Optional, AsyncGenerator
-from dataclasses import dataclass
 import logging
-import asyncio
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, AsyncGenerator, Dict, List
 
-from .fundamental_agent import FundamentalAgent, FundamentalInsight
-from .sentiment_agent import SentimentAgent, SentimentInsight
-from .valuation_agent import ValuationAgent, ValuationInsight
 from hushh_mcp.operons.kai.llm import stream_gemini_response
+
 from .config import (
-    DEBATE_ROUNDS,
-    MIN_CONFIDENCE_THRESHOLD,
-    CONSENSUS_THRESHOLD,
     AGENT_WEIGHTS,
-    RiskProfile,
+    CONSENSUS_THRESHOLD,
+    DEBATE_ROUNDS,
     DecisionType,
+    RiskProfile,
 )
+from .fundamental_agent import FundamentalInsight
+from .sentiment_agent import SentimentInsight
+from .valuation_agent import ValuationInsight
 
 logger = logging.getLogger(__name__)
 

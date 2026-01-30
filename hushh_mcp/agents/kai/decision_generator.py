@@ -11,17 +11,17 @@ Key Responsibilities:
 - Encryption for storage
 """
 
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, asdict
-from datetime import datetime
 import json
 import logging
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Any, Dict, List
 
+from .config import DecisionType, RiskProfile
 from .debate_engine import DebateResult
 from .fundamental_agent import FundamentalInsight
 from .sentiment_agent import SentimentInsight
 from .valuation_agent import ValuationInsight
-from .config import DecisionType, RiskProfile
 
 logger = logging.getLogger(__name__)
 

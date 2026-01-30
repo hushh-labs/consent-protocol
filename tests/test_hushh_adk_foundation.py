@@ -2,19 +2,17 @@
 Verification script for Hushh ADK Foundation.
 Tests HushhContext, hushh_tool, and HushhAgent basics.
 """
+# Adjust path to find hushh_mcp
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
-from dataclasses import dataclass
 
-# Adjust path to find hushh_mcp
-import os
 sys.path.append(os.getcwd())
 
 from hushh_mcp.hushh_adk.context import HushhContext
 from hushh_mcp.hushh_adk.tools import hushh_tool
-from hushh_mcp.hushh_adk.core import HushhAgent
-from hushh_mcp.constants import ConsentScope
+
 
 class TestHushhAdkFoundation(unittest.TestCase):
     
@@ -27,7 +25,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
     def test_context_storage(self):
         """Test that context is stored and retrieved correctly."""
         print("\n🧪 Testing HushhContext storage...")
-        with HushhContext(user_id="user_123", consent_token="token_abc") as ctx:
+        with HushhContext(user_id="user_123", consent_token="token_abc"):  # noqa: S106
             current = HushhContext.current()
             self.assertIsNotNone(current)
             self.assertEqual(current.user_id, "user_123")
@@ -50,7 +48,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
             return f"Processed {arg}"
             
         # Run in context
-        with HushhContext(user_id="user_123", consent_token="valid_token"):
+        with HushhContext(user_id="user_123", consent_token="valid_token"):  # noqa: S106
             result = my_test_tool("data")
             self.assertEqual(result, "Processed data")
             print("✅ Tool executed successfully")
@@ -69,7 +67,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
         def sensitive_tool():
             return "Secret"
             
-        with HushhContext(user_id="user_123", consent_token="bad_token"):
+        with HushhContext(user_id="user_123", consent_token="bad_token"):  # noqa: S106
             with self.assertRaises(PermissionError):
                 sensitive_tool()
                 

@@ -19,10 +19,8 @@ Usage:
 """
 
 import os
-import pytest
-from typing import Generator
-from unittest.mock import patch
 
+import pytest
 
 # ============================================================================
 # BYOK Key Fixtures
