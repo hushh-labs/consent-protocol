@@ -284,14 +284,38 @@ TEST_COUNT=$((TEST_COUNT + 1))
 cd hushh-webapp || exit 1
 
 echo "  → Running Next.js build (web standalone)..."
-if NEXT_PUBLIC_BACKEND_URL=https://api.example.com \
-   NEXT_PUBLIC_FIREBASE_API_KEY="dummy-api-key" \
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="dummy-project.firebaseapp.com" \
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID="dummy-project" \
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="dummy-project.appspot.com" \
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="123456789" \
-   NEXT_PUBLIC_FIREBASE_APP_ID="1:123456789:web:abcdef123456" \
-   npm run build 2>&1 | tee /tmp/build.log; then
+# Source .env.local if available to use real environment
+if [ -f .env.local ]; then
+  echo "    Using .env.local configuration"
+  # Read .env.local line by line to preserve quotes in JSON
+  while IFS='=' read -r key value; do
+    # Skip comments and empty lines
+    [[ $key =~ ^# ]] && continue
+    [[ -z $key ]] && continue
+    
+    # Trim key
+    key=$(echo "$key" | xargs)
+
+    # Filter for NEXT_PUBLIC_ keys only
+    if [[ $key != NEXT_PUBLIC_* ]]; then
+      continue
+    fi
+
+    # Export the variable, wrapping value in single quotes to preserve content
+    # This assumes no single quotes in the value, which is true for the current .env.local
+    eval "export $key='$value'"
+  done < .env.local
+fi
+# Set defaults for CI simulation if not present
+export NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-https://api.example.com}"
+export NEXT_PUBLIC_FIREBASE_API_KEY="${NEXT_PUBLIC_FIREBASE_API_KEY:-dummy-api-key}"
+export NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-dummy-project.firebaseapp.com}"
+export NEXT_PUBLIC_FIREBASE_PROJECT_ID="${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-dummy-project}"
+export NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-dummy-project.appspot.com}"
+export NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-123456789}"
+export NEXT_PUBLIC_FIREBASE_APP_ID="${NEXT_PUBLIC_FIREBASE_APP_ID:-1:123456789:web:abcdef123456}"
+
+if npm run build 2>&1 | tee /tmp/build.log; then
   echo "✓ [PASS] Build (web) completed successfully"
   PASS_COUNT=$((PASS_COUNT + 1))
 else
@@ -303,19 +327,12 @@ else
 fi
 
 echo "  → Running Next.js build (Capacitor export)..."
-if [ $FAIL -eq 0 ] && CAPACITOR_BUILD=true \
-   NEXT_PUBLIC_BACKEND_URL=https://api.example.com \
-   NEXT_PUBLIC_FIREBASE_API_KEY="dummy-api-key" \
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="dummy-project.firebaseapp.com" \
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID="dummy-project" \
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="dummy-project.appspot.com" \
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="123456789" \
-   NEXT_PUBLIC_FIREBASE_APP_ID="1:123456789:web:abcdef123456" \
-   npm run cap:build 2>&1 | tee /tmp/cap-build.log; then
-  echo "✓ [PASS] Capacitor build completed successfully"
-  PASS_COUNT=$((PASS_COUNT + 1))
-else
-  if [ $FAIL -eq 0 ]; then
+if [ $FAIL -eq 0 ]; then
+  export CAPACITOR_BUILD=true
+  if npm run cap:build 2>&1 | tee /tmp/cap-build.log; then
+    echo "✓ [PASS] Capacitor build completed successfully"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  else
     CAP_EXIT=$?
     echo "✗ [FAIL] Capacitor build failed (exit code: $CAP_EXIT)"
     grep -E "error|Error|Failed|✖" /tmp/cap-build.log | tail -5 | sed 's/^/    /'

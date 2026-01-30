@@ -21,9 +21,8 @@ const firebaseConfig = {
 
 // Log warning if running with dummy or missing config (common in CI/builds)
 if (
-  !firebaseConfig.apiKey || 
-  firebaseConfig.apiKey === "dummy-api-key" ||
-  typeof window === "undefined" // Only log on server/build time to avoid console noise in client
+  (!firebaseConfig.apiKey || firebaseConfig.apiKey === "dummy-api-key") &&
+  typeof window === "undefined"
 ) {
   console.warn("⚠️ Firebase Config: Running with missing or dummy credentials. This is expected during CI/Builds but critical features will fail in production.");
 }
