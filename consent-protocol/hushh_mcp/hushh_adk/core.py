@@ -1,5 +1,5 @@
 """
-Hushh ADK Core Agent
+Hushh ADK Base Agent
 
 The base class for all HUSHH-compliant agents.
 It wraps the Google ADK patterns but injects our strict security loop.
@@ -57,11 +57,11 @@ class HushhAgent(LlmAgent):
         self.hushh_name = name
         self.required_scopes = required_scopes
         
-        # Initialize parent ADK agent
+        # Initialize parent ADK agent with correct parameters
         super().__init__(
             model=model,
             tools=tools,
-            prompt=system_prompt  # ADK usually uses 'prompt' or 'system_instruction'
+            system_instruction=system_prompt  # ADK uses 'system_instruction' not 'prompt'
         )
         
     def run(
@@ -80,18 +80,11 @@ class HushhAgent(LlmAgent):
         
         # 1. Base Validation
         # Check if token allows accessing THIS agent
-        # We assume the token might be scoped to 'agent_nav' or specific agent
-        # For now, we validate generic 'agent_kai' or similar if in required_scopes
-        
-        # We iterate required scopes; token must match at least one relevant agent access scope
-        # OR we rely on the specific @hushh_tool checks deeply. 
-        # BUT fail-fast is better.
-        
         is_valid = False
         last_reason = "No scopes defined"
         
         if not self.required_scopes:
-            is_valid = True # No specific agent-level scope needed, relying on tools
+            is_valid = True  # No specific agent-level scope needed, relying on tools
         else:
             for scope in self.required_scopes:
                 valid, reason, _ = validate_token(consent_token, expected_scope=scope)
@@ -111,11 +104,8 @@ class HushhAgent(LlmAgent):
         
         with HushhContext(user_id=user_id, consent_token=consent_token, vault_keys=vault_keys):
             try:
-                # 3. Delegate to ADK LlmAgent
-                # Note: ADK's run signature might vary, we assume standard (input=prompt)
-                # If ADK supports passing 'context' arg directly, we could use that too,
-                # but contextvars is cleaner for deep call stacks.
-                response = super().run(prompt)
+                # 3. Delegate to ADK LlmAgent with proper parameter passing
+                response = super().run(input=prompt)
                 return response
             except Exception as e:
                 logger.error(f"💥 Agent Failure: {str(e)}")

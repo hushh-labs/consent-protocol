@@ -75,6 +75,7 @@ async function proxyRequest(request: NextRequest, params: { path: string[] }) {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           "Connection": "keep-alive",
+          "Content-Encoding": "none",
           "X-Accel-Buffering": "no",
         },
       });

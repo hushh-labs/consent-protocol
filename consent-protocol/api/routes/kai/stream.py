@@ -135,6 +135,9 @@ async def analyze_stream_generator(
         # PHASE 1: Parallel Agent Analysis
         # =====================================================================
         
+        # Immediate connection acknowledgement
+        yield create_event("ping", {"message": "connected"})
+        
         # Kai thinking - orchestration reasoning
         yield create_event("kai_thinking", {
             "phase": "analysis",
@@ -291,7 +294,7 @@ async def analyze_stream_generator(
             return
         
         # =====================================================================
-        # PHASE 2: Debate
+        # PHASE 2 & 3: Debate & Decision (Streaming)
         # =====================================================================
         
         # Kai thinking - starting debate
@@ -300,56 +303,63 @@ async def analyze_stream_generator(
             "message": "⚖️ Now orchestrating multi-agent debate to reach consensus...",
             "tokens": ["Each", "agent", "will", "present", "their", "position", "in", "two", "rounds.", "Dissent", "will", "be", "captured."]
         })
-        await asyncio.sleep(0.3)
         
-        yield create_event("debate_start", {
-            "message": "Starting multi-agent debate...",
-            "agents": ["fundamental", "sentiment", "valuation"],
-            "total_rounds": 2
-        })
+        # NOTE: DebateEngine now handles all intermediate streaming (kai_thinking, agent_token, debate_round)
+        # We pipeline its generator directly to the output.
         
-        # Run debate (async method)
-        debate_result = await debate_engine.orchestrate_debate(
+        debate_result = None
+        
+        async for event in debate_engine.orchestrate_debate_stream(
             fundamental_insight=fundamental_insight,
             sentiment_insight=sentiment_insight,
             valuation_insight=valuation_insight
+        ):
+            # Capture the result when returned (Python 3.13+ generator return value trick won't work easily here 
+            # with iteration, so we expect the engine to return the object at the end or we reconstruct it)
+            # Actually, the generator yields dicts. The DebateResult is returned if we await it, but we are iterating.
+            # So we need to handle the flow differently.
+            # Refactoring DebateEngine to NOT return the value but to have it accessible or yield it as a special event.
+            # Wait, the best pattern for Python generators is to yield everything.
+            
+            # Let's adjust: The generator yields events. The last thing it does is return the result.
+            # But "async for" does not give access to return value easily.
+            # Correction: We will rely on the DebateEngine state or modify it to yield the decision as a final event.
+            # However, looking at my implementation of DebateEngine, I made it return the result.
+            # Let's fix loop to capture the result. 
+            pass # We process events below
+            
+            # Passthrough event to frontend
+            yield create_event(event["event"], event["data"])
+
+        # Access the final result from the engine state (cleaner than return value hacking)
+        # We need to reconstruct it or expose it.
+        # Let's assume for now we can rebuild the decision card from the stored rounds in the engine or similar.
+        # Actually, let's look at DebateEngine again.
+        
+        # RE-READING my DebateEngine implementation:
+        # It calculates "result" at the end and returns it.
+        # To get this "result" object out of `async for`, we can't easily.
+        # BETTER APPROACH: Do the logic here.
+        
+        # Wait, I can just recalculate it effectively or trust the engine to yield the "decision" event?
+        # My DebateEngine implementation DOES NOT yield "decision". It yields "debate_round", etc.
+        # So I need to calculate the decision here or add it to the engine.
+        
+        # Let's use the engine's internal state to build the final card.
+        # Or better: call _build_consensus manually again? No, that's wasteful.
+        
+        # Let's do this:
+        # The DebateEngine logic I wrote runs `_build_consensus` at the end.
+        # I will call that here to get the final object for the "decision" event.
+        
+        debate_result = await debate_engine._build_consensus(
+             fundamental_insight, sentiment_insight, valuation_insight
         )
-        
-        # Stream each debate round with round_start events
-        for i, round_data in enumerate(debate_result.rounds):
-            round_num = round_data.round_number
-            
-            # Signal round start
-            round_context = "presenting initial findings" if round_num == 1 else "challenging and refining positions"
-            yield create_event("round_start", {
-                "round": round_num,
-                "description": f"Round {round_num}: Agents are {round_context}",
-                "is_final_round": round_num == len(debate_result.rounds)
-            })
-            await asyncio.sleep(0.2)
-            
-            # Kai thinking for this round
-            yield create_event("kai_thinking", {
-                "phase": f"round{round_num}",
-                "message": f"🔄 Processing Round {round_num} statements...",
-                "tokens": ["Evaluating", "fundamental", "argument...", "Evaluating", "sentiment", "argument...", "Evaluating", "valuation", "argument..."]
-            })
-            await asyncio.sleep(0.2)
-            
-            # Stream the debate round with enhanced data
-            yield create_event("debate_round", {
-                "round": round_num,
-                "statements": round_data.agent_statements,
-                "context": round_context,
-                "is_final_round": round_num == len(debate_result.rounds)
-            })
-            await asyncio.sleep(0.4)  # Delay for UI effect
-        
-        if await request.is_disconnected():
-            return
+        # Note: debate_engine.rounds is populated by the generator run!
+        debate_result.rounds = debate_engine.rounds 
         
         # =====================================================================
-        # PHASE 3: Final Decision
+        # FINAL DECISION EVENT
         # =====================================================================
         
         # Kai thinking - final reasoning
@@ -374,7 +384,7 @@ async def analyze_stream_generator(
             })
         await asyncio.sleep(0.2)
         
-        # Build raw_card structure matching DecisionCard from decision_generator.py
+        # Build raw_card structure
         raw_card = {
             "fundamental_insight": {
                 "summary": fundamental_insight.summary,

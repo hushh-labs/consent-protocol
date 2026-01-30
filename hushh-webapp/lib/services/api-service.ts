@@ -41,8 +41,23 @@ const getApiBaseUrl = (): string => {
     return normalized.replace(/\/$/, "");
   }
 
-  // Web: Use relative paths (local Next.js server)
+// Web: Use relative paths (local Next.js server)
   return "";
+};
+
+// Direct Backend URL for streaming (bypasses Next.js proxy)
+export const getDirectBackendUrl = (): string => {
+  if (Capacitor.isNativePlatform()) {
+    return getApiBaseUrl(); // Native already points to backend
+  }
+
+  // Allow override via environment variable (works in both dev and prod builds)
+  if (process.env.NEXT_PUBLIC_BACKEND_URL) {
+    return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/$/, "");
+  }
+
+  // Default to localhost for flexibility (user can override for prod)
+  return "http://localhost:8000";
 };
 
 const API_BASE = getApiBaseUrl();
@@ -103,6 +118,13 @@ export class ApiService {
         Accept: "text/event-stream",
       },
     });
+  }
+
+  /**
+   * Get direct backend URL (bypassing proxy)
+   */
+  static getDirectBackendUrl(): string {
+    return getDirectBackendUrl();
   }
 
   // ==================== Auth ====================
@@ -757,7 +779,6 @@ export class ApiService {
               domain = "professional";
             }
           }
-
           promises.push(
             HushhVault.storePreferencesToCloud({
               userId: data.userId,
@@ -1002,3 +1023,4 @@ export class ApiService {
 
 // Re-export for convenience
 export { getApiBaseUrl };
+
