@@ -116,7 +116,7 @@ Layer 4: Agent Tokens     → Scoped permissions (OPERATIONS)
 
 ```bash
 # Clone
-git clone https://github.com/hushh/hushh-research.git
+git clone https://github.com/hushh-labs/hushh-research.git
 cd hushh-research
 
 # Frontend

@@ -139,10 +139,11 @@ gcloud auth application-default login
 
 # Start proxy (replace with your instance)
 # Windows:
-./cloud-sql-proxy.exe hushh-pda:us-central1:hushh-vault-db --port 5432
+# ./cloud-sql-proxy.exe YOUR_PROJECT:REGION:INSTANCE --port 5432
 
 # macOS/Linux:
-./cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db --port 5432
+# ./cloud-sql-proxy YOUR_PROJECT:REGION:INSTANCE --port 5432
+# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
 ```
 
 ### Option B: Local PostgreSQL

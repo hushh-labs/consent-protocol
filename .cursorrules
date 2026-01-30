@@ -60,3 +60,45 @@ ALL 6 must exist or feature is incomplete.
 
 ESLint will catch `fetch()` violations in components automatically.
 Always run `npm run lint` before committing.
+
+## Branching Convention
+
+**REQUIRED FORMAT:** `/[username]/[type]/[type-name]`
+
+- `[username]` - GitHub username (lowercase, no spaces)
+- `[type]` - One of: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- `[type-name]` - Descriptive name (kebab-case)
+
+Examples:
+- ✅ `john/feat/add-movie-agent`
+- ✅ `jane/fix/vault-unlock-race-condition`
+- ✅ `alice/docs/update-readme`
+- ❌ `feat/add-movie-agent` (missing username)
+- ❌ `john/add-movie-agent` (missing type)
+
+**Enforcement:**
+- Always suggest branch names in the `/[username]/[type]/[type-name]` format
+- Never suggest branches starting with `feat/`, `fix/`, or `docs/` without username prefix
+- When user asks to create a branch, prompt for their GitHub username if not provided
+
+## Documentation Assumptions
+
+**CRITICAL:** AI agents must verify assumptions before treating them as fact.
+
+### Verified Information
+- Contact email: `eng@hush1one.com` (all contact emails)
+- Database: Supabase REST API (not Cloud SQL)
+- Branch format: `/[username]/[type]/[type-name]`
+
+### Common Assumptions to Flag
+- **Email addresses**: All contact emails should be `eng@hush1one.com` (not `@hushh.ai`)
+- **URLs**: External API URLs (`api.hushh.ai`, `docs.hushh.ai`) should reference local documentation paths
+- **GCP Projects**: Never reference internal GCP project IDs (`hushh-pda`) - use placeholders
+- **Database**: Use Supabase REST API, not Cloud SQL connection strings
+- **Branch names**: Always use `/[username]/[type]/[type-name]` format
+
+### Before Using Information
+1. Check if value is a placeholder or example
+2. Verify against `docs/assumptions_audit.md` if it exists
+3. Flag assumptions with `<!-- ASSUMPTION: [description] -->` comments when uncertain
+4. Prefer local documentation references over external URLs

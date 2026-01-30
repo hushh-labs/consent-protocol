@@ -38,7 +38,7 @@ Configure these secrets in your GitHub repository settings (Settings → Secrets
 
 ### Required Secrets
 
-- `GCP_PROJECT_ID`: `hushh-pda`
+- `GCP_PROJECT_ID`: `YOUR_GCP_PROJECT_ID` (replace with your project ID)
 - `GCP_SA_KEY`: Service account JSON key with the following permissions:
   - Cloud Build Editor
   - Cloud Run Admin
@@ -99,37 +99,37 @@ You can also trigger deployments manually via GitHub Actions UI:
 If you need to create a new service account for GitHub Actions:
 
 ```bash
-# Set project
-gcloud config set project hushh-pda
+# Set project (replace YOUR_GCP_PROJECT_ID with your actual project ID)
+gcloud config set project YOUR_GCP_PROJECT_ID
 
 # Create service account
 gcloud iam service-accounts create github-actions-deploy \
   --display-name="GitHub Actions Deployment"
 
-# Grant necessary roles
-gcloud projects add-iam-policy-binding hushh-pda \
-  --member="serviceAccount:github-actions-deploy@hushh-pda.iam.gserviceaccount.com" \
+# Grant necessary roles (replace YOUR_GCP_PROJECT_ID and YOUR_SERVICE_ACCOUNT_EMAIL)
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
   --role="roles/run.admin"
 
-gcloud projects add-iam-policy-binding hushh-pda \
-  --member="serviceAccount:github-actions-deploy@hushh-pda.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
   --role="roles/cloudbuild.builds.editor"
 
-gcloud projects add-iam-policy-binding hushh-pda \
-  --member="serviceAccount:github-actions-deploy@hushh-pda.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
   --role="roles/iam.serviceAccountUser"
 
-gcloud projects add-iam-policy-binding hushh-pda \
-  --member="serviceAccount:github-actions-deploy@hushh-pda.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
   --role="roles/secretmanager.secretAccessor"
 
-gcloud projects add-iam-policy-binding hushh-pda \
-  --member="serviceAccount:github-actions-deploy@hushh-pda.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:YOUR_SERVICE_ACCOUNT_EMAIL" \
   --role="roles/storage.admin"
 
-# Generate key
+# Generate key (replace YOUR_SERVICE_ACCOUNT_EMAIL)
 gcloud iam service-accounts keys create github-actions-key.json \
-  --iam-account=github-actions-deploy@hushh-pda.iam.gserviceaccount.com
+  --iam-account=YOUR_SERVICE_ACCOUNT_EMAIL
 
 # Copy the contents of github-actions-key.json and add it as GCP_SA_KEY secret in GitHub
 ```
@@ -153,7 +153,7 @@ git push -u origin deploy
 
 ### Via Google Cloud Console
 
-1. Visit [Cloud Run Console](https://console.cloud.google.com/run?project=hushh-pda)
+1. Visit [Cloud Run Console](https://console.cloud.google.com/run?project=YOUR_GCP_PROJECT_ID)
 2. Check service status, logs, and metrics
 
 ### Via gcloud CLI
