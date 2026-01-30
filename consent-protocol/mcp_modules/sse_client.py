@@ -12,8 +12,8 @@ Uses the existing endpoint: /api/consent/events/{user_id}/poll/{request_id}
 import asyncio
 import json
 import logging
-from typing import Optional, Tuple
 from dataclasses import dataclass
+from typing import Optional
 
 import httpx
 
@@ -63,7 +63,7 @@ async def wait_for_consent_via_sse(
                         message=f"SSE connection failed: {response.status_code}"
                     )
                 
-                logger.info(f"✅ [SSE] Connected, waiting for consent resolution...")
+                logger.info("✅ [SSE] Connected, waiting for consent resolution...")
                 
                 # Track elapsed time for client-side timeout
                 import time
@@ -96,7 +96,7 @@ async def wait_for_consent_via_sse(
                                 if current_event_type == "consent_resolved":
                                     action = data.get("action", "")
                                     if action == "CONSENT_GRANTED":
-                                        logger.info(f"🎉 [SSE] Consent GRANTED!")
+                                        logger.info("🎉 [SSE] Consent GRANTED!")
                                         return ConsentResolution(
                                             status="granted",
                                             request_id=request_id,
@@ -104,7 +104,7 @@ async def wait_for_consent_via_sse(
                                             message="User approved consent"
                                         )
                                     elif action == "CONSENT_DENIED":
-                                        logger.info(f"❌ [SSE] Consent DENIED")
+                                        logger.info("❌ [SSE] Consent DENIED")
                                         return ConsentResolution(
                                             status="denied",
                                             request_id=request_id,
@@ -113,7 +113,7 @@ async def wait_for_consent_via_sse(
                                         )
                                 
                                 elif current_event_type == "consent_timeout":
-                                    logger.warning(f"⏰ [SSE] Server-side timeout")
+                                    logger.warning("⏰ [SSE] Server-side timeout")
                                     return ConsentResolution(
                                         status="timeout",
                                         request_id=request_id,
@@ -137,7 +137,7 @@ async def wait_for_consent_via_sse(
                     # Comments (starting with :) or other fields are ignored
                 
                 # Connection closed without resolution
-                logger.warning(f"⚠️ [SSE] Connection closed without resolution")
+                logger.warning("⚠️ [SSE] Connection closed without resolution")
                 return ConsentResolution(
                     status="error",
                     request_id=request_id,
@@ -152,7 +152,7 @@ async def wait_for_consent_via_sse(
             message=f"Cannot connect to consent server: {e}"
         )
     except asyncio.TimeoutError:
-        logger.warning(f"⏰ [SSE] Request timeout")
+        logger.warning("⏰ [SSE] Request timeout")
         return ConsentResolution(
             status="timeout",
             request_id=request_id,

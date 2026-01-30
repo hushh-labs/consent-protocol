@@ -3,6 +3,7 @@ Development-only diagnostics for Firebase Admin verification.
 """
 
 import os
+
 from fastapi import APIRouter, Header, HTTPException
 
 from api.utils.firebase_admin import ensure_firebase_admin

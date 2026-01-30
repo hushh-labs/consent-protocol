@@ -58,7 +58,7 @@ We follow a strict **Tri-Flow Architecture**. This modular approach ensures that
 
 **1. Protocol & Backend**
 
-- **[Python 3.11 (FastAPI)](https://fastapi.tiangolo.com/)**: The brain.
+- **[Python 3.13 (FastAPI)](https://fastapi.tiangolo.com/)**: The brain.
 - **Agent Discovery**: Powered by [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for interoperability and context sharing.
 - **Consent Logic**: Inspired by [Google ADK A2A](https://developers.google.com/assistant/conversational/agent-to-agent) & [AP2](https://github.com/google/android-protection-review) standards for high-trust financial literacy.
 - **Docs**: [Consent Protocol Documentation](https://github.com/hushh-labs/hushh-research/tree/main/consent-protocol/docs)
@@ -72,7 +72,7 @@ We follow a strict **Tri-Flow Architecture**. This modular approach ensures that
 
 - **Stack**: [Next.js 16](https://nextjs.org/) + [React 19](https://react.dev/) + [Capacitor 8](https://capacitorjs.com/).
 - **🚨 TRI-FLOW RULE**: Next.js API Routes (`/api/...`) are **NOT accessible** to native apps. Feature parity requires implementing native Swift/Kotlin plugins to ensure architectural integrity.
-- **Reference**: [Route Contracts & Tri-Flow Guide](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/06_route_contracts.md)
+- **Reference**: [Route Contracts & Tri-Flow Guide](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/route_contracts.md)
 
 ### 🗺️ Participation
 
@@ -139,7 +139,7 @@ Start here to understand the "Why" and the "How".
 - **The Grand Plan**: [readme.md - Vision & Roadmap](https://github.com/hushh-labs/hushh-research/blob/main/readme.md)
 - **Agents & Operons**: [ADK A2A & AP2 Implementation](https://github.com/hushh-labs/hushh-research/blob/main/consent-protocol/docs/agents.md)
 - **MCP Standards**: [Model Context Protocol Official Site](https://modelcontextprotocol.io/)
-- **Architecture**: [System Map](https://github.com/hushh-labs/hushh-research/blob/main/docs/technical/01_architecture.md)
+- **Architecture**: [System Map](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md)
 ```
 
 ---

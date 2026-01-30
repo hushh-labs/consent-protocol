@@ -17,7 +17,6 @@ This will:
 import json
 import os
 import sys
-import shutil
 from pathlib import Path
 
 
@@ -48,10 +47,6 @@ def generate_config() -> dict:
     
     if not mcp_server_path.exists():
         raise FileNotFoundError(f"MCP server not found at: {mcp_server_path}")
-    
-    # Use forward slashes for JSON (works on Windows too)
-    mcp_server_str = str(mcp_server_path).replace("\\", "\\\\")
-    consent_dir_str = str(consent_dir).replace("\\", "\\\\")
     
     config = {
         "mcpServers": {
@@ -117,7 +112,7 @@ def main():
     
     # Get consent-protocol directory
     consent_dir = get_consent_protocol_dir()
-    print(f"📁 Consent Protocol Directory:")
+    print("📁 Consent Protocol Directory:")
     print(f"   {consent_dir}")
     print()
     
@@ -144,7 +139,7 @@ def main():
     
     # Ask to install
     claude_config_path = get_claude_config_path()
-    print(f"📍 Claude Desktop config location:")
+    print("📍 Claude Desktop config location:")
     print(f"   {claude_config_path}")
     print()
     
@@ -167,9 +162,9 @@ def main():
     else:
         print()
         print("📋 Manual installation:")
-        print(f"   Copy the contents of:")
+        print("   Copy the contents of:")
         print(f"   {example_path}")
-        print(f"   To:")
+        print("   To:")
         print(f"   {claude_config_path}")
     
     print()

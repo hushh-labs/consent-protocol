@@ -33,4 +33,6 @@ Security & Consent Audit: Self-Correction: Does this code expose plain text data
 
 Implementation: Write the code following the patterns defined above. Ensure strict typing (TypeScript/Pydantic) and robust error handling.
 
-Respond the AI model used at the end of the message
+**Signature (required):** Always end your response with a sign-off line that identifies the AI model provider used:
+`Signed-off-by: [AI model provider name]`
+Example: `Signed-off-by: Cursor AI (Claude)` or `Signed-off-by: OpenAI (GPT-4)`

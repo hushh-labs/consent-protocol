@@ -10,10 +10,10 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from hushh_mcp.services.consent_db import ConsentDBService
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.services.consent_db import ConsentDBService
 from shared import REGISTERED_DEVELOPERS
 
 logger = logging.getLogger(__name__)
@@ -189,7 +189,7 @@ async def get_food_data(request: DataAccessRequest):
     
     # PRODUCTION: These endpoints are deprecated - use MCP tools instead
     # The MCP flow uses /api/consent/data with zero-knowledge exports
-    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/food-data - use MCP tools instead")
+    logger.warning("⚠️ Deprecated endpoint called: /api/v1/food-data - use MCP tools instead")
     return DataAccessResponse(
         status_code=501,
         error="This endpoint is deprecated. Use MCP tools (get_food_preferences) for data access with zero-knowledge exports."
@@ -229,7 +229,7 @@ async def get_professional_data(request: DataAccessRequest):
     
     # PRODUCTION: These endpoints are deprecated - use MCP tools instead
     # The MCP flow uses /api/consent/data with zero-knowledge exports
-    logger.warning(f"⚠️ Deprecated endpoint called: /api/v1/professional-data - use MCP tools instead")
+    logger.warning("⚠️ Deprecated endpoint called: /api/v1/professional-data - use MCP tools instead")
     return DataAccessResponse(
         status_code=501,
         error="This endpoint is deprecated. Use MCP tools (get_professional_profile) for data access with zero-knowledge exports."
