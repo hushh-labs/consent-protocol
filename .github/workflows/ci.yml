@@ -72,11 +72,9 @@ jobs:
       
       - name: Lint with ruff
         run: python -m ruff check .
-        continue-on-error: true  # Gradual adoption
       
       - name: Type check with mypy
         run: python -m mypy . --ignore-missing-imports
-        continue-on-error: true  # Gradual adoption
       
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
