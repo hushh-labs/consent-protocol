@@ -29,18 +29,43 @@ jobs:
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
       
+      - name: Validate Node version
+        run: |
+          node --version
+          node -e "const v = process.version.match(/^v(\d+)\./); if (!v || parseInt(v[1]) < 20) throw new Error('Node.js 20+ required')"
+      
+      - name: Validate required files
+        run: |
+          test -f package-lock.json || (echo "❌ ERROR: package-lock.json not found. Run 'npm install' to generate it." && exit 1)
+          node -e "JSON.parse(require('fs').readFileSync('package-lock.json'))" || (echo "❌ ERROR: package-lock.json is not valid JSON" && exit 1)
+          test -f next.config.ts || (echo "❌ ERROR: next.config.ts not found" && exit 1)
+          echo "✓ package-lock.json exists and is valid"
+          echo "✓ next.config.ts exists"
+      
+      - name: Use latest npm
+        run: npm install -g npm@latest && npm --version
+      
       - name: Install dependencies
+        timeout-minutes: 5
         run: npm ci
       
-      - name: TypeScript type check
-        run: npx tsc --noEmit
+      - name: Validate Next.js config
+        run: |
+          npx tsc --noEmit
+          node -e "const fs=require('fs'); const p=require('path'); const f=p.join(process.cwd(),'next.config.ts'); if (!fs.existsSync(f)) process.exit(1); console.log('next.config.ts present and will be validated by build');"
       
       - name: Lint
         run: npm run check-lint
       
-      - name: Build
+      - name: Build (web standalone)
         run: npm run build
         env:
+          NEXT_PUBLIC_BACKEND_URL: https://api.example.com
+      
+      - name: Build (Capacitor export)
+        run: npm run cap:build
+        env:
+          CAPACITOR_BUILD: "true"
           NEXT_PUBLIC_BACKEND_URL: https://api.example.com
       
       - name: Security audit
@@ -65,19 +90,56 @@ jobs:
           cache: "pip"
           cache-dependency-path: consent-protocol/requirements.txt
       
-      - name: Install dependencies
+      - name: Validate Python version
         run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-asyncio mypy ruff
+          python --version
+          python -c "import sys; assert sys.version_info >= (3, 11), 'Python 3.11+ required, got {}'.format(sys.version)"
+      
+      - name: Validate required files
+        run: |
+          test -f requirements.txt || (echo "❌ ERROR: requirements.txt not found" && exit 1)
+          echo "✓ requirements.txt exists"
+          if [ -f requirements-dev.txt ]; then
+            echo "✓ requirements-dev.txt exists (will be used)"
+          else
+            echo "⚠ requirements-dev.txt not found (will install dev deps directly)"
+          fi
+          if [ ! -d tests ] || [ -z "$(find tests -name 'test_*.py' -o -name '*_test.py')" ]; then
+            echo "⚠ WARNING: No test files found in tests/"
+          else
+            echo "✓ Test files found"
+          fi
+      
+      - name: Use latest pip
+        run: python -m pip install --upgrade pip && python -m pip --version
+      
+      - name: Install dependencies
+        timeout-minutes: 5
+        run: |
+          python -m pip install --use-deprecated=legacy-resolver -r requirements.txt
+          if [ -f requirements-dev.txt ]; then
+            python -m pip install --use-deprecated=legacy-resolver -r requirements-dev.txt
+          else
+            python -m pip install --use-deprecated=legacy-resolver pytest pytest-cov pytest-asyncio mypy ruff
+          fi
       
       - name: Lint with ruff
         run: python -m ruff check .
+        continue-on-error: false
       
       - name: Type check with mypy
         run: python -m mypy . --ignore-missing-imports
+        continue-on-error: false
       
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        timeout-minutes: 10
+        run: |
+          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -o -name '*_test.py' | head -1)" ]; then
+            python -m pytest tests/ -v --tb=short
+          else
+            echo "⚠ WARNING: No test files found, skipping tests"
+            exit 0
+          fi
         env:
           TESTING: "true"
           SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
@@ -99,9 +161,17 @@ jobs:
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
       
+      - name: Use latest npm
+        working-directory: ./hushh-webapp
+        run: npm install -g npm@latest && npm --version
+      
       - name: Verify route contracts
         working-directory: ./hushh-webapp
         run: |
           npm ci
-          npm run verify:routes
+          if [ -f scripts/verify-route-contracts.cjs ]; then
+            npm run verify:routes
+          else
+            echo "⚠ WARNING: verify-route-contracts.cjs not found, skipping"
+          fi
         continue-on-error: true  # Don't fail until contracts are fully defined

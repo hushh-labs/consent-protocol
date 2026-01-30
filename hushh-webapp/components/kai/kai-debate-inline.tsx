@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Card as RichCard } from "@/lib/morphy-ux/card";
 import KaiFinancialCharts from "./kai-financial-charts";
-import { ApiService } from "@/lib/services/api-service";
+import { streamKaiAnalysis } from "@/lib/services/kai-service";
 
 // ============================================================================
 // TYPES
@@ -456,7 +456,7 @@ export default function KaiDebateInline({
     }
   }, [handleEvent]);
 
-  // Start analysis using fetch + ReadableStream (supports auth headers)
+  // Start analysis via Kai service streaming API (supports auth headers)
   const startAnalysis = useCallback(async () => {
     if (!ticker || !userId || !vaultOwnerToken) return;
     
@@ -472,26 +472,13 @@ export default function KaiDebateInline({
 
 
 
-    // Use Direct Backend URL for streaming (bypasses Next.js proxy buffering)
-    const baseUrl = ApiService.getDirectBackendUrl();
-    const url = `${baseUrl}/api/kai/analyze/stream`;
-
     try {
-      console.log(`[KaiDebateInline] Connecting to stream: ${url}`);
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${vaultOwnerToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({
-          ticker,
-          user_id: userId,
-          risk_profile: riskProfile,
-          context: userContext,
-        }),
+      const response = await streamKaiAnalysis({
+        userId,
+        ticker,
+        riskProfile,
+        userContext,
+        vaultOwnerToken,
       });
 
       console.log("[KaiDebateInline] Response status:", response.status);
