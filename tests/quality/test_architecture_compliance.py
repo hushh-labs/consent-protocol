@@ -51,7 +51,7 @@ CORRECT:
         consent_token=consent_token  # Required!
     )
 
-See: docs/technical/database-service-layer.md
+See: docs/reference/database_service_layer.md
 
 Violations found:
 {violations}
