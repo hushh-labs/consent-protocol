@@ -284,7 +284,14 @@ TEST_COUNT=$((TEST_COUNT + 1))
 cd hushh-webapp || exit 1
 
 echo "  → Running Next.js build (web standalone)..."
-if NEXT_PUBLIC_BACKEND_URL=https://api.example.com npm run build 2>&1 | tee /tmp/build.log; then
+if NEXT_PUBLIC_BACKEND_URL=https://api.example.com \
+   NEXT_PUBLIC_FIREBASE_API_KEY="dummy-api-key" \
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="dummy-project.firebaseapp.com" \
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID="dummy-project" \
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="dummy-project.appspot.com" \
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="123456789" \
+   NEXT_PUBLIC_FIREBASE_APP_ID="1:123456789:web:abcdef123456" \
+   npm run build 2>&1 | tee /tmp/build.log; then
   echo "✓ [PASS] Build (web) completed successfully"
   PASS_COUNT=$((PASS_COUNT + 1))
 else
@@ -296,7 +303,15 @@ else
 fi
 
 echo "  → Running Next.js build (Capacitor export)..."
-if [ $FAIL -eq 0 ] && CAPACITOR_BUILD=true NEXT_PUBLIC_BACKEND_URL=https://api.example.com npm run cap:build 2>&1 | tee /tmp/cap-build.log; then
+if [ $FAIL -eq 0 ] && CAPACITOR_BUILD=true \
+   NEXT_PUBLIC_BACKEND_URL=https://api.example.com \
+   NEXT_PUBLIC_FIREBASE_API_KEY="dummy-api-key" \
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="dummy-project.firebaseapp.com" \
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID="dummy-project" \
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="dummy-project.appspot.com" \
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="123456789" \
+   NEXT_PUBLIC_FIREBASE_APP_ID="1:123456789:web:abcdef123456" \
+   npm run cap:build 2>&1 | tee /tmp/cap-build.log; then
   echo "✓ [PASS] Capacitor build completed successfully"
   PASS_COUNT=$((PASS_COUNT + 1))
 else
