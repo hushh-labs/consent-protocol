@@ -120,19 +120,19 @@ fi
 # Check Python version
 PYTHON_BIN=${PYTHON_BIN:-python3}
 if ! command -v "$PYTHON_BIN" > /dev/null 2>&1; then
-  echo "❌ ERROR: $PYTHON_BIN not found. Install Python 3.11+"
+  echo "❌ ERROR: $PYTHON_BIN not found. Install Python 3.13+ (CI uses 3.13)"
   FAIL=1
 else
   PYTHON_VERSION=$($PYTHON_BIN --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
   PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
   PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
   
-  if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
-    echo "❌ ERROR: Python $PYTHON_VERSION detected, CI requires Python 3.11+"
+  if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 13 ]); then
+    echo "❌ ERROR: Python $PYTHON_VERSION detected, CI requires Python 3.13+"
     FAIL=1
-  elif [ "$PYTHON_MAJOR" -ne 3 ] || [ "$PYTHON_MINOR" -ne 11 ]; then
-    echo "⚠️  WARNING: Python $PYTHON_VERSION detected, CI uses Python 3.11"
-    echo "   Some packages may behave differently. Consider using Python 3.11."
+  elif [ "$PYTHON_MAJOR" -ne 3 ] || [ "$PYTHON_MINOR" -ne 13 ]; then
+    echo "⚠️  WARNING: Python $PYTHON_VERSION detected, CI uses Python 3.13"
+    echo "   Some packages may behave differently. Consider using Python 3.13."
     WARNINGS=$((WARNINGS + 1))
   else
     echo "  ✓ Python $PYTHON_VERSION detected (matches CI)"
@@ -196,22 +196,22 @@ cd consent-protocol
 
 # Prefer python3 explicitly for local environments where `pip` may not be on PATH
 # PYTHON_BIN is already set during version check above
-# CI uses a 5-minute timeout for pip install; local runs unbounded (use Ctrl+C to abort if needed)
+# CI uses a 10-minute timeout for pip install (default resolver); local runs unbounded (use Ctrl+C to abort if needed)
 
 echo "  Installing dependencies (this may take a few minutes)..."
-$PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver -r requirements.txt || { echo "❌ pip install failed - check requirements.txt and network connection"; FAIL=1; }
+$PYTHON_BIN -m pip install --progress-bar off -r requirements.txt || { echo "❌ pip install failed - check requirements.txt and network connection"; FAIL=1; }
 
 if [ $FAIL -eq 0 ]; then
   echo "  Installing dev dependencies..."
   # Use requirements-dev.txt if it exists, otherwise install directly
   if [ -f "requirements-dev.txt" ]; then
     echo "    Using requirements-dev.txt..."
-    $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver -r requirements-dev.txt || { echo "❌ Dev dependencies install failed"; FAIL=1; }
+    $PYTHON_BIN -m pip install --progress-bar off -r requirements-dev.txt || { echo "❌ Dev dependencies install failed"; FAIL=1; }
     # Install pytest-cov and pytest-asyncio separately as they may not be in requirements-dev.txt
-    $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver pytest-cov pytest-asyncio || { echo "⚠️  Warning: pytest-cov or pytest-asyncio install failed (may already be installed)"; }
+    $PYTHON_BIN -m pip install --progress-bar off pytest-cov pytest-asyncio || { echo "⚠️  Warning: pytest-cov or pytest-asyncio install failed (may already be installed)"; }
   else
     echo "    Installing dev dependencies directly..."
-    $PYTHON_BIN -m pip install --progress-bar off --use-deprecated=legacy-resolver pytest pytest-cov pytest-asyncio mypy ruff || { echo "❌ Dev dependencies install failed"; FAIL=1; }
+    $PYTHON_BIN -m pip install --progress-bar off pytest pytest-cov pytest-asyncio mypy ruff || { echo "❌ Dev dependencies install failed"; FAIL=1; }
   fi
 fi
 
@@ -222,7 +222,7 @@ fi
 
 if [ $FAIL -eq 0 ]; then
   echo "  Type checking with mypy..."
-  $PYTHON_BIN -m mypy . --ignore-missing-imports || { echo "❌ Mypy type check failed - fix type errors above"; FAIL=1; }
+  $PYTHON_BIN -m mypy --config-file pyproject.toml --ignore-missing-imports || { echo "❌ Mypy type check failed - fix type errors above"; FAIL=1; }
 fi
 
 if [ $FAIL -eq 0 ]; then

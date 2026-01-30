@@ -32,30 +32,45 @@ DEFAULT_JSON = os.path.join(
 async def seed_investors(json_path: str):
     """Seed investor profiles from JSON file."""
     print(f"📂 Loading data from: {json_path}")
-    
-    with open(json_path, 'r', encoding='utf-8') as f:
+
+    with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     investors = data.get("investors", [])
     print(f"📊 Found {len(investors)} investor profiles")
-    
-    # Use Supabase REST API
-    supabase = get_supabase()
-    
+
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    pool = await asyncpg.create_pool(DATABASE_URL)
     try:
-        for inv in investors:
+        async with pool.acquire() as conn:
+            for inv in investors:
                 name = inv.get("name")
-                name_normalized = re.sub(r'\s+', '', name.lower()) if name else None
+                name_normalized = re.sub(r"\s+", "", name.lower()) if name else None
                 cik = inv.get("cik")
-                
+
                 # Prepare JSONB fields
-                top_holdings = json.dumps(inv.get("top_holdings")) if inv.get("top_holdings") else None
-                sector_exposure = json.dumps(inv.get("sector_exposure")) if inv.get("sector_exposure") else None
-                public_quotes = json.dumps(inv.get("public_quotes")) if inv.get("public_quotes") else None
-                
+                top_holdings = (
+                    json.dumps(inv.get("top_holdings"))
+                    if inv.get("top_holdings")
+                    else None
+                )
+                sector_exposure = (
+                    json.dumps(inv.get("sector_exposure"))
+                    if inv.get("sector_exposure")
+                    else None
+                )
+                public_quotes = (
+                    json.dumps(inv.get("public_quotes"))
+                    if inv.get("public_quotes")
+                    else None
+                )
+
                 # Upsert by CIK or insert new
                 if cik:
-                    await conn.execute("""
+                    await conn.execute(
+                        """
                         INSERT INTO investor_profiles (
                             name, name_normalized, cik, firm, title, investor_type,
                             aum_billions, top_holdings, sector_exposure,
@@ -107,7 +122,8 @@ async def seed_investors(json_path: str):
                     )
                 else:
                     # No CIK - just insert (for insiders)
-                    await conn.execute("""
+                    await conn.execute(
+                        """
                         INSERT INTO investor_profiles (
                             name, name_normalized, firm, title, investor_type,
                             aum_billions, top_holdings, sector_exposure,
@@ -144,13 +160,12 @@ async def seed_investors(json_path: str):
                         inv.get("is_insider", False),
                         inv.get("insider_company_ticker")
                     )
-                
                 print(f"   ✅ {name}")
-            
+
             # Get final count
             count = await conn.fetchval("SELECT COUNT(*) FROM investor_profiles")
             print(f"\n📊 Total investor profiles: {count}")
-    
+
     finally:
         await pool.close()
 

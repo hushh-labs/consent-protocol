@@ -12,11 +12,10 @@ Free API Options:
 - Market Data: yfinance (unlimited) OR Alpha Vantage free tier (500 req/day)
 """
 
-from typing import Dict, Any, List
-import logging
-import os
-from datetime import datetime, timedelta
 import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
 import httpx
 
@@ -115,7 +114,7 @@ async def fetch_sec_filings(
         raise PermissionError(f"SEC data access denied: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[SEC Fetcher] Fetching filings for {ticker} - user {user_id}")
     
@@ -373,7 +372,7 @@ async def fetch_market_news(
         raise PermissionError(f"News data access denied: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[News Fetcher] Fetching news for {ticker} - user {user_id}")
     
@@ -445,7 +444,7 @@ async def fetch_market_data(
         raise PermissionError(f"Market data access denied: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Market Data Fetcher] Fetching market data for {ticker} - user {user_id}")
     
@@ -578,7 +577,7 @@ async def fetch_peer_data(
         raise PermissionError(f"Market data access denied: {reason}")
     
     if token.user_id != user_id:
-        raise PermissionError(f"Token user mismatch")
+        raise PermissionError("Token user mismatch")
     
     logger.info(f"[Peer Data Fetcher] Fetching peers for {ticker} - user {user_id}")
     

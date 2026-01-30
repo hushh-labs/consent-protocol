@@ -1,14 +1,8 @@
 # tests/test_trust.py
 
-import pytest
-from hushh_mcp.trust.link import (
-    create_trust_link,
-    verify_trust_link,
-    is_trusted_for_scope
-)
-from hushh_mcp.types import TrustLink
 from hushh_mcp.constants import ConsentScope
-
+from hushh_mcp.trust.link import create_trust_link, is_trusted_for_scope, verify_trust_link
+from hushh_mcp.types import TrustLink
 
 USER_ID = "user_nyx"
 DELEGATOR = "agent_identity"

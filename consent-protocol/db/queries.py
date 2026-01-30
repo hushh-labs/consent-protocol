@@ -10,10 +10,9 @@ Includes:
 
 import json
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 from .connection import get_pool
-
 
 # ============================================================================
 # Pending Requests

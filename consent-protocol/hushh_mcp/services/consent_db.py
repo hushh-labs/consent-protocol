@@ -33,7 +33,7 @@ Usage:
 import json
 import logging
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Dict, List, Optional
 
 from db.supabase_client import get_supabase
 

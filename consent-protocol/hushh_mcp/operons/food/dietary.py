@@ -7,8 +7,8 @@ Pure function to validate dietary restrictions.
 Used by food agents to filter restaurant recommendations.
 """
 
-from typing import List, Set
 from enum import Enum
+from typing import List, Set
 
 
 class DietaryRestriction(str, Enum):

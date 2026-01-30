@@ -13,11 +13,11 @@ Privacy architecture:
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
 """
 
-import logging
 import json
+import logging
 import re
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -170,7 +170,6 @@ async def create_investor(investor: InvestorCreateRequest):
     
     Admin endpoint for data ingestion from SEC EDGAR, etc.
     """
-    import re
     
     # Use service layer
     service = InvestorDBService()
@@ -178,7 +177,6 @@ async def create_investor(investor: InvestorCreateRequest):
     # Normalize name for search
     name_normalized = re.sub(r'\s+', '', investor.name.lower())
     
-    from datetime import datetime
     now_iso = datetime.now().isoformat()
     
     # Prepare data

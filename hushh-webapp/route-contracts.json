@@ -6,7 +6,7 @@
       "id": "kaiProxy",
       "webRouteFile": "hushh-webapp/app/api/kai/[...path]/route.ts",
       "backend": {
-        "file": "consent-protocol/api/routes/kai.py",
+        "file": "consent-protocol/api/routes/kai/__init__.py",
         "routerPrefix": "/api/kai",
         "paths": [
           "/health",
@@ -19,7 +19,7 @@
       "native": {
         "tsPluginFile": "hushh-webapp/lib/capacitor/kai.ts",
         "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift",
-        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/Kai/KaiPlugin.kt",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/Kai/KaiPlugin.kt",
         "requiredMethodNames": [
           "grantConsent",
           "analyze",
@@ -52,7 +52,7 @@
       "native": {
         "tsPluginFile": "hushh-webapp/lib/capacitor/index.ts",
         "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/HushhVaultPlugin.swift",
-        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/HushhVault/HushhVaultPlugin.kt",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhVault/HushhVaultPlugin.kt",
         "requiredMethodNames": [
           "hasVault",
           "getVault",
@@ -60,6 +60,33 @@
           "getFoodPreferences",
           "getProfessionalData"
         ]
+      }
+    },
+    {
+      "id": "vaultStatus",
+      "webRouteFile": "hushh-webapp/app/api/vault/status/route.ts",
+      "backend": {
+        "file": "consent-protocol/api/routes/db_proxy.py",
+        "routerPrefix": "/db",
+        "paths": ["/vault/status"]
+      }
+    },
+    {
+      "id": "foodPreferencesProxy",
+      "webRouteFile": "hushh-webapp/app/api/vault/food/preferences/route.ts",
+      "backend": {
+        "file": "consent-protocol/api/routes/food.py",
+        "routerPrefix": "/api/food",
+        "paths": ["/preferences"]
+      }
+    },
+    {
+      "id": "professionalPreferencesProxy",
+      "webRouteFile": "hushh-webapp/app/api/vault/professional/preferences/route.ts",
+      "backend": {
+        "file": "consent-protocol/api/routes/professional.py",
+        "routerPrefix": "/api/professional",
+        "paths": ["/preferences"]
       }
     },
     {
@@ -73,7 +100,7 @@
       "native": {
         "tsPluginFile": "hushh-webapp/lib/capacitor/index.ts",
         "iosPluginFile": "hushh-webapp/ios/App/App/Plugins/HushhConsentPlugin.swift",
-        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/HushhConsent/HushhConsentPlugin.kt",
+        "androidPluginFile": "hushh-webapp/android/app/src/main/java/com/hushh/app/plugins/HushhConsent/HushhConsentPlugin.kt",
         "requiredMethodNames": ["issueVaultOwnerToken"]
       }
     },
