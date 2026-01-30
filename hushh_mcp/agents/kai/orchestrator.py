@@ -1,5 +1,5 @@
 """
-Agent Kai — Main Orchestrator
+Agent Kai — Main Orchestrator (ADK Compliant)
 
 Main entry point for Kai analysis. Coordinates all agents, debate, and decision generation.
 
@@ -17,6 +17,7 @@ from datetime import datetime
 import logging
 import asyncio
 
+from hushh_mcp.agents.base_agent import HushhAgent
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -30,9 +31,11 @@ from .config import RiskProfile, ProcessingMode, ANALYSIS_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-class KaiOrchestrator:
+class KaiOrchestrator(HushhAgent):
     """
     Main Kai Orchestrator - Coordinates entire analysis pipeline.
+    
+    ADK-compliant implementation that orchestrates the 3 specialist agents.
     
     Usage:
         orchestrator = KaiOrchestrator(
@@ -55,6 +58,21 @@ class KaiOrchestrator:
         self.user_id = user_id
         self.risk_profile = risk_profile
         self.processing_mode = processing_mode
+        
+        # Initialize with proper ADK parameters
+        super().__init__(
+            name="Kai Orchestrator",
+            model="gemini-3-flash",  # Default model
+            system_prompt="""
+            You are the Kai Orchestrator, coordinating 3 specialist agents:
+            - Fundamental Analyst (blue)
+            - Sentiment Analyst (purple) 
+            - Valuation Expert (green)
+            
+            Your job is to orchestrate their analysis and generate a final investment decision.
+            """,
+            required_scopes=["agent.kai.analyze"]
+        )
         
         # Instantiate components
         self.fundamental_agent = FundamentalAgent(processing_mode)
@@ -103,60 +121,47 @@ class KaiOrchestrator:
             
             # Step 3: Orchestrate debate
             debate_result = await self.debate_engine.orchestrate_debate(
-                fundamental, sentiment, valuation
+                fundamental_insight=fundamental,
+                sentiment_insight=sentiment,
+                valuation_insight=valuation
             )
             
-            # Step 4: Generate decision card
-            decision_card = await self.decision_generator.generate(
+            # Step 4: Generate final decision card
+            decision_card = await self.decision_generator.generate_decision(
                 ticker=ticker,
+                fundamental_insight=fundamental,
+                sentiment_insight=sentiment,
+                valuation_insight=valuation,
+                debate_result=debate_result,
                 user_id=self.user_id,
-                processing_mode=self.processing_mode,
-                fundamental=fundamental,
-                sentiment=sentiment,
-                valuation=valuation,
-                debate=debate_result,
+                consent_token=consent_token
             )
             
-            elapsed = (datetime.utcnow() - start_time).total_seconds()
-            logger.info(
-                f"[Kai] Analysis complete for {ticker} in {elapsed:.2f}s - "
-                f"Decision: {decision_card.decision} ({decision_card.confidence:.0%})"
-            )
+            # Step 5: Log completion
+            duration = (datetime.utcnow() - start_time).total_seconds()
+            logger.info(f"[Kai] Analysis complete for {ticker} in {duration:.1f}s")
             
             return decision_card
             
         except asyncio.TimeoutError:
             logger.error(f"[Kai] Analysis timeout for {ticker}")
             raise TimeoutError(f"Analysis exceeded {ANALYSIS_TIMEOUT}s timeout")
+        except Exception as e:
+            logger.error(f"[Kai] Analysis failed for {ticker}: {e}")
+            raise
     
     async def _validate_consent(self, consent_token: str):
-        """Validate consent token for analysis."""
+        """Validate that the consent token allows access to Kai analysis."""
+        valid, reason, payload = validate_token(
+            consent_token,
+            expected_scope=ConsentScope("agent.kai.analyze")
+        )
         
-        # Check if the token grants EITHER:
-        # 1. agent.kai.analyze (Delegated permission)
-        # 2. vault.owner (Self-Access / Master Scope)
+        if not valid:
+            raise ValueError(f"Invalid consent token: {reason}")
         
-        required_scopes = [
-            ConsentScope("agent.kai.analyze"),
-            ConsentScope("vault.owner")
-        ]
-        
-        # Valid if ANY of the required scopes are present
-        is_valid = False
-        last_reason = "No token provided"
-        
-        for scope in required_scopes:
-            valid, reason, _ = validate_token(consent_token, scope)
-            if valid:
-                is_valid = True
-                break
-            last_reason = reason
-        
-        if not is_valid:
-            logger.error(f"[Kai] Consent validation failed: {last_reason}")
-            raise ValueError(f"Invalid consent token: {last_reason}")
-        
-        logger.info("[Kai] Consent validated")
+        if payload.user_id != self.user_id:
+            raise ValueError("Token user mismatch")
     
     async def _run_agent_analysis(
         self,
@@ -165,26 +170,43 @@ class KaiOrchestrator:
         context: Optional[Dict[str, Any]] = None
     ):
         """Run all 3 agents in parallel."""
-        logger.info(f"[Kai] Running 3-agent analysis for {ticker}")
-        
-        # Run agents concurrently
+        # Create tasks for parallel execution
         fundamental_task = self.fundamental_agent.analyze(
-            ticker, self.user_id, consent_token, context
-        )
-        sentiment_task = self.sentiment_agent.analyze(
-            ticker, self.user_id, consent_token
-        )
-        valuation_task = self.valuation_agent.analyze(
-            ticker, self.user_id, consent_token
+            ticker=ticker,
+            user_id=self.user_id,
+            consent_token=consent_token,
+            context=context
         )
         
-        # Await all results
-        fundamental, sentiment, valuation = await asyncio.gather(
+        sentiment_task = self.sentiment_agent.analyze(
+            ticker=ticker,
+            user_id=self.user_id,
+            consent_token=consent_token,
+            context=context
+        )
+        
+        valuation_task = self.valuation_agent.analyze(
+            ticker=ticker,
+            user_id=self.user_id,
+            consent_token=consent_token,
+            context=context
+        )
+        
+        # Execute in parallel and return results
+        results = await asyncio.gather(
             fundamental_task,
             sentiment_task,
             valuation_task,
+            return_exceptions=True
         )
         
-        logger.info("[Kai] All agents completed analysis")
+        # Handle exceptions in tasks
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"[Kai] Agent {i} failed: {result}")
+                raise result
         
-        return fundamental, sentiment, valuation
+        return results
+
+# Export singleton for convenience
+kai_orchestrator = KaiOrchestrator(user_id="default", risk_profile="balanced")

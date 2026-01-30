@@ -1,5 +1,5 @@
 """
-Agent Kai — Sentiment Agent
+Agent Kai — Sentiment Agent (ADK Compliant)
 
 Processes news articles, earnings calls, and market sentiment using reflection summarization.
 
@@ -13,6 +13,9 @@ Key Responsibilities:
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import logging
+
+from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.tools.hushh_tools import hushh_tool
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +32,11 @@ class SentimentInsight:
     recommendation: str  # "bullish", "neutral", "bearish"
 
 
-class SentimentAgent:
+class SentimentAgent(HushhAgent):
     """
     Sentiment Agent - Analyzes market sentiment and news.
+    
+    ADK-compliant implementation that uses tools with proper consent validation.
     
     Processes news articles, social media, and earnings transcripts
     to gauge market momentum and identify short-term catalysts.
@@ -41,6 +46,17 @@ class SentimentAgent:
         self.agent_id = "sentiment"
         self.processing_mode = processing_mode
         self.color = "#8b5cf6"
+        
+        # Initialize with proper ADK parameters
+        super().__init__(
+            name="Sentiment Agent",
+            model="gemini-3-flash",  # Default model
+            system_prompt="""
+            You are a Sentiment Analyst focused on market momentum, news catalysts, and sentiment analysis.
+            Your job is to evaluate recent market events, news, and social sentiment to identify short-term catalysts.
+            """,
+            required_scopes=["agent.kai.sentiment"]
+        )
         
     async def analyze(
         self,
@@ -99,135 +115,38 @@ class SentimentAgent:
                 summary=gemini_analysis.get("summary", f"Sentiment analysis for {ticker}"),
                 sentiment_score=gemini_analysis.get("sentiment_score", 0.0),
                 key_catalysts=gemini_analysis.get("key_catalysts", []),
-                confidence=gemini_analysis.get("confidence", 0.7),
+                news_highlights=gemini_analysis.get("news_highlights", []),
+                sources=gemini_analysis.get("sources", ["Gemini Sentiment Analysis"]),
+                confidence=gemini_analysis.get("confidence", 0.5),
                 recommendation=gemini_analysis.get("recommendation", "neutral"),
-                news_highlights=[
-                    {
-                        "title": a.get("title", ""),
-                        "source": a.get("source", {}).get("name", "Unknown"),
-                        "date": a.get("publishedAt", "")[:10] if a.get("publishedAt") else ""
-                    }
-                    for a in news_articles[:3]
-                ],
-                sources=["Gemini Sentiment Analysis"] + [a.get("source", {}).get("name", "Unknown") for a in news_articles[:3]],
             )
         
         # Fallback: Deterministic analysis
+        logger.info(f"[Sentiment] Using deterministic analysis for {ticker}")
         from hushh_mcp.operons.kai.analysis import analyze_sentiment
         
-        analysis = analyze_sentiment(
-            ticker=ticker,
-            user_id=user_id,
-            news_articles=news_articles,
-            consent_token=consent_token,
-        )
-        
-        # Convert to dataclass
-        return SentimentInsight(
-            summary=analysis["summary"],
-            sentiment_score=analysis["sentiment_score"],
-            key_catalysts=analysis["key_catalysts"],
-            confidence=analysis["confidence"],
-            recommendation=analysis["recommendation"],
-            news_highlights=[
-                {
-                    "title": a.get("title", ""),
-                    "source": a.get("source", {}).get("name", "Unknown"),
-                    "date": a.get("publishedAt", "")[:10] if a.get("publishedAt") else ""
-                }
-                for a in news_articles[:3]
-            ],
-            sources=[article.get("source", {}).get("name", "Unknown") for article in news_articles[:5]],
-        )
-    
-
-    
-    async def _mock_analysis(self, ticker: str) -> SentimentInsight:
-        """Mock sentiment analysis (temporary)."""
-        
-        return SentimentInsight(
-            summary=f"Recent news sentiment for {ticker} is moderately positive, with strong momentum following recent product announcements and positive analyst upgrades.",
-            sentiment_score=0.65,  # Moderately bullish
-            key_catalysts=[
-                "New product launch generating positive buzz",
-                "Analyst upgrades from major institutions",
-                "Strong earnings beat expectations",
-                "Expanding market share in key segment",
-            ],
-            news_highlights=[
-                {
-                    "title": f"{ticker} announces breakthrough product innovation",
-                    "source": "Financial Times",
-                    "date": "2024-01-03",
-                    "sentiment": "positive",
-                },
-                {
-                    "title": f"Analysts raise price target for {ticker}",
-                    "source": "Bloomberg",
-                    "date": "2024-01-02",
-                    "sentiment": "positive",
-                },
-                {
-                    "title": f"{ticker} faces regulatory headwinds",
-                    "source": "Wall Street Journal",
-                    "date": "2023-12-28",
-                    "sentiment": "negative",
-                },
-            ],
-            sources=[
-                "Financial News APIs",
-                "Earnings Call Transcripts",
-                "Social Media Sentiment Analysis",
-            ],
-            confidence=0.70,
-            recommendation="bullish",
-        )
-    
-    async def fetch_news(
-        self,
-        ticker: str,
-        consent_token: str,
-        days_back: int = 30,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetch recent news for a ticker (requires consent).
-        
-        Args:
-            ticker: Stock ticker
-            consent_token: Valid consent token for external.news.api
-            days_back: Number of days to look back
+        try:
+            # Call the operon directly without tools (deterministic)
+            analysis = analyze_sentiment(
+                ticker=ticker,
+                user_id=user_id,
+                news_articles=news_articles,
+                consent_token=consent_token,
+            )
             
-        Returns:
-            List of news articles
-        """
-        # TODO: Validate consent token
-        # TODO: Call news API (e.g., NewsAPI, Alpha Vantage)
-        # TODO: Filter and rank by relevance
-        
-        logger.info(f"[Sentiment] Fetching news for {ticker} ({days_back} days)")
-        
-        return []
-    
-    def calculate_sentiment_score(
-        self,
-        news_articles: List[Dict[str, Any]],
-    ) -> float:
-        """
-        Calculate aggregate sentiment score from news articles.
-        
-        Args:
-            news_articles: List of news articles with sentiment
-            
-        Returns:
-            Sentiment score (-1.0 to 1.0)
-        """
-        # TODO: Implement sentiment aggregation
-        # - Weight by source credibility
-        # - Time decay for older articles
-        # - Normalize to -1.0 to 1.0 scale
-        
-        return 0.0
+            return SentimentInsight(
+                summary=analysis.get("summary", f"Sentiment analysis for {ticker}"),
+                sentiment_score=analysis.get("sentiment_score", 0.0),
+                key_catalysts=analysis.get("key_catalysts", []),
+                news_highlights=analysis.get("news_highlights", []),
+                sources=analysis.get("sources", ["Deterministic Analysis"]),
+                confidence=analysis.get("confidence", 0.5),
+                recommendation=analysis.get("recommendation", "neutral"),
+            )
+        except Exception as e:
+            logger.error(f"[Sentiment] Deterministic analysis failed: {e}")
+            raise
 
 
-# Export default instance
+# Export singleton for use in KaiAgent orchestration
 sentiment_agent = SentimentAgent()

@@ -1,8 +1,8 @@
 """
-Agent Kai — Fundamental Agent (AgentNav Compliant)
+Agent Kai — Fundamental Agent (ADK Compliant)
 
 Analyzes 10-K/10-Q SEC filings and financial fundamentals.
-Extended from AgentNav for consent enforcement.
+Extended from HushhAgent for consent enforcement.
 
 Key Responsibilities:
 - Business fundamentals analysis (via operons)
@@ -16,6 +16,9 @@ Future: Attention Marketplace integration for premium data sources.
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import logging
+
+from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.tools.hushh_tools import hushh_tool
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +39,13 @@ class FundamentalInsight:
     recommendation: str  # "buy", "hold", "reduce"
 
 
-class FundamentalAgent:
+class FundamentalAgent(HushhAgent):
     """
     Fundamental Agent - Analyzes company fundamentals.
     
-    Lightweight orchestrator that composes operons for:
-    - SEC filing retrieval (via fetch_sec_filings operon)
-    - Fundamental analysis (via analyze_fundamentals operon)
-    - Financial ratio calculations
+    ADK-compliant implementation that uses tools with proper consent validation.
     
-    All consent validation happens in the operons.
+    All consent validation happens in the operons via tools.
     Agent simply orchestrates and formats results.
     """
     
@@ -53,6 +53,17 @@ class FundamentalAgent:
         self.agent_id = "fundamental"
         self.processing_mode = processing_mode
         self.color = "#3b82f6"  # Blue
+        
+        # Initialize with proper ADK parameters
+        super().__init__(
+            name="Fundamental Agent",
+            model="gemini-3-flash",  # Default model
+            system_prompt="""
+            You are a Fundamental Analyst focused on SEC filings, business moat, and cash flow.
+            Your job is to analyze company financials, business models, and long-term viability.
+            """,
+            required_scopes=["agent.kai.fundamental"]
+        )
         
     async def analyze(
         self,
@@ -117,7 +128,7 @@ class FundamentalAgent:
                 )
             except Exception as e:
                 logger.warning(f"[Fundamental] Gemini analysis failed: {e}. Falling back to deterministic.")
-
+        
         # Step 3: Traditional Analysis (Fallback or baseline metrics)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
         
@@ -144,7 +155,7 @@ class FundamentalAgent:
                 recommendation=gemini_analysis.get("recommendation", analysis["recommendation"]),
                 sources=self._format_sources(sec_filings) + ["Gemini Senior Analyst Report"],
             )
-
+        
         # Step 5: Format as FundamentalInsight (Fallback)
         return FundamentalInsight(
             summary=analysis["summary"],
@@ -170,65 +181,6 @@ class FundamentalAgent:
             "SEC EDGAR Database",
             "Financial statement analysis",
         ]
-    
-
-    
-    # =========================================================================
-    # FUTURE: Attention Marketplace Integration
-    # =========================================================================
-    
-    async def fetch_premium_data(
-        self,
-        ticker: str,
-        data_source: str,
-        consent_token: str,
-        bid_amount: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """
-        [PLACEHOLDER] Fetch premium data via Attention Marketplace.
-        
-        In v2+, users can bid for access to premium data sources:
-        - Bloomberg Terminal data
-        - Proprietary research reports
-        - Real-time SEC filing alerts
-        - Expert analyst insights
-        
-        The Attention Marketplace allows Kai to:
-        1. Request premium data on user's behalf
-        2. Present bid options (cost, quality, speed)
-        3. Execute data purchase with user consent
-        4. Audit all transactions transparently
-        
-        Args:
-            ticker: Stock ticker
-            data_source: Premium source identifier
-            consent_token: Validated consent token
-            bid_amount: Optional bid amount (USD)
-            
-        Returns:
-            Premium data payload
-            
-        References:
-            - docs/vision/kai/preparation/attention-marketplace.md
-            - Adaptive Attention Marketplace (AAM) spec
-        """
-        logger.info(
-            f"[Fundamental] [PLACEHOLDER] Attention Marketplace: "
-            f"Would fetch {data_source} for {ticker} (bid: ${bid_amount})"
-        )
-        
-        # TODO: v2+ implementation
-        # - Integrate with Attention Marketplace API
-        # - Present bid UI to user
-        # - Execute transaction with consent
-        # - Return premium data
-        
-        return {
-            "status": "not_implemented",
-            "message": "Attention Marketplace coming in v2+",
-            "data_source": data_source,
-            "ticker": ticker,
-        }
 
 
 # Export singleton for use in KaiAgent orchestration
