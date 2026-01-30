@@ -49,10 +49,10 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
 
 1.  **Find an Issue**: Look for issues tagged `good-first-issue` or `help-wanted`.
 2.  **Fork the Repo**: Create your own fork on GitHub.
-3.  **Create a Branch**: Use a descriptive name:
-    - `feat/add-movie-agent`
-    - `fix/vault-unlock-race-condition`
-    - `docs/update-readme`
+3.  **Create a Branch**: Use format `/[username]/[type]/[type-name]`:
+    - `YOUR_USERNAME/feat/add-movie-agent`
+    - `YOUR_USERNAME/fix/vault-unlock-race-condition`
+    - `YOUR_USERNAME/docs/update-readme`
 4.  **Implement the Tri-Flow**: Ensure your change works on Web, iOS, and Android.
 5.  **Test CI Locally**: **Always run local CI checks before committing**:
     ```bash

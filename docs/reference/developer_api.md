@@ -31,7 +31,7 @@ The Hushh Developer API allows external applications to access user data **only 
 ### 2. Request Consent
 
 ```bash
-curl -X POST https://api.hushh.ai/api/v1/request-consent \
+curl -X POST http://localhost:8000/api/v1/request-consent \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "firebase_user_id",
@@ -70,7 +70,7 @@ Once user approves, the consent token becomes available.
 ### 6. Access Data
 
 ```bash
-curl -X POST https://api.hushh.ai/api/v1/food-data \
+curl -X POST http://localhost:8000/api/v1/food-data \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "firebase_user_id",
@@ -85,7 +85,7 @@ curl -X POST https://api.hushh.ai/api/v1/food-data \
 ### Base URL
 
 ```
-Production: https://api.hushh.ai
+Production: See deployment documentation for production URL
 Development: http://localhost:8000
 ```
 
@@ -345,8 +345,8 @@ http://localhost:8000/docs
 
 For developer registration and support:
 
-- Email: developers@hushh.ai
-- Documentation: https://docs.hushh.ai
+- Email: eng@hush1one.com
+- Documentation: See `docs/reference/developer_api.md` for API documentation
 
 ---
 

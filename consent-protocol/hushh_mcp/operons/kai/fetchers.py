@@ -37,7 +37,7 @@ async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
     """
     url = "https://query1.finance.yahoo.com/v7/finance/quote"
     params = {"symbols": ticker.upper()}
-    headers = {"User-Agent": "Hushh-Research/1.0 (compliance@hushh.ai)"}
+    headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
 
     timeout = httpx.Timeout(connect=3.0, read=4.0, write=4.0, pool=3.0)
     async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
@@ -126,7 +126,7 @@ async def fetch_sec_filings(
     EDGAR_DATA_URL = "https://data.sec.gov"  # For submissions
     EDGAR_WWW_URL = "https://www.sec.gov"    # For company tickers
     HEADERS = {
-        "User-Agent": "Hushh-Research/1.0 (compliance@hushh.ai)",  # Required by SEC
+        "User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)",  # Required by SEC
         "Accept": "application/json"
     }
     

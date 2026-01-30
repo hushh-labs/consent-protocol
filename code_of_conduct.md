@@ -71,7 +71,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at:
 
-* **Email**: conduct@hushh.ai
+* **Email**: eng@hush1one.com
 * **Discord**: Contact a moderator in the #support channel
 
 All complaints will be reviewed and investigated promptly and fairly.
