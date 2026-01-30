@@ -5,7 +5,7 @@
  *
  * First step in Kai onboarding - detects investor from Firebase displayName
  * and allows confirmation or manual search.
- * Uses morphy-ux components per frontend-design-system.md.
+ * Uses morphy-ux components per frontend_design_system.md.
  */
 
 import { useState, useEffect, useCallback } from "react";

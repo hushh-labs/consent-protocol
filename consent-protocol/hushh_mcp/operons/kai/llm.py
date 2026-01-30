@@ -460,15 +460,16 @@ async def stream_gemini_response(
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
     
     try:
-        # Use synchronous streaming - more reliable than async iteration
+        # Use ASYNC streaming to prevent blocking the event loop
         config = types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=4096,
         )
         
-        # Call the synchronous streaming method
-        stream = _gemini_client.models.generate_content_stream(
-            model="gemini-3-flash-preview",
+        # Call the ASYNC streaming method
+        # Note: google.genai V1 SDK uses client.aio for async calls
+        stream = await _gemini_client.aio.models.generate_content_stream(
+            model="gemini-2.0-flash-lite-preview", # Flash Lite is faster for streaming
             contents=prompt,
             config=config,
         )
@@ -476,8 +477,8 @@ async def stream_gemini_response(
         full_text = ""
         token_count = 0
         
-        # Synchronous iteration in async context
-        for chunk in stream:
+        # Async iteration
+        async for chunk in stream:
             try:
                 chunk_text = chunk.text if hasattr(chunk, 'text') else ""
             except Exception as e:
@@ -487,14 +488,15 @@ async def stream_gemini_response(
             if chunk_text:
                 token_count += 1
                 full_text += chunk_text
-                logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}: {chunk_text[:30]}...")
+                # Log only every 10th token to reduce noise
+                if token_count % 10 == 0:
+                     logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
+                
                 yield {
                     "type": "token",
                     "text": chunk_text,
                     "agent": agent_name,
                 }
-                # CRITICAL: Yield control to event loop so SSE events flush
-                await asyncio.sleep(0.005)
         
         # Yield complete event with full text
         yield {

@@ -6,7 +6,7 @@
  *
  * When adding new parameters:
  * 1. Add constant here
- * 2. Update docs/PLUGIN_API_REFERENCE.md
+ * 2. Update docs/plugin_api_reference.md
  * 3. Use constant in TypeScript calls
  * 4. Use exact string in Swift and Kotlin
  */
