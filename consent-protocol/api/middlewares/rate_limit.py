@@ -40,19 +40,19 @@ class RateLimits:
     """Safe rate limits for 2-step consent flow."""
     
     # Step 1: Request consent - conservative limit
-    CONSENT_REQUEST = "10/minute"
+    CONSENT_REQUEST = "10/minute"  # noqa: S105
     
     # Step 2: Approve/deny - slightly higher
-    CONSENT_ACTION = "20/minute"
+    CONSENT_ACTION = "20/minute"  # noqa: S105
     
     # Token validation - higher for polling (soon replaced by SSE)
-    TOKEN_VALIDATION = "60/minute"
+    TOKEN_VALIDATION = "60/minute"  # noqa: S105
     
     # Agent chat - moderate limit
-    AGENT_CHAT = "30/minute"
+    AGENT_CHAT = "30/minute"  # noqa: S105
     
     # Global fallback per IP
-    GLOBAL_PER_IP = "100/minute"
+    GLOBAL_PER_IP = "100/minute"  # noqa: S105
 
 
 def log_rate_limit_hit(request: Request, limit: str):

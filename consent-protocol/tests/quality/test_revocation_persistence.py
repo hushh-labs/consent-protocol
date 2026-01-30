@@ -5,10 +5,10 @@ Token Revocation Persistence Tests
 Verifies that token revocation is persisted to database and survives server restarts.
 """
 
-import pytest
 import hashlib
 import time
-import asyncio
+
+import pytest
 
 
 # Simulated revocation functions that match the implementation pattern
@@ -73,7 +73,7 @@ class TestRevocationPersistence:
     @pytest.mark.asyncio
     async def test_revoke_token_is_persisted(self, db):
         """Revoked token should be marked as revoked."""
-        token = "HCT:abc123.signature"
+        token = "HCT:abc123.signature"  # noqa: S105
         
         await db.revoke(token, user_id="user_123", reason="User requested")
         
@@ -82,14 +82,14 @@ class TestRevocationPersistence:
     @pytest.mark.asyncio
     async def test_non_revoked_token_is_valid(self, db):
         """Non-revoked token should not be in revocation list."""
-        token = "HCT:valid_token.signature"
+        token = "HCT:valid_token.signature"  # noqa: S105
         
         assert await db.is_revoked(token) is False
     
     @pytest.mark.asyncio
     async def test_revocation_survives_restart(self, db):
         """Token should remain revoked after server restart."""
-        token = "HCT:revoked_before_restart.signature"
+        token = "HCT:revoked_before_restart.signature"  # noqa: S105
         
         # Revoke token
         await db.revoke(token, user_id="user_456")
@@ -103,7 +103,7 @@ class TestRevocationPersistence:
     @pytest.mark.asyncio
     async def test_revocation_stores_metadata(self, db):
         """Revocation should store full metadata."""
-        token = "HCT:token_with_metadata.signature"
+        token = "HCT:token_with_metadata.signature"  # noqa: S105
         
         await db.revoke(
             token,
@@ -123,7 +123,7 @@ class TestRevocationPersistence:
     @pytest.mark.asyncio
     async def test_token_hash_is_sha256(self, db):
         """Token should be stored as SHA256 hash, not plaintext."""
-        token = "HCT:sensitive_token.signature"
+        token = "HCT:sensitive_token.signature"  # noqa: S105
         expected_hash = hashlib.sha256(token.encode()).hexdigest()
         
         await db.revoke(token, user_id="user_test")
@@ -143,7 +143,7 @@ class TestRevocationValidation:
     @pytest.mark.asyncio
     async def test_validate_rejects_revoked_token(self, db):
         """Validation should fail for revoked tokens."""
-        token = "HCT:will_be_revoked.signature"
+        token = "HCT:will_be_revoked.signature"  # noqa: S105
         
         # Token valid before revocation
         assert await db.is_revoked(token) is False
@@ -158,10 +158,10 @@ class TestRevocationValidation:
     async def test_multiple_revocations_same_user(self, db):
         """User can have multiple revoked tokens."""
         user_id = "user_multi"
-        tokens = [
+        tokens = [  # noqa: S105
             "HCT:token_1.sig",
             "HCT:token_2.sig",
-            "HCT:token_3.sig"
+            "HCT:token_3.sig",
         ]
         
         for token in tokens:

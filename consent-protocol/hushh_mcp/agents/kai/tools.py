@@ -5,18 +5,18 @@ ADK Tools for the Kai Financial Agent.
 Wraps the specialized analysis engines (Fundamental, Sentiment, Valuation) into tools.
 """
 
-from typing import Dict, Any, Optional
-import asyncio
+from typing import Any, Dict
 
-from hushh_mcp.hushh_adk.tools import hushh_tool
-from hushh_mcp.hushh_adk.context import HushhContext
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.hushh_adk.context import HushhContext
+from hushh_mcp.hushh_adk.tools import hushh_tool
 
 # Import the existing "Agents" which we are now treating as "Analysis Engines"
 # We backed them up, but we'll use the ones in the current directory as library code.
 from .fundamental_agent import fundamental_agent as fundamental_engine
 from .sentiment_agent import sentiment_agent as sentiment_engine
 from .valuation_agent import valuation_agent as valuation_engine
+
 
 @hushh_tool(scope=ConsentScope.VAULT_READ_FINANCE, name="perform_fundamental_analysis")
 async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:

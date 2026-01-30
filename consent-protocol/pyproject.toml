@@ -1,9 +1,17 @@
 # pyproject.toml - Python tooling configuration for Hushh Consent Protocol
 
 [tool.ruff]
-# Python 3.11 - aligned with CI and Dockerfile
-target-version = "py311"
+# Python 3.13 - aligned with CI and Dockerfile
+target-version = "py313"
 line-length = 100
+exclude = [
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
@@ -12,25 +20,25 @@ select = [
     "S",   # bandit security checks
 ]
 ignore = [
-    "S101",  # Allow assert in tests
-]
-exclude = [
-    ".git",
-    "__pycache__",
-    ".pytest_cache",
-    "*.egg-info",
+    "E501",  # Line length handled separately
+    "B904",  # Prefer explicit exception chaining, but avoid noisy diffs
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # Allow assert in tests
 
 [tool.mypy]
-# Python 3.11 - aligned with CI and Dockerfile
-python_version = "3.11"
+# Python 3.13 - aligned with CI and Dockerfile
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Gradual typing adoption
 ignore_missing_imports = true   # Third-party libs without stubs
+files = ["api"]
+
+[[tool.mypy.overrides]]
+module = ["hushh_mcp.*"]
+follow_imports = "skip"
 
 [tool.bandit]
 exclude_dirs = ["tests", "__pycache__"]

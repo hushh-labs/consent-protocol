@@ -5,8 +5,8 @@ Rate Limiting Tests
 Verifies that rate limiting is properly enforced for consent endpoints.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
+
 from api.middlewares.rate_limit import RateLimits, get_rate_limit_key
 
 
@@ -59,23 +59,23 @@ class TestRateLimitConstants:
     
     def test_consent_request_limit(self):
         """Consent request limit should be 10/minute."""
-        assert RateLimits.CONSENT_REQUEST == "10/minute"
+        assert RateLimits.CONSENT_REQUEST == "10/minute"  # noqa: S105
     
     def test_consent_action_limit(self):
         """Consent action limit should be 20/minute."""
-        assert RateLimits.CONSENT_ACTION == "20/minute"
+        assert RateLimits.CONSENT_ACTION == "20/minute"  # noqa: S105
     
     def test_token_validation_limit(self):
         """Token validation limit should be higher for polling."""
-        assert RateLimits.TOKEN_VALIDATION == "60/minute"
+        assert RateLimits.TOKEN_VALIDATION == "60/minute"  # noqa: S105
     
     def test_agent_chat_limit(self):
         """Agent chat limit should be moderate."""
-        assert RateLimits.AGENT_CHAT == "30/minute"
+        assert RateLimits.AGENT_CHAT == "30/minute"  # noqa: S105
     
     def test_global_limit(self):
         """Global per-IP limit should be highest."""
-        assert RateLimits.GLOBAL_PER_IP == "100/minute"
+        assert RateLimits.GLOBAL_PER_IP == "100/minute"  # noqa: S105
 
 
 class TestRateLimitEnforcement:

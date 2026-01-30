@@ -5,11 +5,11 @@ Delegation functions for the Orchestrator agent.
 These tools are used by the LLM to route requests to specialized agents.
 """
 
-from typing import Dict, Any
-from hushh_mcp.hushh_adk.tools import hushh_tool
+from typing import Any, Dict
+
 from hushh_mcp.hushh_adk.context import HushhContext
-from hushh_mcp.trust.link import create_trust_link
-from hushh_mcp.constants import ConsentScope
+from hushh_mcp.hushh_adk.tools import hushh_tool
+
 
 # Helper to standard delegation response
 def _create_delegation_response(domain: str, target_agent: str, context: HushhContext) -> Dict[str, Any]:

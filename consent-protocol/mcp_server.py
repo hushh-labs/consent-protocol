@@ -30,19 +30,20 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
 
+from mcp_modules import resources as mcp_resources
+
 # Import modular components
 from mcp_modules.config import SERVER_INFO
 from mcp_modules.tools import (
     get_tool_definitions,
-    handle_request_consent,
     handle_check_consent_status,
+    handle_delegate,
     handle_get_food,
     handle_get_professional,
-    handle_validate_token,
-    handle_delegate,
     handle_list_scopes,
+    handle_request_consent,
+    handle_validate_token,
 )
-from mcp_modules import resources as mcp_resources
 
 # ============================================================================
 # LOGGING CONFIGURATION

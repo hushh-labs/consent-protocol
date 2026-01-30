@@ -3,24 +3,20 @@
 Consent request and status check handlers.
 """
 
-import asyncio
 import json
 import logging
-import time
-from typing import Any
 
 import httpx
 from mcp.types import TextContent
 
-from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from mcp_modules.config import (
+    CONSENT_POLL_INTERVAL_SECONDS,
+    CONSENT_TIMEOUT_SECONDS,
     FASTAPI_URL,
     FRONTEND_URL,
-    PRODUCTION_MODE,
     MCP_DEVELOPER_TOKEN,
-    CONSENT_TIMEOUT_SECONDS,
-    CONSENT_POLL_INTERVAL_SECONDS,
+    PRODUCTION_MODE,
     SCOPE_API_MAP,
 )
 
@@ -88,7 +84,6 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     """
     user_id = args.get("user_id")
     scope_str = args.get("scope")
-    reason = args.get("reason", "MCP Host requesting access")
     
     # Email resolution
     original_identifier = user_id
@@ -114,8 +109,6 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     
     # Validate scope
     scope_api = SCOPE_API_MAP.get(scope_str)
-    scope_enum = SCOPE_ENUM_MAP.get(scope_str)
-    
     if not scope_api:
         return [TextContent(type="text", text=json.dumps({
             "status": "error",
@@ -133,7 +126,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
         try:
             async with httpx.AsyncClient() as client:
                 # Step 1: Create pending consent request
-                logger.info(f"📤 Creating pending consent request in FastAPI...")
+                logger.info("📤 Creating pending consent request in FastAPI...")
                 
                 create_response = await client.post(
                     f"{FASTAPI_URL}/api/v1/request-consent",
@@ -160,7 +153,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                 
                 # Already granted
                 if status == "already_granted":
-                    logger.info(f"✅ Consent already granted - returning existing token")
+                    logger.info("✅ Consent already granted - returning existing token")
                     return [TextContent(type="text", text=json.dumps({
                         "status": "granted",
                         "consent_token": data.get("consent_token"),
@@ -201,7 +194,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         }))]
                     
                     logger.info(f"📋 Consent request created (ID: {request_id})")
-                    logger.info(f"🔌 Using SSE to wait for user approval...")
+                    logger.info("🔌 Using SSE to wait for user approval...")
                     
                     # Use SSE client for efficient server-push notifications
                     from mcp_modules.sse_client import wait_for_consent_via_sse
@@ -233,7 +226,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                             
                             if active_token:
                                 token_id = active_token.get("token_id")
-                                logger.info(f"🎉 CONSENT GRANTED by user! Token received.")
+                                logger.info("🎉 CONSENT GRANTED by user! Token received.")
                                 return [TextContent(type="text", text=json.dumps({
                                     "status": "granted",
                                     "consent_token": token_id,
@@ -251,7 +244,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         }))]
                     
                     elif resolution.status == "denied":
-                        logger.warning(f"❌ Consent DENIED by user")
+                        logger.warning("❌ Consent DENIED by user")
                         return [TextContent(type="text", text=json.dumps({
                             "status": "denied",
                             "user_id": user_id,
@@ -355,7 +348,7 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                             ]
                         }))]
                 
-                logger.info(f"✅ Request not pending - may have been approved or denied")
+                logger.info("✅ Request not pending - may have been approved or denied")
                 return [TextContent(type="text", text=json.dumps({
                     "status": "not_pending",
                     "user_id": user_id,

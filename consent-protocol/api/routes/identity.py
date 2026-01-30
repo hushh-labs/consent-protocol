@@ -20,14 +20,14 @@ Privacy architecture:
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from hushh_mcp.services.investor_db import InvestorDBService
-from hushh_mcp.services.user_investor_profile_db import UserInvestorProfileService
+from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from api.utils.firebase_auth import verify_firebase_bearer
+from hushh_mcp.services.investor_db import InvestorDBService
+from hushh_mcp.services.user_investor_profile_db import UserInvestorProfileService
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,6 @@ async def auto_detect_investor(
     
     If no displayName or no matches found, returns {"detected": False}
     """
-    import re
 
     # Validate Firebase token
     if not authorization.startswith("Bearer "):
@@ -288,10 +287,9 @@ async def get_identity_status(
 
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
-        user_id = payload.user_id
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
     # Use service layer for user_investor_profiles operations
@@ -329,10 +327,9 @@ async def get_encrypted_profile(
 
         if payload.scope != ConsentScope.VAULT_OWNER.value:
             raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
-        user_id = payload.user_id
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
     # Use service layer for user_investor_profiles operations
@@ -371,7 +368,7 @@ async def delete_identity(
         user_id = payload.user_id
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
     # Use service layer for user_investor_profiles operations

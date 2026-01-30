@@ -6,9 +6,11 @@ Advanced multi-modal financial analyst.
 MIGRATED TO ADK (v2.0.0)
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from hushh_mcp.types import UserID
-from .agent import get_kai_agent, KaiAgent
+
+from .agent import KaiAgent, get_kai_agent
 
 __all__ = ["handle_message", "KaiAgent", "get_kai_agent"]
 

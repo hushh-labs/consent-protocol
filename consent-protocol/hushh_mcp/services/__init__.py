@@ -11,12 +11,12 @@ CONSENT-FIRST ARCHITECTURE:
     API routes should use these services, never access database directly.
 """
 
-from .vault_db import VaultDBService
 from .consent_db import ConsentDBService
 from .investor_db import InvestorDBService
-from .user_investor_profile_db import UserInvestorProfileService
-from .vault_keys_service import VaultKeysService
 from .kai_decisions_service import KaiDecisionsService
+from .user_investor_profile_db import UserInvestorProfileService
+from .vault_db import VaultDBService
+from .vault_keys_service import VaultKeysService
 
 __all__ = [
     "VaultDBService",

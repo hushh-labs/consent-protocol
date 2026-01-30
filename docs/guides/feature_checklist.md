@@ -77,7 +77,7 @@ Use this checklist for EVERY new feature that involves data operations.
 ## Documentation
 
 - [ ] Add route to `hushh-webapp/route-contracts.json`
-- [ ] Update `docs/technical/06_route_contracts.md` if needed
+- [ ] Update `docs/reference/route_contracts.md` (or use symlink `docs/technical/route_contracts.md`) if needed
 - [ ] Add JSDoc comments to service methods
 
 ## Common Mistakes to Avoid
