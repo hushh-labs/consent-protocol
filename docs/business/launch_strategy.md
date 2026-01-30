@@ -75,7 +75,7 @@ _Builders might be intimidated by the requirement to support Web, iOS, and Andro
 
 ### 📂 Repo Optimization
 
-- [ ] **README.md Overhaul**:
+- [ ] **readme.md Overhaul**:
   - **Banner**: "Now Live on App Store".
   - **Badges**: `build: passing`, `license: MIT`, `discord: active`.
   - **Quick Start**: One-line command to run the stack.
@@ -127,7 +127,7 @@ _Builders might be intimidated by the requirement to support Web, iOS, and Andro
 
 | Day     | Action                                                                                 | Owner |
 | :------ | :------------------------------------------------------------------------------------- | :---- |
-| **1-3** | **Polishing Docs**: Ensure `GETTING_STARTED.md` is bulletproof. Windows support check? | @User |
+| **1-3** | **Polishing Docs**: Ensure `getting_started.md` is bulletproof. Windows support check? | @User |
 | **4**   | **Discord Setup**: Create server, channels, bot permissions.                           | @User |
 | **5**   | **Asset Creation**: Record the 60s demo video.                                         | @User |
 | **7**   | **Soft Launch**: Invite 10-20 trusted devs to Discord to break things.                 | @User |

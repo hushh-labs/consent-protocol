@@ -28,7 +28,7 @@ Brief description of what this PR does.
 - [ ] Error messages include missing parameter names
 - [ ] Tested on iOS simulator
 - [ ] Tested on Android emulator
-- [ ] Updated `docs/PLUGIN_API_REFERENCE.md` if API changed
+- [ ] Updated `docs/plugin_api_reference.md` if API changed
 
 ### Testing
 
