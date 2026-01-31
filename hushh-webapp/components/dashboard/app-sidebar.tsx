@@ -3,16 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Utensils,
-  ShoppingBag,
-  CreditCard,
-  Plane,
-  MessageCircle,
-  Dumbbell,
-  UserCheck,
   Shield,
   TrendingUp,
   Home,
+  MessageSquare,
+  User,
 } from "lucide-react";
 import {
   Sidebar,
@@ -30,52 +25,10 @@ import { usePendingConsentCount } from "@/components/consent/notification-provid
 
 const domains = [
   {
-    name: "Investor",
-    href: "/kai",
+    name: "Agent Kai",
+    href: "/dashboard/kai",
     icon: TrendingUp,
     status: "active",
-  },
-  {
-    name: "Professional",
-    href: "/dashboard/professional",
-    icon: UserCheck,
-    status: "active",
-  },
-  {
-    name: "Food & Dining",
-    href: "/dashboard/food",
-    icon: Utensils,
-    status: "active",
-  },
-  {
-    name: "Fashion",
-    href: "/dashboard/fashion",
-    icon: ShoppingBag,
-    status: "soon",
-  },
-  {
-    name: "Transactions",
-    href: "/dashboard/transactions",
-    icon: CreditCard,
-    status: "soon",
-  },
-  {
-    name: "Travel",
-    href: "/dashboard/travel",
-    icon: Plane,
-    status: "soon",
-  },
-  {
-    name: "Social",
-    href: "/dashboard/social",
-    icon: MessageCircle,
-    status: "soon",
-  },
-  {
-    name: "Fitness",
-    href: "/dashboard/fitness",
-    icon: Dumbbell,
-    status: "soon",
   },
 ];
 
