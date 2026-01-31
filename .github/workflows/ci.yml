@@ -83,6 +83,10 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=high
         continue-on-error: true  # Don't fail on advisories, just warn
+      
+      - name: Run frontend tests
+        run: npm test
+        continue-on-error: true  # Don't fail until tests are stable
 
   # ============================================================================
   # Backend (Python FastAPI)
@@ -143,11 +147,11 @@ jobs:
         run: python -m mypy --config-file pyproject.toml --ignore-missing-imports
         continue-on-error: false
       
-      - name: Run tests
+      - name: Run tests with coverage
         timeout-minutes: 10
         run: |
           if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -o -name '*_test.py' | head -1)" ]; then
-            python -m pytest tests/ -v --tb=short
+            python -m pytest tests/ -v --tb=short --cov=hushh_mcp --cov-report=xml --cov-report=term
           else
             echo "⚠ WARNING: No test files found, skipping tests"
             exit 0
