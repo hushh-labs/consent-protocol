@@ -5,49 +5,95 @@ from enum import Enum
 # ==================== Consent Scopes ====================
 
 class ConsentScope(str, Enum):
-    # Vault READ scopes (domain-specific per Bible)
-    VAULT_READ_FINANCE = "vault.read.finance"
-    VAULT_READ_FOOD = "vault.read.food"
-    VAULT_READ_PROFESSIONAL = "vault.read.professional"
+    """
+    Granular consent scopes for MCP-compliant data access.
     
+    Design Principles:
+    - VAULT_OWNER grants full world model access (user's own data)
+    - External MCP requests must specify granular attr.* scopes
+    - Attribute-level granularity for fine-grained consent
+    """
+    
+    # ==================== VAULT OWNER (Full Access) ====================
     # "Master Scope" granted ONLY via BYOK login. 
     # Never granted to external agents.
     VAULT_OWNER = "vault.owner"
-
-    # Vault WRITE scopes (domain-specific per Bible)
-    VAULT_WRITE_FOOD = "vault.write.food"
+    
+    # ==================== FINANCIAL ATTRIBUTES (Granular) ====================
+    ATTR_FINANCIAL_RISK_PROFILE = "attr.financial.risk_profile"
+    ATTR_FINANCIAL_HOLDINGS = "attr.financial.holdings"
+    ATTR_FINANCIAL_PERFORMANCE = "attr.financial.performance"
+    ATTR_FINANCIAL_DECISIONS = "attr.financial.decisions"
+    
+    # ==================== LIFESTYLE ATTRIBUTES ====================
+    ATTR_LIFESTYLE_INTERESTS = "attr.lifestyle.interests"
+    ATTR_LIFESTYLE_SPENDING = "attr.lifestyle.spending"
+    ATTR_LIFESTYLE_LOCATIONS = "attr.lifestyle.locations"
+    
+    # ==================== PROFESSIONAL ATTRIBUTES ====================
+    ATTR_PROFESSIONAL_SKILLS = "attr.professional.skills"
+    ATTR_PROFESSIONAL_EXPERIENCE = "attr.professional.experience"
+    
+    # ==================== PORTFOLIO OPERATIONS ====================
+    PORTFOLIO_IMPORT = "portfolio.import"
+    PORTFOLIO_ANALYZE = "portfolio.analyze"
+    PORTFOLIO_READ = "portfolio.read"
+    
+    # ==================== CHAT HISTORY ====================
+    CHAT_HISTORY_READ = "chat.history.read"
+    CHAT_HISTORY_WRITE = "chat.history.write"
+    
+    # ==================== EMBEDDINGS (Similarity Matching) ====================
+    EMBEDDING_PROFILE_READ = "embedding.profile.read"
+    EMBEDDING_PROFILE_COMPUTE = "embedding.profile.compute"
+    
+    # ==================== KAI AGENT OPERATIONS ====================
+    AGENT_KAI_ANALYZE = "agent.kai.analyze"
+    AGENT_KAI_DEBATE = "agent.kai.debate"
+    AGENT_KAI_INFER = "agent.kai.infer"
+    
+    # ==================== EXTERNAL DATA SOURCES ====================
+    # Hybrid mode - per-request consent
+    EXTERNAL_SEC_FILINGS = "external.sec.filings"
+    EXTERNAL_NEWS_API = "external.news.api"
+    EXTERNAL_MARKET_DATA = "external.market.data"
+    EXTERNAL_RENAISSANCE = "external.renaissance.data"
+    
+    # ==================== LEGACY SCOPES (Deprecated) ====================
+    # Kept for backward compatibility during migration
+    VAULT_READ_FINANCE = "vault.read.finance"
+    VAULT_READ_FOOD = "vault.read.food"
+    VAULT_READ_PROFESSIONAL = "vault.read.professional"
     VAULT_WRITE_FINANCE = "vault.write.finance"
+    VAULT_WRITE_FOOD = "vault.write.food"
     VAULT_WRITE_PROFESSIONAL = "vault.write.professional"
-
-    # Agent permissioning
-    AGENT_SHOPPING_PURCHASE = "agent.shopping.purchase"
-    AGENT_FINANCE_ANALYZE = "agent.finance.analyze"
-    AGENT_SALES_OPTIMIZE = "agent.sales.optimize"
-    AGENT_FOOD_COLLECT = "agent.food.collect"
-
-    # Custom and extensible scopes
-    CUSTOM_TEMPORARY = "custom.temporary"
-    CUSTOM_SESSION_WRITE = "custom.session.write"
-
-    # ==================== KAI SCOPES ====================
-    # Vault operations for Kai
     VAULT_READ_RISK_PROFILE = "vault.read.risk_profile"
     VAULT_READ_DECISION_HISTORY = "vault.read.decision_history"
     VAULT_WRITE_RISK_PROFILE = "vault.write.risk_profile"
     VAULT_WRITE_DECISION = "vault.write.decision"
 
-    # Kai agent operations
-    AGENT_KAI_ANALYZE = "agent.kai.analyze"
-    AGENT_KAI_DEBATE = "agent.kai.debate"
-
-    # External data sources (Hybrid mode - per-request consent)
-    EXTERNAL_SEC_FILINGS = "external.sec.filings"
-    EXTERNAL_NEWS_API = "external.news.api"
-    EXTERNAL_MARKET_DATA = "external.market.data"
-
     @classmethod
     def list(cls):
         return [scope.value for scope in cls]
+    
+    @classmethod
+    def financial_scopes(cls):
+        """Return all financial attribute scopes."""
+        return [
+            cls.ATTR_FINANCIAL_RISK_PROFILE,
+            cls.ATTR_FINANCIAL_HOLDINGS,
+            cls.ATTR_FINANCIAL_PERFORMANCE,
+            cls.ATTR_FINANCIAL_DECISIONS,
+        ]
+    
+    @classmethod
+    def lifestyle_scopes(cls):
+        """Return all lifestyle attribute scopes."""
+        return [
+            cls.ATTR_LIFESTYLE_INTERESTS,
+            cls.ATTR_LIFESTYLE_SPENDING,
+            cls.ATTR_LIFESTYLE_LOCATIONS,
+        ]
 
 
 # ==================== Agent Configuration ====================
@@ -55,9 +101,6 @@ class ConsentScope(str, Enum):
 # Port assignments for agent-to-agent communication
 AGENT_PORTS = {
     "agent_orchestrator": 10000,
-    "agent_food_dining": 10001,
-    "agent_professional_profile": 10002,
-    "agent_shopper": 10004,
     "agent_kai": 10005,  # Kai investment analysis agent
 }
 
