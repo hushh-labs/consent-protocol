@@ -34,9 +34,7 @@ from api.routes import (  # noqa: E402
     db_proxy,
     debug_firebase,
     developer,
-    food,
     health,
-    professional,
     session,
     sse,
 )
@@ -114,12 +112,6 @@ app.include_router(debug_firebase.router)
 from api.routes.kai import router as kai_router  # noqa: E402
 
 app.include_router(kai_router)
-
-# Food agent routes (/api/food/...)
-app.include_router(food.router)
-
-# Professional agent routes (/api/professional/...)
-app.include_router(professional.router)
 
 # Phase 2: Investor Profiles (Public Discovery Layer)
 from api.routes import investors  # noqa: E402

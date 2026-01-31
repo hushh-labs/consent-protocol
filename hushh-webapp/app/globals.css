@@ -57,7 +57,7 @@ html body[data-scroll-locked] {
 }
 
 :root {
-  --radius: 2.35rem;
+  --radius: 1rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -89,6 +89,29 @@ html body[data-scroll-locked] {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  
+  /* Crystal Gold Theme */
+  --crystal-gold-50: #FDF8E7;
+  --crystal-gold-100: #F9EDCC;
+  --crystal-gold-200: #F4E4BA;
+  --crystal-gold-300: #E8D5A3;
+  --crystal-gold-400: #D4AF37;
+  --crystal-gold-500: #C5A028;
+  --crystal-gold-600: #B8860B;
+  --crystal-gold-700: #996515;
+  --crystal-gold-800: #7A4F0F;
+  --crystal-gold-900: #5C3A0A;
+  
+  /* Crystal Glass Effect */
+  --crystal-glass-bg: rgba(255, 255, 255, 0.12);
+  --crystal-glass-border: rgba(212, 175, 55, 0.2);
+  --crystal-glass-blur: 20px;
+  
+  /* App Background - Light Gold Gradient */
+  --app-bg-start: #FFFDF7;
+  --app-bg-mid: #FDF8E7;
+  --app-bg-end: #F9EDCC;
+  
   --glass1: #ffffff60 !important;
   --glass2: #6464643b !important;
   --activeGlassColor: var(--glass1) !important;
@@ -96,15 +119,16 @@ html body[data-scroll-locked] {
   --shadow2: ##0000004f;
   --activeShadowColor: var(--shadow1);
   --fadeGrey: #e5e7eb80;
-  /* Hushh Brand Color Tokens (from hushh.ai) */
-  --morphy-primary-start: #e91e63; /* Pink (Welcome Gradient Start) */
-  --morphy-primary-end: #9c27b0; /* Purple (Welcome Gradient End) */
-  --morphy-secondary-start: #c0c0c0; /* Silver gradient start */
-  --morphy-secondary-end: #e8e8e8; /* Silver gradient end (FAQ style) */
+  
+  /* Hushh Brand Color Tokens - Crystal Gold */
+  --morphy-primary-start: #D4AF37;
+  --morphy-primary-end: #B8860B;
+  --morphy-secondary-start: #F4E4BA;
+  --morphy-secondary-end: #E8D5A3;
 
-  /* Alternative gold/accent gradient */
-  --morphy-accent-start: #fbbf24;
-  --morphy-accent-end: #f59e0b;
+  /* Gold accent gradient */
+  --morphy-accent-start: #D4AF37;
+  --morphy-accent-end: #B8860B;
 
   /* Pre-computed gradients */
   --morphy-primary-gradient: linear-gradient(
@@ -123,23 +147,31 @@ html body[data-scroll-locked] {
     var(--morphy-accent-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens */
-  --md-ripple-hover-color: var(--morphy-primary-start);
-  --md-ripple-pressed-color: var(--morphy-primary-start);
+  /* Material 3 Expressive Ripple Tokens - Gold */
+  --md-ripple-hover-color: var(--crystal-gold-400);
+  --md-ripple-pressed-color: var(--crystal-gold-600);
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }
 
-/* Theme-aware gradient text - pink→purple consistently */
+/* Theme-aware gradient text - Crystal Gold */
 .hushh-gradient-text {
-  background-image: linear-gradient(to right, #e91e63, #9c27b0);
+  background-image: linear-gradient(to right, #D4AF37, #B8860B);
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
 }
 
 .dark .hushh-gradient-text {
-  background-image: linear-gradient(to right, #c0c0c0, #e8e8e8);
+  background-image: linear-gradient(to right, #D4AF37, #F4E4BA);
+}
+
+/* Crystal Gold Text */
+.text-crystal-gold {
+  background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .dark {
@@ -174,6 +206,16 @@ html body[data-scroll-locked] {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  
+  /* Crystal Glass Effect - Dark Mode */
+  --crystal-glass-bg: rgba(212, 175, 55, 0.06);
+  --crystal-glass-border: rgba(212, 175, 55, 0.15);
+  
+  /* App Background - Dark Gold Gradient */
+  --app-bg-start: #0A0A0C;
+  --app-bg-mid: #12100D;
+  --app-bg-end: #1A1510;
+  
   --glass1: #ffffff40 !important;
   --glass2: #6464643b !important;
   --activeGlassColor: var(--glass2) !important;
@@ -181,11 +223,12 @@ html body[data-scroll-locked] {
   --shadow2: #0000004f;
   --activeShadowColor: var(--shadow2);
   --fadeGrey: #e5e7eb80;
-  /* Morphy UI Color Tokens - Dark Mode */
-  --morphy-primary-start: #e91e63;
-  --morphy-primary-end: #9c27b0;
-  --morphy-secondary-start: #e91e63;
-  --morphy-secondary-end: #9c27b0;
+  
+  /* Morphy UI Color Tokens - Dark Mode Crystal Gold */
+  --morphy-primary-start: #D4AF37;
+  --morphy-primary-end: #B8860B;
+  --morphy-secondary-start: #D4AF37;
+  --morphy-secondary-end: #F4E4BA;
 
   /* Ensure gradient colors are available immediately in dark mode */
   --morphy-secondary-gradient: linear-gradient(
@@ -194,9 +237,9 @@ html body[data-scroll-locked] {
     var(--morphy-secondary-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens - Pink/Purple for Hushh brand */
-  --md-ripple-hover-color: #e91e63;
-  --md-ripple-pressed-color: #9c27b0;
+  /* Material 3 Expressive Ripple Tokens - Gold */
+  --md-ripple-hover-color: #D4AF37;
+  --md-ripple-pressed-color: #B8860B;
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }
@@ -360,27 +403,22 @@ html body[data-scroll-locked] {
   pointer-events: none;
 }
 
-/* Subtle App Background Gradients - FIXED so content scrolls over static bg */
+/* Subtle App Background Gradients - Crystal Gold Theme */
 .morphy-app-bg {
   background: linear-gradient(
     180deg,
-    #ffffff 0%,
-    #ffffff 40%,
-    #f2f8ff 70%,
-    #e6f2ff 100%
+    var(--app-bg-start, #FFFDF7) 0%,
+    var(--app-bg-mid, #FDF8E7) 50%,
+    var(--app-bg-end, #F9EDCC) 100%
   );
 }
 
 .dark .morphy-app-bg {
   background: linear-gradient(
-    145deg,
-    #09090c 0%,
-    #0c0c14 15%,
-    #0f0f1a 30%,
-    #121218 50%,
-    #0f101a 65%,
-    #0c0c14 80%,
-    #09090c 100%
+    180deg,
+    var(--app-bg-start, #0A0A0C) 0%,
+    var(--app-bg-mid, #12100D) 50%,
+    var(--app-bg-end, #1A1510) 100%
   );
 }
 
@@ -576,4 +614,108 @@ html body[data-scroll-locked] {
   background: #fbbf24 !important;
   color: #000000 !important;
   border: 1px solid #f59e0b !important;
+}
+
+/* ============================================================================
+ * CRYSTAL GLASS EFFECT - iOS-inspired glassmorphism with gold accents
+ * ============================================================================ */
+
+.crystal-glass {
+  background: var(--crystal-glass-bg);
+  backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+  border: 1px solid var(--crystal-glass-border);
+  border-radius: var(--radius);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Gold accent variant */
+.crystal-glass-gold {
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.1) 0%,
+    rgba(184, 134, 11, 0.05) 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: var(--radius);
+  backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+}
+
+.dark .crystal-glass-gold {
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.08) 0%,
+    rgba(184, 134, 11, 0.04) 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+/* Crystal button variants */
+.crystal-btn {
+  background: var(--crystal-glass-bg);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid var(--crystal-glass-border);
+  border-radius: var(--radius);
+  transition: all 200ms ease-in-out;
+}
+
+.crystal-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(212, 175, 55, 0.3);
+}
+
+.dark .crystal-btn:hover {
+  background: rgba(212, 175, 55, 0.1);
+}
+
+.crystal-btn-gold {
+  background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
+  color: white;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+  transition: all 200ms ease-in-out;
+}
+
+.crystal-btn-gold:hover {
+  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Crystal card */
+.crystal-card {
+  background: var(--crystal-glass-bg);
+  backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
+  border: 1px solid var(--crystal-glass-border);
+  border-radius: calc(var(--radius) * 1.5);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    0 4px 30px rgba(0, 0, 0, 0.1);
+  transition: all 200ms ease-in-out;
+}
+
+.crystal-card:hover {
+  border-color: rgba(212, 175, 55, 0.3);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    0 8px 40px rgba(0, 0, 0, 0.15);
+}
+
+/* iOS-like radius utilities */
+@layer utilities {
+  .rounded-ios {
+    border-radius: var(--radius);
+  }
+  .rounded-ios-lg {
+    border-radius: calc(var(--radius) * 1.5);
+  }
+  .rounded-ios-xl {
+    border-radius: calc(var(--radius) * 2);
+  }
 }
