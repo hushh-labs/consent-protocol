@@ -4,15 +4,19 @@ Consent management endpoints (pending, approve, deny, revoke, history, active).
 
 NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
 Legacy scopes are mapped to dynamic scopes for backward compatibility.
+
+SECURITY: All consent management endpoints require Firebase authentication.
+The authenticated user can only manage their own consent requests.
 """
 
 import logging
 import time
 from typing import Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from api.middleware import require_firebase_auth, verify_user_id_match
 from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
@@ -24,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/consent", tags=["Consent Management"])
 
-# Export data storage (in-memory for temporary encrypted data during MCP flow)
+# NOTE: Export data is now persisted to database via ConsentDBService.store_consent_export()
+# The in-memory dict is kept as a fast cache but database is the source of truth
 _consent_exports: Dict[str, Dict] = {}
 
 
@@ -47,11 +52,18 @@ class CancelConsentRequest(BaseModel):
 
 
 @router.get("/pending")
-async def get_pending_consents(userId: str):
+async def get_pending_consents(
+    userId: str,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     Get all pending consent requests for a user.
-    Uses ConsentDBService for database access.
+    
+    SECURITY: Requires Firebase authentication. User can only view their own pending requests.
     """
+    # Verify user is requesting their own data
+    verify_user_id_match(firebase_uid, userId)
+    
     service = ConsentDBService()
     pending_from_db = await service.get_pending_requests(userId)
     logger.info(f"📋 Found {len(pending_from_db)} pending requests in DB for {userId}")
@@ -59,9 +71,14 @@ async def get_pending_consents(userId: str):
 
 
 @router.post("/pending/approve")
-async def approve_consent(request: Request):
+async def approve_consent(
+    request: Request,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     User approves a pending consent request (Zero-Knowledge).
+    
+    SECURITY: Requires Firebase authentication. User can only approve their own consent requests.
     
     Browser sends encrypted export data (server never sees plaintext).
     Export key is embedded in the consent token.
@@ -73,6 +90,9 @@ async def approve_consent(request: Request):
     encryptedData = body.get("encryptedData")  # Base64 ciphertext
     encryptedIv = body.get("encryptedIv")  # Base64 IV
     encryptedTag = body.get("encryptedTag")  # Base64 auth tag
+    
+    # Verify user is approving their own consent
+    verify_user_id_match(firebase_uid, userId)
     
     logger.info(f"✅ User {userId} approving consent request {requestId}")
     logger.info(f"   Export data present: {bool(encryptedData)}")
@@ -148,20 +168,33 @@ async def approve_consent(request: Request):
         expires_in_ms=expiry_hours * 60 * 60 * 1000
     )
     
-    # Store encrypted export linked to token (still in-memory for export data)
+    # Store encrypted export linked to token
+    # Persist to database for cross-instance consistency
     if encryptedData and exportKey:
+        # Store in database (source of truth)
+        await service.store_consent_export(
+            consent_token=token.token,
+            user_id=userId,
+            encrypted_data=encryptedData,
+            iv=encryptedIv or "",
+            tag=encryptedTag or "",
+            export_key=exportKey,
+            scope=pending_request["scope"],
+            expires_at_ms=token.expires_at,
+        )
+        
+        # Also cache in memory for fast access
         _consent_exports[token.token] = {
             "encrypted_data": encryptedData,
             "iv": encryptedIv,
             "tag": encryptedTag,
-            "export_key": exportKey,  # Will be in token for MCP decryption
+            "export_key": exportKey,
             "scope": pending_request["scope"],
             "created_at": int(time.time() * 1000),
         }
-        logger.info("   Stored encrypted export for token")
+        logger.info("   Stored encrypted export for token (DB + cache)")
     
     # Log CONSENT_GRANTED to database with dot notation scope
-    service = ConsentDBService()
     await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
@@ -184,10 +217,19 @@ async def approve_consent(request: Request):
 
 
 @router.post("/pending/deny")
-async def deny_consent(userId: str, requestId: str):
+async def deny_consent(
+    userId: str,
+    requestId: str,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     User denies a pending consent request.
+    
+    SECURITY: Requires Firebase authentication. User can only deny their own consent requests.
     """
+    # Verify user is denying their own consent
+    verify_user_id_match(firebase_uid, userId)
+    
     logger.info(f"❌ User {userId} denying consent request {requestId}")
     
     # Get pending request from database
@@ -211,13 +253,21 @@ async def deny_consent(userId: str, requestId: str):
 
 
 @router.post("/cancel")
-async def cancel_consent(payload: CancelConsentRequest):
+async def cancel_consent(
+    payload: CancelConsentRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     Cancel a pending consent request.
 
+    SECURITY: Requires Firebase authentication. User can only cancel their own consent requests.
+    
     Implementation: insert a terminal audit action so the request no longer
     appears as pending (pending = latest action == REQUESTED).
     """
+    # Verify user is cancelling their own consent
+    verify_user_id_match(firebase_uid, payload.userId)
+    
     logger.info(f"🛑 User {payload.userId} cancelling consent request {payload.requestId}")
 
     service = ConsentDBService()
@@ -356,9 +406,14 @@ async def issue_vault_owner_token(request: Request):
 
 
 @router.post("/revoke")
-async def revoke_consent(request: Request):
+async def revoke_consent(
+    request: Request,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     User revokes an active consent token.
+    
+    SECURITY: Requires Firebase authentication. User can only revoke their own consent.
     
     This removes access for the app that was previously granted consent.
     For VAULT_OWNER tokens, this effectively locks the vault.
@@ -372,6 +427,9 @@ async def revoke_consent(request: Request):
         
         if not userId or not scope:
             raise HTTPException(status_code=400, detail="userId and scope are required")
+        
+        # Verify user is revoking their own consent
+        verify_user_id_match(firebase_uid, userId)
         
         logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
         
@@ -396,6 +454,12 @@ async def revoke_consent(request: Request):
         if original_token and not original_token.startswith("REVOKED_"):
             revoke_token(original_token)
             logger.info("🔒 Token added to in-memory revocation set")
+            
+            # Also delete any associated export data
+            await service.delete_consent_export(original_token)
+            if original_token in _consent_exports:
+                del _consent_exports[original_token]
+            logger.info("🗑️ Deleted associated export data")
         
         # Generate a NEW unique token_id for the REVOKED event
         # (Cannot reuse original token_id due to UNIQUE constraint on consent_audit table)
@@ -444,6 +508,8 @@ async def get_consent_export_data(consent_token: str):
     MCP calls this with a valid consent token.
     Returns encrypted data + export key for client-side decryption.
     Server NEVER sees plaintext.
+    
+    Data is retrieved from database (source of truth) with in-memory cache fallback.
     """
     logger.info(f"📦 Export data request for token: {consent_token[:30]}...")
     
@@ -453,21 +519,38 @@ async def get_consent_export_data(consent_token: str):
         logger.warning(f"❌ Token validation failed: {reason}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
     
-    # Look up the encrypted export
-    if consent_token not in _consent_exports:
-        logger.warning("⚠️ No export data found for token")
+    # Try in-memory cache first (fast path)
+    if consent_token in _consent_exports:
+        export_data = _consent_exports[consent_token]
+        logger.info(f"✅ Returning encrypted export from cache for scope: {export_data.get('scope')}")
+        return {
+            "status": "success",
+            "encrypted_data": export_data["encrypted_data"],
+            "iv": export_data["iv"],
+            "tag": export_data["tag"],
+            "export_key": export_data["export_key"],
+            "scope": export_data["scope"],
+        }
+    
+    # Fall back to database (cross-instance consistency)
+    service = ConsentDBService()
+    export_data = await service.get_consent_export(consent_token)
+    
+    if not export_data:
+        logger.warning("⚠️ No export data found for token (checked cache and DB)")
         raise HTTPException(status_code=404, detail="No export data for this token")
     
-    export_data = _consent_exports[consent_token]
+    # Cache for future requests
+    _consent_exports[consent_token] = export_data
     
-    logger.info(f"✅ Returning encrypted export for scope: {export_data.get('scope')}")
+    logger.info(f"✅ Returning encrypted export from DB for scope: {export_data.get('scope')}")
     
     return {
         "status": "success",
         "encrypted_data": export_data["encrypted_data"],
         "iv": export_data["iv"],
         "tag": export_data["tag"],
-        "export_key": export_data["export_key"],  # MCP decrypts with this
+        "export_key": export_data["export_key"],
         "scope": export_data["scope"],
     }
 
