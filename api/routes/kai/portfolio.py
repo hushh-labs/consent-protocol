@@ -6,15 +6,20 @@ Handles:
 - File upload (CSV/PDF) for brokerage statements
 - Portfolio summary retrieval
 - KPI derivation and world model integration
+
+Authentication:
+- All endpoints require VAULT_OWNER token (consent-first architecture)
+- Token contains user_id, proving both identity and consent
+- Firebase is only used for bootstrap (issuing VAULT_OWNER token)
 """
 
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
-from api.utils.firebase_auth import verify_firebase_bearer
+from api.middleware import require_vault_owner_token
 from hushh_mcp.services.portfolio_import_service import (
     ImportResult,
     get_portfolio_import_service,
@@ -53,8 +58,8 @@ class PortfolioSummaryResponse(BaseModel):
 @router.post("/portfolio/import", response_model=PortfolioImportResponse)
 async def import_portfolio(
     file: UploadFile,
-    user_id: str = Form(..., description="User's Firebase UID"),
-    authorization: str = Header(..., description="Bearer token for authentication"),
+    user_id: str = Form(..., description="User's ID"),
+    authorization: str = Header(..., description="Bearer token with VAULT_OWNER token"),
 ) -> PortfolioImportResponse:
     """
     Import a brokerage statement and analyze the portfolio.
@@ -71,7 +76,8 @@ async def import_portfolio(
     3. Store KPIs in user's world model
     4. Return summary with losers and winners
     
-    **Authentication**: Requires valid Firebase ID token.
+    **Authentication**: Requires valid VAULT_OWNER token.
+    The token proves both identity (user_id) and consent (vault unlocked).
     
     **Example Response**:
     ```json
@@ -89,17 +95,38 @@ async def import_portfolio(
         "source": "schwab"
     }
     ```
-    """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
     
-    # Verify user_id matches token
-    if token_uid != user_id:
-        logger.warning(f"User ID mismatch: token={token_uid}, request={user_id}")
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    Note: This endpoint uses manual token validation instead of Depends() due to
+    multipart form data handling requirements with file uploads.
+    """
+    from hushh_mcp.consent.token import validate_token
+    from hushh_mcp.constants import ConsentScope
+    
+    # Manual token validation (can't use Depends with multipart form + file upload)
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization.removeprefix("Bearer ").strip()
+    valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
+    
+    if not valid or not token_obj:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {reason}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_obj.user_id != user_id:
+        logger.warning(f"User ID mismatch: token={token_obj.user_id}, request={user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     # Validate file
     if not file.filename:
@@ -133,24 +160,21 @@ async def import_portfolio(
 @router.get("/portfolio/summary/{user_id}", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
     user_id: str,
-    authorization: str = Header(..., description="Bearer token for authentication"),
+    token_data: dict = Depends(require_vault_owner_token),
 ) -> PortfolioSummaryResponse:
     """
     Get portfolio summary from world model (without decrypting holdings).
     
     Returns KPIs derived from the user's imported portfolio.
     
-    **Authentication**: Requires valid Firebase ID token matching user_id.
+    **Authentication**: Requires valid VAULT_OWNER token matching user_id.
     """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
-    # Verify user_id matches token
-    if token_uid != user_id:
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     # Get financial attributes from world model
     world_model = get_world_model_service()

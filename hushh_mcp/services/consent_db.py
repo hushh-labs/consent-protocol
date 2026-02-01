@@ -32,7 +32,7 @@ Usage:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from db.db_client import get_db
@@ -72,10 +72,11 @@ class ConsentDBService:
         now_ms = int(datetime.now().timestamp() * 1000)
         
         # Fetch all relevant rows (we'll filter in Python)
+        # Note: Using neq() instead of not_.is_() for Supabase Python client compatibility
         response = supabase.table("consent_audit")\
             .select("*")\
             .eq("user_id", user_id)\
-            .not_.is_("request_id", "null")\
+            .neq("request_id", None)\
             .order("issued_at", desc=True)\
             .execute()
         
@@ -492,3 +493,143 @@ class ConsentDBService:
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
+    
+    # =========================================================================
+    # Consent Exports (MCP Zero-Knowledge Flow)
+    # =========================================================================
+    
+    async def store_consent_export(
+        self,
+        consent_token: str,
+        user_id: str,
+        encrypted_data: str,
+        iv: str,
+        tag: str,
+        export_key: str,
+        scope: str,
+        expires_at_ms: int
+    ) -> bool:
+        """
+        Store encrypted export data for MCP zero-knowledge flow.
+        
+        This persists the encrypted data to the database so it survives
+        server restarts and is available across all instances.
+        
+        Args:
+            consent_token: The consent token this export is for
+            user_id: The user ID
+            encrypted_data: Base64-encoded ciphertext
+            iv: Base64-encoded initialization vector
+            tag: Base64-encoded authentication tag
+            export_key: Hex-encoded AES-256 key for MCP decryption
+            scope: The scope this export is for
+            expires_at_ms: Expiry timestamp in milliseconds
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        supabase = self._get_supabase()
+        
+        # Convert ms timestamp to ISO format for Supabase
+        from datetime import datetime, timezone
+        expires_at = datetime.fromtimestamp(expires_at_ms / 1000, tz=timezone.utc).isoformat()
+        
+        try:
+            # Upsert to handle re-approvals
+            response = supabase.table("consent_exports").upsert({
+                "consent_token": consent_token,
+                "user_id": user_id,
+                "encrypted_data": encrypted_data,
+                "iv": iv,
+                "tag": tag,
+                "export_key": export_key,
+                "scope": scope,
+                "expires_at": expires_at,
+            }, on_conflict="consent_token").execute()
+            
+            logger.info(f"Stored consent export for token: {consent_token[:30]}...")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store consent export: {e}")
+            return False
+    
+    async def get_consent_export(self, consent_token: str) -> Optional[Dict]:
+        """
+        Retrieve encrypted export data for a consent token.
+        
+        Args:
+            consent_token: The consent token to look up
+            
+        Returns:
+            Export data dict if found and not expired, None otherwise
+        """
+        supabase = self._get_supabase()
+        
+        try:
+            response = supabase.table("consent_exports")\
+                .select("*")\
+                .eq("consent_token", consent_token)\
+                .gt("expires_at", datetime.now(timezone.utc).isoformat())\
+                .limit(1)\
+                .execute()
+            
+            if response.data and len(response.data) > 0:
+                row = response.data[0]
+                return {
+                    "encrypted_data": row.get("encrypted_data"),
+                    "iv": row.get("iv"),
+                    "tag": row.get("tag"),
+                    "export_key": row.get("export_key"),
+                    "scope": row.get("scope"),
+                    "created_at": row.get("created_at"),
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get consent export: {e}")
+            return None
+    
+    async def delete_consent_export(self, consent_token: str) -> bool:
+        """
+        Delete a consent export (e.g., when consent is revoked).
+        
+        Args:
+            consent_token: The consent token to delete export for
+            
+        Returns:
+            True if deleted, False otherwise
+        """
+        supabase = self._get_supabase()
+        
+        try:
+            response = supabase.table("consent_exports")\
+                .delete()\
+                .eq("consent_token", consent_token)\
+                .execute()
+            
+            logger.info(f"Deleted consent export for token: {consent_token[:30]}...")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete consent export: {e}")
+            return False
+    
+    async def cleanup_expired_exports(self) -> int:
+        """
+        Clean up expired consent exports.
+        
+        Returns:
+            Number of exports deleted
+        """
+        supabase = self._get_supabase()
+        
+        try:
+            # Call the cleanup function
+            response = supabase.rpc("cleanup_expired_consent_exports").execute()
+            
+            if response.data is not None:
+                deleted_count = response.data
+                logger.info(f"Cleaned up {deleted_count} expired consent exports")
+                return deleted_count
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to cleanup expired exports: {e}")
+            return 0
