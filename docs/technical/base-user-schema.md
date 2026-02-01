@@ -1,1 +1,0 @@
-../reference/base-user-schema.md

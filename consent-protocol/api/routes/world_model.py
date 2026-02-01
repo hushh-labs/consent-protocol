@@ -115,3 +115,33 @@ async def get_encrypted_data(
         )
     
     return data
+
+
+@router.get("/domain-data/{user_id}/{domain}", response_model=dict)
+async def get_domain_data(
+    user_id: str,
+    domain: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Get user's encrypted data blob for a specific domain.
+    
+    Returns encrypted blob that can only be decrypted client-side.
+    """
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
+    
+    world_model = get_world_model_service()
+    data = await world_model.get_domain_data(user_id, domain)
+    
+    if data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {domain} data found for user"
+        )
+    
+    return {"encrypted_blob": data}

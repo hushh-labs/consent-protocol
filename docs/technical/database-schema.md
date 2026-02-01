@@ -1,1 +1,0 @@
-../reference/database-schema.md
