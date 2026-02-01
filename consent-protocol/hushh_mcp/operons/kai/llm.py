@@ -23,7 +23,7 @@ except ImportError:
 
 from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
+from hushh_mcp.constants import ConsentScope, GEMINI_MODEL, GEMINI_MODEL_FULL
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-3-flash-preview")
+        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
         # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
@@ -303,7 +303,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-3-flash-preview")
+        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -408,7 +408,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel("models/gemini-3-flash-preview")
+        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
         response = await asyncio.wait_for(
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
@@ -469,7 +469,7 @@ async def stream_gemini_response(
         # Call the ASYNC streaming method
         # Note: google.genai V1 SDK uses client.aio for async calls
         stream = await _gemini_client.aio.models.generate_content_stream(
-            model="gemini-2.0-flash-lite-preview", # Flash Lite is faster for streaming
+            model=GEMINI_MODEL, # Use standardized model
             contents=prompt,
             config=config,
         )

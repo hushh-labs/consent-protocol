@@ -5,8 +5,9 @@ Consent management endpoints (pending, approve, deny, revoke, history, active).
 NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
 Legacy scopes are mapped to dynamic scopes for backward compatibility.
 
-SECURITY: All consent management endpoints require Firebase authentication.
-The authenticated user can only manage their own consent requests.
+SECURITY: All consent management endpoints require VAULT_OWNER token authentication.
+The consent page is vault-gated, so users must unlock their vault first.
+This ensures consistent consent-first architecture throughout the system.
 """
 
 import logging
@@ -16,7 +17,7 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from api.middleware import require_firebase_auth, verify_user_id_match
+from api.middleware import require_vault_owner_token
 from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
@@ -54,15 +55,16 @@ class CancelConsentRequest(BaseModel):
 @router.get("/pending")
 async def get_pending_consents(
     userId: str,
-    firebase_uid: str = Depends(require_firebase_auth),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     Get all pending consent requests for a user.
     
-    SECURITY: Requires Firebase authentication. User can only view their own pending requests.
+    SECURITY: Requires VAULT_OWNER token. User can only view their own pending requests.
     """
     # Verify user is requesting their own data
-    verify_user_id_match(firebase_uid, userId)
+    if token_data["user_id"] != userId:
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
     
     service = ConsentDBService()
     pending_from_db = await service.get_pending_requests(userId)
@@ -73,12 +75,12 @@ async def get_pending_consents(
 @router.post("/pending/approve")
 async def approve_consent(
     request: Request,
-    firebase_uid: str = Depends(require_firebase_auth),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     User approves a pending consent request (Zero-Knowledge).
     
-    SECURITY: Requires Firebase authentication. User can only approve their own consent requests.
+    SECURITY: Requires VAULT_OWNER token. User can only approve their own consent requests.
     
     Browser sends encrypted export data (server never sees plaintext).
     Export key is embedded in the consent token.
@@ -92,7 +94,8 @@ async def approve_consent(
     encryptedTag = body.get("encryptedTag")  # Base64 auth tag
     
     # Verify user is approving their own consent
-    verify_user_id_match(firebase_uid, userId)
+    if token_data["user_id"] != userId:
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
     
     logger.info(f"✅ User {userId} approving consent request {requestId}")
     logger.info(f"   Export data present: {bool(encryptedData)}")
@@ -220,15 +223,16 @@ async def approve_consent(
 async def deny_consent(
     userId: str,
     requestId: str,
-    firebase_uid: str = Depends(require_firebase_auth),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     User denies a pending consent request.
     
-    SECURITY: Requires Firebase authentication. User can only deny their own consent requests.
+    SECURITY: Requires VAULT_OWNER token. User can only deny their own consent requests.
     """
     # Verify user is denying their own consent
-    verify_user_id_match(firebase_uid, userId)
+    if token_data["user_id"] != userId:
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
     
     logger.info(f"❌ User {userId} denying consent request {requestId}")
     
@@ -255,18 +259,19 @@ async def deny_consent(
 @router.post("/cancel")
 async def cancel_consent(
     payload: CancelConsentRequest,
-    firebase_uid: str = Depends(require_firebase_auth),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     Cancel a pending consent request.
 
-    SECURITY: Requires Firebase authentication. User can only cancel their own consent requests.
+    SECURITY: Requires VAULT_OWNER token. User can only cancel their own consent requests.
     
     Implementation: insert a terminal audit action so the request no longer
     appears as pending (pending = latest action == REQUESTED).
     """
     # Verify user is cancelling their own consent
-    verify_user_id_match(firebase_uid, payload.userId)
+    if token_data["user_id"] != payload.userId:
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
     
     logger.info(f"🛑 User {payload.userId} cancelling consent request {payload.requestId}")
 
@@ -408,12 +413,12 @@ async def issue_vault_owner_token(request: Request):
 @router.post("/revoke")
 async def revoke_consent(
     request: Request,
-    firebase_uid: str = Depends(require_firebase_auth),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     User revokes an active consent token.
     
-    SECURITY: Requires Firebase authentication. User can only revoke their own consent.
+    SECURITY: Requires VAULT_OWNER token. User can only revoke their own consent.
     
     This removes access for the app that was previously granted consent.
     For VAULT_OWNER tokens, this effectively locks the vault.
@@ -429,7 +434,8 @@ async def revoke_consent(
             raise HTTPException(status_code=400, detail="userId and scope are required")
         
         # Verify user is revoking their own consent
-        verify_user_id_match(firebase_uid, userId)
+        if token_data["user_id"] != userId:
+            raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
         
         logger.info(f"🔒 User {userId} revoking consent for scope: {scope}")
         

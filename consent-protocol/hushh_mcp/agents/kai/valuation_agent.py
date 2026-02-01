@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class ValuationAgent(HushhAgent):
         # Initialize with proper ADK parameters
         super().__init__(
             name="Valuation Agent",
-            model="gemini-3-flash",  # Default model
+            model=GEMINI_MODEL,  # Standardized model
             system_prompt="""
             You are a Valuation Expert focused on fair value, multiples, and DCF analysis.
             Your job is to calculate financial metrics, compare with peers, and determine if a stock is overvalued or undervalued.

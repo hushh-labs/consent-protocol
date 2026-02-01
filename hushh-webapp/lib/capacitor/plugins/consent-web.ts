@@ -115,11 +115,11 @@ export class HushhConsentWeb extends WebPlugin {
   async revokeConsent(options: {
     userId: string;
     scope: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean; lockVault?: boolean }> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
     const response = await fetch(`${BACKEND_URL}/api/consent/revoke`, {
@@ -140,6 +140,177 @@ export class HushhConsentWeb extends WebPlugin {
       success: true,
       lockVault: data.lockVault ?? false,
     };
+  }
+
+  /**
+   * Approve a pending consent request
+   */
+  async approve(options: {
+    requestId: string;
+    userId?: string;
+    encryptedData?: string;
+    encryptedIv?: string;
+    encryptedTag?: string;
+    exportKey?: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/consent/pending/approve`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        userId: options.userId,
+        requestId: options.requestId,
+        encryptedData: options.encryptedData,
+        encryptedIv: options.encryptedIv,
+        encryptedTag: options.encryptedTag,
+        exportKey: options.exportKey,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to approve consent");
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Deny a pending consent request
+   */
+  async deny(options: {
+    requestId: string;
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/consent/pending/deny?userId=${options.userId}&requestId=${options.requestId}`,
+      {
+        method: "POST",
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to deny consent");
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Cancel a pending consent request
+   */
+  async cancel(options: {
+    requestId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/consent/cancel`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ requestId: options.requestId }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to cancel consent");
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Get pending consent requests
+   */
+  async getPending(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ pending: any[] }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/consent/pending?userId=${options.userId}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to get pending consents");
+    }
+
+    const data = await response.json();
+    return { pending: data.pending || [] };
+  }
+
+  /**
+   * Get active consents
+   */
+  async getActive(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ consents: any[] }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/consent/active?userId=${options.userId}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to get active consents");
+    }
+
+    const data = await response.json();
+    return { consents: data.active || [] };
+  }
+
+  /**
+   * Get consent history
+   */
+  async getHistory(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: any[] }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
+
+    const params = new URLSearchParams({ userId: options.userId });
+    if (options.page) params.append("page", options.page.toString());
+    if (options.limit) params.append("limit", options.limit.toString());
+
+    const response = await fetch(
+      `${BACKEND_URL}/api/consent/history?${params}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to get consent history");
+    }
+
+    const data = await response.json();
+    return { items: data.items || [] };
   }
 
   async createTrustLink(options: CreateTrustLinkOptions): Promise<TrustLink> {
