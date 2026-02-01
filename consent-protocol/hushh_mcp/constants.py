@@ -1,38 +1,30 @@
 # hushh_mcp/constants.py
 
+from __future__ import annotations
+
 from enum import Enum
+from typing import Optional
 
 # ==================== Consent Scopes ====================
 
 class ConsentScope(str, Enum):
     """
-    Granular consent scopes for MCP-compliant data access.
+    Consent scopes for MCP-compliant data access.
     
     Design Principles:
     - VAULT_OWNER grants full world model access (user's own data)
-    - External MCP requests must specify granular attr.* scopes
-    - Attribute-level granularity for fine-grained consent
+    - Dynamic attr.{domain}.{key} scopes are validated via DynamicScopeGenerator
+    - Static operation scopes are defined in this enum
+    
+    Dynamic Scopes (NOT in enum - validated dynamically):
+    - attr.{domain}.{attribute} - e.g., attr.financial.holdings
+    - attr.{domain}.* - Wildcard for entire domain
     """
     
     # ==================== VAULT OWNER (Full Access) ====================
     # "Master Scope" granted ONLY via BYOK login. 
     # Never granted to external agents.
     VAULT_OWNER = "vault.owner"
-    
-    # ==================== FINANCIAL ATTRIBUTES (Granular) ====================
-    ATTR_FINANCIAL_RISK_PROFILE = "attr.financial.risk_profile"
-    ATTR_FINANCIAL_HOLDINGS = "attr.financial.holdings"
-    ATTR_FINANCIAL_PERFORMANCE = "attr.financial.performance"
-    ATTR_FINANCIAL_DECISIONS = "attr.financial.decisions"
-    
-    # ==================== LIFESTYLE ATTRIBUTES ====================
-    ATTR_LIFESTYLE_INTERESTS = "attr.lifestyle.interests"
-    ATTR_LIFESTYLE_SPENDING = "attr.lifestyle.spending"
-    ATTR_LIFESTYLE_LOCATIONS = "attr.lifestyle.locations"
-    
-    # ==================== PROFESSIONAL ATTRIBUTES ====================
-    ATTR_PROFESSIONAL_SKILLS = "attr.professional.skills"
-    ATTR_PROFESSIONAL_EXPERIENCE = "attr.professional.experience"
     
     # ==================== PORTFOLIO OPERATIONS ====================
     PORTFOLIO_IMPORT = "portfolio.import"
@@ -47,10 +39,16 @@ class ConsentScope(str, Enum):
     EMBEDDING_PROFILE_READ = "embedding.profile.read"
     EMBEDDING_PROFILE_COMPUTE = "embedding.profile.compute"
     
+    # ==================== WORLD MODEL OPERATIONS ====================
+    WORLD_MODEL_READ = "world_model.read"
+    WORLD_MODEL_WRITE = "world_model.write"
+    WORLD_MODEL_METADATA = "world_model.metadata"
+    
     # ==================== KAI AGENT OPERATIONS ====================
     AGENT_KAI_ANALYZE = "agent.kai.analyze"
     AGENT_KAI_DEBATE = "agent.kai.debate"
     AGENT_KAI_INFER = "agent.kai.infer"
+    AGENT_KAI_CHAT = "agent.kai.chat"
     
     # ==================== EXTERNAL DATA SOURCES ====================
     # Hybrid mode - per-request consent
@@ -58,41 +56,152 @@ class ConsentScope(str, Enum):
     EXTERNAL_NEWS_API = "external.news.api"
     EXTERNAL_MARKET_DATA = "external.market.data"
     EXTERNAL_RENAISSANCE = "external.renaissance.data"
-    
-    # ==================== LEGACY SCOPES (Deprecated) ====================
-    # Kept for backward compatibility during migration
-    VAULT_READ_FINANCE = "vault.read.finance"
-    VAULT_READ_FOOD = "vault.read.food"
-    VAULT_READ_PROFESSIONAL = "vault.read.professional"
-    VAULT_WRITE_FINANCE = "vault.write.finance"
-    VAULT_WRITE_FOOD = "vault.write.food"
-    VAULT_WRITE_PROFESSIONAL = "vault.write.professional"
-    VAULT_READ_RISK_PROFILE = "vault.read.risk_profile"
-    VAULT_READ_DECISION_HISTORY = "vault.read.decision_history"
-    VAULT_WRITE_RISK_PROFILE = "vault.write.risk_profile"
-    VAULT_WRITE_DECISION = "vault.write.decision"
+
+    # NOTE: Legacy VAULT_READ_* and VAULT_WRITE_* scopes have been removed.
+    # All data access now uses dynamic attr.{domain}.{key} scopes:
+    # - attr.financial.* replaces vault.read.finance / vault.write.finance
+    # - attr.food.* replaces vault.read.food / vault.write.food
+    # - attr.professional.* replaces vault.read.professional / vault.write.professional
+    # - attr.financial.risk_profile replaces vault.read.risk_profile / vault.write.risk_profile
+    # - attr.kai_decisions.* replaces vault.read.decision_history / vault.write.decision
 
     @classmethod
     def list(cls):
+        """List all static scopes."""
         return [scope.value for scope in cls]
     
     @classmethod
-    def financial_scopes(cls):
-        """Return all financial attribute scopes."""
+    def is_dynamic_scope(cls, scope: str) -> bool:
+        """
+        Check if a scope is a dynamic attr.* scope.
+        
+        Dynamic scopes follow the pattern: attr.{domain}.{attribute}
+        They are NOT defined in this enum but validated via DynamicScopeGenerator.
+        """
+        return scope.startswith("attr.")
+    
+    @classmethod
+    def is_wildcard_scope(cls, scope: str) -> bool:
+        """Check if a scope is a wildcard pattern (ends with .*)."""
+        return scope.endswith(".*")
+    
+    @classmethod
+    def validate(cls, scope: str, user_id: Optional[str] = None) -> bool:
+        """
+        Validate a scope - static or dynamic.
+        
+        Args:
+            scope: The scope string to validate
+            user_id: Optional user ID for dynamic scope validation
+        
+        Returns:
+            True if the scope is valid
+        """
+        # Check static scopes first
+        if scope in [s.value for s in cls]:
+            return True
+        
+        # Check dynamic scopes
+        if cls.is_dynamic_scope(scope):
+            # Import here to avoid circular dependency
+            from hushh_mcp.consent.scope_generator import get_scope_generator
+            generator = get_scope_generator()
+            
+            # Parse and validate format
+            domain, attr_key, is_wildcard = generator.parse_scope(scope)
+            if domain is None:
+                return False
+            
+            # If user_id provided, validate against stored attributes
+            if user_id:
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    return loop.run_until_complete(
+                        generator.validate_scope(scope, user_id)
+                    )
+                except RuntimeError:
+                    # No event loop, just validate format
+                    return True
+            
+            return True
+        
+        return False
+    
+    @classmethod
+    def check_access(
+        cls,
+        requested_scope: str,
+        granted_scopes: list[str],
+    ) -> bool:
+        """
+        Check if a requested scope is covered by granted scopes.
+        
+        Handles:
+        - Direct matches
+        - Wildcard matches (attr.financial.* covers attr.financial.holdings)
+        - VAULT_OWNER grants all access
+        
+        Args:
+            requested_scope: The scope being requested
+            granted_scopes: List of scopes that have been granted
+        
+        Returns:
+            True if access should be granted
+        """
+        # VAULT_OWNER grants everything
+        if cls.VAULT_OWNER.value in granted_scopes:
+            return True
+        
+        # Direct match
+        if requested_scope in granted_scopes:
+            return True
+        
+        # Check wildcard matches for dynamic scopes
+        if cls.is_dynamic_scope(requested_scope):
+            from hushh_mcp.consent.scope_generator import get_scope_generator
+            generator = get_scope_generator()
+            
+            for granted in granted_scopes:
+                if generator.matches_wildcard(requested_scope, granted):
+                    return True
+        
+        return False
+    
+    @classmethod
+    def operation_scopes(cls):
+        """Return all operation scopes (non-attribute)."""
         return [
-            cls.ATTR_FINANCIAL_RISK_PROFILE,
-            cls.ATTR_FINANCIAL_HOLDINGS,
-            cls.ATTR_FINANCIAL_PERFORMANCE,
-            cls.ATTR_FINANCIAL_DECISIONS,
+            cls.PORTFOLIO_IMPORT,
+            cls.PORTFOLIO_ANALYZE,
+            cls.PORTFOLIO_READ,
+            cls.CHAT_HISTORY_READ,
+            cls.CHAT_HISTORY_WRITE,
+            cls.EMBEDDING_PROFILE_READ,
+            cls.EMBEDDING_PROFILE_COMPUTE,
+            cls.WORLD_MODEL_READ,
+            cls.WORLD_MODEL_WRITE,
+            cls.WORLD_MODEL_METADATA,
         ]
     
     @classmethod
-    def lifestyle_scopes(cls):
-        """Return all lifestyle attribute scopes."""
+    def agent_scopes(cls):
+        """Return all agent operation scopes."""
         return [
-            cls.ATTR_LIFESTYLE_INTERESTS,
-            cls.ATTR_LIFESTYLE_SPENDING,
-            cls.ATTR_LIFESTYLE_LOCATIONS,
+            cls.AGENT_KAI_ANALYZE,
+            cls.AGENT_KAI_DEBATE,
+            cls.AGENT_KAI_INFER,
+            cls.AGENT_KAI_CHAT,
+        ]
+    
+    @classmethod
+    def external_scopes(cls):
+        """Return all external data source scopes."""
+        return [
+            cls.EXTERNAL_SEC_FILINGS,
+            cls.EXTERNAL_NEWS_API,
+            cls.EXTERNAL_MARKET_DATA,
+            cls.EXTERNAL_RENAISSANCE,
         ]
 
 

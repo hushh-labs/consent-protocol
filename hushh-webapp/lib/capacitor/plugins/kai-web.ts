@@ -201,4 +201,67 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
     return response.json();
   }
+
+  async getInitialChatState(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{
+    is_new_user: boolean;
+    has_portfolio: boolean;
+    has_financial_data: boolean;
+    welcome_type: string;
+    total_attributes: number;
+    available_domains: string[];
+  }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (options.authToken) {
+      headers["Authorization"] = `Bearer ${options.authToken}`;
+    }
+
+    const response = await fetch(`/api/kai/chat/initial-state/${options.userId}`, {
+      method: "GET",
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get initial chat state");
+    }
+
+    return response.json();
+  }
+
+  async chat(options: {
+    userId: string;
+    message: string;
+    conversationId?: string;
+    vaultOwnerToken: string;
+    authToken?: string;
+  }): Promise<{
+    response: string;
+    conversationId: string;
+    timestamp: string;
+  }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${options.vaultOwnerToken}`,
+    };
+
+    const response = await fetch("/api/kai/chat", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        user_id: options.userId,
+        message: options.message,
+        conversation_id: options.conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to send chat message");
+    }
+
+    return response.json();
+  }
 }

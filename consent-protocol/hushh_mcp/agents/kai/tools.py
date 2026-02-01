@@ -18,7 +18,7 @@ from .sentiment_agent import sentiment_agent as sentiment_engine
 from .valuation_agent import valuation_agent as valuation_engine
 
 
-@hushh_tool(scope=ConsentScope.VAULT_READ_FINANCE, name="perform_fundamental_analysis")
+@hushh_tool(scope=ConsentScope.AGENT_KAI_ANALYZE, name="perform_fundamental_analysis")
 async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:
     """
     Analyze business fundamentals (SEC filings, financial health, moat).
@@ -51,7 +51,7 @@ async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:
         return {"error": f"Fundamental analysis failed: {str(e)}"}
 
 
-@hushh_tool(scope=ConsentScope.VAULT_READ_FINANCE, name="perform_sentiment_analysis")
+@hushh_tool(scope=ConsentScope.AGENT_KAI_ANALYZE, name="perform_sentiment_analysis")
 async def perform_sentiment_analysis(ticker: str) -> Dict[str, Any]:
     """
     Analyze market sentiment (News, Social Media, Analyst Ratings).
@@ -81,7 +81,7 @@ async def perform_sentiment_analysis(ticker: str) -> Dict[str, Any]:
         return {"error": f"Sentiment analysis failed: {str(e)}"}
 
 
-@hushh_tool(scope=ConsentScope.VAULT_READ_FINANCE, name="perform_valuation_analysis")
+@hushh_tool(scope=ConsentScope.AGENT_KAI_ANALYZE, name="perform_valuation_analysis")
 async def perform_valuation_analysis(ticker: str) -> Dict[str, Any]:
     """
     Perform quantitative valuation (DCF, Multiples, Fair Value).

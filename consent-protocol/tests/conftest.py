@@ -103,13 +103,15 @@ def mock_vault_owner_token() -> str:
 @pytest.fixture
 def mock_read_food_token() -> str:
     """
-    Generate a vault.read.food consent token for testing.
+    Generate an attr.food.* consent token for testing.
+    
+    NOTE: Uses dynamic attr.{domain}.* scope instead of legacy vault.read.food.
     """
     from hushh_mcp.consent.token import issue_token
     return issue_token(
         user_id="test_user_123",
         agent_id="food_agent",
-        scope="vault.read.food"
+        scope="attr.food.*"  # Dynamic scope replaces vault.read.food
     )
 
 
@@ -209,13 +211,15 @@ def sample_plaintext_data() -> dict:
 def mock_trust_link(test_user_id: str) -> dict:
     """
     Generate a mock TrustLink for A2A testing.
+    
+    NOTE: Uses dynamic attr.{domain}.* scope instead of legacy vault.read.food.
     """
     from hushh_mcp.trust.link import create_trust_link
     
     return create_trust_link(
         from_agent="orchestrator",
         to_agent="food_agent",
-        scope="vault.read.food",
+        scope="attr.food.*",  # Dynamic scope replaces vault.read.food
         signed_by_user=test_user_id
     )
 

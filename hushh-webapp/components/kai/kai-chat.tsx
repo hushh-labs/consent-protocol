@@ -8,6 +8,7 @@
  * - Insertable UI components
  * - Voice input support
  * - Streaming responses with debate visualization
+ * - Portfolio import with skip option
  */
 
 "use client";
@@ -22,7 +23,6 @@ import {
   Mic,
   MicOff,
   ArrowLeft,
-  Sparkles,
   User,
   TrendingUp,
   Upload,
@@ -30,7 +30,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ApiService } from "@/lib/services/api-service";
+import { getInitialChatState as fetchInitialChatState } from "@/lib/services/kai-service";
 import { InsertableComponent } from "./insertable-components";
+import { HushhLogoIcon, HushhLogoAvatar } from "@/components/ui/hushh-logo-icon";
 
 // =============================================================================
 // TYPES
@@ -44,6 +46,15 @@ interface ChatMessage {
   componentType?: string;
   componentData?: Record<string, unknown>;
   createdAt: Date;
+}
+
+interface InitialChatState {
+  is_new_user: boolean;
+  has_portfolio: boolean;
+  has_financial_data: boolean;
+  welcome_type: "new" | "returning_no_portfolio" | "returning";
+  total_attributes: number;
+  available_domains: string[];
 }
 
 interface KaiChatProps {
@@ -86,21 +97,276 @@ export function KaiChat({
     inputRef.current?.focus();
   }, []);
 
-  // Initialize with welcome message
+  // Proactive welcome - fetch initial state and show appropriate message
   useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
+    const fetchInitialStateAndWelcome = async () => {
+      if (messages.length > 0) return; // Already have messages
+      
+      try {
+        // Fetch initial chat state from backend via service layer (tri-flow compliant)
+        const state = await fetchInitialChatState(userId) as InitialChatState;
+        
+        // Determine welcome message based on user state
+        let welcomeMessage: ChatMessage;
+        
+        if (state.is_new_user || state.welcome_type === "new") {
+          // New user - proactive portfolio import prompt
+          welcomeMessage = {
+            id: "welcome-new",
+            role: "assistant",
+            content:
+              "Hi! I'm Kai, your personal investment advisor. " +
+              "To give you personalized insights, let's start by importing your brokerage statement. " +
+              "This will help me understand your portfolio and identify opportunities.",
+            contentType: "component",
+            componentType: "portfolio_import",
+            componentData: { 
+              prompt: "Import your portfolio to begin", 
+              show_skip: true,
+              is_onboarding: true
+            },
+            createdAt: new Date(),
+          };
+        } else if (!state.has_portfolio || state.welcome_type === "returning_no_portfolio") {
+          // Returning user without portfolio
+          welcomeMessage = {
+            id: "welcome-no-portfolio",
+            role: "assistant",
+            content:
+              "Welcome back! I noticed you haven't imported your portfolio yet. " +
+              "Would you like to do that now for personalized investment advice?",
+            contentType: "component",
+            componentType: "portfolio_import",
+            componentData: { 
+              prompt: "Import portfolio", 
+              show_skip: true 
+            },
+            createdAt: new Date(),
+          };
+        } else {
+          // Returning user with portfolio - personalized welcome
+          const domainCount = state.available_domains.length;
+          welcomeMessage = {
+            id: "welcome-returning",
+            role: "assistant",
+            content:
+              `Welcome back! I have your portfolio and ${state.total_attributes} data points across ${domainCount} categories. ` +
+              "What would you like to explore today? I can analyze stocks, review your holdings, or help identify opportunities.",
+            contentType: "text",
+            createdAt: new Date(),
+          };
+        }
+        
+        setMessages([welcomeMessage]);
+        
+      } catch (error) {
+        console.error("Error fetching initial chat state:", error);
+        // Fallback to generic welcome
+        setMessages([
+          {
+            id: "welcome-fallback",
+            role: "assistant",
+            content:
+              "Hi! I'm Kai, your personal investment advisor. I can help you analyze stocks, review your portfolio, and identify opportunities. What would you like to explore today?",
+            contentType: "text",
+            createdAt: new Date(),
+          },
+        ]);
+      }
+    };
+    
+    fetchInitialStateAndWelcome();
+  }, [userId, messages.length]);
+
+  // Handle component actions (portfolio upload, skip, analyze loser, etc.)
+  const handleComponentAction = useCallback(async (action: string, payload: unknown) => {
+    const data = payload as Record<string, unknown>;
+    
+    if (action === "upload_portfolio" && data.file instanceof File) {
+      setIsLoading(true);
+      
+      try {
+        const response = await ApiService.importPortfolio({
+          userId,
+          file: data.file,
+          vaultOwnerToken,
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          // Add success message with loser report
+          const newMessages: ChatMessage[] = [
+            {
+              id: `assistant-${Date.now()}`,
+              role: "assistant",
+              content: `Great! I've analyzed your portfolio with ${result.holdings_count} holdings. Here's what I found:`,
+              contentType: "component",
+              componentType: "loser_report",
+              componentData: { losers: result.losers, interactive: true },
+              createdAt: new Date(),
+            },
+          ];
+          
+          // If there are losers, add analysis prompt
+          if (result.losers && result.losers.length > 0) {
+            newMessages.push({
+              id: `assistant-prompt-${Date.now()}`,
+              role: "assistant",
+              content: "Would you like me to analyze any of these positions?",
+              contentType: "component",
+              componentType: "loser_analysis_prompt",
+              componentData: { losers: result.losers },
+              createdAt: new Date(),
+            });
+          }
+          
+          setMessages((prev) => [...prev, ...newMessages]);
+          
+          // Notify parent of world model update
+          if (onWorldModelUpdate && result.kpis_stored) {
+            onWorldModelUpdate(result.kpis_stored);
+          }
+        } else {
+          // Show error
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              role: "assistant",
+              content: result.error || "I had trouble processing that file. Please try a different format.",
+              contentType: "text",
+              createdAt: new Date(),
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("Portfolio import error:", error);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            content: "I encountered an error importing your portfolio. Please try again.",
+            contentType: "text",
+            createdAt: new Date(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (action === "skip_portfolio") {
+      // User skipped portfolio import
+      setMessages((prev) => [
+        ...prev,
         {
-          id: "welcome",
+          id: `assistant-${Date.now()}`,
           role: "assistant",
-          content:
-            "Hi! I'm Kai, your personal investment advisor. I can help you analyze stocks, review your portfolio, and identify opportunities. What would you like to explore today?",
+          content: "No problem! You can import your portfolio anytime. In the meantime, I can help you analyze specific stocks, discuss investment strategies, or answer questions about the market. What interests you?",
           contentType: "text",
           createdAt: new Date(),
         },
       ]);
+    } else if (action === "analyze_loser" && data.symbol) {
+      // Analyze a specific loser
+      setIsLoading(true);
+      const symbol = data.symbol as string;
+      
+      // Add user message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          content: `Analyze ${symbol}`,
+          contentType: "text",
+          createdAt: new Date(),
+        },
+      ]);
+      
+      try {
+        const response = await ApiService.analyzeLoser({
+          userId,
+          symbol,
+          conversationId: conversationId || undefined,
+          vaultOwnerToken,
+        });
+        
+        const result = await response.json();
+        
+        // Update conversation ID if new
+        if (result.conversation_id && !conversationId) {
+          setConversationId(result.conversation_id);
+        }
+        
+        // Add analysis result
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: `Here's my analysis for ${symbol}:`,
+            contentType: "component",
+            componentType: "analysis_summary",
+            componentData: {
+              ticker: result.ticker,
+              decision: result.decision,
+              confidence: result.confidence,
+              summary: result.summary,
+              hasFullAnalysis: true,
+            },
+            createdAt: new Date(),
+          },
+        ]);
+        
+        // Notify parent of world model update
+        if (onWorldModelUpdate && result.saved_to_world_model) {
+          onWorldModelUpdate([
+            { domain: "kai_decisions", key: `${symbol}_decision`, value: result.decision },
+          ]);
+        }
+      } catch (error) {
+        console.error("Analysis error:", error);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            content: `I encountered an error analyzing ${symbol}. Please try again.`,
+            contentType: "text",
+            createdAt: new Date(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (action === "analyze_all_losers" && data.symbols) {
+      // Analyze all losers - set input for user to send
+      const symbols = data.symbols as string[];
+      setInput(`Analyze all my losers: ${symbols.join(", ")}`);
+    } else if (action === "view_full_analysis" && data.ticker) {
+      // Navigate to full analysis view
+      const ticker = data.ticker as string;
+      router.push(`/kai/analyze/${ticker}`);
+    } else if (action === "review_losers") {
+      // Trigger review losers flow - set input for user to send
+      setInput("Show me my portfolio losers");
+    } else if (action === "import_new") {
+      // Show portfolio import component
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: "Let's update your portfolio with a new statement:",
+          contentType: "component",
+          componentType: "portfolio_import",
+          componentData: { prompt: "Upload updated statement", show_skip: true },
+          createdAt: new Date(),
+        },
+      ]);
     }
-  }, [messages.length]);
+  }, [userId, vaultOwnerToken, conversationId, onWorldModelUpdate, router, input, isLoading, setInput, setIsLoading, setMessages, setConversationId]);
 
   // Send message handler
   const handleSend = useCallback(async () => {
@@ -130,8 +396,8 @@ export function KaiChat({
       const data = await response.json();
 
       // Update conversation ID if new
-      if (data.conversationId && !conversationId) {
-        setConversationId(data.conversationId);
+      if (data.conversation_id && !conversationId) {
+        setConversationId(data.conversation_id);
       }
 
       // Add assistant response
@@ -139,17 +405,17 @@ export function KaiChat({
         id: `assistant-${Date.now()}`,
         role: "assistant",
         content: data.response || data.message || "I understand. Let me help you with that.",
-        contentType: data.componentType ? "component" : "text",
-        componentType: data.componentType,
-        componentData: data.componentData,
+        contentType: data.component_type ? "component" : "text",
+        componentType: data.component_type,
+        componentData: data.component_data,
         createdAt: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Handle world model updates
-      if (data.worldModelUpdates && onWorldModelUpdate) {
-        onWorldModelUpdate(data.worldModelUpdates);
+      // Handle learned attributes
+      if (data.learned_attributes && data.learned_attributes.length > 0 && onWorldModelUpdate) {
+        onWorldModelUpdate(data.learned_attributes);
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -202,9 +468,7 @@ export function KaiChat({
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex items-center gap-3 flex-1">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--crystal-gold-400)] to-[var(--crystal-gold-600)] flex items-center justify-center">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
+          <HushhLogoAvatar size="md" />
           <div>
             <h1 className="font-semibold">Agent Kai</h1>
             <p className="text-xs text-muted-foreground">
@@ -239,7 +503,7 @@ export function KaiChat({
               {msg.role === "user" ? (
                 <User className="h-4 w-4" />
               ) : (
-                <Sparkles className="h-4 w-4 text-[var(--crystal-gold-500)]" />
+                <HushhLogoIcon size={16} className="opacity-80" />
               )}
             </div>
 
@@ -256,6 +520,7 @@ export function KaiChat({
                 <InsertableComponent
                   type={msg.componentType}
                   data={msg.componentData || {}}
+                  onAction={handleComponentAction}
                 />
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -268,7 +533,7 @@ export function KaiChat({
         {isLoading && (
           <div className="flex gap-3 mr-auto">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[var(--crystal-gold-400)]/20 to-[var(--crystal-gold-600)]/10 border border-[var(--crystal-gold-400)]/20 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-[var(--crystal-gold-500)]" />
+              <HushhLogoIcon size={16} className="opacity-80" />
             </div>
             <div className="crystal-glass p-3 rounded-2xl rounded-tl-sm">
               <HushhLoader variant="inline" label="Thinking..." />

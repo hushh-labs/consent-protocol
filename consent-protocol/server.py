@@ -71,7 +71,7 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_origin_regex="https://.*\.run\.app",
+    allow_origin_regex=r"https://.*\.run\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -128,7 +128,12 @@ from api.routes import analysis  # noqa: E402
 
 app.include_router(analysis.router)
 
-logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 ENABLED")
+# Phase 7: World Model (Dynamic Domain Management)
+from api.routes import world_model  # noqa: E402
+
+app.include_router(world_model.router)
+
+logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED")
 
 
 # ============================================================================

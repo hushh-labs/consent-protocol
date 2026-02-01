@@ -3,6 +3,8 @@
 Kai Consent Endpoints
 
 Handles Kai-specific consent grants for analysis operations.
+
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
 """
 
 import logging
@@ -27,9 +29,10 @@ router = APIRouter()
 
 class GrantConsentRequest(BaseModel):
     user_id: str
+    # Updated to use dynamic attr.* scopes instead of legacy vault.read.*/vault.write.*
     scopes: List[str] = [
-        "vault.read.risk_profile",
-        "vault.write.decision",
+        "attr.financial.risk_profile",  # Replaces vault.read.risk_profile
+        "attr.kai_decisions.*",          # Replaces vault.write.decision
         "agent.kai.analyze",
     ]
 
