@@ -12,12 +12,13 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:800
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join("/");
+    const { path } = await params;
+    const pathStr = path.join("/");
     const searchParams = request.nextUrl.searchParams.toString();
-    const url = `${BACKEND_URL}/api/world-model/${path}${searchParams ? `?${searchParams}` : ""}`;
+    const url = `${BACKEND_URL}/api/world-model/${pathStr}${searchParams ? `?${searchParams}` : ""}`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -40,13 +41,14 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join("/");
+    const { path } = await params;
+    const pathStr = path.join("/");
     const body = await request.json();
 
-    const response = await fetch(`${BACKEND_URL}/api/world-model/${path}`, {
+    const response = await fetch(`${BACKEND_URL}/api/world-model/${pathStr}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -68,12 +70,13 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join("/");
+    const { path } = await params;
+    const pathStr = path.join("/");
 
-    const response = await fetch(`${BACKEND_URL}/api/world-model/${path}`, {
+    const response = await fetch(`${BACKEND_URL}/api/world-model/${pathStr}`, {
       method: "DELETE",
       headers: {
         Authorization: request.headers.get("Authorization") || "",
@@ -93,13 +96,14 @@ export async function DELETE(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join("/");
+    const { path } = await params;
+    const pathStr = path.join("/");
     const body = await request.json();
 
-    const response = await fetch(`${BACKEND_URL}/api/world-model/${path}`, {
+    const response = await fetch(`${BACKEND_URL}/api/world-model/${pathStr}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

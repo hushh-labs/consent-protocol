@@ -2,11 +2,24 @@
 """
 World Model Service - Unified user data model with BYOK encryption.
 
-This service manages the dynamic world model architecture:
-1. domain_registry - Dynamic domain discovery and metadata
-2. world_model_index_v2 - Queryable metadata with JSONB flexibility
-3. world_model_attributes - Encrypted detailed attributes (BYOK)
-4. world_model_embeddings - Vector embeddings for similarity search
+This service manages the two-table world model architecture:
+
+1. world_model_index_v2 (ONE row per user)
+   - Queryable, non-encrypted metadata
+   - Used for MCP scope generation and UI display
+   - Structure: { domain_summaries: {...}, available_domains: [...], ... }
+
+2. world_model_data (ONE row per user) - NEW
+   - Single encrypted JSONB blob containing ALL user data
+   - Client-side encryption (BYOK) - backend cannot decrypt
+   - Structure: { ciphertext, iv, tag }
+   - Decrypted structure: { financial: {...}, food: {...}, health: {...} }
+
+DEPRECATED TABLES (DO NOT USE):
+- world_model_attributes (replaced by world_model_data)
+- vault_portfolios (merged into world_model_data.financial)
+- vault_food (merged into world_model_data.food)
+- vault_professional (merged into world_model_data.professional)
 """
 
 import logging
@@ -530,7 +543,126 @@ class WorldModelService:
             logger.error(f"Error finding similar users: {e}")
             return []
     
-    # ==================== PORTFOLIO OPERATIONS ====================
+    # ==================== WORLD MODEL DATA OPERATIONS (BLOB-BASED) ====================
+    
+    async def store_domain_data(
+        self,
+        user_id: str,
+        domain: str,
+        encrypted_blob: dict,
+        summary: dict,
+    ) -> bool:
+        """
+        Store encrypted domain data and update index.
+        
+        This is the NEW method for storing user data following BYOK principles.
+        Client encrypts entire domain object and sends only ciphertext to backend.
+        
+        Args:
+            user_id: User's ID
+            domain: Domain key (e.g., "financial", "food")
+            encrypted_blob: Pre-encrypted data from client
+                {
+                    "ciphertext": "base64...",
+                    "iv": "base64...",
+                    "tag": "base64..."
+                }
+            summary: Non-sensitive metadata for world_model_index_v2
+                {
+                    "has_portfolio": true,
+                    "holdings_count": 4,
+                    "risk_bucket": "aggressive"
+                }
+        
+        Returns:
+            bool: Success status
+        """
+        try:
+            # 1. Get current encrypted data
+            current_data = await self.get_encrypted_data(user_id)
+            
+            # 2. Store updated encrypted blob
+            # Note: Merging happens on client-side. Backend just stores the new blob.
+            data = {
+                "user_id": user_id,
+                "encrypted_data_ciphertext": encrypted_blob["ciphertext"],
+                "encrypted_data_iv": encrypted_blob["iv"],
+                "encrypted_data_tag": encrypted_blob["tag"],
+                "algorithm": encrypted_blob.get("algorithm", "aes-256-gcm"),
+                "data_version": 1,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+            
+            if current_data is None:
+                data["created_at"] = datetime.utcnow().isoformat()
+            
+            self.supabase.table("world_model_data").upsert(data).execute()
+            
+            # 3. Update world_model_index_v2
+            await self.update_domain_summary(user_id, domain, summary)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error storing domain data: {e}")
+            return False
+    
+    async def get_encrypted_data(self, user_id: str) -> Optional[dict]:
+        """
+        Get user's encrypted data blob.
+        
+        Returns encrypted blob that can only be decrypted client-side.
+        Backend cannot read this data.
+        
+        Returns:
+            dict with keys: ciphertext, iv, tag, algorithm
+            or None if no data exists
+        """
+        try:
+            result = self.supabase.table("world_model_data").select("*").eq(
+                "user_id", user_id
+            ).execute()
+            
+            if not result.data:
+                return None
+            
+            row = result.data[0]
+            return {
+                "ciphertext": row["encrypted_data_ciphertext"],
+                "iv": row["encrypted_data_iv"],
+                "tag": row["encrypted_data_tag"],
+                "algorithm": row.get("algorithm", "aes-256-gcm"),
+                "data_version": row.get("data_version", 1),
+                "updated_at": row.get("updated_at"),
+            }
+        except Exception as e:
+            logger.error(f"Error getting encrypted data: {e}")
+            return None
+    
+    async def delete_user_data(self, user_id: str) -> bool:
+        """
+        Delete all user data (encrypted blob and index).
+        
+        Used for account deletion / data purge.
+        """
+        try:
+            # Delete encrypted data
+            self.supabase.table("world_model_data").delete().eq(
+                "user_id", user_id
+            ).execute()
+            
+            # Delete index
+            self.supabase.table("world_model_index_v2").delete().eq(
+                "user_id", user_id
+            ).execute()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting user data: {e}")
+            return False
+    
+    # ==================== LEGACY: PORTFOLIO OPERATIONS (DEPRECATED) ====================
+    # These methods use the OLD vault_portfolios table
+    # New code should use store_domain_data() instead
     
     async def store_portfolio(
         self,
@@ -543,7 +675,13 @@ class WorldModelService:
         source: str = "manual",
         portfolio_name: str = "Main Portfolio",
     ) -> bool:
-        """Store encrypted portfolio holdings."""
+        """
+        DEPRECATED: Store encrypted portfolio holdings.
+        
+        Use store_domain_data() instead for new code.
+        This method uses the old vault_portfolios table.
+        """
+        logger.warning("store_portfolio() is deprecated. Use store_domain_data() instead.")
         try:
             data = {
                 "user_id": user_id,

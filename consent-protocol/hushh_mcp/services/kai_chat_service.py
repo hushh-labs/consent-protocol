@@ -414,11 +414,12 @@ class KaiChatService:
             return False
         
         # Check if portfolio already imported
-        if user_context and "financial" in user_context.available_domains:
+        user_domain_keys = [d.domain_key for d in user_context.domains] if user_context and user_context.domains else []
+        if user_context and "financial" in user_domain_keys:
             # Check for portfolio_imported attribute
             try:
                 attrs = await self.world_model.get_domain_attributes(user_id, "financial")
-                portfolio_imported = any(attr["attribute_key"] == "portfolio_imported" for attr in attrs)
+                portfolio_imported = any(attr.attribute_key == "portfolio_imported" for attr in attrs)
                 if portfolio_imported:
                     return False
             except Exception:
@@ -445,7 +446,8 @@ class KaiChatService:
             metadata = await self.world_model.get_user_metadata(user_id)
             
             # Check if financial domain exists
-            if not metadata or "financial" not in metadata.available_domains:
+            user_domain_keys = [d.domain_key for d in metadata.domains] if metadata and metadata.domains else []
+            if not metadata or "financial" not in user_domain_keys:
                 return {
                     "has_portfolio": False,
                     "missing_attributes": ["portfolio", "risk_tolerance", "investment_horizon", "income_bracket"],
@@ -455,7 +457,7 @@ class KaiChatService:
             
             # Get financial domain attributes
             attrs = await self.world_model.get_domain_attributes(user_id, "financial")
-            attr_keys = {attr["attribute_key"] for attr in attrs}
+            attr_keys = {attr.attribute_key for attr in attrs}
             
             # Define required attributes for complete profile
             required_attrs = {
@@ -789,7 +791,7 @@ class KaiChatService:
         """
         try:
             # Get world model metadata
-            metadata = await self.world_model.get_metadata(user_id)
+            metadata = await self.world_model.get_user_metadata(user_id)
             
             # Check portfolio
             has_portfolio = False

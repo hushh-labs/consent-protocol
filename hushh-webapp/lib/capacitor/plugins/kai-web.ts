@@ -2,6 +2,11 @@
  * Kai Web Implementation
  *
  * Fallback for web platform - uses standard fetch to Next.js API routes
+ *
+ * Authentication:
+ * - All consent-gated operations use VAULT_OWNER token
+ * - Token proves both identity (user_id) and consent (vault unlocked)
+ * - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
  */
 
 import { WebPlugin } from "@capacitor/core";
@@ -11,13 +16,14 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
   async grantConsent(options: {
     userId: string;
     scopes: string[];
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ token: string; expires_at: string }> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    // grantConsent may use VAULT_OWNER token if available
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
     const response = await fetch("/api/kai/consent/grant", {
@@ -52,14 +58,15 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     riskProfile: string;
     processingMode: string;
     context?: any;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<any> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    // Use VAULT_OWNER token for consent-gated access
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
     const body: Record<string, any> = {
@@ -93,16 +100,14 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     userId: string;
     preferences?: KaiEncryptedPreference[];
     preferencesEncrypted?: string;
-    authToken?: string;
     vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    // Prefer vaultOwnerToken over authToken for consent protocol compliance
-    const token = options.vaultOwnerToken || options.authToken;
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    // Use VAULT_OWNER token for consent-gated access
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
     const preferences: KaiEncryptedPreference[] | undefined =
@@ -133,35 +138,41 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
   async getPreferences(options: {
     userId: string;
-    authToken?: string;
     vaultOwnerToken?: string;
   }): Promise<{ preferences: any[] }> {
     // Debug logging
     console.log("[KaiWeb] getPreferences called with:", {
       userId: options.userId,
-      hasAuthToken: !!options.authToken,
       hasVaultOwnerToken: !!options.vaultOwnerToken,
       vaultOwnerTokenPrefix: options.vaultOwnerToken?.substring(0, 20),
     });
 
     // Safety check: This should NOT be called on native platforms
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const Capacitor = (window as any).Capacitor;
       if (Capacitor?.isNativePlatform?.()) {
-        console.error("[KaiWeb] ⚠️ Web plugin called on native platform! This is a bug.");
+        console.error(
+          "[KaiWeb] ⚠️ Web plugin called on native platform! This is a bug."
+        );
         console.error("[KaiWeb] Platform:", Capacitor.getPlatform?.());
-        console.error("[KaiWeb] This will fail because there's no Next.js server on native.");
+        console.error(
+          "[KaiWeb] This will fail because there's no Next.js server on native."
+        );
       }
     }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    // Prefer vaultOwnerToken over authToken for consent protocol compliance
-    const token = options.vaultOwnerToken || options.authToken;
-    console.log("[KaiWeb] Using token:", token ? "YES (length=" + token.length + ")" : "NO");
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    // Use VAULT_OWNER token for consent-gated access
+    console.log(
+      "[KaiWeb] Using token:",
+      options.vaultOwnerToken
+        ? "YES (length=" + options.vaultOwnerToken.length + ")"
+        : "NO"
+    );
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
     const url = `/api/kai/preferences/${options.userId}`;
@@ -204,7 +215,7 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
   async getInitialChatState(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{
     is_new_user: boolean;
     has_portfolio: boolean;
@@ -216,14 +227,18 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (options.authToken) {
-      headers["Authorization"] = `Bearer ${options.authToken}`;
+    // Use VAULT_OWNER token for consent-gated access
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
     }
 
-    const response = await fetch(`/api/kai/chat/initial-state/${options.userId}`, {
-      method: "GET",
-      headers,
-    });
+    const response = await fetch(
+      `/api/kai/chat/initial-state/${options.userId}`,
+      {
+        method: "GET",
+        headers,
+      }
+    );
 
     if (!response.ok) {
       throw new Error("Failed to get initial chat state");
@@ -237,15 +252,15 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
     message: string;
     conversationId?: string;
     vaultOwnerToken: string;
-    authToken?: string;
   }): Promise<{
     response: string;
     conversationId: string;
     timestamp: string;
   }> {
+    // Use VAULT_OWNER token for consent-gated access
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${options.vaultOwnerToken}`,
+      Authorization: `Bearer ${options.vaultOwnerToken}`,
     };
 
     const response = await fetch("/api/kai/chat", {
@@ -260,6 +275,90 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
     if (!response.ok) {
       throw new Error("Failed to send chat message");
+    }
+
+    return response.json();
+  }
+
+  async importPortfolio(options: {
+    userId: string;
+    fileBase64?: string;
+    fileName: string;
+    mimeType: string;
+    vaultOwnerToken: string;
+  }): Promise<{
+    success: boolean;
+    holdings_count: number;
+    total_value: number;
+    losers: Array<{
+      symbol: string;
+      name: string;
+      gain_loss_pct: number;
+      gain_loss: number;
+    }>;
+    winners: Array<{
+      symbol: string;
+      name: string;
+      gain_loss_pct: number;
+      gain_loss: number;
+    }>;
+    kpis_stored: string[];
+    portfolio_data?: {
+      holdings: Array<{
+        symbol: string;
+        name: string;
+        quantity: number;
+        current_price: number;
+        market_value: number;
+        cost_basis?: number;
+        gain_loss?: number;
+        gain_loss_pct?: number;
+      }>;
+      kpis: Record<string, unknown>;
+    };
+    source: string;
+    error?: string;
+  }> {
+    console.log("[KaiWeb] importPortfolio called:", {
+      userId: options.userId,
+      fileName: options.fileName,
+      mimeType: options.mimeType,
+      hasFileBase64: !!options.fileBase64,
+    });
+
+    if (!options.fileBase64) {
+      throw new Error("fileBase64 is required for web plugin");
+    }
+
+    // Decode base64 to binary
+    const binaryString = atob(options.fileBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: options.mimeType });
+    const file = new File([blob], options.fileName, { type: options.mimeType });
+
+    // Create FormData
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("user_id", options.userId);
+
+    // Use VAULT_OWNER token for consent-gated access
+    const response = await fetch("/api/kai/portfolio/import", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${options.vaultOwnerToken}`,
+        // Note: Don't set Content-Type for FormData - browser sets it with boundary
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail || errorData.error || "Failed to import portfolio"
+      );
     }
 
     return response.json();
