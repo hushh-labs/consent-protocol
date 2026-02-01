@@ -5,28 +5,54 @@
 
 /**
  * Consent scopes matching backend ConsentScope enum
+ * 
+ * NOTE: Uses dynamic attr.DOMAIN.ATTRIBUTE scopes instead of legacy vault.read/vault.write scopes.
+ * Legacy scopes are kept for backward compatibility but should not be used in new code.
  */
 export const CONSENT_SCOPES = {
-  // Vault READ scopes
-  VAULT_READ_EMAIL: "vault.read.email",
-  VAULT_READ_PHONE: "vault.read.phone",
-  VAULT_READ_FOOD: "vault.read.food",
-  VAULT_READ_PROFESSIONAL: "vault.read.professional",
-  VAULT_READ_FINANCE: "vault.read.finance",
-  VAULT_READ_ALL: "vault.read.all",
+  // Dynamic attr.* scopes (canonical - preferred)
+  ATTR_FOOD: "attr.food.*",
+  ATTR_PROFESSIONAL: "attr.professional.*",
+  ATTR_FINANCIAL: "attr.financial.*",
+  ATTR_FINANCIAL_RISK_PROFILE: "attr.financial.risk_profile",
+  ATTR_KAI_DECISIONS: "attr.kai_decisions.*",
+  ATTR_HEALTH: "attr.health.*",
 
-  // Vault WRITE scopes
-  VAULT_WRITE_FOOD: "vault.write.food",
-  VAULT_WRITE_FINANCE: "vault.write.finance",
-  VAULT_WRITE_PROFESSIONAL: "vault.write.professional",
+  // World model scopes
+  WORLD_MODEL_READ: "world_model.read",
+  WORLD_MODEL_WRITE: "world_model.write",
+
+  // Vault owner (master scope)
+  VAULT_OWNER: "vault.owner",
 
   // Agent permissioning
   AGENT_IDENTITY_VERIFY: "agent.identity.verify",
   AGENT_SHOPPING_PURCHASE: "agent.shopping.purchase",
   AGENT_FOOD_COLLECT: "agent.food.collect",
+  AGENT_KAI_ANALYZE: "agent.kai.analyze",
 
   // Custom scopes
   CUSTOM_TEMPORARY: "custom.temporary",
+
+  // Legacy scopes (deprecated - for backward compatibility only)
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_EMAIL: "vault.read.email",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_PHONE: "vault.read.phone",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_FOOD: "vault.read.food",
+  /** @deprecated Use ATTR_PROFESSIONAL instead */
+  VAULT_READ_PROFESSIONAL: "vault.read.professional",
+  /** @deprecated Use ATTR_FINANCIAL instead */
+  VAULT_READ_FINANCE: "vault.read.finance",
+  /** @deprecated Use VAULT_OWNER instead */
+  VAULT_READ_ALL: "vault.read.all",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_WRITE_FOOD: "vault.write.food",
+  /** @deprecated Use ATTR_FINANCIAL instead */
+  VAULT_WRITE_FINANCE: "vault.write.finance",
+  /** @deprecated Use ATTR_PROFESSIONAL instead */
+  VAULT_WRITE_PROFESSIONAL: "vault.write.professional",
 } as const;
 
 export type ConsentScope = (typeof CONSENT_SCOPES)[keyof typeof CONSENT_SCOPES];

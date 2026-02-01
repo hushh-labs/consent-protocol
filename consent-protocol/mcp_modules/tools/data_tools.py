@@ -59,9 +59,10 @@ async def handle_get_food(args: dict) -> list[TextContent]:
     user_id = await resolve_email_to_uid(user_id)
     
     # Compliance check
+    # NOTE: Legacy VAULT_READ_FOOD scope has been removed.
     valid, reason, token_obj = validate_token(
         consent_token,
-        expected_scope=ConsentScope.VAULT_READ_FOOD
+        expected_scope=ConsentScope.WORLD_MODEL_READ
     )
     
     if not valid:
@@ -69,9 +70,9 @@ async def handle_get_food(args: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps({
             "status": "access_denied",
             "error": f"Consent validation failed: {reason}",
-            "required_scope": "vault.read.food",
+            "required_scope": "world_model.read",
             "privacy_notice": "Hushh requires explicit consent before accessing any personal data.",
-            "remedy": "Call request_consent with scope='vault.read.food' first"
+            "remedy": "Call request_consent with scope='world_model.read' first"
         }))]
     
     # User ID must match
@@ -169,10 +170,11 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
     # Email resolution
     user_id = await resolve_email_to_uid(user_id)
     
-    # Compliance check - must have vault.read.professional scope
+    # Compliance check - must have world_model.read scope
+    # NOTE: Legacy VAULT_READ_PROFESSIONAL scope has been removed.
     valid, reason, token_obj = validate_token(
         consent_token,
-        expected_scope=ConsentScope.VAULT_READ_PROFESSIONAL  # NOT food!
+        expected_scope=ConsentScope.WORLD_MODEL_READ
     )
     
     if not valid:
@@ -180,10 +182,9 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps({
             "status": "access_denied",
             "error": f"Consent validation failed: {reason}",
-            "required_scope": "vault.read.professional",
+            "required_scope": "world_model.read",
             "privacy_notice": "Each data category requires its own consent token.",
-            "remedy": "Call request_consent with scope='vault.read.professional' first",
-            "note": "A vault.read.food token cannot access professional data."
+            "remedy": "Call request_consent with scope='world_model.read' first"
         }))]
     
     # User ID must match

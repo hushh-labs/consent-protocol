@@ -6,25 +6,28 @@
  * - hushh_mcp/trust/link.py → TrustLink types
  * - hushh_mcp/types.py → EncryptedPayload, VaultRecord
  * - hushh_mcp/constants.py → ConsentScope enum
+ *
+ * NOTE: Uses dynamic attr.DOMAIN.ATTRIBUTE scopes instead of legacy vault.read/vault.write scopes.
  */
 
 // ==================== Consent Scopes ====================
 // Mirrors: consent-protocol/hushh_mcp/constants.py
 
 export enum ConsentScope {
-  // Vault READ scopes
-  VAULT_READ_EMAIL = "vault.read.email",
-  VAULT_READ_PHONE = "vault.read.phone",
-  VAULT_READ_FINANCE = "vault.read.finance",
-  VAULT_READ_CONTACTS = "vault.read.contacts",
-  VAULT_READ_FOOD = "vault.read.food",
-  VAULT_READ_PROFESSIONAL = "vault.read.professional",
-  VAULT_READ_ALL = "vault.read.all",
+  // Dynamic attr.* scopes (canonical - preferred)
+  ATTR_FOOD = "attr.food.*",
+  ATTR_PROFESSIONAL = "attr.professional.*",
+  ATTR_FINANCIAL = "attr.financial.*",
+  ATTR_FINANCIAL_RISK_PROFILE = "attr.financial.risk_profile",
+  ATTR_KAI_DECISIONS = "attr.kai_decisions.*",
+  ATTR_HEALTH = "attr.health.*",
 
-  // Vault WRITE scopes
-  VAULT_WRITE_FOOD = "vault.write.food",
-  VAULT_WRITE_FINANCE = "vault.write.finance",
-  VAULT_WRITE_PROFESSIONAL = "vault.write.professional",
+  // World model scopes
+  WORLD_MODEL_READ = "world_model.read",
+  WORLD_MODEL_WRITE = "world_model.write",
+
+  // Vault owner (master scope)
+  VAULT_OWNER = "vault.owner",
 
   // Agent permissioning
   AGENT_SHOPPING_PURCHASE = "agent.shopping.purchase",
@@ -32,10 +35,33 @@ export enum ConsentScope {
   AGENT_IDENTITY_VERIFY = "agent.identity.verify",
   AGENT_SALES_OPTIMIZE = "agent.sales.optimize",
   AGENT_FOOD_COLLECT = "agent.food.collect",
+  AGENT_KAI_ANALYZE = "agent.kai.analyze",
 
   // Custom scopes
   CUSTOM_TEMPORARY = "custom.temporary",
   CUSTOM_SESSION_WRITE = "custom.session.write",
+
+  // Legacy scopes (deprecated - for backward compatibility only)
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_EMAIL = "vault.read.email",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_PHONE = "vault.read.phone",
+  /** @deprecated Use ATTR_FINANCIAL instead */
+  VAULT_READ_FINANCE = "vault.read.finance",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_CONTACTS = "vault.read.contacts",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_READ_FOOD = "vault.read.food",
+  /** @deprecated Use ATTR_PROFESSIONAL instead */
+  VAULT_READ_PROFESSIONAL = "vault.read.professional",
+  /** @deprecated Use VAULT_OWNER instead */
+  VAULT_READ_ALL = "vault.read.all",
+  /** @deprecated Use ATTR_FOOD instead */
+  VAULT_WRITE_FOOD = "vault.write.food",
+  /** @deprecated Use ATTR_FINANCIAL instead */
+  VAULT_WRITE_FINANCE = "vault.write.finance",
+  /** @deprecated Use ATTR_PROFESSIONAL instead */
+  VAULT_WRITE_PROFESSIONAL = "vault.write.professional",
 }
 
 // ==================== Token Types ====================
