@@ -1,6 +1,9 @@
 # api/routes/developer.py
 """
 Developer API v1 endpoints for external access with consent.
+
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+Legacy scopes are mapped to dynamic scopes for backward compatibility.
 """
 
 import logging
@@ -11,6 +14,8 @@ import uuid
 from fastapi import APIRouter, HTTPException
 
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
+from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
+from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.consent_db import ConsentDBService
@@ -23,31 +28,14 @@ CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
 
 router = APIRouter(prefix="/api/v1", tags=["Developer API"])
 
-# Map underscore API format to ConsentScope enum for dot notation conversion
-SCOPE_TO_ENUM = {
-    "vault_read_food": ConsentScope.VAULT_READ_FOOD,
-    "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-    "vault_read_finance": ConsentScope.VAULT_READ_FINANCE,
-    "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
-    "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
-}
-
 
 def get_scope_description(scope: str) -> str:
-    """Human-readable scope descriptions."""
-    descriptions = {
-        # Dot notation (canonical)
-        "vault.read.food": "Read your food preferences (dietary, cuisines, budget)",
-        "vault.read.professional": "Read your professional profile (title, skills, experience)",
-        "vault.write.food": "Write to your food preferences",
-        "vault.write.professional": "Write to your professional profile",
-        # Underscore notation (legacy fallback)
-        "vault_read_food": "Read your food preferences (dietary, cuisines, budget)",
-        "vault_read_professional": "Read your professional profile (title, skills, experience)",
-        "vault_write_food": "Write to your food preferences",
-        "vault_write_professional": "Write to your professional profile",
-    }
-    return descriptions.get(scope, f"Access: {scope}")
+    """
+    Human-readable scope descriptions.
+    
+    Delegated to centralized dynamic scope resolution.
+    """
+    return get_dynamic_scope_description(scope)
 
 
 @router.get("")
@@ -91,8 +79,8 @@ async def request_consent(request: ConsentRequest):
     if "*" not in dev_info["approved_scopes"] and request.scope not in dev_info["approved_scopes"]:
         raise HTTPException(status_code=403, detail=f"Scope '{request.scope}' not approved for this developer")
     
-    # Convert underscore scope to dot notation for consistent DB storage
-    scope_enum = SCOPE_TO_ENUM.get(request.scope)
+    # Convert scope to enum using centralized resolver
+    scope_enum = resolve_scope_to_enum(request.scope)
     scope_dot = scope_enum.value if scope_enum else request.scope
     
     # Check if consent already granted (query database with dot notation)
@@ -161,7 +149,7 @@ async def get_food_data(request: DataAccessRequest):
     """
     Get user's food preferences data.
     
-    Requires valid consent token with VAULT_READ_FOOD scope.
+    Requires valid consent token with WORLD_MODEL_READ scope.
     
     Follows Hushh Core Principle: "Scoped Access"
     """
@@ -170,7 +158,7 @@ async def get_food_data(request: DataAccessRequest):
     # Validate consent token
     valid, reason, token = validate_token(
         request.consent_token,
-        expected_scope=ConsentScope.VAULT_READ_FOOD
+        expected_scope=ConsentScope.WORLD_MODEL_READ
     )
     
     if not valid:
@@ -208,7 +196,7 @@ async def get_professional_data(request: DataAccessRequest):
     """
     Get user's professional profile data.
     
-    Requires valid consent token with VAULT_READ_PROFESSIONAL scope.
+    Requires valid consent token with WORLD_MODEL_READ scope.
     
     Follows Hushh Core Principle: "Scoped Access"
     """
@@ -217,7 +205,7 @@ async def get_professional_data(request: DataAccessRequest):
     # Validate consent token
     valid, reason, token = validate_token(
         request.consent_token,
-        expected_scope=ConsentScope.VAULT_READ_PROFESSIONAL
+        expected_scope=ConsentScope.WORLD_MODEL_READ
     )
     
     if not valid:
