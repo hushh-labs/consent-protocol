@@ -1,6 +1,6 @@
 # Project Context Map (Canonical)
 
-> **Purpose**: A single “source of truth” for how this repo is organized, what is **immutable** (consent protocol invariants), and how to build features without breaking **Capacitor iOS/Android**.
+> **Purpose**: A single "source of truth" for how this repo is organized, what is **immutable** (consent protocol invariants), and how to build features without breaking **Capacitor iOS/Android**.
 >
 > **Read first**: `docs/technical/architecture.md`, `docs/technical/consent-implementation.md`, `docs/technical/mobile.md`, `docs/technical/mcp-integration.md`
 
@@ -21,12 +21,12 @@
 ### BYOK / Zero‑Knowledge (Cloud Storage is Always Encrypted)
 
 - **Vault keys never belong to the server**.
-- The backend stores **ciphertext only**; the user’s key stays client-side.
+- The backend stores **ciphertext only**; the user's key stays client-side.
 - In the web app, decrypted keys are **memory-only** (React state), not persisted (`hushh-webapp/lib/vault/vault-context.tsx`).
 
-### “Implicit Consent” Internally ≠ No Consent Mechanism
+### "Implicit Consent" Internally ≠ No Consent Mechanism
 
-Internally, the user is “the owner”, but the system still enforces a **consent-first gate** using a **VAULT_OWNER token** (no bypass paths).
+Internally, the user is "the owner", but the system still enforces a **consent-first gate** using a **VAULT_OWNER token** (no bypass paths).
 
 - **Vault owner access is still token-gated**, via **`vault.owner`** scope.
 - Token validation supports a **hierarchical master scope**:
@@ -40,7 +40,7 @@ Internally, the user is “the owner”, but the system still enforces a **conse
 
 ---
 
-## The 3 Consent Surfaces (Know Which One You’re Touching)
+## The 3 Consent Surfaces (Know Which One You're Touching)
 
 ### 1) Vault Owner Session (User → their own vault)
 
@@ -54,7 +54,7 @@ Internally, the user is “the owner”, but the system still enforces a **conse
   - iOS: `hushh-webapp/ios/App/App/Plugins/HushhConsentPlugin.swift`
   - Android: `hushh-webapp/android/app/src/main/java/com/hushh/pda/plugins/HushhConsent/HushhConsentPlugin.kt`
 
-### 2) External Developer API (3P app → user’s data)
+### 2) External Developer API (3P app → user's data)
 
 - Developer requests consent → user approves in UI → token issued.
 - Docs: `docs/technical/developer-api.md`
@@ -82,9 +82,9 @@ Internally, the user is “the owner”, but the system still enforces a **conse
 
 ### Native (Capacitor static export; no Next.js server)
 
-**Rule**: any feature that uses `/app/api/*` must have a **native plugin path** (or it won’t work on iOS/Android).
+**Rule**: any feature that uses `/app/api/*` must have a **native plugin path** (or it won't work on iOS/Android).
 
-Authoritative guideline: `docs/technical/mobile.md` (“Critical: API Routes Require Native Plugins”).
+Authoritative guideline: `docs/technical/mobile.md` ("Critical: API Routes Require Native Plugins").
 
 Native plugin registration:
 
@@ -99,7 +99,7 @@ Platform-aware routing is centralized in:
 
 ---
 
-## Canonical “Where Do I Implement X?” Guide
+## Canonical "Where Do I Implement X?" Guide
 
 ### Add/Change a backend endpoint (protocol-safe)
 
@@ -120,7 +120,7 @@ Platform-aware routing is centralized in:
   - Validate tokens (and scopes) before touching any vault data
   - Prefer reuse of operons to keep agents small and testable
 
-### Add a new UI feature that needs “API”
+### Add a new UI feature that needs "API"
 
 Follow the **Capacitor-safe 5-step workflow**:
 
@@ -248,8 +248,247 @@ Every new feature that touches data follows this exact structure:
 ## Working Agreement (for future changes)
 
 - **Never** persist the vault key (BYOK).
-- **Never** add auth/consent bypasses “because it’s the user”.
+- **Never** add auth/consent bypasses "because it's the user".
 - **Always** keep web + iOS + Android feature parity for anything user-facing:
   - If it uses `/app/api/*`, it must also have a **Capacitor plugin** path.
 - Prefer `/api/*` token-gated routes; treat `/db/*` as legacy only.
+- **Always** use dynamic `attr.{domain}.*` scopes (NOT legacy `vault.read.*`/`vault.write.*`).
+- **Always** store new data in `world_model_attributes` table via `WorldModelService`.
 
+---
+
+## Dynamic Consent Scopes (IMPORTANT)
+
+### Scope Migration: Legacy to Dynamic
+
+The codebase has migrated from legacy `vault.read.*`/`vault.write.*` scopes to dynamic `attr.{domain}.*` scopes.
+
+**Legacy scopes (DEPRECATED - do not use in new code):**
+- `vault.read.food` → Use `attr.food.*`
+- `vault.read.professional` → Use `attr.professional.*`
+- `vault.read.finance` → Use `attr.financial.*`
+- `vault.write.decision` → Use `attr.kai_decisions.*`
+
+**Dynamic scope pattern:**
+```
+attr.{domain}.{attribute_key}   # Specific attribute (e.g., attr.food.dietary_restrictions)
+attr.{domain}.*                  # All attributes in domain (e.g., attr.food.*)
+vault.owner                      # Full access (user's own data)
+```
+
+### Key Files for Dynamic Scopes
+
+- **Scope Generator**: `consent-protocol/hushh_mcp/consent/scope_generator.py`
+- **Domain Registry**: `consent-protocol/hushh_mcp/services/domain_registry_service.py`
+- **World Model Service**: `consent-protocol/hushh_mcp/services/world_model_service.py`
+- **Attribute Learner**: `consent-protocol/hushh_mcp/services/attribute_learner.py`
+
+### World Model Tri-Flow
+
+The World Model feature follows the tri-flow architecture:
+
+| Layer | File |
+|-------|------|
+| Backend | `consent-protocol/api/routes/world_model.py` |
+| Web Proxy | `hushh-webapp/app/api/world-model/[...path]/route.ts` |
+| iOS Plugin | `hushh-webapp/ios/App/App/Plugins/WorldModelPlugin.swift` |
+| Android Plugin | `hushh-webapp/android/.../plugins/WorldModel/WorldModelPlugin.kt` |
+| Service | `hushh-webapp/lib/services/world-model-service.ts` |
+| Web Fallback | `hushh-webapp/lib/capacitor/plugins/world-model-web.ts` |
+| Plugin Interface | `hushh-webapp/lib/capacitor/world-model.ts` |
+
+---
+
+## Dynamic Domain Architecture (NEW - PRODUCTION READY)
+
+### Overview
+
+The platform now supports **infinite scalability** through dynamic domain management. Domains are discovered at runtime from the `domain_registry` table, eliminating all hardcoded domain references.
+
+### Core Principles
+
+1. **No Hardcoded Domains** - All domain lists fetched from database
+2. **Dynamic Scope Generation** - Scopes created as `attr.{domain}.{attribute_key}`
+3. **Auto-Registration** - New domains automatically registered when attributes are stored
+4. **Backward Compatibility** - Legacy `vault.read.*` scopes mapped to `attr.*` format
+
+### Architecture Components
+
+**Backend Services**:
+- `DomainRegistryService` - Manages domain metadata in `domain_registry` table
+- `DynamicScopeGenerator` - Generates and validates `attr.{domain}.*` scopes
+- `DomainInferrer` - Auto-categorizes attributes into domains
+- `scope_helpers.py` - Centralized scope resolution utilities
+
+**Frontend Services**:
+- `WorldModelService` - Platform-aware domain/scope fetching
+- `domains.ts` - Dynamic `DomainInfo` interface (replaces hardcoded `VaultDomain`)
+
+**API Endpoints** (5 new):
+- `GET /api/world-model/domains` - List all domains
+- `GET /api/world-model/domains/{userId}` - User domains
+- `GET /api/world-model/metadata/{userId}` - User metadata
+- `GET /api/world-model/scopes/{userId}` - Available scopes
+- `GET /api/world-model/attributes/{userId}` - User attributes
+
+### Migration Path
+
+**Old Code** (Hardcoded):
+```python
+# Backend
+DOMAINS = ["food", "professional", "financial"]
+if domain in DOMAINS:
+    process(domain)
+```
+
+**New Code** (Dynamic):
+```python
+# Backend
+from hushh_mcp.services.domain_registry_service import get_domain_registry_service
+registry = get_domain_registry_service()
+domains = await registry.list_domains()
+for domain in domains:
+    process(domain.domain_key)
+```
+
+**Old Code** (Frontend):
+```typescript
+// Frontend
+type VaultDomain = "food" | "professional";
+```
+
+**New Code** (Frontend):
+```typescript
+// Frontend
+const domains = await WorldModelService.listDomains();
+// Returns: DomainInfo[]
+```
+
+### Compliance Tests
+
+New architecture compliance tests enforce:
+- ✅ No hardcoded domain string literals in API routes
+- ✅ No hardcoded domain lists/arrays
+- ✅ All scope resolution uses `scope_helpers.py`
+- ✅ VaultDBService has deprecation notice
+- ✅ WorldModelService exists and is preferred
+
+Run: `pytest consent-protocol/tests/quality/test_architecture_compliance.py`
+
+---
+
+## Financial Intelligence (Agent Kai Enhanced)
+
+### Portfolio Parser Enhancements
+
+**New Capabilities**:
+- ✅ PDF parsing via `pdfplumber` (Fidelity, JPMorgan)
+- ✅ Enhanced holding data (acquisition dates, sectors, estimated income)
+- ✅ Account metadata extraction (account numbers, types, statement periods)
+- ✅ Asset allocation from statements
+- ✅ Income metrics (dividends, interest, capital gains)
+- ✅ Tax reporting data (realized/unrealized gains)
+
+**Supported Statement Formats**:
+1. **CSV** - Schwab, Fidelity, Robinhood, generic
+2. **Fidelity PDF** - Full account summary, asset allocation, holdings, income
+3. **JPMorgan PDF** - Account values, holdings with acquisition dates, realized G/L
+
+### 20+ Financial KPIs
+
+Stored in `world_model_attributes` table under `financial` domain:
+
+**Basic**: `holdings_count`, `portfolio_value_bucket`
+
+**Asset Allocation**: `allocation_domestic_stock`, `allocation_foreign_stock`, `allocation_bonds`, `allocation_cash`, `allocation_etf`
+
+**Income**: `annual_dividend_income`, `portfolio_yield`, `taxable_dividends`, `tax_exempt_dividends`, `interest_income`
+
+**Tax Efficiency**: `tax_loss_harvesting_candidates`, `long_term_gain_positions`, `unrealized_gain_positions`
+
+**Concentration**: `top_5_concentration`, `top_holding_symbol`, `top_holding_pct`, `top_holding_value`
+
+**Sector Exposure**: `sector_technology`, `sector_financial`, `sector_healthcare`, `sector_consumer_cyclical`, `sector_energy` *(dynamic based on holdings)*
+
+**Risk**: `margin_exposure`, `short_positions_count`, `sector_diversity_score`, `risk_bucket`
+
+**Performance**: `total_unrealized_gain_loss`, `total_unrealized_gain_loss_pct`, `ytd_return_pct`, `losers_count`, `winners_count`
+
+### Proactive Data Collection
+
+Agent Kai tracks profile completeness and proactively prompts for missing data:
+
+```python
+# In kai_chat_service.py
+completeness = await _check_data_completeness(user_id)
+# Tracks: portfolio, risk_tolerance, investment_horizon, investment_goals, 
+#         age_bracket, tax_situation, income_bracket, liquidity_needs
+
+if completeness["completeness_score"] < 0.7:
+    prompt = await get_proactive_data_collection_prompt(user_id)
+    # Returns contextual prompt for highest-priority missing attribute
+```
+
+**Attribute Priority**:
+1. `portfolio_imported` (highest)
+2. `risk_tolerance`
+3. `investment_horizon`
+4. `investment_goals`
+5. `age_bracket`
+
+---
+
+## Production Deployment Checklist
+
+### Backend ✅
+- ✅ All scope resolution centralized (`scope_helpers.py`)
+- ✅ World Model API endpoints operational
+- ✅ PDF parsing with `pdfplumber` installed
+- ✅ Enhanced KPI derivation (20+ metrics)
+- ✅ Kai data completeness checking
+- ✅ Dynamic domain registry
+- ✅ Legacy scope backward compatibility
+
+### Frontend ✅
+- ✅ Dynamic `DomainInfo` type
+- ✅ `WorldModelService` methods implemented
+- ✅ Web API proxies for all World Model endpoints
+- ✅ Tri-flow architecture preserved
+- ✅ Backward compatible domain utilities
+
+### Native (iOS) ✅
+- ✅ `listDomains()` method
+- ✅ `getUserDomains()` method
+- ✅ `getAvailableScopes()` method
+- ✅ All existing methods maintained
+
+### Tests ✅
+- ✅ Architecture compliance tests for dynamic domains
+- ✅ No hardcoded domain detection
+- ✅ Scope resolution validation
+- ✅ World Model service existence checks
+
+### Documentation ✅
+- ✅ Dynamic domain architecture documented
+- ✅ Financial KPIs documented (20+ metrics)
+- ✅ Migration paths provided
+- ✅ API endpoints documented
+- ✅ Compliance checklist complete
+
+---
+
+## Breaking Changes & Migration
+
+### No Breaking Changes for End Users
+
+All changes are backward compatible. Legacy scopes (`vault.read.food`) are automatically converted to dynamic scopes (`attr.food.*`).
+
+### For Developers
+
+**If you're adding new domains**: Don't add them to code. Just store attributes with the domain name, and the system will auto-register it.
+
+**If you're checking domains**: Use `await domain_registry.list_domains()` instead of hardcoded lists.
+
+**If you're resolving scopes**: Import `scope_helpers.py` instead of creating SCOPE_TO_ENUM dictionaries.
+
+---

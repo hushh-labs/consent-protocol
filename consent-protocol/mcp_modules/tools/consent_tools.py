@@ -1,6 +1,9 @@
 # mcp/tools/consent_tools.py
 """
 Consent request and status check handlers.
+
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+Legacy scopes are mapped to dynamic scopes for backward compatibility.
 """
 
 import json
@@ -9,7 +12,6 @@ import logging
 import httpx
 from mcp.types import TextContent
 
-from hushh_mcp.constants import ConsentScope
 from mcp_modules.config import (
     CONSENT_POLL_INTERVAL_SECONDS,
     CONSENT_TIMEOUT_SECONDS,
@@ -21,14 +23,6 @@ from mcp_modules.config import (
 )
 
 logger = logging.getLogger("hushh-mcp-server")
-
-
-# Map scope strings to enums
-SCOPE_ENUM_MAP = {
-    "vault.read.food": ConsentScope.VAULT_READ_FOOD,
-    "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-    "vault.read.finance": ConsentScope.VAULT_READ_FINANCE,
-}
 
 
 async def resolve_email_to_uid(user_id: str) -> tuple[str, str | None, str | None]:

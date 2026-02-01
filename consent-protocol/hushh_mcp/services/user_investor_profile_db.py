@@ -23,7 +23,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from db.supabase_client import get_supabase
+from db.db_client import get_db
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -49,9 +49,9 @@ class UserInvestorProfileService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (private - ONLY for internal service use)."""
+        """Get database client (private - ONLY for internal service use)."""
         if self._supabase is None:
-            self._supabase = get_supabase()
+            self._supabase = get_db()
         return self._supabase
     
     def _validate_vault_owner_token(self, token: str) -> str:

@@ -3,25 +3,41 @@
 /**
  * Vault Domain Abstraction
  *
- * Provides a scalable, reusable pattern for accessing vault data across domains.
- * Each domain (food, professional, finance, etc.) follows the same consent-based
- * access pattern with proper validation.
+ * DYNAMIC DOMAINS: Domains are now fetched from the backend at runtime.
+ * This file provides backward compatibility and helper functions.
  *
  * 3-Layer Security:
  * 1. Firebase Auth (identity) - user is who they claim to be
  * 2. BYOK Encryption - data is encrypted/decrypted client-side only
  * 3. Consent Protocol - scoped tokens for each action
+ *
+ * NOTE: Uses dynamic attr.{domain}.* scopes.
  */
 
 import { ApiService } from "@/lib/services/api-service";
+import { 
+  WorldModelService,
+  DomainInfo,
+  ScopeDisplayInfo 
+} from "@/lib/services/world-model-service";
 
 // ============================================================================
-// DOMAIN DEFINITIONS
+// DYNAMIC DOMAIN TYPES
 // ============================================================================
 
 /**
- * Available vault domains.
- * Add new domains here as the system scales.
+ * Domain metadata from WorldModelService.
+ * Re-exported for backward compatibility.
+ */
+export type { DomainInfo, ScopeDisplayInfo } from "@/lib/services/world-model-service";
+
+// ============================================================================
+// LEGACY SUPPORT (Deprecated)
+// ============================================================================
+
+/**
+ * @deprecated Use DomainInfo from WorldModelService.listDomains() instead.
+ * Legacy type kept for backward compatibility.
  */
 export type VaultDomain = "food" | "professional" | "finance" | "health";
 
@@ -35,10 +51,8 @@ export interface DomainConfig {
   icon: string;
   /** Description for consent dialogs */
   description: string;
-  /** Required scope for reading this domain */
-  readScope: string;
-  /** Required scope for writing this domain */
-  writeScope: string;
+  /** Required scope for accessing this domain (dynamic attr.* pattern) */
+  scope: string;
   /** Database getter function */
   getData: (
     userId: string,
@@ -49,15 +63,15 @@ export interface DomainConfig {
 }
 
 /**
- * Domain registry - single source of truth for all vault domains.
+ * @deprecated Legacy domain registry - Use WorldModelService.listDomains() instead.
+ * Kept for backward compatibility only. DO NOT add new domains here.
  */
 export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
   food: {
     displayName: "Food & Dining",
     icon: "🍽️",
     description: "Dietary restrictions, cuisine preferences, and budget",
-    readScope: "vault.read.food",
-    writeScope: "vault.write.food",
+    scope: "attr.food.*",
     getData: async (userId, token) => {
       if (!token) {
         console.error("[domains] No consent token provided for food data");
@@ -78,8 +92,7 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     displayName: "Professional Profile",
     icon: "💼",
     description: "Job title, skills, experience, and preferences",
-    readScope: "vault.read.professional",
-    writeScope: "vault.write.professional",
+    scope: "attr.professional.*",
     getData: async (userId, token) => {
       if (!token) {
         console.error(
@@ -103,8 +116,7 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     displayName: "Finance",
     icon: "💰",
     description: "Financial preferences and budgeting",
-    readScope: "vault.read.finance",
-    writeScope: "vault.write.finance",
+    scope: "attr.financial.*",
     getData: async () => null, // Coming soon
     fields: [],
   },
@@ -112,18 +124,80 @@ export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
     displayName: "Health & Wellness",
     icon: "🏥",
     description: "Health preferences and wellness goals",
-    readScope: "vault.read.health",
-    writeScope: "vault.write.health",
+    scope: "attr.health.*",
     getData: async () => null, // Coming soon
     fields: [],
   },
 };
 
 // ============================================================================
-// DOMAIN UTILITIES
+// DYNAMIC DOMAIN UTILITIES (PREFERRED)
 // ============================================================================
 
 /**
+ * Fetch all domains dynamically from backend.
+ * This is the preferred way to get domain information.
+ */
+export async function fetchDomains(includeEmpty = false): Promise<DomainInfo[]> {
+  try {
+    return await WorldModelService.listDomains(includeEmpty);
+  } catch (error) {
+    console.error("[domains] Failed to fetch domains:", error);
+    return [];
+  }
+}
+
+/**
+ * Fetch domains for a specific user.
+ * Only returns domains where the user has data.
+ * 
+ * @deprecated Use WorldModelService.listDomains() instead - it now includes all domains.
+ * This function is kept for backward compatibility but just calls listDomains().
+ */
+export async function fetchUserDomains(userId: string): Promise<DomainInfo[]> {
+  try {
+    // For now, just return all domains - the backend will eventually support user-specific filtering
+    return await WorldModelService.listDomains(false);
+  } catch (error) {
+    console.error("[domains] Failed to fetch user domains:", error);
+    return [];
+  }
+}
+
+/**
+ * Get scope display info for any scope.
+ * Parses attr.{domain}.{attribute} pattern.
+ */
+export function getScopeDisplayInfo(scope: string): ScopeDisplayInfo {
+  const match = scope.match(/^attr\.([^.]+)\.?(.*)$/);
+  if (!match) {
+    return {
+      displayName: scope,
+      domain: "",
+      attribute: null,
+      isWildcard: false,
+    };
+  }
+
+  const [, domain, attribute] = match;
+  const isWildcard = attribute === "*" || !attribute;
+
+  return {
+    displayName: isWildcard
+      ? `All ${domain} Data`
+      : `${domain} - ${(attribute || "").replace(/_/g, " ")}`,
+    domain: domain || "",
+    attribute: isWildcard ? null : attribute || null,
+    isWildcard,
+  };
+}
+
+// ============================================================================
+// LEGACY UTILITIES (Deprecated but kept for compatibility)
+// ============================================================================
+
+/**
+ * @deprecated Use fetchDomains() instead.
  * Get config for a domain.
  */
 export function getDomainConfig(domain: VaultDomain): DomainConfig {
@@ -131,6 +205,7 @@ export function getDomainConfig(domain: VaultDomain): DomainConfig {
 }
 
 /**
+ * @deprecated Use fetchDomains() with filter instead.
  * Get all active domains (those with getData implemented).
  */
 export function getActiveDomains(): VaultDomain[] {
@@ -140,6 +215,7 @@ export function getActiveDomains(): VaultDomain[] {
 }
 
 /**
+ * @deprecated Use fetchDomains() instead.
  * Get all domains including coming soon.
  */
 export function getAllDomains(): VaultDomain[] {
@@ -147,6 +223,7 @@ export function getAllDomains(): VaultDomain[] {
 }
 
 /**
+ * @deprecated Use fetchUserDomains() instead.
  * Check if a domain is active (has data).
  */
 export function isDomainActive(domain: VaultDomain): boolean {

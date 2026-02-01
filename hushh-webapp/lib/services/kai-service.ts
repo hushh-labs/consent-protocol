@@ -62,9 +62,10 @@ export async function grantKaiConsent(
 
   return Kai.grantConsent({
     userId,
+    // Updated to use dynamic attr.* scopes instead of legacy vault.read.*/vault.write.*
     scopes: scopes || [
-      "vault.read.risk_profile",
-      "vault.write.decision",
+      "attr.financial.risk_profile",  // Replaces vault.read.risk_profile
+      "attr.kai_decisions.*",          // Replaces vault.write.decision
       "agent.kai.analyze",
     ],
     authToken,
@@ -247,4 +248,24 @@ export async function streamKaiAnalysis(params: {
   });
 
   return response;
+}
+
+/**
+ * Get initial chat state for proactive welcome flow.
+ * Platform-aware: Uses Kai plugin on native, Next.js API on web.
+ */
+export async function getInitialChatState(userId: string): Promise<{
+  is_new_user: boolean;
+  has_portfolio: boolean;
+  has_financial_data: boolean;
+  welcome_type: string;
+  total_attributes: number;
+  available_domains: string[];
+}> {
+  const authToken = await getAuthToken();
+
+  return Kai.getInitialChatState({
+    userId,
+    authToken,
+  });
 }

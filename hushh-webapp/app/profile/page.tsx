@@ -4,12 +4,12 @@
  * Profile Page
  *
  * Shows user info from authentication providers (Google, Apple, etc.), 
- * sign out button, and theme toggle.
+ * world model domains with KPI cards, sign out button, and theme toggle.
  * Mobile-first design with Morphy-UX styling.
  */
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -26,14 +26,58 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { User, Mail, LogOut, Shield } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { 
+  User, 
+  Mail, 
+  LogOut, 
+  Shield, 
+  Wallet, 
+  CreditCard, 
+  Heart, 
+  Plane, 
+  Utensils, 
+  Briefcase, 
+  Tv, 
+  ShoppingBag, 
+  Folder,
+  Loader2,
+  MessageSquare,
+  ChevronRight
+} from "lucide-react";
+import { WorldModelService, DomainSummary } from "@/lib/services/world-model-service";
 
 type ThemeOption = "light" | "dark" | "system";
+
+// Icon mapping for domains
+const DOMAIN_ICONS: Record<string, React.ElementType> = {
+  financial: Wallet,
+  subscriptions: CreditCard,
+  health: Heart,
+  travel: Plane,
+  food: Utensils,
+  professional: Briefcase,
+  entertainment: Tv,
+  shopping: ShoppingBag,
+  general: Folder,
+  wallet: Wallet,
+  "credit-card": CreditCard,
+  heart: Heart,
+  plane: Plane,
+  utensils: Utensils,
+  briefcase: Briefcase,
+  tv: Tv,
+  "shopping-bag": ShoppingBag,
+  folder: Folder,
+};
 
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isAuthenticated, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const [domains, setDomains] = useState<DomainSummary[]>([]);
+  const [totalAttributes, setTotalAttributes] = useState(0);
+  const [loadingDomains, setLoadingDomains] = useState(true);
 
   // Redirect to login if not authenticated (in useEffect to avoid render error)
   useEffect(() => {
@@ -41,6 +85,28 @@ export default function ProfilePage() {
       router.push("/");
     }
   }, [isAuthenticated, router]);
+
+  // Load world model data
+  useEffect(() => {
+    const loadWorldModelData = async () => {
+      if (!user?.uid) return;
+      
+      try {
+        setLoadingDomains(true);
+        const metadata = await WorldModelService.getMetadata(user.uid);
+        setDomains(metadata.domains);
+        setTotalAttributes(metadata.totalAttributes);
+      } catch (error) {
+        console.error("Failed to load world model data:", error);
+      } finally {
+        setLoadingDomains(false);
+      }
+    };
+    
+    if (user?.uid) {
+      loadWorldModelData();
+    }
+  }, [user?.uid]);
 
   const handleSignOut = async () => {
     try {
@@ -79,7 +145,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-lg space-y-6">
+    <div className="container mx-auto py-8 px-4 max-w-2xl space-y-6">
       {/* Profile Header */}
       <div className="text-center space-y-4">
         {user?.photoURL ? (
@@ -98,6 +164,83 @@ export default function ProfilePage() {
           <p className="text-muted-foreground text-sm">{user?.email}</p>
         </div>
       </div>
+
+      {/* World Model KPI Cards */}
+      <Card variant="none" effect="glass">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-[var(--crystal-gold-500)]/10 flex items-center justify-center">
+                <Folder className="h-5 w-5 text-[var(--crystal-gold-500)]" />
+              </div>
+              <span>Your Data Profile</span>
+            </div>
+            {!loadingDomains && (
+              <Badge variant="secondary" className="text-xs">
+                {totalAttributes} data points
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {loadingDomains ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-[var(--crystal-gold-500)]" />
+            </div>
+          ) : domains.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {domains.map((domain) => {
+                const IconComponent = DOMAIN_ICONS[domain.icon] || DOMAIN_ICONS[domain.key] || Folder;
+                return (
+                  <button
+                    key={domain.key}
+                    onClick={() => router.push(`/dashboard/consent?domain=${domain.key}`)}
+                    className="p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-left group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="p-2 rounded-lg"
+                        style={{ backgroundColor: `${domain.color}20` }}
+                      >
+                        <IconComponent
+                          className="h-5 w-5"
+                          style={{ color: domain.color }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate group-hover:text-[var(--crystal-gold-500)] transition-colors">
+                          {domain.displayName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {domain.attributeCount} attribute{domain.attributeCount !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-[var(--crystal-gold-500)] transition-colors" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--crystal-gold-100)] dark:bg-[var(--crystal-gold-900)]/20 flex items-center justify-center">
+                <MessageSquare className="h-6 w-6 text-[var(--crystal-gold-500)]" />
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                No data yet. Chat with Kai to build your profile.
+              </p>
+              <Button
+                variant="none"
+                size="sm"
+                className="bg-[var(--crystal-gold-500)] text-white hover:bg-[var(--crystal-gold-600)]"
+                onClick={() => router.push("/chat")}
+              >
+                Ask Agent Kai
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Account Info Card */}
       <Card variant="none" effect="glass">

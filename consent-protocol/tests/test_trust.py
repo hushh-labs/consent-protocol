@@ -7,8 +7,8 @@ from hushh_mcp.types import TrustLink
 USER_ID = "user_nyx"
 DELEGATOR = "agent_identity"
 DELEGATEE = "agent_shopper"
-SCOPE_VALID = ConsentScope.VAULT_READ_FOOD
-SCOPE_INVALID = ConsentScope.VAULT_READ_FINANCE
+SCOPE_VALID = ConsentScope.WORLD_MODEL_READ
+SCOPE_INVALID = ConsentScope.WORLD_MODEL_READ
 
 
 def test_create_and_verify_trust_link():

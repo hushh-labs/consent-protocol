@@ -3,7 +3,7 @@
 Chat Database Service - Persistent chat history with insertable components.
 
 This service manages chat conversations and messages, supporting:
-- Persistent conversation history
+- Persistent conversation history with BYOK encryption
 - Insertable UI components (analysis, portfolio import, etc.)
 - Message metadata (tokens, model used)
 """
@@ -14,7 +14,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from db.supabase_client import get_supabase
+from db.db_client import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +54,16 @@ class Conversation:
     agent_context: Optional[dict] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Encryption fields
+    title_ciphertext: Optional[str] = None
+    title_iv: Optional[str] = None
+    title_tag: Optional[str] = None
+    encryption_status: str = "pending"
 
 
 @dataclass
 class ChatMessage:
-    """Chat message with optional component."""
+    """Chat message with optional component and encryption support."""
     id: str
     conversation_id: str
     role: MessageRole
@@ -69,17 +74,26 @@ class ChatMessage:
     tokens_used: Optional[int] = None
     model_used: Optional[str] = None
     created_at: Optional[datetime] = None
+    # Encryption fields
+    content_ciphertext: Optional[str] = None
+    content_iv: Optional[str] = None
+    content_tag: Optional[str] = None
+    component_data_ciphertext: Optional[str] = None
+    component_data_iv: Optional[str] = None
+    component_data_tag: Optional[str] = None
+    encryption_status: str = "pending"
 
 
 class ChatDBService:
     """
-    Service for managing persistent chat history.
+    Service for managing persistent chat history with BYOK encryption.
     
     Supports industry-standard chat patterns with:
     - Conversation threads
     - Message history with pagination
     - Insertable UI components
     - Token tracking
+    - BYOK encryption for message content
     """
     
     def __init__(self):
@@ -88,7 +102,7 @@ class ChatDBService:
     @property
     def supabase(self):
         if self._supabase is None:
-            self._supabase = get_supabase()
+            self._supabase = get_db()
         return self._supabase
     
     # ==================== CONVERSATION OPERATIONS ====================
@@ -98,14 +112,27 @@ class ChatDBService:
         user_id: str,
         title: Optional[str] = None,
         agent_context: Optional[dict] = None,
+        # Encryption parameters (optional - for encrypted storage)
+        title_ciphertext: Optional[str] = None,
+        title_iv: Optional[str] = None,
+        title_tag: Optional[str] = None,
     ) -> Optional[Conversation]:
-        """Create a new conversation."""
+        """Create a new conversation with optional encryption."""
         try:
             data = {
                 "user_id": user_id,
-                "title": title,
                 "agent_context": agent_context,
             }
+            
+            # Support both encrypted and plaintext modes
+            if title_ciphertext and title_iv and title_tag:
+                data["title_ciphertext"] = title_ciphertext
+                data["title_iv"] = title_iv
+                data["title_tag"] = title_tag
+                data["encryption_status"] = "encrypted"
+            else:
+                data["title"] = title
+                data["encryption_status"] = "legacy_plaintext" if title else "pending"
             
             result = self.supabase.table("chat_conversations").insert(data).execute()
             
@@ -120,6 +147,10 @@ class ChatDBService:
                 agent_context=row.get("agent_context"),
                 created_at=row.get("created_at"),
                 updated_at=row.get("updated_at"),
+                title_ciphertext=row.get("title_ciphertext"),
+                title_iv=row.get("title_iv"),
+                title_tag=row.get("title_tag"),
+                encryption_status=row.get("encryption_status", "pending"),
             )
         except Exception as e:
             logger.error(f"Error creating conversation: {e}")
@@ -223,19 +254,43 @@ class ChatDBService:
         component_data: Optional[dict] = None,
         tokens_used: Optional[int] = None,
         model_used: Optional[str] = None,
+        # Encryption parameters (optional - for encrypted storage)
+        content_ciphertext: Optional[str] = None,
+        content_iv: Optional[str] = None,
+        content_tag: Optional[str] = None,
+        component_data_ciphertext: Optional[str] = None,
+        component_data_iv: Optional[str] = None,
+        component_data_tag: Optional[str] = None,
     ) -> Optional[ChatMessage]:
-        """Add a message to a conversation."""
+        """Add a message to a conversation with optional encryption."""
         try:
             data = {
                 "conversation_id": conversation_id,
                 "role": role.value,
-                "content": content,
                 "content_type": content_type.value,
                 "component_type": component_type.value if component_type else None,
-                "component_data": component_data,
                 "tokens_used": tokens_used,
                 "model_used": model_used,
             }
+            
+            # Support both encrypted and plaintext modes for content
+            if content_ciphertext and content_iv and content_tag:
+                data["content_ciphertext"] = content_ciphertext
+                data["content_iv"] = content_iv
+                data["content_tag"] = content_tag
+                data["content"] = "[encrypted]"  # Placeholder for encrypted content
+                data["encryption_status"] = "encrypted"
+            else:
+                data["content"] = content
+                data["encryption_status"] = "legacy_plaintext"
+            
+            # Support both encrypted and plaintext modes for component_data
+            if component_data_ciphertext and component_data_iv and component_data_tag:
+                data["component_data_ciphertext"] = component_data_ciphertext
+                data["component_data_iv"] = component_data_iv
+                data["component_data_tag"] = component_data_tag
+            else:
+                data["component_data"] = component_data
             
             result = self.supabase.table("chat_messages").insert(data).execute()
             
@@ -258,6 +313,13 @@ class ChatDBService:
                 tokens_used=row.get("tokens_used"),
                 model_used=row.get("model_used"),
                 created_at=row.get("created_at"),
+                content_ciphertext=row.get("content_ciphertext"),
+                content_iv=row.get("content_iv"),
+                content_tag=row.get("content_tag"),
+                component_data_ciphertext=row.get("component_data_ciphertext"),
+                component_data_iv=row.get("component_data_iv"),
+                component_data_tag=row.get("component_data_tag"),
+                encryption_status=row.get("encryption_status", "pending"),
             )
         except Exception as e:
             logger.error(f"Error adding message: {e}")

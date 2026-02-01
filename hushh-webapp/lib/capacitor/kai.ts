@@ -79,6 +79,38 @@ export interface KaiPlugin {
     userId: string;
     vaultOwnerToken: string;
   }): Promise<{ success: boolean }>;
+
+  /**
+   * Get initial chat state for proactive welcome flow.
+   * Calls: GET /api/kai/chat/initial-state/:userId
+   */
+  getInitialChatState(options: {
+    userId: string;
+    authToken?: string;
+  }): Promise<{
+    is_new_user: boolean;
+    has_portfolio: boolean;
+    has_financial_data: boolean;
+    welcome_type: string;
+    total_attributes: number;
+    available_domains: string[];
+  }>;
+
+  /**
+   * Send a chat message to Kai.
+   * Calls: POST /api/kai/chat
+   */
+  chat(options: {
+    userId: string;
+    message: string;
+    conversationId?: string;
+    vaultOwnerToken: string;
+    authToken?: string;
+  }): Promise<{
+    response: string;
+    conversationId: string;
+    timestamp: string;
+  }>;
 }
 
 export const Kai = registerPlugin<KaiPlugin>("Kai", {
