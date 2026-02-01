@@ -51,7 +51,14 @@ SERVER_INFO = {
 # ============================================================================
 
 # Map MCP scope strings to API format
+# Supports both dynamic attr.* scopes and legacy vault.read.* scopes
 SCOPE_API_MAP = {
+    # Dynamic attr.* scopes (canonical - preferred)
+    "attr.food.*": "attr_food",
+    "attr.professional.*": "attr_professional",
+    "attr.financial.*": "attr_financial",
+    "attr.health.*": "attr_health",
+    # Legacy vault.read.* scopes (deprecated - for backward compatibility)
     "vault.read.food": "vault_read_food",
     "vault.read.professional": "vault_read_professional",
     "vault.read.finance": "vault_read_finance",
