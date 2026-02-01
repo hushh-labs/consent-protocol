@@ -7,15 +7,20 @@ Handles:
 - Auto-learning of user attributes
 - Insertable UI component responses
 - Conversation history management
+
+Authentication:
+- All endpoints require VAULT_OWNER token (consent-first architecture)
+- Token contains user_id, proving both identity and consent
+- Firebase is only used for bootstrap (issuing VAULT_OWNER token)
 """
 
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from api.utils.firebase_auth import verify_firebase_bearer
+from api.middleware import require_vault_owner_token
 from hushh_mcp.services.kai_chat_service import KaiChatResponse, get_kai_chat_service
 
 logger = logging.getLogger(__name__)
@@ -49,7 +54,7 @@ class ConversationHistoryResponse(BaseModel):
 @router.post("/chat", response_model=KaiChatResponseModel)
 async def kai_chat(
     request: KaiChatRequest,
-    authorization: str = Header(..., description="Bearer token for authentication"),
+    token_data: dict = Depends(require_vault_owner_token),
 ) -> KaiChatResponseModel:
     """
     Main conversational endpoint for Kai.
@@ -59,7 +64,8 @@ async def kai_chat(
     - Auto-learns user attributes from conversation
     - Maintains conversation history
     
-    **Authentication**: Requires valid Firebase ID token in Authorization header.
+    **Authentication**: Requires valid VAULT_OWNER token in Authorization header.
+    The token proves both identity (user_id) and consent (vault unlocked).
     
     **Example Request**:
     ```json
@@ -84,16 +90,13 @@ async def kai_chat(
     }
     ```
     """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
-    # Verify user_id matches token
-    if token_uid != request.user_id:
-        logger.warning(f"User ID mismatch: token={token_uid}, request={request.user_id}")
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_data["user_id"] != request.user_id:
+        logger.warning(f"User ID mismatch: token={token_data['user_id']}, request={request.user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     # Process message
     service = get_kai_chat_service()
@@ -116,20 +119,15 @@ async def kai_chat(
 @router.get("/chat/history/{conversation_id}", response_model=ConversationHistoryResponse)
 async def get_conversation_history(
     conversation_id: str,
-    authorization: str = Header(...),
+    token_data: dict = Depends(require_vault_owner_token),
     limit: int = 50,
 ) -> ConversationHistoryResponse:
     """
     Get conversation history for a specific conversation.
     
-    **Authentication**: Requires valid Firebase ID token.
+    **Authentication**: Requires valid VAULT_OWNER token.
     """
-    # Validate token
-    try:
-        verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
+    # Token validated by dependency - user has consent
     service = get_kai_chat_service()
     messages = await service.get_conversation_history(conversation_id, limit=limit)
     
@@ -142,24 +140,21 @@ async def get_conversation_history(
 @router.get("/chat/conversations/{user_id}")
 async def list_user_conversations(
     user_id: str,
-    authorization: str = Header(...),
+    token_data: dict = Depends(require_vault_owner_token),
     limit: int = 20,
     offset: int = 0,
 ) -> dict:
     """
     List all conversations for a user.
     
-    **Authentication**: Requires valid Firebase ID token matching user_id.
+    **Authentication**: Requires valid VAULT_OWNER token matching user_id.
     """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
-    # Verify user_id matches token
-    if token_uid != user_id:
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     service = get_kai_chat_service()
     conversations = await service.chat_db.list_conversations(user_id, limit=limit, offset=offset)
@@ -193,7 +188,7 @@ class InitialChatStateResponse(BaseModel):
 @router.get("/chat/initial-state/{user_id}", response_model=InitialChatStateResponse)
 async def get_initial_chat_state(
     user_id: str,
-    authorization: str = Header(...),
+    token_data: dict = Depends(require_vault_owner_token),
 ) -> InitialChatStateResponse:
     """
     Get initial chat state for a user - determines proactive welcome message.
@@ -201,7 +196,7 @@ async def get_initial_chat_state(
     This endpoint is called when the chat UI opens to determine what welcome
     message Kai should show proactively (without waiting for user input).
     
-    **Authentication**: Requires valid Firebase ID token matching user_id.
+    **Authentication**: Requires valid VAULT_OWNER token matching user_id.
     
     **Response Types**:
     - `is_new_user=True`: Show portfolio import prompt immediately
@@ -220,15 +215,12 @@ async def get_initial_chat_state(
     }
     ```
     """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
-    # Verify user_id matches token
-    if token_uid != user_id:
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     service = get_kai_chat_service()
     state = await service.get_initial_chat_state(user_id)
@@ -270,7 +262,7 @@ class AnalyzeLoserResponse(BaseModel):
 @router.post("/chat/analyze-loser", response_model=AnalyzeLoserResponse)
 async def analyze_portfolio_loser(
     request: AnalyzeLoserRequest,
-    authorization: str = Header(..., description="Bearer token for authentication"),
+    token_data: dict = Depends(require_vault_owner_token),
 ) -> AnalyzeLoserResponse:
     """
     Analyze a specific portfolio loser and return a compact analysis.
@@ -279,7 +271,8 @@ async def analyze_portfolio_loser(
     in the user's portfolio. It returns a compact summary suitable for embedding
     in the chat interface.
     
-    **Authentication**: Requires valid Firebase ID token in Authorization header.
+    **Authentication**: Requires valid VAULT_OWNER token in Authorization header.
+    The token proves both identity (user_id) and consent (vault unlocked).
     
     **Example Request**:
     ```json
@@ -305,16 +298,13 @@ async def analyze_portfolio_loser(
     }
     ```
     """
-    # Validate token and get user ID
-    try:
-        token_uid = verify_firebase_bearer(authorization)
-    except HTTPException:
-        raise
-    
-    # Verify user_id matches token
-    if token_uid != request.user_id:
-        logger.warning(f"User ID mismatch: token={token_uid}, request={request.user_id}")
-        raise HTTPException(status_code=403, detail="User ID does not match token")
+    # Verify user_id matches token (consent-first: token contains user_id)
+    if token_data["user_id"] != request.user_id:
+        logger.warning(f"User ID mismatch: token={token_data['user_id']}, request={request.user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
     
     # Normalize ticker
     ticker = request.symbol.upper().strip()

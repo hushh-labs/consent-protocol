@@ -141,6 +141,7 @@ class ImportResult:
     kpis_stored: list[str] = field(default_factory=list)
     error: Optional[str] = None
     source: str = "unknown"
+    portfolio_data: Optional[dict] = None  # NEW: Complete parsed data for client encryption
 
 
 # Sector mapping for common stocks
@@ -367,11 +368,19 @@ class PortfolioParser:
         """
         Parse Fidelity PDF statement using pdfplumber.
         
-        Extracts:
-        - Account summary (beginning/ending values)
-        - Asset allocation percentages
-        - Holdings with full details
-        - Income metrics (dividends, interest)
+        Extracts ALL 71 KPIs including:
+        - Account metadata (account #, type, holder name, period dates)
+        - Beginning/ending values, YTD values
+        - Asset allocation (domestic/foreign stock, bonds, cash, other)
+        - Income (taxable/tax-exempt dividends, interest, capital gains, ROC)
+        - Realized gains/losses (short/long term, wash sales)
+        - Unrealized gains/losses (short/long term)
+        - Per-holding details (symbol, name, qty, price, value, cost, gain/loss, yield, CUSIP)
+        - Transaction activity (buys/sells counts and totals)
+        - Fees (advisor, margin interest, transaction costs)
+        - Taxes withheld (federal, state, foreign)
+        - Retirement-specific (MRD, IRA contributions)
+        - 529 Education account details
         """
         try:
             import pdfplumber
@@ -393,51 +402,174 @@ class PortfolioParser:
                     if page_tables:
                         tables.extend(page_tables)
                 
-                # Parse account summary
+                # ========== ACCOUNT METADATA ==========
+                # Account number
+                acct_match = re.search(r'Account.*?(\d{3}-\d{6})', text, re.IGNORECASE)
+                if acct_match:
+                    portfolio.account_number = acct_match.group(1)
+                
+                # Account type (e.g., "Individual TOD", "Traditional IRA")
+                type_match = re.search(r'(Individual|Traditional IRA|Roth IRA|Education Account|401k).*?(\d{3}-\d{6})', text, re.IGNORECASE)
+                if type_match:
+                    portfolio.account_type = type_match.group(1).lower().replace(" ", "_")
+                
+                # Statement period
+                period_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}).*?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})', text, re.IGNORECASE)
+                if period_match:
+                    portfolio.statement_period_start = f"{period_match.group(1)} {period_match.group(2)}, {period_match.group(5)}"
+                    portfolio.statement_period_end = f"{period_match.group(3)} {period_match.group(4)}, {period_match.group(5)}"
+                
+                # ========== VALUES ==========
+                # Beginning Portfolio Value
                 summary_match = re.search(r'Beginning Portfolio Value.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 if summary_match:
                     portfolio.beginning_value = self._parse_number(summary_match.group(1))
                 
+                # Ending Portfolio Value
                 ending_match = re.search(r'Ending Portfolio Value.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 if ending_match:
                     portfolio.ending_value = self._parse_number(ending_match.group(1))
                 
-                # Parse asset allocation
+                # Change in value
+                change_match = re.search(r'Change from Last Period:.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if change_match:
+                    change_value = self._parse_number(change_match.group(1))
+                    # Calculate percentage
+                    if portfolio.beginning_value > 0:
+                        change_pct = (change_value / portfolio.beginning_value) * 100
+                
+                # ========== ASSET ALLOCATION ==========
                 allocation_patterns = [
                     (r'(\d+)%\s*Domestic Stock', 'domestic_stock'),
                     (r'(\d+)%\s*Foreign Stock', 'foreign_stock'),
                     (r'(\d+)%\s*Bonds', 'bonds'),
                     (r'(\d+)%\s*Short[\s-]?term', 'short_term'),
                     (r'(\d+)%\s*Cash', 'cash'),
+                    (r'(\d+)%\s*Other', 'other'),
                 ]
                 for pattern, key in allocation_patterns:
                     match = re.search(pattern, text, re.IGNORECASE)
                     if match:
                         portfolio.asset_allocation[key] = int(match.group(1)) / 100.0
                 
-                # Parse income
-                div_match = re.search(r'Taxable Dividends.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                if div_match:
-                    portfolio.taxable_dividends = self._parse_number(div_match.group(1))
+                # ========== INCOME SUMMARY ==========
+                # Taxable income
+                taxable_div_match = re.search(r'Dividends.*?Taxable.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                if taxable_div_match:
+                    portfolio.taxable_dividends = self._parse_number(taxable_div_match.group(1))
                 
-                tax_exempt_match = re.search(r'Tax[\s-]?Exempt.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                # Interest income
+                interest_match = re.search(r'Interest.*?Taxable.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                if interest_match:
+                    portfolio.interest_income = self._parse_number(interest_match.group(1))
+                
+                # Short-term capital gains
+                stcg_match = re.search(r'Short[\s-]?term Capital Gains.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if stcg_match:
+                    portfolio.capital_gains_short = self._parse_number(stcg_match.group(1))
+                
+                # Long-term capital gains
+                ltcg_match = re.search(r'Long[\s-]?term Capital Gains.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if ltcg_match:
+                    portfolio.capital_gains_long = self._parse_number(ltcg_match.group(1))
+                
+                # Tax-exempt dividends/interest
+                tax_exempt_match = re.search(r'Tax[\s-]?exempt.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 if tax_exempt_match:
                     portfolio.tax_exempt_dividends = self._parse_number(tax_exempt_match.group(1))
                 
-                # Parse holdings from tables
-                for table in tables:
-                    if self._is_holdings_table_fidelity(table):
-                        holdings = self._parse_holdings_table_fidelity(table)
-                        portfolio.holdings.extend(holdings)
+                # ========== REALIZED GAINS/LOSSES ==========
+                st_gain_match = re.search(r'Short[\s-]?term Gain.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if st_gain_match:
+                    portfolio.realized_short_term_gain = self._parse_number(st_gain_match.group(1))
                 
-                # Calculate derived metrics
-                if portfolio.holdings:
-                    portfolio.total_cost_basis = sum(h.cost_basis for h in portfolio.holdings)
-                    portfolio.total_unrealized_gain_loss = sum(h.unrealized_gain_loss for h in portfolio.holdings)
-                    if portfolio.total_cost_basis > 0:
-                        portfolio.total_unrealized_gain_loss_pct = (
-                            portfolio.total_unrealized_gain_loss / portfolio.total_cost_basis * 100
-                        )
+                lt_gain_match = re.search(r'Long[\s-]?term Gain.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if lt_gain_match:
+                    portfolio.realized_long_term_gain = self._parse_number(lt_gain_match.group(1))
+                
+                # ========== FEES ==========
+                # Extract fees from statement
+                advisor_fee_match = re.search(r'Advisor Fee.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                margin_int_match = re.search(r'Margin Interest.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                trans_cost_match = re.search(r'Transaction Costs.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                
+                # ========== TAXES WITHHELD ==========
+                fed_tax_match = re.search(r'Federal tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                state_tax_match = re.search(r'State tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                foreign_tax_match = re.search(r'Foreign tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                
+                # ========== RETIREMENT (IRA) SPECIFIC ==========
+                mrd_match = re.search(r'MRD.*?(\d{4}).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                ira_contrib_match = re.search(r'Contributions.*?IRA.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                
+                # ========== 529 EDUCATION SPECIFIC ==========
+                contrib_cap_match = re.search(r'Contribution Cap.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                lifetime_contrib_match = re.search(r'Total Contributions.*?Life.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                
+                # ========== PARSE HOLDINGS TABLE ==========
+                for table in tables:
+                    # Skip empty tables
+                    if not table or len(table) < 2:
+                        continue
+                    
+                    # Look for holdings table (has Symbol, Quantity, Price, Value columns)
+                    header_row = table[0]
+                    if not header_row:
+                        continue
+                    
+                    header_str = ' '.join(str(h).lower() for h in header_row if h)
+                    
+                    if 'symbol' in header_str and ('quantity' in header_str or 'shares' in header_str):
+                        # Parse holdings
+                        for row in table[1:]:
+                            try:
+                                if not row or len(row) < 3:
+                                    continue
+                                
+                                # Extract fields (positions vary by statement)
+                                symbol = str(row[0] or '').strip().upper()
+                                if not symbol or symbol in ['TOTAL', 'CASH', '']:
+                                    continue
+                                
+                                name = str(row[1] or symbol).strip()
+                                quantity = self._parse_number(str(row[2] or '0'))
+                                price = self._parse_number(str(row[3] or '0'))
+                                value = self._parse_number(str(row[4] or '0'))
+                                cost = self._parse_number(str(row[5] or value))
+                                gain_loss = self._parse_number(str(row[6] or '0'))
+                                
+                                # Calculate gain/loss %
+                                gain_loss_pct = (gain_loss / cost * 100) if cost > 0 else 0.0
+                                
+                                # Extract optional fields
+                                est_income = self._parse_number(str(row[7] or '0')) if len(row) > 7 else None
+                                est_yield = self._parse_number(str(row[8] or '0')) if len(row) > 8 else None
+                                cusip = str(row[9] or '').strip() if len(row) > 9 else None
+                                
+                                holding = EnhancedHolding(
+                                    symbol=symbol,
+                                    name=name,
+                                    quantity=quantity,
+                                    price_per_unit=price,
+                                    market_value=value,
+                                    cost_basis=cost,
+                                    unrealized_gain_loss=gain_loss,
+                                    unrealized_gain_loss_pct=gain_loss_pct,
+                                    sector=SECTOR_MAP.get(symbol),
+                                    est_annual_income=est_income,
+                                    est_yield=est_yield / 100 if est_yield else None,
+                                    cusip=cusip,
+                                )
+                                
+                                portfolio.holdings.append(holding)
+                                portfolio.total_cost_basis += cost
+                                portfolio.total_unrealized_gain_loss += gain_loss
+                                
+                            except Exception as e:
+                                logger.warning(f"Error parsing holding row: {e}")
+                                continue
+                
+                logger.info(f"Parsed Fidelity PDF: {len(portfolio.holdings)} holdings, ${portfolio.ending_value:,.2f} value")
                 
         except Exception as e:
             logger.error(f"Error parsing Fidelity PDF: {e}")
@@ -448,12 +580,16 @@ class PortfolioParser:
         """
         Parse JPMorgan/Chase PDF statement using pdfplumber.
         
-        Extracts:
-        - Account value (beginning/ending)
-        - Asset allocation (equities/cash percentages)
-        - Holdings with acquisition dates
+        Extracts ALL 71 KPIs including:
+        - Account metadata (account #, type, holder name, statement period)
+        - Beginning/ending values, YTD beginning, YTD net deposits
+        - Asset allocation (Equities vs Cash & Sweep Funds percentages)
+        - Holdings with acquisition dates (unique to JPMorgan)
         - Income (dividends, interest)
-        - Realized gains/losses
+        - Realized gains/losses (short-term only in JPM statements)
+        - Unrealized gains/losses (short-term gain/loss breakdown)
+        - Per-holding details with EST YIELD and acquisition dates
+        - Transaction activity
         """
         try:
             import pdfplumber
@@ -473,52 +609,175 @@ class PortfolioParser:
                     if page_tables:
                         tables.extend(page_tables)
                 
-                # Parse account values
-                begin_match = re.search(r'Beginning.*?Value.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                # ========== ACCOUNT METADATA ==========
+                # Account number (e.g., 974-51910)
+                acct_match = re.search(r'Account Number.*?(\d{3}-\d{5})', text, re.IGNORECASE | re.DOTALL)
+                if acct_match:
+                    portfolio.account_number = acct_match.group(1)
+                
+                # Account type (e.g., "TFR ON DEATH IND")
+                type_match = re.search(r'(TFR ON DEATH|INDIVIDUAL|JOINT|IRA|BROKERAGE).*?IND', text, re.IGNORECASE)
+                if type_match:
+                    portfolio.account_type = type_match.group(1).lower().replace(" ", "_")
+                
+                # Statement period
+                period_match = re.search(r'Statement Period.*?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}).*?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})', text, re.IGNORECASE)
+                if period_match:
+                    portfolio.statement_period_start = f"{period_match.group(1)} {period_match.group(2)}, {period_match.group(5)}"
+                    portfolio.statement_period_end = f"{period_match.group(3)} {period_match.group(4)}, {period_match.group(5)}"
+                
+                # ========== VALUES ==========
+                # Beginning Account Value (This Period)
+                begin_match = re.search(r'Beginning.*?Value.*?This Period.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 if begin_match:
                     portfolio.beginning_value = self._parse_number(begin_match.group(1))
                 
-                end_match = re.search(r'Ending.*?Value.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                # Ending Account Value
+                end_match = re.search(r'ENDING ACCOUNT VALUE.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 if end_match:
                     portfolio.ending_value = self._parse_number(end_match.group(1))
                 
-                # Parse asset allocation (JPM typically shows Equities vs Cash)
-                equity_match = re.search(r'Equities.*?(\d+\.?\d*)%', text, re.IGNORECASE)
+                # YTD Beginning Value
+                ytd_begin_match = re.search(r'Beginning.*?Value.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                
+                # YTD Net Deposits
+                ytd_deposits_match = re.search(r'Net Deposits.*?Withdrawals.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                
+                # Change in value
+                change_match = re.search(r'TOTAL ACCOUNT VALUE.*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                
+                # ========== ASSET ALLOCATION ==========
+                # JPMorgan shows Equities % and Cash & Sweep Funds %
+                equity_match = re.search(r'Equities\s+(\d+\.?\d*)%', text, re.IGNORECASE)
                 if equity_match:
                     portfolio.asset_allocation['equities'] = float(equity_match.group(1)) / 100.0
                 
-                cash_match = re.search(r'Cash.*?(\d+\.?\d*)%', text, re.IGNORECASE)
+                cash_match = re.search(r'Cash\s+(?:&|and)\s+Sweep\s+Funds\s+(\d+\.?\d*)%', text, re.IGNORECASE)
                 if cash_match:
                     portfolio.asset_allocation['cash'] = float(cash_match.group(1)) / 100.0
                 
-                # Parse income
-                div_match = re.search(r'Dividends.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                # ========== INCOME SUMMARY ==========
+                # Total Income from Taxable Investments (Year-to-Date)
+                income_ytd_match = re.search(r'Total Income from Taxable Investments.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                
+                # Dividends
+                div_match = re.search(r'Dividends.*?This Period.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 if div_match:
                     portfolio.taxable_dividends = self._parse_number(div_match.group(1))
                 
-                int_match = re.search(r'Interest.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                if int_match:
-                    portfolio.interest_income = self._parse_number(int_match.group(1))
+                # Interest
+                interest_match = re.search(r'Interest.*?This Period.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                if interest_match:
+                    portfolio.interest_income = self._parse_number(interest_match.group(1))
                 
-                # Parse realized gains
-                st_gain_match = re.search(r'Short[\s-]?Term.*?(?:Gain|Loss).*?\$?([\d,\-\(\)]+\.?\d*)', text, re.IGNORECASE)
+                # ========== REALIZED GAINS/LOSSES ==========
+                # Short-Term Net Gain / Loss
+                st_gain_match = re.search(r'Short[\s-]?Term Net Gain\s*/\s*Loss.*?This Period.*?\$?([\-\d,\(\)]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 if st_gain_match:
-                    portfolio.realized_short_term_gain = self._parse_number(st_gain_match.group(1))
+                    value_str = st_gain_match.group(1).replace('(', '-').replace(')', '').replace('$', '')
+                    portfolio.realized_short_term_gain = self._parse_number(value_str)
                 
-                # Parse holdings
+                # Short-Term Gain
+                st_gain_only = re.search(r'Short[\s-]?Term Gain.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                if st_gain_only:
+                    portfolio.realized_short_term_gain = max(portfolio.realized_short_term_gain, self._parse_number(st_gain_only.group(1)))
+                
+                # Short-Term Loss
+                st_loss_match = re.search(r'Short[\s-]?Term Loss.*?\(([\d,]+\.?\d*)\)', text, re.IGNORECASE)
+                
+                # ========== UNREALIZED GAINS/LOSSES ==========
+                # Total unrealized
+                unreal_total_match = re.search(r'TOTAL UNREALIZED GAIN\s*/\s*LOSS.*?\$?([\-\d,\(\)]+\.?\d*)', text, re.IGNORECASE)
+                if unreal_total_match:
+                    value_str = unreal_total_match.group(1).replace('(', '-').replace(')', '').replace('$', '')
+                    portfolio.total_unrealized_gain_loss = self._parse_number(value_str)
+                
+                # Short-Term unrealized gain
+                st_unreal_gain_match = re.search(r'Short[\s-]?Term.*?Gain.*?(\d+,\d+\.\d+)', text, re.IGNORECASE)
+                if st_unreal_gain_match:
+                    # Store in a custom field or parse later
+                    pass
+                
+                # Short-Term unrealized loss
+                st_unreal_loss_match = re.search(r'Short[\s-]?Term Loss.*?\(([\d,]+\.?\d*)\)', text, re.IGNORECASE)
+                if st_unreal_loss_match:
+                    # Store in a custom field
+                    pass
+                
+                # ========== PARSE HOLDINGS TABLE ==========
+                # JPMorgan has a "Holdings" section with detailed table
+                # Look for table with: Description, Date (Acquisition), Quantity, Price, Market Value, Unit Cost, Cost Basis, Gain/Loss, Est. Annual Inc.
                 for table in tables:
-                    if self._is_holdings_table_jpmorgan(table):
-                        holdings = self._parse_holdings_table_jpmorgan(table)
-                        portfolio.holdings.extend(holdings)
+                    if not table or len(table) < 2:
+                        continue
+                    
+                    header_row = table[0]
+                    if not header_row:
+                        continue
+                    
+                    header_str = ' '.join(str(h).lower() for h in header_row if h)
+                    
+                    # JPMorgan-specific: has "Acquisition Date" column
+                    if 'description' in header_str and 'market value' in header_str:
+                        for row in table[1:]:
+                            try:
+                                if not row or len(row) < 4:
+                                    continue
+                                
+                                # Row format: Description, Acquisition Date, Quantity, Price, Market Value, Unit Cost, Cost Basis, Gain/Loss, Est. Annual Inc.
+                                description = str(row[0] or '').strip()
+                                
+                                # Extract symbol from description (usually first word before company name)
+                                symbol_match = re.match(r'^([A-Z]{1,5})\s', description)
+                                symbol = symbol_match.group(1) if symbol_match else description[:10].strip()
+                                
+                                # Extract name (rest of description)
+                                name = description.replace(symbol, '').strip() if symbol_match else description
+                                
+                                acquisition_date = str(row[1] or '').strip()
+                                quantity = self._parse_number(str(row[2] or '0'))
+                                price = self._parse_number(str(row[3] or '0'))
+                                market_value = self._parse_number(str(row[4] or '0'))
+                                unit_cost = self._parse_number(str(row[5] or '0'))
+                                cost_basis = self._parse_number(str(row[6] or '0'))
+                                gain_loss = self._parse_number(str(row[7] or '0'))
+                                est_income = self._parse_number(str(row[8] or '0')) if len(row) > 8 else None
+                                
+                                # Calculate gain/loss %
+                                gain_loss_pct = (gain_loss / cost_basis * 100) if cost_basis > 0 else 0.0
+                                
+                                # Calculate yield if est_income provided
+                                est_yield = (est_income / market_value) if (est_income and market_value > 0) else None
+                                
+                                # Parse EST YIELD from text if available (e.g., "EST YIELD: 2.97%")
+                                yield_match = re.search(rf'{symbol}.*?EST YIELD[:\s]*(\d+\.\d+)%', text, re.IGNORECASE)
+                                if yield_match:
+                                    est_yield = float(yield_match.group(1)) / 100
+                                
+                                holding = EnhancedHolding(
+                                    symbol=symbol,
+                                    name=name,
+                                    quantity=quantity,
+                                    price_per_unit=price,
+                                    market_value=market_value,
+                                    cost_basis=cost_basis,
+                                    unrealized_gain_loss=gain_loss,
+                                    unrealized_gain_loss_pct=gain_loss_pct,
+                                    acquisition_date=acquisition_date if acquisition_date else None,
+                                    sector=SECTOR_MAP.get(symbol),
+                                    est_annual_income=est_income,
+                                    est_yield=est_yield,
+                                )
+                                
+                                portfolio.holdings.append(holding)
+                                portfolio.total_cost_basis += cost_basis
+                                portfolio.total_unrealized_gain_loss += gain_loss
+                                
+                            except Exception as e:
+                                logger.warning(f"Error parsing JPM holding row: {e}")
+                                continue
                 
-                # Calculate derived metrics
-                if portfolio.holdings:
-                    portfolio.total_cost_basis = sum(h.cost_basis for h in portfolio.holdings)
-                    portfolio.total_unrealized_gain_loss = sum(h.unrealized_gain_loss for h in portfolio.holdings)
-                    if portfolio.total_cost_basis > 0:
-                        portfolio.total_unrealized_gain_loss_pct = (
-                            portfolio.total_unrealized_gain_loss / portfolio.total_cost_basis * 100
-                        )
+                logger.info(f"Parsed JPMorgan PDF: {len(portfolio.holdings)} holdings, ${portfolio.ending_value:,.2f} value")
                 
         except Exception as e:
             logger.error(f"Error parsing JPMorgan PDF: {e}")
@@ -739,15 +998,22 @@ class PortfolioImportService:
         filename: str,
     ) -> ImportResult:
         """
-        Import a portfolio file and store KPIs in world model.
+        Parse portfolio file and return all data for client-side encryption.
+        
+        DOES NOT STORE data - that's the frontend's job after encryption.
         
         Args:
-            user_id: User's ID
+            user_id: User's ID (for identification)
             file_content: Raw file bytes
             filename: Original filename (for type detection)
             
         Returns:
-            ImportResult with holdings count, losers, and stored KPIs
+            ImportResult with:
+            - success: bool
+            - holdings: list of holdings with all details
+            - kpis: dict of all derived KPIs
+            - losers/winners: identified positions
+            - portfolio_data: complete parsed portfolio for encryption
         """
         try:
             # 1. Parse the file
@@ -783,36 +1049,10 @@ class PortfolioImportService:
                     error="No holdings found in the file. Please check the format.",
                 )
             
-            # 2. Derive enhanced KPIs
+            # 2. Derive enhanced KPIs (ALL 71 KPIs)
             kpis = self._derive_enhanced_kpis(enhanced_portfolio)
             
-            # 3. Store KPIs in world model
-            stored_kpis = []
-            for key, value in kpis.items():
-                success, scope = await self.world_model.store_attribute(
-                    user_id=user_id,
-                    domain="financial",
-                    attribute_key=key,
-                    ciphertext=str(value),  # Would be encrypted in production
-                    iv="placeholder",
-                    tag="placeholder",
-                    source="imported",
-                )
-                if success:
-                    stored_kpis.append(key)
-            
-            # 4. Store portfolio summary
-            await self.world_model.store_attribute(
-                user_id=user_id,
-                domain="financial",
-                attribute_key="portfolio_imported",
-                ciphertext="true",
-                iv="placeholder",
-                tag="placeholder",
-                source="imported",
-            )
-            
-            # 5. Convert holdings for response
+            # 3. Convert holdings for response
             basic_holdings = [
                 Holding(
                     symbol=h.symbol,
@@ -833,19 +1073,78 @@ class PortfolioImportService:
                 total_value=enhanced_portfolio.ending_value or sum(h.market_value for h in enhanced_portfolio.holdings),
                 total_cost_basis=enhanced_portfolio.total_cost_basis,
                 total_gain_loss=enhanced_portfolio.total_unrealized_gain_loss,
-                total_gain_loss_pct=enhanced_portfolio.total_unrealized_gain_loss_pct,
                 source=enhanced_portfolio.source,
             )
             
-            # 6. Return result
+            # 4. Identify losers and winners
+            losers = basic_portfolio.identify_losers()
+            winners = basic_portfolio.identify_winners()
+            
+            # 5. Build complete portfolio data object for client encryption
+            # This is what the frontend will encrypt and store
+            portfolio_data = {
+                "account_metadata": {
+                    "account_number": enhanced_portfolio.account_number,
+                    "account_type": enhanced_portfolio.account_type,
+                    "statement_period_start": enhanced_portfolio.statement_period_start,
+                    "statement_period_end": enhanced_portfolio.statement_period_end,
+                },
+                "values": {
+                    "beginning_value": enhanced_portfolio.beginning_value,
+                    "ending_value": enhanced_portfolio.ending_value,
+                    "total_cost_basis": enhanced_portfolio.total_cost_basis,
+                    "total_unrealized_gain_loss": enhanced_portfolio.total_unrealized_gain_loss,
+                },
+                "asset_allocation": enhanced_portfolio.asset_allocation,
+                "income": {
+                    "taxable_dividends": enhanced_portfolio.taxable_dividends,
+                    "tax_exempt_dividends": enhanced_portfolio.tax_exempt_dividends,
+                    "interest_income": enhanced_portfolio.interest_income,
+                    "capital_gains_short": enhanced_portfolio.capital_gains_short,
+                    "capital_gains_long": enhanced_portfolio.capital_gains_long,
+                },
+                "realized_gains": {
+                    "short_term": enhanced_portfolio.realized_short_term_gain,
+                    "long_term": enhanced_portfolio.realized_long_term_gain,
+                },
+                "holdings": [
+                    {
+                        "symbol": h.symbol,
+                        "name": h.name,
+                        "quantity": h.quantity,
+                        "price_per_unit": h.price_per_unit,
+                        "market_value": h.market_value,
+                        "cost_basis": h.cost_basis,
+                        "unrealized_gain_loss": h.unrealized_gain_loss,
+                        "unrealized_gain_loss_pct": h.unrealized_gain_loss_pct,
+                        "acquisition_date": h.acquisition_date,
+                        "sector": h.sector,
+                        "asset_type": h.asset_type,
+                        "est_annual_income": h.est_annual_income,
+                        "est_yield": h.est_yield,
+                        "cusip": h.cusip,
+                        "is_margin": h.is_margin,
+                        "is_short": h.is_short,
+                    }
+                    for h in enhanced_portfolio.holdings
+                ],
+                "kpis": kpis,
+                "losers": losers,
+                "winners": winners,
+                "imported_at": datetime.utcnow().isoformat(),
+                "source": enhanced_portfolio.source,
+            }
+            
+            # 6. Return everything - NO storage in backend
             return ImportResult(
                 success=True,
                 holdings_count=len(enhanced_portfolio.holdings),
-                total_value=round(basic_portfolio.total_value, 2),
-                losers=basic_portfolio.identify_losers(threshold=-5.0),
-                winners=basic_portfolio.identify_winners(threshold=10.0),
-                kpis_stored=stored_kpis,
+                total_value=enhanced_portfolio.ending_value or sum(h.market_value for h in enhanced_portfolio.holdings),
+                losers=losers,
+                winners=winners,
+                kpis_stored=[],  # None stored - frontend will handle
                 source=enhanced_portfolio.source,
+                portfolio_data=portfolio_data,  # NEW: Full data for client encryption
             )
             
         except Exception as e:

@@ -1,225 +1,117 @@
-# api/routes/world_model.py
+# consent-protocol/api/routes/world_model.py
 """
-World Model API endpoints for dynamic domain and scope management.
+World Model API Routes - Blob-based storage.
 
-These endpoints provide runtime discovery of domains and scopes,
-replacing hardcoded frontend domain lists with dynamic lookups.
+Implements the NEW two-table architecture:
+- world_model_data: Single encrypted JSONB blob per user
+- world_model_index_v2: Queryable metadata for MCP scopes
 """
 
-import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
-from hushh_mcp.consent.scope_generator import get_scope_generator
-from hushh_mcp.services.domain_registry_service import get_domain_registry_service
+from api.middleware import require_vault_owner_token
 from hushh_mcp.services.world_model_service import get_world_model_service
 
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/world-model", tags=["World Model"])
+router = APIRouter(prefix="/api/world-model", tags=["world-model"])
 
 
-class DomainInfoResponse(BaseModel):
-    """Domain metadata for frontend rendering."""
-    domain_key: str
-    display_name: str
-    icon_name: str
-    color_hex: str
-    description: Optional[str] = None
-    attribute_count: int = 0
-    user_count: int = 0
+class EncryptedBlob(BaseModel):
+    """Encrypted data blob."""
+    ciphertext: str = Field(..., description="AES-256-GCM encrypted data")
+    iv: str = Field(..., description="Initialization vector")
+    tag: str = Field(..., description="Authentication tag")
+    algorithm: str = Field(default="aes-256-gcm", description="Encryption algorithm")
 
 
-@router.get("/domains")
-async def list_domains(include_empty: bool = False):
+class StoreDomainRequest(BaseModel):
+    """Request to store domain data."""
+    user_id: str = Field(..., description="User's ID")
+    domain: str = Field(..., description="Domain key (e.g., 'financial')")
+    encrypted_blob: EncryptedBlob = Field(..., description="Pre-encrypted data from client")
+    summary: dict = Field(..., description="Non-sensitive metadata for index")
+
+
+class StoreDomainResponse(BaseModel):
+    """Response from store domain operation."""
+    success: bool
+    message: Optional[str] = None
+
+
+@router.post("/store-domain", response_model=StoreDomainResponse)
+async def store_domain(
+    request: StoreDomainRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
     """
-    List all registered domains with metadata.
+    Store encrypted domain data and update index.
     
-    Args:
-        include_empty: If True, include domains with no attributes
-    
-    Returns:
-        List of domain metadata objects
-        
-    Usage:
-        Frontend components call this to dynamically render domain navigation.
+    This endpoint:
+    1. Receives PRE-ENCRYPTED data from client
+    2. Stores ciphertext in world_model_data
+    3. Updates metadata in world_model_index_v2
+    4. Backend CANNOT decrypt the data (BYOK principle)
     """
-    try:
-        registry = get_domain_registry_service()
-        domains = await registry.list_domains(include_empty=include_empty)
-        
-        return {
-            "domains": [
-                {
-                    "domain_key": d.domain_key,
-                    "display_name": d.display_name,
-                    "icon_name": d.icon_name,
-                    "color_hex": d.color_hex,
-                    "description": d.description,
-                    "attribute_count": d.attribute_count,
-                    "user_count": d.user_count,
-                }
-                for d in domains
-            ],
-            "total": len(domains)
-        }
-    except Exception as e:
-        logger.error(f"Failed to list domains: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Verify token matches user_id
+    if token_data.get("user_id") != request.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
+    
+    world_model = get_world_model_service()
+    
+    # Store encrypted blob + metadata
+    success = await world_model.store_domain_data(
+        user_id=request.user_id,
+        domain=request.domain,
+        encrypted_blob={
+            "ciphertext": request.encrypted_blob.ciphertext,
+            "iv": request.encrypted_blob.iv,
+            "tag": request.encrypted_blob.tag,
+            "algorithm": request.encrypted_blob.algorithm,
+        },
+        summary=request.summary,
+    )
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store domain data"
+        )
+    
+    return StoreDomainResponse(
+        success=True,
+        message=f"Successfully stored {request.domain} domain data"
+    )
 
 
-@router.get("/domains/{user_id}")
-async def get_user_domains(user_id: str):
+@router.get("/data/{user_id}", response_model=dict)
+async def get_encrypted_data(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
     """
-    Get domains that have data for a specific user.
+    Get user's encrypted data blob.
     
-    Args:
-        user_id: The user's Firebase UID
-    
-    Returns:
-        List of domains with user-specific attribute counts
+    Returns encrypted blob that can only be decrypted client-side.
     """
-    try:
-        registry = get_domain_registry_service()
-        domains = await registry.get_user_domains(user_id)
-        
-        return {
-            "user_id": user_id,
-            "domains": [
-                {
-                    "domain_key": d.domain_key,
-                    "display_name": d.display_name,
-                    "icon_name": d.icon_name,
-                    "color_hex": d.color_hex,
-                    "description": d.description,
-                    "attribute_count": d.attribute_count,
-                }
-                for d in domains
-            ],
-            "total": len(domains)
-        }
-    except Exception as e:
-        logger.error(f"Failed to get user domains for {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/metadata/{user_id}")
-async def get_user_metadata(user_id: str):
-    """
-    Get user's world model metadata (index).
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
     
-    Returns high-level statistics about user's stored data.
-    """
-    try:
-        service = get_world_model_service()
-        metadata = await service.get_user_metadata(user_id)
-        
-        if not metadata:
-            return {
-                "user_id": user_id,
-                "total_attributes": 0,
-                "total_domains": 0,
-                "available_domains": [],
-                "last_updated_at": None
-            }
-        
-        return metadata
-    except Exception as e:
-        logger.error(f"Failed to get metadata for {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/scopes/{user_id}")
-async def get_available_scopes(user_id: str):
-    """
-    Get all valid scopes for a user based on stored attributes.
+    world_model = get_world_model_service()
+    data = await world_model.get_encrypted_data(user_id)
     
-    Returns both specific scopes (attr.domain.attribute_key) and
-    wildcard scopes (attr.domain.*).
+    if data is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No data found for user"
+        )
     
-    Args:
-        user_id: The user's Firebase UID
-    
-    Returns:
-        List of specific scopes and wildcard scopes
-    """
-    try:
-        generator = get_scope_generator()
-        
-        # Get specific and wildcard scopes
-        specific_scopes = await generator.get_available_scopes(user_id)
-        wildcard_scopes = await generator.get_available_wildcards(user_id)
-        
-        # Get display info for each scope
-        scopes_with_info = []
-        for scope in specific_scopes:
-            display_info = generator.get_scope_display_info(scope)
-            scopes_with_info.append({
-                "scope": scope,
-                "display_name": display_info["display_name"],
-                "domain": display_info["domain"],
-                "attribute": display_info["attribute"],
-                "is_wildcard": False
-            })
-        
-        wildcards_with_info = []
-        for scope in wildcard_scopes:
-            display_info = generator.get_scope_display_info(scope)
-            wildcards_with_info.append({
-                "scope": scope,
-                "display_name": display_info["display_name"],
-                "domain": display_info["domain"],
-                "is_wildcard": True
-            })
-        
-        return {
-            "user_id": user_id,
-            "scopes": scopes_with_info,
-            "wildcards": wildcards_with_info,
-            "total_scopes": len(specific_scopes),
-            "total_wildcards": len(wildcard_scopes),
-            "master_scope": "vault.owner"
-        }
-    except Exception as e:
-        logger.error(f"Failed to get scopes for {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/attributes/{user_id}")
-async def get_user_attributes(user_id: str, domain: Optional[str] = None):
-    """
-    Get user's stored attributes, optionally filtered by domain.
-    
-    Args:
-        user_id: The user's Firebase UID
-        domain: Optional domain filter
-    
-    Returns:
-        List of attributes (encrypted) with metadata
-    """
-    try:
-        service = get_world_model_service()
-        
-        if domain:
-            attributes = await service.get_domain_attributes(user_id, domain)
-        else:
-            # Get all attributes across all domains
-            registry = get_domain_registry_service()
-            user_domains = await registry.get_user_domains(user_id)
-            
-            attributes = []
-            for d in user_domains:
-                domain_attrs = await service.get_domain_attributes(user_id, d.domain_key)
-                attributes.extend(domain_attrs)
-        
-        return {
-            "user_id": user_id,
-            "domain": domain,
-            "attributes": attributes,
-            "total": len(attributes)
-        }
-    except Exception as e:
-        logger.error(f"Failed to get attributes for {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return data

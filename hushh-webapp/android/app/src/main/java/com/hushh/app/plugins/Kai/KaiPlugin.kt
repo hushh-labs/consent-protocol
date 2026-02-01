@@ -15,6 +15,11 @@ import java.util.concurrent.TimeUnit
  * 
  * Native plugin for Agent Kai stock analysis.
  * Makes HTTP calls to backend from native code.
+ *
+ * Authentication:
+ * - All consent-gated operations use VAULT_OWNER token
+ * - Token proves both identity (user_id) and consent (vault unlocked)
+ * - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
  */
 
 @CapacitorPlugin(name = "Kai")
@@ -77,7 +82,8 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/consent/grant"
         
@@ -90,8 +96,8 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).post(body)
         
-        if (authToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        if (vaultOwnerToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
         }
         
         val request = requestBuilder.build()
@@ -145,7 +151,8 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val contextObj = call.getObject("context") // Optional context object
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/analyze"
@@ -166,8 +173,8 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).post(body)
         
-        if (authToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        if (vaultOwnerToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
         }
         
         val request = requestBuilder.build()
@@ -220,7 +227,8 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/preferences/store"
         
@@ -240,8 +248,8 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).post(body)
         
-        if (authToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        if (vaultOwnerToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
         }
         
         val request = requestBuilder.build()
@@ -279,7 +287,8 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/preferences/$userId"
         
@@ -288,9 +297,9 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).get()
         
-        if (authToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $authToken")
-            android.util.Log.d("KaiPlugin", "🔑 Auth token added")
+        if (vaultOwnerToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
+            android.util.Log.d("KaiPlugin", "🔑 VAULT_OWNER token added")
         }
         
         val request = requestBuilder.build()
@@ -369,6 +378,247 @@ class KaiPlugin : Plugin() {
                     pluginCall.resolve(result)
                 } catch (e: Exception) {
                     pluginCall.resolve(JSObject().put("success", true))
+                }
+            }
+        })
+    }
+
+    @PluginMethod
+    fun importPortfolio(call: PluginCall) {
+        android.util.Log.d(TAG, "🔍 importPortfolio called")
+        
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val fileName = call.getString("fileName") ?: run {
+            call.reject("Missing fileName")
+            return
+        }
+        val mimeType = call.getString("mimeType") ?: run {
+            call.reject("Missing mimeType")
+            return
+        }
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        val fileBase64 = call.getString("fileBase64") ?: run {
+            call.reject("Missing fileBase64")
+            return
+        }
+        
+        // Decode base64 file content
+        val fileData: ByteArray
+        try {
+            fileData = android.util.Base64.decode(fileBase64, android.util.Base64.DEFAULT)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Invalid base64 file content: ${e.message}")
+            call.reject("Invalid base64 file content")
+            return
+        }
+        
+        // Check file size (max 10MB)
+        if (fileData.size > 10 * 1024 * 1024) {
+            android.util.Log.e(TAG, "❌ File too large: ${fileData.size} bytes")
+            call.reject("File too large. Maximum size is 10MB.")
+            return
+        }
+        
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/portfolio/import"
+        
+        android.util.Log.d(TAG, "🌐 URL: $url")
+        android.util.Log.d(TAG, "📁 File: $fileName (${fileData.size} bytes)")
+        
+        // Build multipart request body
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("user_id", userId)
+            .addFormDataPart(
+                "file",
+                fileName,
+                fileData.toRequestBody(mimeType.toMediaType())
+            )
+            .build()
+        
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+        
+        val pluginCall = call
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [importPortfolio] $errorMsg")
+                pluginCall.reject(errorMsg)
+            }
+            
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val responseBody = response.body?.string()
+                val truncatedBody = if (responseBody != null && responseBody.length > 500) {
+                    responseBody.take(500) + "..."
+                } else {
+                    responseBody
+                }
+                
+                if (!response.isSuccessful || responseBody == null) {
+                    val errorMsg = "Request failed: HTTP ${response.code} | backendUrl: $backendUrl" +
+                        if (truncatedBody != null) " | body: $truncatedBody" else ""
+                    android.util.Log.e(TAG, "❌ [importPortfolio] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                    return
+                }
+                
+                try {
+                    val result = JSObject(responseBody)
+                    android.util.Log.d(TAG, "✅ importPortfolio success: holdings=${result.optInt("holdings_count", -1)}")
+                    pluginCall.resolve(result)
+                } catch (e: Exception) {
+                    val errorMsg = "JSON parsing error: ${e.message} | backendUrl: $backendUrl"
+                    android.util.Log.e(TAG, "❌ [importPortfolio] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                }
+            }
+        })
+    }
+
+    @PluginMethod
+    fun chat(call: PluginCall) {
+        android.util.Log.d(TAG, "🔍 chat called")
+        
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val message = call.getString("message") ?: run {
+            call.reject("Missing message")
+            return
+        }
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        
+        val conversationId = call.getString("conversationId")
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/chat"
+        
+        android.util.Log.d(TAG, "🌐 URL: $url")
+        
+        val json = JSONObject().apply {
+            put("user_id", userId)
+            put("message", message)
+            if (conversationId != null) {
+                put("conversation_id", conversationId)
+            }
+        }
+        
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+        
+        val pluginCall = call
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [chat] $errorMsg")
+                pluginCall.reject(errorMsg)
+            }
+            
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val responseBody = response.body?.string()
+                val truncatedBody = if (responseBody != null && responseBody.length > 200) {
+                    responseBody.take(200) + "..."
+                } else {
+                    responseBody
+                }
+                
+                if (!response.isSuccessful || responseBody == null) {
+                    val errorMsg = "Request failed: HTTP ${response.code} | backendUrl: $backendUrl" +
+                        if (truncatedBody != null) " | body: $truncatedBody" else ""
+                    android.util.Log.e(TAG, "❌ [chat] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                    return
+                }
+                
+                try {
+                    val result = JSObject(responseBody)
+                    android.util.Log.d(TAG, "✅ chat success")
+                    pluginCall.resolve(result)
+                } catch (e: Exception) {
+                    val errorMsg = "JSON parsing error: ${e.message} | backendUrl: $backendUrl"
+                    android.util.Log.e(TAG, "❌ [chat] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                }
+            }
+        })
+    }
+
+    @PluginMethod
+    fun getInitialChatState(call: PluginCall) {
+        android.util.Log.d(TAG, "🔍 getInitialChatState called")
+        
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        
+        // Use VAULT_OWNER token for consent-gated access
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/chat/initial-state/$userId"
+        
+        android.util.Log.d(TAG, "🌐 URL: $url")
+        
+        val requestBuilder = Request.Builder().url(url).get()
+        
+        if (vaultOwnerToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
+        }
+        
+        val request = requestBuilder.build()
+        val pluginCall = call
+        
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [getInitialChatState] $errorMsg")
+                pluginCall.reject(errorMsg)
+            }
+            
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val responseBody = response.body?.string()
+                val truncatedBody = if (responseBody != null && responseBody.length > 200) {
+                    responseBody.take(200) + "..."
+                } else {
+                    responseBody
+                }
+                
+                if (!response.isSuccessful || responseBody == null) {
+                    val errorMsg = "Request failed: HTTP ${response.code} | backendUrl: $backendUrl" +
+                        if (truncatedBody != null) " | body: $truncatedBody" else ""
+                    android.util.Log.e(TAG, "❌ [getInitialChatState] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                    return
+                }
+                
+                try {
+                    val result = JSObject(responseBody)
+                    android.util.Log.d(TAG, "✅ getInitialChatState success")
+                    pluginCall.resolve(result)
+                } catch (e: Exception) {
+                    val errorMsg = "JSON parsing error: ${e.message} | backendUrl: $backendUrl"
+                    android.util.Log.e(TAG, "❌ [getInitialChatState] $errorMsg")
+                    pluginCall.reject(errorMsg)
                 }
             }
         })
