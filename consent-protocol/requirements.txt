@@ -68,6 +68,15 @@ proto-plus==1.27.0
 # Pinned to avoid resolution-too-deep with default pip resolver
 google-adk==1.23.0
 
+# 🤖 Google Generative AI (Gemini)
+# Used by kai_chat_service.py and attribute_learner.py
+google-generativeai>=0.8.0
+
+# 🔗 A2A Protocol (Agent-to-Agent)
+# Used by server_a2a.py and adk_bridge
+flask>=3.0.0
+python-a2a>=0.4.0
+
 # 🛠️ Utilities
 wrapt>=1.14.0  # Required for Python 3.11+ compatibility
 rsa>=4.9

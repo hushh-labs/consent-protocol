@@ -8,11 +8,15 @@
  * - Managing domain discovery
  * - Scope validation
  *
- * Tri-Flow Compliant: Uses HushhWorldModel plugin on native, Next.js API on web.
+ * Tri-Flow Compliant: Uses HushhWorldModel plugin on native, ApiService.apiFetch() on web.
+ * 
+ * IMPORTANT: This service MUST NOT use direct fetch("/api/...") calls.
+ * All web requests go through ApiService.apiFetch() for consistent auth handling.
  */
 
 import { Capacitor } from "@capacitor/core";
 import { HushhWorldModel } from "@/lib/capacitor";
+import { ApiService } from "./api-service";
 
 // ==================== Types ====================
 
@@ -95,11 +99,14 @@ export interface ScopeDisplayInfo {
 
 export class WorldModelService {
   /**
-   * Get auth header from session storage.
+   * Get auth headers for API requests.
+   * Returns headers object with Authorization if vault_owner_token is available.
    */
-  private static async getAuthHeader(): Promise<string> {
-    const token = sessionStorage.getItem("vault_owner_token");
-    return token ? `Bearer ${token}` : "";
+  private static getAuthHeaders(): HeadersInit {
+    const token = typeof window !== "undefined" 
+      ? sessionStorage.getItem("vault_owner_token") 
+      : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
   /**
@@ -129,9 +136,9 @@ export class WorldModelService {
       };
     }
 
-    // Web: Use Next.js proxy
-    const response = await fetch(`/api/world-model/metadata/${userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(`/api/world-model/metadata/${userId}`, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -178,8 +185,9 @@ export class WorldModelService {
       };
     }
 
-    const response = await fetch(`/api/world-model/index/${userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(`/api/world-model/index/${userId}`, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -223,12 +231,13 @@ export class WorldModelService {
       }));
     }
 
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
     const url = domain
       ? `/api/world-model/attributes/${userId}?domain=${domain}`
       : `/api/world-model/attributes/${userId}`;
 
-    const response = await fetch(url, {
-      headers: { Authorization: await this.getAuthHeader() },
+    const response = await ApiService.apiFetch(url, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -255,6 +264,64 @@ export class WorldModelService {
    * Store an encrypted attribute.
    * Domain will be auto-inferred if not provided.
    */
+  /**
+   * Store domain data (NEW blob-based architecture).
+   *
+   * This is the NEW method for storing user data following BYOK principles.
+   * Client encrypts entire domain object and backend stores only ciphertext.
+   *
+   * @param params.userId - User's ID
+   * @param params.domain - Domain key (e.g., "financial", "food")
+   * @param params.encryptedBlob - Pre-encrypted data from client
+   * @param params.summary - Non-sensitive metadata for world_model_index_v2
+   */
+  static async storeDomainData(params: {
+    userId: string;
+    domain: string;
+    encryptedBlob: EncryptedValue;
+    summary: Record<string, unknown>;
+  }): Promise<{ success: boolean }> {
+    if (Capacitor.isNativePlatform()) {
+      // TODO: Add native plugin method for blob storage
+      // For now, fall through to web implementation
+      console.warn("[WorldModelService] Native storeDomainData not yet implemented");
+    }
+
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch("/api/world-model/store-domain", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        user_id: params.userId,
+        domain: params.domain,
+        encrypted_blob: {
+          ciphertext: params.encryptedBlob.ciphertext,
+          iv: params.encryptedBlob.iv,
+          tag: params.encryptedBlob.tag,
+          algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
+        },
+        summary: params.summary,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to store domain data: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  }
+
+  /**
+   * Store an encrypted attribute in the World Model.
+   * Domain will be auto-inferred if not provided.
+   * 
+   * @deprecated Use storeDomainData() for new code (blob-based architecture)
+   */
   static async storeAttribute(
     userId: string,
     attributeKey: string,
@@ -280,11 +347,12 @@ export class WorldModelService {
       });
     }
 
-    const response = await fetch("/api/world-model/attributes", {
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch("/api/world-model/attributes", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: await this.getAuthHeader(),
+        ...this.getAuthHeaders(),
       },
       body: JSON.stringify({
         user_id: userId,
@@ -328,11 +396,12 @@ export class WorldModelService {
       return result.success;
     }
 
-    const response = await fetch(
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(
       `/api/world-model/attributes/${userId}/${domain}/${attributeKey}`,
       {
         method: "DELETE",
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: this.getAuthHeaders(),
       }
     );
 
@@ -357,8 +426,9 @@ export class WorldModelService {
       }));
     }
 
-    const response = await fetch(`/api/world-model/domains/${userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(`/api/world-model/domains/${userId}`, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -396,7 +466,8 @@ export class WorldModelService {
       }));
     }
 
-    const response = await fetch(
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(
       `/api/world-model/domains?include_empty=${includeEmpty}`
     );
 
@@ -431,8 +502,9 @@ export class WorldModelService {
       };
     }
 
-    const response = await fetch(`/api/world-model/scopes/${userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(`/api/world-model/scopes/${userId}`, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -464,10 +536,11 @@ export class WorldModelService {
       return result.portfolio;
     }
 
-    const response = await fetch(
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(
       `/api/world-model/portfolio/${userId}?portfolio_name=${encodeURIComponent(portfolioName)}`,
       {
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: this.getAuthHeaders(),
       }
     );
 
@@ -518,8 +591,9 @@ export class WorldModelService {
       return result.portfolios;
     }
 
-    const response = await fetch(`/api/world-model/portfolios/${userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(`/api/world-model/portfolios/${userId}`, {
+      headers: this.getAuthHeaders(),
     });
 
     if (!response.ok) {
