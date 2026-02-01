@@ -4,6 +4,7 @@
  * Get Pending Consent Requests API
  *
  * Proxies to Python backend to get pending consent requests for a user.
+ * Requires VAULT_OWNER token for authentication (consent-first architecture).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -25,13 +26,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Forward Authorization header (VAULT_OWNER token)
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authorization header required" },
+        { status: 401 }
+      );
+    }
+
     console.log(`[API] Fetching pending consents for user: ${userId}`);
 
     const response = await fetch(
       `${BACKEND_URL}/api/consent/pending?userId=${userId}`,
       {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+        },
       }
     );
 
