@@ -14,7 +14,10 @@ import secrets
 from dataclasses import dataclass
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
+
+from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ class AttributeLearner:
     """
     
     def __init__(self):
-        self._model = None
+        self._client = None
         self._world_model = None
     
     @staticmethod
@@ -83,15 +86,15 @@ class AttributeLearner:
         return base64.b64encode(iv).decode(), base64.b64encode(tag).decode()
     
     @property
-    def model(self):
-        if self._model is None:
-            api_key = os.environ.get("GOOGLE_API_KEY")
+    def client(self):
+        """Get the google.genai client (from google-adk)."""
+        if not hasattr(self, '_client') or self._client is None:
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
             if api_key:
-                genai.configure(api_key=api_key)
-                self._model = genai.GenerativeModel('gemini-1.5-flash')
+                self._client = genai.Client(api_key=api_key)
             else:
-                logger.warning("GOOGLE_API_KEY not set, attribute learning disabled")
-        return self._model
+                self._client = None
+        return self._client
     
     @property
     def world_model(self):
@@ -115,7 +118,7 @@ class AttributeLearner:
         Returns:
             List of extracted attributes
         """
-        if not self.model:
+        if not self.client:
             return []
         
         try:
@@ -124,12 +127,15 @@ class AttributeLearner:
                 assistant_response=assistant_response,
             )
             
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1,  # Low temperature for consistent extraction
-                )
+            config = genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,  # Low temperature for consistent extraction
+            )
+            
+            response = await self.client.aio.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=config,
             )
             
             # Parse JSON response

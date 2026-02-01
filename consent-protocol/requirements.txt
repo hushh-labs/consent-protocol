@@ -28,6 +28,13 @@ psycopg2-binary>=2.9.0
 # 📄 PDF parsing for brokerage statements
 pdfplumber==0.11.0
 
+# 🖼️ OCR for image-based portfolio documents (screenshots, scans)
+# Note: Tesseract binary must be installed separately:
+#   macOS: brew install tesseract
+#   Ubuntu: apt-get install tesseract-ocr
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
 # >=0.27.1 for mcp 1.26; <0.29 for supabase 2.27
 httpx>=0.27.1,<0.29
@@ -65,12 +72,9 @@ google-api-core==2.29.0
 proto-plus==1.27.0
 
 # 🧠 Generative AI (ADK - Agent Development Kit)
+# google-adk includes google-genai SDK - no separate google-generativeai needed
 # Pinned to avoid resolution-too-deep with default pip resolver
 google-adk==1.23.0
-
-# 🤖 Google Generative AI (Gemini)
-# Used by kai_chat_service.py and attribute_learner.py
-google-generativeai>=0.8.0
 
 # 🔗 A2A Protocol (Agent-to-Agent)
 # Used by server_a2a.py and adk_bridge

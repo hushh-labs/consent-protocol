@@ -175,17 +175,17 @@ export interface HushhConsentPlugin {
 
   getPending(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ consents: any[] }>;
 
   getActive(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ consents: any[] }>;
 
   getHistory(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
     page?: number;
     limit?: number;
   }): Promise<{ items: any[] }>;
@@ -197,24 +197,24 @@ export interface HushhConsentPlugin {
     encryptedIv?: string;
     encryptedTag?: string;
     exportKey?: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
   deny(options: {
     requestId: string;
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
   cancel(options: {
     requestId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
   revokeConsent(options: {
     userId: string;
     scope: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean; lockVault?: boolean }>;
 }
 
@@ -355,12 +355,12 @@ export interface HushhVaultPlugin {
 
   getPendingConsents(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ pending: any[] }>;
 
   getActiveConsents(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ active: any[] }>;
 
   getConsentHistory(options: {
