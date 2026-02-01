@@ -1,53 +1,29 @@
 // app/chat/page.tsx
 
 /**
- * Unified Kai Chat Interface
+ * Chat Page - Redirects to Kai Dashboard
  *
- * Features:
- * - Persistent conversation history
- * - Insertable UI components (analysis, portfolio import, etc.)
- * - Voice input support
- * - Streaming responses
+ * The chat interface has been replaced with a component-based flow.
+ * This page redirects users to the new Kai experience.
  */
 
 "use client";
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/firebase/auth-context";
-import { useVault } from "@/lib/vault/vault-context";
-import { KaiChat } from "@/components/kai/kai-chat";
+import { HushhLoader } from "@/components/ui/hushh-loader";
 
 export default function ChatPage() {
   const router = useRouter();
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { vaultOwnerToken, getVaultKey } = useVault();
 
-  // Auth protection
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/");
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user || !vaultOwnerToken) {
-    return null;
-  }
+    // Redirect to the new Kai dashboard
+    router.replace("/dashboard/kai");
+  }, [router]);
 
   return (
-    <div className="h-screen flex flex-col">
-      <KaiChat
-        userId={user.uid}
-        vaultOwnerToken={vaultOwnerToken}
-      />
+    <div className="min-h-screen flex items-center justify-center">
+      <HushhLoader variant="inline" label="Redirecting to Kai..." />
     </div>
   );
 }
