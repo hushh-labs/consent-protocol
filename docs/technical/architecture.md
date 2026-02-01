@@ -1,1 +1,0 @@
-../reference/architecture.md

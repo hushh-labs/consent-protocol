@@ -1,1 +1,0 @@
-../reference/mcp-integration.md
