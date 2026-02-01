@@ -17,9 +17,16 @@ uvicorn>=0.34.0
 # 🗃️ Database (Postgres async)
 asyncpg>=0.29.0
 
-# 🗄️ Supabase REST client (for migration)
-# Pinned to avoid resolution-too-deep with default pip resolver
-supabase==2.27.2
+# 🗃️ Database (Postgres sync - for session pooler)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# 🗄️ Supabase REST client (DEPRECATED - kept for backward compatibility)
+# All database operations now use SQLAlchemy with session pooler
+# supabase==2.27.2
+
+# 📄 PDF parsing for brokerage statements
+pdfplumber==0.11.0
 
 # ⚡ HTTP client for agents (e.g. Apple ID, APIs)
 # >=0.27.1 for mcp 1.26; <0.29 for supabase 2.27

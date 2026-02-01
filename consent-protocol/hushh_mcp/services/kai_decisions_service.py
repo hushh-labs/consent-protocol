@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from db.supabase_client import get_supabase
+from db.db_client import get_db
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
@@ -45,9 +45,9 @@ class KaiDecisionsService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (private - ONLY for internal service use)."""
+        """Get database client (private - ONLY for internal service use)."""
         if self._supabase is None:
-            self._supabase = get_supabase()
+            self._supabase = get_db()
         return self._supabase
     
     def _validate_consent(self, consent_token: str, user_id: str, operation: str = "access") -> None:
@@ -65,11 +65,13 @@ class KaiDecisionsService:
         if not valid or not token_obj:
             raise ConsentValidationError(f"Invalid consent token: {reason}", reason="invalid_token")
         
-        # Accept VAULT_OWNER or vault.read.finance / vault.write.finance
+        # Accept VAULT_OWNER or world_model.read / world_model.write
+        # NOTE: Legacy VAULT_READ_FINANCE and VAULT_WRITE_FINANCE have been removed.
         allowed_scopes = [
             ConsentScope.VAULT_OWNER.value,
-            ConsentScope.VAULT_READ_FINANCE.value,
-            ConsentScope.VAULT_WRITE_FINANCE.value
+            ConsentScope.WORLD_MODEL_READ.value,
+            ConsentScope.WORLD_MODEL_WRITE.value,
+            ConsentScope.AGENT_KAI_ANALYZE.value,
         ]
         
         if token_obj.scope not in allowed_scopes:

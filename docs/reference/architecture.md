@@ -82,10 +82,11 @@ Every agent in the system must conform to the **Hushh ADK Standard**:
 
 | Agent             | Role                | Model            | Key Tools                                                             |
 | :---------------- | :------------------ | :--------------- | :-------------------------------------------------------------------- |
-| **Orchestrator**  | **Router**          | `gemini-3-flash` | `delegate_to_food`, `delegate_to_kai`, `delegate_to_prof`             |
-| **Food & Dining** | **Slot Filler**     | `gemini-3-flash` | `get_restaurant_recommendations` (Real Data), `save_food_preferences` |
-| **Professional**  | **Profile Builder** | `gemini-3-flash` | `save_professional_profile`                                           |
-| **Kai (Finance)** | **Coordinator**     | `gemini-3-flash` | `perform_fundamental`, `perform_sentiment`, `perform_valuation`       |
+| **Orchestrator**  | **Router**          | `gemini-3-flash` | `delegate_to_kai`                                                     |
+| **Kai (Finance)** | **Coordinator**     | `gemini-3-flash` | `perform_fundamental`, `perform_sentiment`, `perform_valuation`, `chat` |
+| **Renaissance**   | **Research**        | N/A              | `get_renaissance_rating`, `enhance_analysis`, `identify_portfolio_alignment` |
+
+> **Note**: Food & Dining and Professional agents have been deprecated. User data is now stored in the unified World Model with dynamic domains.
 
 ## 5. Directory Structure
 
@@ -93,15 +94,23 @@ Every agent in the system must conform to the **Hushh ADK Standard**:
 hushh_mcp/
 ├── agents/             # The Spokes
 │   ├── orchestrator/
-│   ├── food_dining/
-│   ├── professional_profile/
 │   └── kai/
+│       └── renaissance_agent.py  # Research data integration
 ├── hushh_adk/          # The Foundation
 │   ├── core.py         # HushhAgent
 │   ├── tools.py        # @hushh_tool
 │   └── context.py      # HushhContext
+├── services/           # Service Layer
+│   ├── world_model_service.py    # Unified user data model
+│   ├── domain_registry_service.py # Dynamic domain management
+│   ├── domain_inferrer.py        # Auto-categorization
+│   ├── chat_db_service.py        # Persistent chat history
+│   └── portfolio_parser.py       # Brokerage statement parsing
+├── consent/            # Consent Protocol
+│   └── scope_generator.py        # Dynamic scope generation
 ├── operons/            # The Business Logic (Pure Functions)
-└── data/               # Static Datasets (restaurants.json)
+└── data/               # Static Datasets
+    └── renaissance_universe.json # Research data
 ```
 
 ## 6. Database Service Layer Architecture
@@ -112,26 +121,238 @@ Hushh uses a **consent-first service layer** for all database operations. All da
 
 - **VaultDBService** (`hushh_mcp/services/vault_db.py`) - Vault operations (food, professional, kai)
 - **ConsentDBService** (`hushh_mcp/services/consent_db.py`) - Consent management (pending requests, active tokens, audit log)
-- **InvestorDBService** (`hushh_mcp/services/investor_db.py`) - Investor profile operations (public data)
+- **WorldModelService** (`hushh_mcp/services/world_model_service.py`) - Unified user data model
+- **ChatDBService** (`hushh_mcp/services/chat_db_service.py`) - Persistent chat history
+- **RenaissanceService** (`hushh_mcp/services/renaissance_service.py`) - Investable universe queries
 
 ### Architecture Flow
 
-```
-API Route → Service Layer (validates consent) → Supabase Client → Database
+```mermaid
+flowchart TD
+    subgraph api [API Layer]
+        R1["/api/vault/*"]
+        R2["/api/kai/*"]
+        R3["/api/world-model/*"]
+    end
+    
+    subgraph services [Service Layer]
+        VDB[VaultDBService]
+        WMS[WorldModelService]
+        CDB[ConsentDBService]
+    end
+    
+    subgraph db [Database Layer]
+        DBC[DatabaseClient]
+        ENG[SQLAlchemy Engine]
+    end
+    
+    subgraph pg [PostgreSQL]
+        SP[Session Pooler]
+        PG[(Supabase PostgreSQL)]
+    end
+    
+    R1 --> VDB
+    R2 --> WMS
+    R3 --> WMS
+    VDB --> DBC
+    WMS --> DBC
+    CDB --> DBC
+    DBC --> ENG
+    ENG --> SP
+    SP --> PG
 ```
 
 **Key Principle:** API routes MUST use service layer methods, never access database directly.
 
 ### Database Technology
 
-- **Supabase REST API** - All application database operations use Supabase REST API client
+- **SQLAlchemy + psycopg2** - Direct PostgreSQL connections via session pooler
+- **Supabase Session Pooler** - Connection pooling managed by Supabase
 - **PostgreSQL** - Database backend (managed by Supabase)
-- **asyncpg** - Deprecated, only used for schema creation scripts (DDL)
+- **pgvector** - Vector embeddings for similarity search
+
+### Connection Configuration
+
+```env
+DB_USER=postgres.your-project-ref
+DB_PASSWORD=your-password
+DB_HOST=aws-1-us-east-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+```
 
 See `docs/reference/database_service_layer.md` for detailed architecture.
 
-## 7. Security & Compliance
+## 7. World Model Architecture
+
+The Hushh World Model is a **dynamic, schema-less** user data model that supports any domain without predefined structures.
+
+### Three-Layer Architecture
+
+```mermaid
+flowchart TB
+    subgraph storage [Storage Layer]
+        DomainReg[domain_registry<br/>Tracks all domains]
+        Attributes[world_model_attributes<br/>Key-value encrypted storage]
+        Index[world_model_index_v2<br/>Queryable JSONB metadata]
+        Embeddings[world_model_embeddings<br/>Vector search]
+    end
+    
+    subgraph inference [Inference Layer]
+        DomainInfer[Domain Inferrer<br/>Auto-categorizes new data]
+        ScopeGen[Scope Generator<br/>Creates attr.domain.key scopes]
+        MetaAgg[Metadata Aggregator<br/>Builds UI-ready summaries]
+    end
+    
+    subgraph api [API Layer]
+        StoreAttr[Store Attribute]
+        GetMeta[Get User Metadata]
+        CheckScope[Validate Scope]
+        DiscoverDomains[Discover Domains]
+    end
+```
+
+### Key Features
+
+- **Dynamic Domains**: No hardcoded enum - domains are auto-registered on first use
+- **Auto-Categorization**: DomainInferrer uses keywords and patterns to categorize attributes
+- **Dynamic Scopes**: Consent scopes follow `attr.{domain}.{attribute}` pattern
+- **BYOK Encryption**: All sensitive attributes encrypted with user's vault key
+- **UI Metadata**: Frontend receives display-ready domain cards with icons and colors
+
+### Consent Scopes
+
+Dynamic scopes are generated based on stored attributes:
+- Specific: `attr.financial.holdings`
+- Wildcard: `attr.financial.*`
+- Domain-level: `attr.subscriptions`
+
+## 8. Security & Compliance
 
 - **Zero-Trust Tools**: Tools verify consent _again_, even if the Agent has it.
+
+## 9. Full System Architecture Diagram
+
+```mermaid
+flowchart TB
+    subgraph frontend [Frontend - hushh-webapp]
+        Dashboard[Dashboard Page]
+        Chat[Chat Page]
+        Profile[Profile Page]
+        Services[Service Layer]
+    end
+    
+    subgraph native [Native Plugins]
+        iOSKai[iOS KaiPlugin]
+        AndroidKai[Android KaiPlugin]
+        iOSWM[iOS WorldModelPlugin]
+        AndroidWM[Android WorldModelPlugin]
+    end
+    
+    subgraph backend [Backend - consent-protocol]
+        KaiRoutes[Kai Routes]
+        WorldModelRoutes[World Model Routes]
+        A2AServer[A2A Server]
+    end
+    
+    subgraph services [Service Layer]
+        KaiChatService[KaiChatService]
+        WorldModelService[WorldModelService]
+        AttributeLearner[AttributeLearner]
+        DomainInferrer[DomainInferrer]
+    end
+    
+    subgraph adk [Hushh ADK]
+        HushhAgent[HushhAgent]
+        KaiAgent[KaiAgent]
+        Tools[@hushh_tool]
+    end
+    
+    subgraph database [Supabase PostgreSQL]
+        WorldModelTables[world_model_*]
+        ChatTables[chat_*]
+        DomainTable[domain_registry]
+        VaultTables[vault_*]
+    end
+    
+    Dashboard --> Services
+    Chat --> Services
+    Profile --> Services
+    Services --> iOSKai
+    Services --> AndroidKai
+    Services --> iOSWM
+    Services --> AndroidWM
+    iOSKai --> KaiRoutes
+    AndroidKai --> KaiRoutes
+    iOSWM --> WorldModelRoutes
+    AndroidWM --> WorldModelRoutes
+    KaiRoutes --> KaiChatService
+    WorldModelRoutes --> WorldModelService
+    KaiChatService --> HushhAgent
+    HushhAgent --> KaiAgent
+    KaiAgent --> Tools
+    KaiChatService --> AttributeLearner
+    AttributeLearner --> DomainInferrer
+    WorldModelService --> WorldModelTables
+    KaiChatService --> ChatTables
+    DomainInferrer --> DomainTable
+    A2AServer --> KaiAgent
+```
+
+## 10. Tri-Flow Architecture
+
+The application supports Web, iOS, and Android platforms via Capacitor plugins:
+
+```mermaid
+flowchart TB
+    subgraph component [Frontend Component]
+        KaiChat[KaiChat Component]
+        Service[WorldModelService]
+    end
+    
+    subgraph web [Web Platform]
+        NextAPI[Next.js API Route]
+    end
+    
+    subgraph ios [iOS Platform]
+        iOSPlugin[WorldModelPlugin.swift]
+    end
+    
+    subgraph android [Android Platform]
+        AndroidPlugin[WorldModelPlugin.kt]
+    end
+    
+    subgraph backend [Python Backend]
+        FastAPI[FastAPI Server]
+        WorldModelSvc[WorldModelService]
+        DB[(PostgreSQL)]
+    end
+    
+    KaiChat --> Service
+    Service -->|Web| NextAPI
+    Service -->|iOS| iOSPlugin
+    Service -->|Android| AndroidPlugin
+    NextAPI --> FastAPI
+    iOSPlugin --> FastAPI
+    AndroidPlugin --> FastAPI
+    FastAPI --> WorldModelSvc
+    WorldModelSvc --> DB
+```
+
+### Platform Detection Pattern
+
+```typescript
+// Service layer detects platform and routes accordingly
+if (Capacitor.isNativePlatform()) {
+  // Use native plugin
+  const { WorldModel } = await import('@/plugins/world-model');
+  return WorldModel.getMetadata({ userId });
+} else {
+  // Use web API
+  const response = await fetch(`/api/world-model/metadata/${userId}`);
+  return response.json();
+}
+```
 - **Manifest Truth**: Permissions are defined in `yaml`, not code.
 - **Audit Logging**: Every tool invocation is logged with `ctx.user_id`.
+- **Consent-Based Access**: All data access requires valid consent token with appropriate scope.

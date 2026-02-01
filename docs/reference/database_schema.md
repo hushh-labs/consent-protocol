@@ -1,6 +1,39 @@
 # Database Schema
 
-> PostgreSQL schema for the Hushh encrypted vault, investor profiles, and consent audit system.
+> PostgreSQL schema for the Hushh encrypted vault, investor profiles, world model, and consent audit system.
+
+---
+
+## 🔌 Database Connection
+
+Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL connections.
+
+### Connection Configuration
+
+```env
+# .env file
+DB_USER=postgres.your-project-ref
+DB_PASSWORD=your-password
+DB_HOST=aws-1-us-east-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+```
+
+### Running Migrations
+
+```bash
+cd consent-protocol
+python -c "
+from db.db_client import get_db_connection
+from sqlalchemy import text
+
+with get_db_connection() as conn:
+    with open('db/migrations/007_renaissance_universe.sql', 'r') as f:
+        conn.execute(text(f.read()))
+    conn.commit()
+    print('Migration complete!')
+"
+```
 
 ---
 
@@ -9,84 +42,114 @@
 | Principle             | Implementation                                     |
 | --------------------- | -------------------------------------------------- |
 | **Zero-Knowledge**    | All user data stored as AES-256-GCM ciphertext     |
-| **Domain Separation** | Separate tables per data category                  |
+| **Dynamic Domains**   | World model supports any domain without schema changes |
 | **Field-Based Storage** | Each encrypted field stored as separate row      |
 | **Audit Trail**       | `consent_audit` logs all token operations          |
 | **No Plaintext**      | Server cannot decrypt any user data                |
 | **Investor Layer**    | Public profiles for discovery, encrypted for vault |
+| **Vector Search**     | pgvector embeddings for similarity matching        |
 
 ---
 
 ## 📊 Entity Relationship Diagram
 
-```
-┌──────────────────────┐
-│     vault_keys       │  (User vault authentication)
-├──────────────────────┤
-│ user_id (PK)         │
-│ auth_method          │
-│ encrypted_vault_key  │
-│ salt, iv             │
-│ recovery_*           │
-│ created_at           │
-└──────────┬───────────┘
-           │
-           │ 1:N (field-based storage)
-           ▼
-┌──────────────────────┐     ┌──────────────────────┐
-│     vault_food       │     │  vault_professional  │
-├──────────────────────┤     ├──────────────────────┤
-│ id (PK)              │     │ id (PK)              │
-│ user_id (FK)         │     │ user_id (FK)         │
-│ field_name           │     │ field_name           │
-│ ciphertext           │     │ ciphertext           │
-│ iv, tag              │     │ iv, tag              │
-│ UNIQUE(user_id,      │     │ UNIQUE(user_id,      │
-│   field_name)        │     │   field_name)        │
-└──────────────────────┘     └──────────────────────┘
-           │
-           │ 1:N
-           ▼
-┌──────────────────────┐     ┌──────────────────────┐
-│ vault_kai_preferences│     │      vault_kai       │
-├──────────────────────┤     ├──────────────────────┤
-│ id (PK)              │     │ id (PK)              │
-│ user_id (FK)         │     │ user_id (FK)         │
-│ field_name           │     │ ticker               │
-│ ciphertext           │     │ decision_type        │
-│ iv, tag              │     │ decision_ciphertext  │
-│ UNIQUE(user_id,      │     │ iv, tag              │
-│   field_name)        │     │ confidence_score     │
-└──────────────────────┘     └──────────────────────┘
-           │
-           │ 1:1
-           ▼
-┌──────────────────────┐     ┌──────────────────────┐
-│user_investor_profiles│────▶│  investor_profiles   │
-├──────────────────────┤     ├──────────────────────┤
-│ id (PK)              │     │ id (PK)              │
-│ user_id (FK, UNIQUE) │     │ name                 │
-│ confirmed_investor_id│     │ cik (SEC identifier) │
-│ profile_data_*       │     │ firm, title          │
-│   (ENCRYPTED)        │     │ top_holdings (JSONB) │
-│ custom_holdings_*    │     │ investment_style     │
-│   (ENCRYPTED)        │     │ (PUBLIC DATA)        │
-└──────────────────────┘     └──────────────────────┘
-           │
-           │ 1:N
-           ▼
-┌──────────────────────┐
-│    consent_audit     │
-├──────────────────────┤
-│ id (PK)              │
-│ token_id             │
-│ user_id              │
-│ agent_id             │
-│ scope                │
-│ action               │
-│ issued_at            │
-│ expires_at           │
-└──────────────────────┘
+```mermaid
+erDiagram
+    vault_keys ||--o{ world_model_index_v2 : has
+    vault_keys ||--o{ world_model_attributes : has
+    vault_keys ||--o{ world_model_embeddings : has
+    vault_keys ||--o{ chat_conversations : has
+    vault_keys ||--o{ vault_portfolios : has
+    vault_keys ||--o{ consent_audit : has
+    vault_keys ||--o| user_investor_profiles : has
+    
+    domain_registry ||--o{ world_model_attributes : categorizes
+    chat_conversations ||--o{ chat_messages : contains
+    user_investor_profiles }o--|| investor_profiles : references
+    
+    vault_keys {
+        text user_id PK
+        text auth_method
+        text encrypted_vault_key
+        text salt
+        text iv
+        timestamptz created_at
+    }
+    
+    domain_registry {
+        text domain_key PK
+        text display_name
+        text description
+        text icon_name
+        text color_hex
+        text parent_domain FK
+        int attribute_count
+        int user_count
+        timestamptz first_seen_at
+    }
+    
+    world_model_index_v2 {
+        text user_id PK
+        jsonb domain_summaries
+        text[] available_domains
+        text[] computed_tags
+        decimal activity_score
+        timestamptz last_active_at
+        int total_attributes
+        int model_version
+    }
+    
+    world_model_attributes {
+        serial id PK
+        text user_id FK
+        text domain
+        text attribute_key
+        text ciphertext
+        text iv
+        text tag
+        text algorithm
+        text source
+        text display_name
+        text data_type
+        decimal confidence
+    }
+    
+    world_model_embeddings {
+        serial id PK
+        text user_id FK
+        text embedding_type
+        vector embedding_vector
+        text model_name
+    }
+    
+    chat_conversations {
+        uuid id PK
+        text user_id FK
+        text title
+        jsonb agent_context
+    }
+    
+    chat_messages {
+        uuid id PK
+        uuid conversation_id FK
+        text role
+        text content
+        text content_type
+        text component_type
+        jsonb component_data
+    }
+    
+    vault_portfolios {
+        serial id PK
+        text user_id FK
+        text portfolio_name
+        text holdings_ciphertext
+        text holdings_iv
+        text holdings_tag
+        numeric total_value_usd
+        int holdings_count
+        text source
+    }
 ```
 
 ---
@@ -124,134 +187,212 @@ CREATE TABLE vault_keys (
 
 ---
 
-### vault_food
+### domain_registry
 
-Food & Dining preferences using **field-based storage** (each field is a separate encrypted row).
+Dynamic domain registry for the World Model. Domains are auto-registered when new attribute types are discovered.
 
 ```sql
-CREATE TABLE vault_food (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,        -- e.g., 'dietary_restrictions', 'cuisines', 'budget'
-    ciphertext TEXT NOT NULL,        -- AES-256-GCM encrypted value
-    iv TEXT NOT NULL,                -- 12-byte initialization vector
-    tag TEXT NOT NULL,               -- 16-byte authentication tag
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    consent_token_id TEXT,           -- Token used for this write
-    UNIQUE(user_id, field_name)      -- One value per field per user
+CREATE TABLE domain_registry (
+    domain_key TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    description TEXT,
+    icon_name TEXT,                  -- Lucide icon name
+    color_hex TEXT,                  -- Brand color for UI
+    parent_domain TEXT REFERENCES domain_registry(domain_key),
+    attribute_count INTEGER DEFAULT 0,
+    user_count INTEGER DEFAULT 0,
+    first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_vault_food_user ON vault_food(user_id);
+CREATE INDEX idx_domain_parent ON domain_registry(parent_domain);
+```
+
+**Seeded Domains:**
+| domain_key | display_name | icon_name | color_hex |
+|------------|--------------|-----------|-----------|
+| financial | Financial | wallet | #D4AF37 |
+| food | Food & Dining | utensils | #F97316 |
+| professional | Professional | briefcase | #8B5CF6 |
+| health | Health & Wellness | heart | #EF4444 |
+| travel | Travel | plane | #0EA5E9 |
+| entertainment | Entertainment | tv | #EC4899 |
+| shopping | Shopping | shopping-bag | #14B8A6 |
+| subscriptions | Subscriptions | credit-card | #6366F1 |
+| general | General | folder | #6B7280 |
+| kai_decisions | Kai Decisions | brain | #D4AF37 |
+| kai_preferences | Kai Preferences | settings | #D4AF37 |
+
+---
+
+### world_model_attributes
+
+**Primary encrypted storage** for all user data using BYOK (Bring Your Own Key) encryption. Replaces legacy domain-specific tables (`vault_food`, `vault_professional`, etc.).
+
+```sql
+CREATE TABLE world_model_attributes (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    domain TEXT NOT NULL,            -- References domain_registry.domain_key
+    attribute_key TEXT NOT NULL,     -- e.g., 'dietary_restrictions', 'risk_tolerance'
+    
+    -- Encrypted Value (BYOK)
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    
+    -- Metadata
+    source TEXT NOT NULL DEFAULT 'explicit',  -- 'explicit', 'inferred', 'imported', 'computed'
+    confidence DECIMAL(3,2),
+    inferred_at TIMESTAMPTZ,
+    display_name TEXT,
+    data_type TEXT DEFAULT 'string',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    UNIQUE(user_id, domain, attribute_key)
+);
+
+CREATE INDEX idx_wma_user ON world_model_attributes(user_id);
+CREATE INDEX idx_wma_domain ON world_model_attributes(domain);
 ```
 
 **Example Data:**
-| user_id | field_name | ciphertext | iv | tag |
-|---------|------------|------------|-----|-----|
-| UWHGe... | dietary_restrictions | eyJhbGc... | abc123... | def456... |
-| UWHGe... | cuisines | eyJhbGc... | ghi789... | jkl012... |
-| UWHGe... | budget | eyJhbGc... | mno345... | pqr678... |
+| user_id | domain | attribute_key | source | data_type |
+|---------|--------|---------------|--------|-----------|
+| UWHGe... | financial | holdings_count | imported | number |
+| UWHGe... | financial | risk_bucket | computed | string |
+| UWHGe... | kai_decisions | AAPL_decision | computed | string |
+| UWHGe... | food | dietary_restrictions | explicit | array |
 
 ---
 
-### vault_professional
+### world_model_index_v2
 
-Professional profile data using **field-based storage**.
-
-```sql
-CREATE TABLE vault_professional (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,        -- e.g., 'title', 'skills', 'experience', 'job_preferences'
-    ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    consent_token_id TEXT,
-    UNIQUE(user_id, field_name)
-);
-
-CREATE INDEX idx_vault_professional_user ON vault_professional(user_id);
-```
-
----
-
-### vault_kai_preferences
-
-Encrypted user settings for Agent Kai (Risk Profile, Processing Mode).
+Queryable index layer for user world models. Updated automatically via triggers when attributes change.
 
 ```sql
-CREATE TABLE vault_kai_preferences (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,        -- 'kai_risk_profile', 'kai_processing_mode'
-    ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    UNIQUE(user_id, field_name)
-);
-
-CREATE INDEX idx_vault_kai_prefs_user ON vault_kai_preferences(user_id);
-```
-
----
-
-### kai_sessions
-
-Session tracking for Kai investment analysis.
-
-```sql
-CREATE TABLE kai_sessions (
-    session_id VARCHAR(64) PRIMARY KEY,
-    user_id VARCHAR(128) NOT NULL,
-    processing_mode VARCHAR(32) DEFAULT 'hybrid',  -- 'on_device', 'hybrid'
-    risk_profile VARCHAR(32) DEFAULT 'balanced',   -- 'conservative', 'balanced', 'aggressive'
-    legal_acknowledged BOOLEAN DEFAULT FALSE,
-    onboarding_complete BOOLEAN DEFAULT FALSE,
+CREATE TABLE world_model_index_v2 (
+    user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    domain_summaries JSONB DEFAULT '{}',
+    available_domains TEXT[] DEFAULT '{}',
+    computed_tags TEXT[] DEFAULT '{}',
+    activity_score DECIMAL(3,2),
+    last_active_at TIMESTAMPTZ,
+    total_attributes INTEGER DEFAULT 0,
+    model_version INTEGER DEFAULT 2,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_kai_sessions_user ON kai_sessions(user_id);
+CREATE INDEX idx_wmi2_domains ON world_model_index_v2 USING GIN(domain_summaries);
+CREATE INDEX idx_wmi2_available ON world_model_index_v2 USING GIN(available_domains);
+CREATE INDEX idx_wmi2_tags ON world_model_index_v2 USING GIN(computed_tags);
 ```
-
-**Notes:**
-- `processing_mode`: Currently only 'hybrid' (cloud-based analysis) is active
-- `risk_profile`: Affects agent debate weights and decision formatting
-- `legal_acknowledged`: User has seen legal disclaimer
 
 ---
 
-### vault_kai
+### world_model_embeddings
 
-Encrypted investment decision history (analysis results). References `kai_sessions` for session context.
+Vector embeddings for similarity search using pgvector.
 
 ```sql
-CREATE TABLE vault_kai (
+CREATE TABLE world_model_embeddings (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    session_id TEXT REFERENCES kai_sessions(session_id),
-    ticker TEXT NOT NULL,
-    decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
+    embedding_type embedding_type NOT NULL,  -- 'financial_profile', 'lifestyle_profile', etc.
+    embedding_vector vector(384),            -- all-MiniLM-L6-v2 dimension
+    model_name TEXT DEFAULT 'all-MiniLM-L6-v2',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, embedding_type)
+);
+
+-- HNSW Index for fast similarity search
+CREATE INDEX idx_wme_vector ON world_model_embeddings 
+USING hnsw (embedding_vector vector_cosine_ops);
+```
+
+---
+
+### chat_conversations
+
+Persistent chat history for Kai conversations.
+
+```sql
+CREATE TABLE chat_conversations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    title TEXT,
+    agent_context JSONB,             -- Current session state
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_chat_conv_user ON chat_conversations(user_id);
+```
+
+---
+
+### chat_messages
+
+Individual messages within conversations, supporting insertable components.
+
+```sql
+CREATE TABLE chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+    content TEXT NOT NULL,
+    content_type TEXT DEFAULT 'text',  -- 'text', 'component', 'tool_use'
     
-    -- Encrypted Decision Card (JSON)
-    decision_ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
+    -- For insertable components
+    component_type TEXT,               -- 'analysis', 'portfolio_import', 'loser_report', etc.
+    component_data JSONB,
     
-    confidence_score DECIMAL(3,2),
+    -- Metadata
+    tokens_used INTEGER,
+    model_used TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_vault_kai_user ON vault_kai(user_id);
-CREATE INDEX idx_vault_kai_ticker ON vault_kai(ticker);
+CREATE INDEX idx_chat_msg_conv ON chat_messages(conversation_id);
+CREATE INDEX idx_chat_msg_created ON chat_messages(created_at DESC);
+```
+
+---
+
+### vault_portfolios
+
+Encrypted portfolio holdings imported from brokerage statements.
+
+```sql
+CREATE TABLE vault_portfolios (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    portfolio_name TEXT DEFAULT 'Main Portfolio',
+    
+    -- Encrypted holdings array
+    holdings_ciphertext TEXT NOT NULL,
+    holdings_iv TEXT NOT NULL,
+    holdings_tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    
+    -- Metadata (unencrypted for display)
+    total_value_usd NUMERIC,
+    holdings_count INTEGER,
+    source TEXT,                     -- 'manual', 'csv', 'pdf_schwab', 'plaid'
+    
+    last_imported_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    UNIQUE(user_id, portfolio_name)
+);
+
+CREATE INDEX idx_portfolio_user ON vault_portfolios(user_id);
 ```
 
 ---
@@ -446,28 +587,141 @@ Each encrypted field follows this structure:
 
 ## 📈 Key Queries
 
-### Get Vault Status (Optimized CTE)
+### Get User World Model Metadata (RPC Function)
 
-Used by dashboard to show domain counts without fetching encrypted data:
+Returns comprehensive metadata about a user's world model:
 
 ```sql
-WITH food_count AS (
-    SELECT COUNT(*) as cnt FROM vault_food WHERE user_id = $1
-),
-prof_count AS (
-    SELECT COUNT(*) as cnt FROM vault_professional WHERE user_id = $1
-),
-kai_check AS (
-    SELECT EXISTS(SELECT 1 FROM user_investor_profiles WHERE user_id = $1) as exists
-),
-kai_prefs_count AS (
-    SELECT COUNT(*) as cnt FROM vault_kai_preferences WHERE user_id = $1
+CREATE OR REPLACE FUNCTION get_user_world_model_metadata(p_user_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql STABLE
+AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    SELECT jsonb_build_object(
+        'user_id', p_user_id,
+        'domains', COALESCE((
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'key', dr.domain_key,
+                    'display_name', dr.display_name,
+                    'icon', dr.icon_name,
+                    'color', dr.color_hex,
+                    'attribute_count', (
+                        SELECT COUNT(*) 
+                        FROM world_model_attributes wma 
+                        WHERE wma.user_id = p_user_id AND wma.domain = dr.domain_key
+                    )
+                )
+            )
+            FROM domain_registry dr
+            WHERE dr.domain_key = ANY(
+                SELECT DISTINCT domain FROM world_model_attributes WHERE user_id = p_user_id
+            )
+        ), '[]'::jsonb),
+        'total_attributes', COALESCE((
+            SELECT COUNT(*) FROM world_model_attributes WHERE user_id = p_user_id
+        ), 0),
+        'available_domains', COALESCE((
+            SELECT array_agg(DISTINCT domain) FROM world_model_attributes WHERE user_id = p_user_id
+        ), ARRAY[]::TEXT[])
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+```
+
+**Usage:**
+```sql
+SELECT get_user_world_model_metadata('UWHGeUyfUAbmEl5xwIPoWJ7Cyft2');
+```
+
+---
+
+### Auto-Register Domain (RPC Function)
+
+Automatically registers new domains when discovered:
+
+```sql
+CREATE OR REPLACE FUNCTION auto_register_domain(
+    p_domain_key TEXT,
+    p_display_name TEXT DEFAULT NULL,
+    p_icon_name TEXT DEFAULT 'folder',
+    p_color_hex TEXT DEFAULT '#6B7280'
 )
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_display_name TEXT;
+    v_result JSONB;
+BEGIN
+    v_display_name := COALESCE(p_display_name, INITCAP(REPLACE(p_domain_key, '_', ' ')));
+    
+    INSERT INTO domain_registry (domain_key, display_name, icon_name, color_hex)
+    VALUES (p_domain_key, v_display_name, p_icon_name, p_color_hex)
+    ON CONFLICT (domain_key) DO NOTHING;
+    
+    SELECT jsonb_build_object(
+        'domain_key', domain_key,
+        'display_name', display_name,
+        'icon_name', icon_name,
+        'color_hex', color_hex
+    ) INTO v_result
+    FROM domain_registry
+    WHERE domain_key = p_domain_key;
+    
+    RETURN v_result;
+END;
+$$;
+```
+
+---
+
+### Similarity Search (RPC Function)
+
+Find similar user profiles using vector embeddings:
+
+```sql
+CREATE OR REPLACE FUNCTION match_user_profiles(
+    query_embedding vector(384),
+    embedding_type_filter embedding_type,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    user_id text,
+    similarity float
+)
+LANGUAGE sql STABLE
+AS $$
+    SELECT
+        user_id,
+        1 - (embedding_vector <=> query_embedding) as similarity
+    FROM world_model_embeddings
+    WHERE embedding_type = embedding_type_filter
+      AND 1 - (embedding_vector <=> query_embedding) > match_threshold
+    ORDER BY embedding_vector <=> query_embedding
+    LIMIT match_count;
+$$;
+```
+
+---
+
+### Get World Model Status
+
+Used by dashboard to show domain counts:
+
+```sql
 SELECT 
-    (SELECT cnt FROM food_count) as food_count,
-    (SELECT cnt FROM prof_count) as prof_count,
-    (SELECT exists FROM kai_check) as kai_onboarded,
-    (SELECT cnt FROM kai_prefs_count) as kai_prefs_count;
+    wmi.total_attributes,
+    wmi.available_domains,
+    wmi.last_active_at,
+    (SELECT COUNT(*) FROM vault_portfolios WHERE user_id = $1) as portfolio_count
+FROM world_model_index_v2 wmi
+WHERE wmi.user_id = $1;
 ```
 
 ### Get Investor Stock Count
@@ -520,29 +774,35 @@ LIMIT 50;
 
 ## 🔄 Migrations
 
-### Run Migration Script
+### Migration Files
 
-```bash
-cd consent-protocol
+| File | Description |
+|------|-------------|
+| `COMBINED_MIGRATION.sql` | Creates all world model tables, chat tables, and portfolio tables |
+| `005_encrypt_chat_tables.sql` | Adds encryption columns to chat tables |
 
-# Create specific table
-python db/migrate.py --table vault_food
+### Run Migration
 
-# Create all tables
-python db/migrate.py --full
+Execute in Supabase SQL Editor:
 
-# Show status
-python db/migrate.py --status
+```sql
+-- Run COMBINED_MIGRATION.sql first
+-- Then run 005_encrypt_chat_tables.sql
 ```
 
 ### Table Creation Order (Dependencies)
 
 1. `vault_keys` (root)
-2. `vault_food`, `vault_professional` (depend on vault_keys)
-3. `consent_audit` (references vault_keys)
-4. `investor_profiles` (standalone public table)
-5. `user_investor_profiles` (depends on vault_keys, references investor_profiles)
-6. `vault_kai`, `vault_kai_preferences` (depend on vault_keys)
+2. `domain_registry` (standalone)
+3. `world_model_attributes` (depends on vault_keys)
+4. `world_model_index_v2` (depends on vault_keys)
+5. `world_model_embeddings` (depends on vault_keys)
+6. `chat_conversations` (depends on vault_keys)
+7. `chat_messages` (depends on chat_conversations)
+8. `vault_portfolios` (depends on vault_keys)
+9. `consent_audit` (references vault_keys)
+10. `investor_profiles` (standalone public table)
+11. `user_investor_profiles` (depends on vault_keys, references investor_profiles)
 
 ---
 
@@ -550,14 +810,122 @@ python db/migrate.py --status
 
 | Domain | Table | Storage Pattern | Privacy |
 |--------|-------|-----------------|---------|
-| **Food** | `vault_food` | Field-based (N rows per user) | E2E Encrypted |
-| **Professional** | `vault_professional` | Field-based (N rows per user) | E2E Encrypted |
-| **Kai Preferences** | `vault_kai_preferences` | Field-based (N rows per user) | E2E Encrypted |
-| **Kai Decisions** | `vault_kai` | Row per analysis | E2E Encrypted |
+| **All User Data** | `world_model_attributes` | Field-based (N rows per user per domain) | E2E Encrypted |
+| **User Index** | `world_model_index_v2` | Single row per user | Non-sensitive metadata |
+| **Domain Registry** | `domain_registry` | One row per domain | Public |
+| **Embeddings** | `world_model_embeddings` | One row per user per type | Computed vectors |
+| **Chat History** | `chat_conversations` + `chat_messages` | Conversation-based | E2E Encrypted |
+| **Portfolios** | `vault_portfolios` | Single row per portfolio | E2E Encrypted |
 | **Investor (Public)** | `investor_profiles` | Single row per investor | **Public** (SEC data) |
 | **Investor (Private)** | `user_investor_profiles` | Single row per user | E2E Encrypted |
 | **Consent Audit** | `consent_audit` | Append-only log | Token IDs only |
 
 ---
 
-_Version: 2.0 | Updated: January 14, 2026 | Field-based storage + Investor profiles_
+## 🔄 Triggers
+
+### Auto-Update Domain Counts
+
+When attributes are inserted/deleted, domain registry counts are automatically updated:
+
+```sql
+CREATE OR REPLACE FUNCTION update_domain_registry_counts()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE domain_registry 
+        SET attribute_count = attribute_count + 1,
+            last_updated_at = NOW()
+        WHERE domain_key = NEW.domain;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE domain_registry 
+        SET attribute_count = GREATEST(0, attribute_count - 1),
+            last_updated_at = NOW()
+        WHERE domain_key = OLD.domain;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_domain_counts
+    AFTER INSERT OR DELETE ON world_model_attributes
+    FOR EACH ROW EXECUTE FUNCTION update_domain_registry_counts();
+```
+
+### Auto-Update User Index
+
+When attributes change, the user's index is automatically updated:
+
+```sql
+CREATE OR REPLACE FUNCTION update_user_index_on_attribute_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO world_model_index_v2 (user_id, available_domains, total_attributes, last_active_at)
+    SELECT 
+        COALESCE(NEW.user_id, OLD.user_id),
+        ARRAY(SELECT DISTINCT domain FROM world_model_attributes WHERE user_id = COALESCE(NEW.user_id, OLD.user_id)),
+        (SELECT COUNT(*) FROM world_model_attributes WHERE user_id = COALESCE(NEW.user_id, OLD.user_id)),
+        NOW()
+    ON CONFLICT (user_id) DO UPDATE SET
+        available_domains = EXCLUDED.available_domains,
+        total_attributes = EXCLUDED.total_attributes,
+        last_active_at = NOW(),
+        updated_at = NOW();
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_user_index
+    AFTER INSERT OR UPDATE OR DELETE ON world_model_attributes
+    FOR EACH ROW EXECUTE FUNCTION update_user_index_on_attribute_change();
+```
+
+---
+
+## 📈 Renaissance Universe
+
+The `renaissance_universe` table stores the Renaissance AI Fund's investable stock universe with tier classifications.
+
+### renaissance_universe
+
+```sql
+CREATE TABLE renaissance_universe (
+    id SERIAL PRIMARY KEY,
+    ticker TEXT NOT NULL UNIQUE,
+    company_name TEXT NOT NULL,
+    sector TEXT NOT NULL,
+    tier TEXT NOT NULL CHECK (tier IN ('ACE', 'KING', 'QUEEN', 'JACK')),
+    fcf_billions NUMERIC(10,2),           -- 2024 Free Cash Flow in billions
+    investment_thesis TEXT,                -- Why investable
+    tier_rank INTEGER,                     -- Rank within tier (1 = best)
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Tier Definitions
+
+| Tier | Description | Count | FCF Range |
+|------|-------------|-------|-----------|
+| **ACE** | Top-tier, largest FCF generators with strongest moats | 30 | $6B - $109B |
+| **KING** | High-quality companies with strong market positions | 41 | $1.5B - $22B |
+| **QUEEN** | Quality companies with solid fundamentals | 36 | $0.8B - $11B |
+| **JACK** | Good companies, smaller FCF but still investable | 44 | $0.3B - $6.5B |
+
+### RPC Functions
+
+**Check if ticker is investable:**
+```sql
+SELECT is_renaissance_investable('AAPL');
+-- Returns: {"is_investable": true, "ticker": "AAPL", "tier": "ACE", ...}
+```
+
+**Get stocks by tier:**
+```sql
+SELECT get_renaissance_by_tier('ACE');
+-- Returns: JSON array of all ACE tier stocks
+```
+
+---
+
+_Version: 3.0 | Updated: January 31, 2026 | World Model Architecture_

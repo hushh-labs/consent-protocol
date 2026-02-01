@@ -875,9 +875,10 @@ export class ApiService {
     userId: string;
     scopes?: string[];
   }): Promise<Response> {
+    // Updated to use dynamic attr.* scopes instead of legacy vault.read.*/vault.write.*
     const scopes = data.scopes || [
-      "vault.read.risk_profile",
-      "vault.write.decision",
+      "attr.financial.risk_profile",  // Replaces vault.read.risk_profile
+      "attr.kai_decisions.*",          // Replaces vault.write.decision
       "agent.kai.analyze",
     ];
 
@@ -1017,6 +1018,184 @@ export class ApiService {
 
     return apiFetch(`/api/kai/preferences/${data.userId}`, {
       method: "GET",
+    });
+  }
+
+  /**
+   * Send message to Kai chat agent
+   * 
+   * This is the primary method for conversational interaction with Kai.
+   * Supports persistent chat history and insertable UI components.
+   */
+  static async sendKaiMessage(data: {
+    userId: string;
+    message: string;
+    conversationId?: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        const result = await Kai.chat({
+          userId: data.userId,
+          message: data.message,
+          conversationId: data.conversationId,
+          vaultOwnerToken: data.vaultOwnerToken,
+          authToken,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("[ApiService] Native sendKaiMessage error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/chat", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify({
+        user_id: data.userId,
+        message: data.message,
+        conversation_id: data.conversationId,
+      }),
+    });
+  }
+
+  /**
+   * Import portfolio from brokerage statement
+   * 
+   * Accepts CSV or PDF files and returns portfolio analysis with losers.
+   */
+  static async importPortfolio(data: {
+    userId: string;
+    file: File;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const formData = new FormData();
+    formData.append("file", data.file);
+    formData.append("user_id", data.userId);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
+        // Native: Direct backend call with FormData
+        const response = await fetch(`${API_BASE}/api/kai/portfolio/import`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: formData,
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native importPortfolio error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    // Web: Use Next.js proxy
+    const url = `${API_BASE}/api/kai/portfolio/import`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: formData,
+    });
+
+    return response;
+  }
+
+  /**
+   * Get portfolio summary from world model
+   */
+  static async getPortfolioSummary(data: {
+    userId: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
+        const response = await fetch(`${API_BASE}/api/kai/portfolio/summary/${data.userId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native getPortfolioSummary error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch(`/api/kai/portfolio/summary/${data.userId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+    });
+  }
+
+  /**
+   * Analyze a portfolio loser
+   */
+  static async analyzeLoser(data: {
+    userId: string;
+    symbol: string;
+    conversationId?: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      symbol: data.symbol,
+      conversation_id: data.conversationId,
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
+        const response = await fetch(`${API_BASE}/api/kai/chat/analyze-loser`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native analyzeLoser error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/chat/analyze-loser", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify(body),
     });
   }
 }

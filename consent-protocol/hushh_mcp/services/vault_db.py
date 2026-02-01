@@ -17,31 +17,37 @@ BYOK (Bring Your Own Key):
     Encryption/decryption happens client-side.
     The database and backend NEVER see plaintext user data.
 
+DEPRECATION NOTICE:
+    This service uses legacy vault_* tables (vault_food, vault_professional, etc.).
+    New code should use WorldModelService which stores all data in world_model_attributes.
+    
+    Migration path:
+    - VaultDBService (legacy) → WorldModelService (preferred)
+    - vault_food table → world_model_attributes with domain="food"
+    - vault_professional table → world_model_attributes with domain="professional"
+    - vault_kai table → world_model_attributes with domain="kai_decisions"
+
 Usage:
+    # DEPRECATED - use WorldModelService instead
     from hushh_mcp.services.vault_db import VaultDBService
     
-    service = VaultDBService()
+    # PREFERRED - use WorldModelService
+    from hushh_mcp.services.world_model_service import get_world_model_service
     
-    # Store encrypted data
-    await service.store_encrypted_field(
+    service = get_world_model_service()
+    await service.store_attribute(
         user_id="user_123",
         domain="food",
-        field_name="dietary_restrictions",
-        payload=encrypted_payload,
-        consent_token="HCT:..."
-    )
-    
-    # Retrieve encrypted data
-    data = await service.get_encrypted_fields(
-        user_id="user_123",
-        domain="food",
-        consent_token="HCT:..."
+        attribute_key="dietary_restrictions",
+        ciphertext=encrypted_value,
+        iv=iv,
+        tag=tag,
     )
 """
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
@@ -49,7 +55,9 @@ from hushh_mcp.types import EncryptedPayload
 
 logger = logging.getLogger(__name__)
 
-# Domain to table mapping
+# DEPRECATED: Domain to table mapping
+# New code should use world_model_attributes table via WorldModelService
+# These are kept for backward compatibility only - DO NOT add new domains here
 DOMAIN_TABLES = {
     "food": "vault_food",
     "professional": "vault_professional",
@@ -57,19 +65,22 @@ DOMAIN_TABLES = {
     "kai_decisions": "vault_kai",  # Note: vault_kai stores decisions with metadata
 }
 
-# Domain to scope mapping
+# DEPRECATED: Domain to scope mapping
+# All domains now use WORLD_MODEL_READ/WORLD_MODEL_WRITE via dynamic attr.{domain}.* scopes
+# VAULT_OWNER grants full access to all domains.
+# These mappings are kept for backward compatibility with legacy vault_* tables
 DOMAIN_READ_SCOPES = {
-    "food": [ConsentScope.VAULT_READ_FOOD, ConsentScope.VAULT_OWNER],
-    "professional": [ConsentScope.VAULT_READ_PROFESSIONAL, ConsentScope.VAULT_OWNER],
-    "kai_preferences": [ConsentScope.VAULT_READ_FINANCE, ConsentScope.VAULT_OWNER],
-    "kai_decisions": [ConsentScope.VAULT_READ_FINANCE, ConsentScope.VAULT_OWNER],
+    "food": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
+    "professional": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
+    "kai_preferences": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
+    "kai_decisions": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
 }
 
 DOMAIN_WRITE_SCOPES = {
-    "food": [ConsentScope.VAULT_WRITE_FOOD, ConsentScope.VAULT_OWNER],
-    "professional": [ConsentScope.VAULT_WRITE_PROFESSIONAL, ConsentScope.VAULT_OWNER],
-    "kai_preferences": [ConsentScope.VAULT_WRITE_FINANCE, ConsentScope.VAULT_OWNER],
-    "kai_decisions": [ConsentScope.VAULT_WRITE_FINANCE, ConsentScope.VAULT_OWNER],
+    "food": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
+    "professional": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
+    "kai_preferences": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
+    "kai_decisions": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
 }
 
 
@@ -92,10 +103,10 @@ class VaultDBService:
         self._supabase = None
     
     def _get_supabase(self):
-        """Get Supabase client (private - ONLY for internal service use)."""
+        """Get database client (private - ONLY for internal service use)."""
         if self._supabase is None:
-            from db.supabase_client import get_supabase
-            self._supabase = get_supabase()
+            from db.db_client import get_db
+            self._supabase = get_db()
         return self._supabase
     
     async def _validate_consent(
@@ -185,7 +196,7 @@ class VaultDBService:
     async def get_encrypted_fields(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"],
+        domain: str,  # DEPRECATED: Use dynamic domains instead of fixed literals
         consent_token: str,
         field_names: Optional[List[str]] = None
     ) -> Dict[str, EncryptedPayload]:
@@ -260,7 +271,7 @@ class VaultDBService:
     async def store_encrypted_field(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"],
+        domain: str,  # DEPRECATED: Use dynamic domains instead of fixed literals
         field_name: str,
         payload: EncryptedPayload,
         consent_token: str
@@ -328,7 +339,7 @@ class VaultDBService:
     async def store_encrypted_fields(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"],
+        domain: str,  # DEPRECATED: Use dynamic domains instead of fixed literals
         fields: Dict[str, EncryptedPayload],
         consent_token: str
     ) -> int:
@@ -404,7 +415,7 @@ class VaultDBService:
     async def delete_encrypted_fields(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"],
+        domain: str,  # DEPRECATED: Use dynamic domains instead of fixed literals
         consent_token: str,
         field_names: Optional[List[str]] = None
     ) -> int:
@@ -473,17 +484,29 @@ class VaultDBService:
     async def check_vault_exists(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"]
+        domain: str  # Accept any domain, validate against DOMAIN_TABLES at runtime
     ) -> bool:
         """
         Check if user has any data in the specified vault domain.
         
-        Note: This does NOT require consent as it only checks existence,
+        NOTE: This method is DEPRECATED. Use WorldModelService.get_domain_attributes() instead.
+        
+        This does NOT require consent as it only checks existence,
         not the actual encrypted data.
+        
+        Args:
+            user_id: User's ID
+            domain: Domain key (validated against DOMAIN_TABLES)
+        
+        Returns:
+            True if user has data in the domain, False otherwise
+        
+        Raises:
+            ValueError: If domain is not in DOMAIN_TABLES
         """
         table = DOMAIN_TABLES.get(domain)
         if not table:
-            raise ValueError(f"Unknown domain: {domain}")
+            raise ValueError(f"Unknown domain: {domain}. Valid domains: {list(DOMAIN_TABLES.keys())}")
         
         supabase = self._get_supabase()
         
@@ -500,7 +523,7 @@ class VaultDBService:
     async def get_field_names(
         self,
         user_id: str,
-        domain: Literal["food", "professional", "kai_preferences", "kai_decisions"],
+        domain: str,  # DEPRECATED: Use dynamic domains instead of fixed literals
         consent_token: str
     ) -> List[str]:
         """

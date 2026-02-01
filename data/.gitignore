@@ -2,3 +2,4 @@
 # These are sample/test data files that can be regenerated via scripts/
 
 *.json
+*.pdf

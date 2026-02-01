@@ -2,30 +2,22 @@
 """
 World Model Service - Unified user data model with BYOK encryption.
 
-This service manages the 3-layer world model architecture:
-1. world_model_index - Queryable metadata (non-sensitive)
-2. world_model_attributes - Encrypted detailed attributes (BYOK)
-3. world_model_embeddings - Vector embeddings for similarity search
+This service manages the dynamic world model architecture:
+1. domain_registry - Dynamic domain discovery and metadata
+2. world_model_index_v2 - Queryable metadata with JSONB flexibility
+3. world_model_attributes - Encrypted detailed attributes (BYOK)
+4. world_model_embeddings - Vector embeddings for similarity search
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from db.supabase_client import get_supabase
+from db.db_client import get_db
 
 logger = logging.getLogger(__name__)
-
-
-class WorldModelDomain(str, Enum):
-    """Domains for world model attributes."""
-    FINANCIAL = "financial"
-    LIFESTYLE = "lifestyle"
-    PROFESSIONAL = "professional"
-    INTERESTS = "interests"
-    BEHAVIORAL = "behavioral"
 
 
 class AttributeSource(str, Enum):
@@ -45,25 +37,47 @@ class EmbeddingType(str, Enum):
 
 
 @dataclass
-class WorldModelIndex:
-    """Queryable user profile metadata."""
+class DomainSummary:
+    """Summary of a domain for a user."""
+    domain_key: str
+    display_name: str
+    icon: str
+    color: str
+    attribute_count: int
+    summary: dict = field(default_factory=dict)
+    available_scopes: list[str] = field(default_factory=list)
+    last_updated: Optional[datetime] = None
+
+
+@dataclass
+class WorldModelIndexV2:
+    """Dynamic world model index with JSONB flexibility."""
     user_id: str
-    risk_bucket: Optional[str] = None
-    investment_horizon: Optional[str] = None
-    portfolio_size_bucket: Optional[str] = None
-    lifestyle_tags: list[str] = None
-    interest_categories: list[str] = None
+    domain_summaries: dict = field(default_factory=dict)
+    available_domains: list[str] = field(default_factory=list)
+    computed_tags: list[str] = field(default_factory=list)
     activity_score: Optional[float] = None
     last_active_at: Optional[datetime] = None
-    model_version: int = 1
-    confidence_score: Optional[float] = None
+    total_attributes: int = 0
+    model_version: int = 2
+
+
+@dataclass
+class UserWorldModelMetadata:
+    """Complete metadata about a user's world model for UI."""
+    user_id: str
+    domains: list[DomainSummary] = field(default_factory=list)
+    total_attributes: int = 0
+    model_completeness: float = 0.0
+    suggested_domains: list[str] = field(default_factory=list)
+    last_updated: Optional[datetime] = None
 
 
 @dataclass
 class EncryptedAttribute:
     """Encrypted attribute with BYOK encryption."""
     user_id: str
-    domain: WorldModelDomain
+    domain: str  # Now accepts any string (dynamic domains)
     attribute_key: str
     ciphertext: str
     iv: str
@@ -72,11 +86,13 @@ class EncryptedAttribute:
     source: AttributeSource = AttributeSource.EXPLICIT
     confidence: Optional[float] = None
     inferred_at: Optional[datetime] = None
+    display_name: Optional[str] = None
+    data_type: str = "string"
 
 
 class WorldModelService:
     """
-    Service for managing the unified world model.
+    Service for managing the unified world model with dynamic domains.
     
     Follows BYOK principles - all sensitive attributes are encrypted
     with the user's vault key before storage.
@@ -84,105 +100,199 @@ class WorldModelService:
     
     def __init__(self):
         self._supabase = None
+        self._domain_registry = None
+        self._domain_inferrer = None
+        self._scope_generator = None
     
     @property
     def supabase(self):
         if self._supabase is None:
-            self._supabase = get_supabase()
+            self._supabase = get_db()
         return self._supabase
     
-    # ==================== INDEX OPERATIONS ====================
+    @property
+    def domain_registry(self):
+        if self._domain_registry is None:
+            from hushh_mcp.services.domain_registry_service import get_domain_registry_service
+            self._domain_registry = get_domain_registry_service()
+        return self._domain_registry
     
-    async def get_index(self, user_id: str) -> Optional[WorldModelIndex]:
-        """Get user's world model index."""
+    @property
+    def domain_inferrer(self):
+        if self._domain_inferrer is None:
+            from hushh_mcp.services.domain_inferrer import get_domain_inferrer
+            self._domain_inferrer = get_domain_inferrer()
+        return self._domain_inferrer
+    
+    @property
+    def scope_generator(self):
+        if self._scope_generator is None:
+            from hushh_mcp.consent.scope_generator import get_scope_generator
+            self._scope_generator = get_scope_generator()
+        return self._scope_generator
+    
+    # ==================== INDEX V2 OPERATIONS ====================
+    
+    async def get_index_v2(self, user_id: str) -> Optional[WorldModelIndexV2]:
+        """Get user's world model index (v2 with JSONB)."""
         try:
-            result = self.supabase.table("world_model_index").select("*").eq("user_id", user_id).execute()
+            result = self.supabase.table("world_model_index_v2").select("*").eq(
+                "user_id", user_id
+            ).execute()
             
             if not result.data:
                 return None
             
             row = result.data[0]
-            return WorldModelIndex(
+            return WorldModelIndexV2(
                 user_id=row["user_id"],
-                risk_bucket=row.get("risk_bucket"),
-                investment_horizon=row.get("investment_horizon"),
-                portfolio_size_bucket=row.get("portfolio_size_bucket"),
-                lifestyle_tags=row.get("lifestyle_tags") or [],
-                interest_categories=row.get("interest_categories") or [],
+                domain_summaries=row.get("domain_summaries") or {},
+                available_domains=row.get("available_domains") or [],
+                computed_tags=row.get("computed_tags") or [],
                 activity_score=row.get("activity_score"),
                 last_active_at=row.get("last_active_at"),
-                model_version=row.get("model_version", 1),
-                confidence_score=row.get("confidence_score"),
+                total_attributes=row.get("total_attributes", 0),
+                model_version=row.get("model_version", 2),
             )
         except Exception as e:
-            logger.error(f"Error getting world model index: {e}")
+            logger.error(f"Error getting world model index v2: {e}")
             return None
     
-    async def upsert_index(self, index: WorldModelIndex) -> bool:
-        """Create or update user's world model index."""
+    async def upsert_index_v2(self, index: WorldModelIndexV2) -> bool:
+        """Create or update user's world model index (v2)."""
         try:
             data = {
                 "user_id": index.user_id,
-                "risk_bucket": index.risk_bucket,
-                "investment_horizon": index.investment_horizon,
-                "portfolio_size_bucket": index.portfolio_size_bucket,
-                "lifestyle_tags": index.lifestyle_tags or [],
-                "interest_categories": index.interest_categories or [],
+                "domain_summaries": index.domain_summaries,
+                "available_domains": index.available_domains,
+                "computed_tags": index.computed_tags,
                 "activity_score": index.activity_score,
                 "last_active_at": index.last_active_at.isoformat() if index.last_active_at else None,
+                "total_attributes": index.total_attributes,
                 "model_version": index.model_version,
-                "confidence_score": index.confidence_score,
                 "updated_at": datetime.utcnow().isoformat(),
             }
             
-            self.supabase.table("world_model_index").upsert(data).execute()
+            self.supabase.table("world_model_index_v2").upsert(data).execute()
             return True
         except Exception as e:
-            logger.error(f"Error upserting world model index: {e}")
+            logger.error(f"Error upserting world model index v2: {e}")
             return False
     
-    async def update_activity(self, user_id: str) -> bool:
-        """Update user's last active timestamp."""
+    async def update_domain_summary(
+        self,
+        user_id: str,
+        domain: str,
+        summary: dict,
+    ) -> bool:
+        """Update a specific domain summary in the index."""
         try:
-            self.supabase.table("world_model_index").update({
-                "last_active_at": datetime.utcnow().isoformat(),
-            }).eq("user_id", user_id).execute()
-            return True
+            # Get current index
+            index = await self.get_index_v2(user_id)
+            if index is None:
+                index = WorldModelIndexV2(user_id=user_id)
+            
+            # Update domain summary
+            index.domain_summaries[domain] = summary
+            
+            # Update available domains
+            if domain not in index.available_domains:
+                index.available_domains.append(domain)
+            
+            return await self.upsert_index_v2(index)
         except Exception as e:
-            logger.error(f"Error updating activity: {e}")
+            logger.error(f"Error updating domain summary: {e}")
             return False
     
-    # ==================== ATTRIBUTE OPERATIONS ====================
+    # ==================== ATTRIBUTE OPERATIONS (DYNAMIC DOMAINS) ====================
     
-    async def store_attribute(self, attr: EncryptedAttribute) -> bool:
-        """Store an encrypted attribute."""
+    async def store_attribute(
+        self,
+        user_id: str,
+        domain: Optional[str],
+        attribute_key: str,
+        ciphertext: str,
+        iv: str,
+        tag: str,
+        algorithm: str = "aes-256-gcm",
+        source: str = "explicit",
+        confidence: Optional[float] = None,
+        display_name: Optional[str] = None,
+        data_type: str = "string",
+    ) -> tuple[bool, str]:
+        """
+        Store an encrypted attribute with auto domain registration.
+        
+        If domain is None, it will be inferred from the attribute_key.
+        
+        Returns:
+            Tuple of (success, generated_scope)
+        """
         try:
+            # Infer domain if not provided
+            if domain is None or domain == "":
+                domain = self.domain_inferrer.infer(attribute_key)
+            
+            # Normalize domain
+            domain = domain.lower().strip()
+            
+            # Auto-register domain if new
+            domain_metadata = self.domain_inferrer.get_domain_metadata(domain)
+            await self.domain_registry.register_domain(
+                domain_key=domain,
+                display_name=domain_metadata.get("display_name"),
+                icon_name=domain_metadata.get("icon"),
+                color_hex=domain_metadata.get("color"),
+            )
+            
+            # Store attribute
             data = {
-                "user_id": attr.user_id,
-                "domain": attr.domain.value,
-                "attribute_key": attr.attribute_key,
-                "ciphertext": attr.ciphertext,
-                "iv": attr.iv,
-                "tag": attr.tag,
-                "algorithm": attr.algorithm,
-                "source": attr.source.value,
-                "confidence": attr.confidence,
-                "inferred_at": attr.inferred_at.isoformat() if attr.inferred_at else None,
+                "user_id": user_id,
+                "domain": domain,
+                "attribute_key": attribute_key,
+                "ciphertext": ciphertext,
+                "iv": iv,
+                "tag": tag,
+                "algorithm": algorithm,
+                "source": source,
+                "confidence": confidence,
+                "display_name": display_name or attribute_key.replace("_", " ").title(),
+                "data_type": data_type,
             }
             
             self.supabase.table("world_model_attributes").upsert(
                 data,
                 on_conflict="user_id,domain,attribute_key"
             ).execute()
-            return True
+            
+            # Generate scope for this attribute
+            scope = self.scope_generator.generate_scope(domain, attribute_key)
+            
+            return (True, scope)
         except Exception as e:
             logger.error(f"Error storing attribute: {e}")
-            return False
+            return (False, "")
+    
+    async def store_attribute_obj(self, attr: EncryptedAttribute) -> tuple[bool, str]:
+        """Store an encrypted attribute object."""
+        return await self.store_attribute(
+            user_id=attr.user_id,
+            domain=attr.domain,
+            attribute_key=attr.attribute_key,
+            ciphertext=attr.ciphertext,
+            iv=attr.iv,
+            tag=attr.tag,
+            algorithm=attr.algorithm,
+            source=attr.source.value if isinstance(attr.source, AttributeSource) else attr.source,
+            confidence=attr.confidence,
+            display_name=attr.display_name,
+            data_type=attr.data_type,
+        )
     
     async def get_attribute(
         self,
         user_id: str,
-        domain: WorldModelDomain,
+        domain: str,
         attribute_key: str,
     ) -> Optional[EncryptedAttribute]:
         """Get a specific encrypted attribute."""
@@ -190,7 +300,7 @@ class WorldModelService:
             result = self.supabase.table("world_model_attributes").select("*").eq(
                 "user_id", user_id
             ).eq(
-                "domain", domain.value
+                "domain", domain.lower()
             ).eq(
                 "attribute_key", attribute_key
             ).execute()
@@ -199,18 +309,7 @@ class WorldModelService:
                 return None
             
             row = result.data[0]
-            return EncryptedAttribute(
-                user_id=row["user_id"],
-                domain=WorldModelDomain(row["domain"]),
-                attribute_key=row["attribute_key"],
-                ciphertext=row["ciphertext"],
-                iv=row["iv"],
-                tag=row["tag"],
-                algorithm=row.get("algorithm", "aes-256-gcm"),
-                source=AttributeSource(row["source"]),
-                confidence=row.get("confidence"),
-                inferred_at=row.get("inferred_at"),
-            )
+            return self._row_to_attribute(row)
         except Exception as e:
             logger.error(f"Error getting attribute: {e}")
             return None
@@ -218,39 +317,37 @@ class WorldModelService:
     async def get_domain_attributes(
         self,
         user_id: str,
-        domain: WorldModelDomain,
+        domain: str,
     ) -> list[EncryptedAttribute]:
         """Get all attributes for a domain."""
         try:
             result = self.supabase.table("world_model_attributes").select("*").eq(
                 "user_id", user_id
             ).eq(
-                "domain", domain.value
+                "domain", domain.lower()
             ).execute()
             
-            return [
-                EncryptedAttribute(
-                    user_id=row["user_id"],
-                    domain=WorldModelDomain(row["domain"]),
-                    attribute_key=row["attribute_key"],
-                    ciphertext=row["ciphertext"],
-                    iv=row["iv"],
-                    tag=row["tag"],
-                    algorithm=row.get("algorithm", "aes-256-gcm"),
-                    source=AttributeSource(row["source"]),
-                    confidence=row.get("confidence"),
-                    inferred_at=row.get("inferred_at"),
-                )
-                for row in result.data
-            ]
+            return [self._row_to_attribute(row) for row in (result.data or [])]
         except Exception as e:
             logger.error(f"Error getting domain attributes: {e}")
+            return []
+    
+    async def get_all_attributes(self, user_id: str) -> list[EncryptedAttribute]:
+        """Get all attributes for a user across all domains."""
+        try:
+            result = self.supabase.table("world_model_attributes").select("*").eq(
+                "user_id", user_id
+            ).execute()
+            
+            return [self._row_to_attribute(row) for row in (result.data or [])]
+        except Exception as e:
+            logger.error(f"Error getting all attributes: {e}")
             return []
     
     async def delete_attribute(
         self,
         user_id: str,
-        domain: WorldModelDomain,
+        domain: str,
         attribute_key: str,
     ) -> bool:
         """Delete a specific attribute."""
@@ -258,7 +355,7 @@ class WorldModelService:
             self.supabase.table("world_model_attributes").delete().eq(
                 "user_id", user_id
             ).eq(
-                "domain", domain.value
+                "domain", domain.lower()
             ).eq(
                 "attribute_key", attribute_key
             ).execute()
@@ -266,6 +363,120 @@ class WorldModelService:
         except Exception as e:
             logger.error(f"Error deleting attribute: {e}")
             return False
+    
+    def _row_to_attribute(self, row: dict) -> EncryptedAttribute:
+        """Convert database row to EncryptedAttribute."""
+        source_str = row.get("source", "explicit")
+        try:
+            source = AttributeSource(source_str)
+        except ValueError:
+            source = AttributeSource.EXPLICIT
+        
+        return EncryptedAttribute(
+            user_id=row["user_id"],
+            domain=row["domain"],
+            attribute_key=row["attribute_key"],
+            ciphertext=row["ciphertext"],
+            iv=row["iv"],
+            tag=row["tag"],
+            algorithm=row.get("algorithm", "aes-256-gcm"),
+            source=source,
+            confidence=row.get("confidence"),
+            inferred_at=row.get("inferred_at"),
+            display_name=row.get("display_name"),
+            data_type=row.get("data_type", "string"),
+        )
+    
+    # ==================== METADATA OPERATIONS ====================
+    
+    async def get_user_metadata(self, user_id: str) -> UserWorldModelMetadata:
+        """
+        Get complete metadata about user's world model for UI.
+        
+        This is the primary method for frontend to fetch user profile data.
+        """
+        try:
+            # Try RPC function first (more efficient)
+            try:
+                result = self.supabase.rpc(
+                    "get_user_world_model_metadata",
+                    {"p_user_id": user_id}
+                ).execute()
+                
+                if result.data:
+                    data = result.data
+                    domains = []
+                    for d in (data.get("domains") or []):
+                        domains.append(DomainSummary(
+                            domain_key=d["key"],
+                            display_name=d["display_name"],
+                            icon=d["icon"],
+                            color=d["color"],
+                            attribute_count=d["attribute_count"],
+                            last_updated=d.get("last_updated"),
+                        ))
+                    
+                    return UserWorldModelMetadata(
+                        user_id=user_id,
+                        domains=domains,
+                        total_attributes=data.get("total_attributes", 0),
+                        last_updated=data.get("last_updated"),
+                    )
+            except Exception as rpc_error:
+                logger.warning(f"RPC get_user_world_model_metadata failed, using fallback: {rpc_error}")
+            
+            # Fallback: Manual query
+            user_domains = await self.domain_registry.get_user_domains(user_id)
+            
+            domains = []
+            for domain_info in user_domains:
+                # Get scopes for this domain
+                scopes = await self.scope_generator.get_available_scopes(user_id)
+                domain_scopes = [s for s in scopes if s.startswith(f"attr.{domain_info.domain_key}.")]
+                
+                domains.append(DomainSummary(
+                    domain_key=domain_info.domain_key,
+                    display_name=domain_info.display_name,
+                    icon=domain_info.icon_name,
+                    color=domain_info.color_hex,
+                    attribute_count=domain_info.attribute_count,
+                    available_scopes=domain_scopes,
+                ))
+            
+            # Get total count
+            result = self.supabase.table("world_model_attributes").select(
+                "id", count="exact"
+            ).eq("user_id", user_id).execute()
+            total = result.count or 0
+            
+            # Calculate completeness (based on recommended domains from registry)
+            # Query domain registry for domains marked as "recommended" or use top domains by user count
+            try:
+                registry_result = self.supabase.table("domain_registry").select(
+                    "domain_key"
+                ).order("user_count", desc=True).limit(5).execute()
+                common_domains = {d["domain_key"] for d in registry_result.data} if registry_result.data else set()
+            except Exception:
+                # Fallback to sensible defaults if registry query fails
+                common_domains = {"financial", "subscriptions", "health", "travel", "food"}
+            
+            user_domain_keys = {d.domain_key for d in domains}
+            completeness = len(user_domain_keys & common_domains) / len(common_domains) if common_domains else 0.0
+            
+            # Suggest missing common domains
+            suggested = list(common_domains - user_domain_keys)[:3]
+            
+            return UserWorldModelMetadata(
+                user_id=user_id,
+                domains=domains,
+                total_attributes=total,
+                model_completeness=completeness,
+                suggested_domains=suggested,
+                last_updated=datetime.utcnow(),
+            )
+        except Exception as e:
+            logger.error(f"Error getting user metadata: {e}")
+            return UserWorldModelMetadata(user_id=user_id)
     
     # ==================== EMBEDDING OPERATIONS ====================
     
@@ -376,6 +587,51 @@ class WorldModelService:
         except Exception as e:
             logger.error(f"Error getting portfolio: {e}")
             return None
+    
+    async def list_portfolios(self, user_id: str) -> list[dict]:
+        """List all portfolios for a user."""
+        try:
+            result = self.supabase.table("vault_portfolios").select(
+                "portfolio_name", "total_value_usd", "holdings_count", "source", "last_imported_at"
+            ).eq("user_id", user_id).execute()
+            
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Error listing portfolios: {e}")
+            return []
+    
+    # ==================== LEGACY COMPATIBILITY ====================
+    # These methods maintain backward compatibility with the old API
+    
+    async def get_index(self, user_id: str):
+        """Legacy: Get world model index (redirects to v2)."""
+        return await self.get_index_v2(user_id)
+    
+    async def upsert_index(self, index):
+        """Legacy: Upsert world model index."""
+        if isinstance(index, WorldModelIndexV2):
+            return await self.upsert_index_v2(index)
+        # Convert old format to new
+        new_index = WorldModelIndexV2(
+            user_id=index.user_id,
+            activity_score=getattr(index, "activity_score", None),
+            last_active_at=getattr(index, "last_active_at", None),
+        )
+        return await self.upsert_index_v2(new_index)
+    
+    async def update_activity(self, user_id: str) -> bool:
+        """Update user's last active timestamp."""
+        try:
+            # Update v2 index
+            self.supabase.table("world_model_index_v2").upsert({
+                "user_id": user_id,
+                "last_active_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating activity: {e}")
+            return False
 
 
 # Singleton instance

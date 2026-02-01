@@ -1,11 +1,13 @@
 # Database Service Layer Architecture
 
-> **Status**: Active (Supabase REST API Migration Complete)
+> **Status**: Active (SQLAlchemy Session Pooler)
 > **Last Updated**: January 2026
 
 ## Overview
 
 Hushh uses a **consent-first service layer architecture** for all database operations. All database access goes through service classes that validate consent tokens before performing any operations.
+
+The database layer uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL connections, providing better performance and full SQL capabilities.
 
 ## Core Principle: Consent-First & Agent-Mediated Access
 
@@ -14,23 +16,62 @@ Hushh uses a **consent-first service layer architecture** for all database opera
 ### Architecture Flow
 
 ```
-API Route → Service Layer (validates consent) → Supabase Client → Database
+API Route → Service Layer (validates consent) → DB Client → PostgreSQL
+```
+
+```mermaid
+flowchart TD
+    subgraph api [API Layer]
+        R1["/api/vault/*"]
+        R2["/api/kai/*"]
+        R3["/api/world-model/*"]
+    end
+    
+    subgraph services [Service Layer]
+        VDB[VaultDBService]
+        CDB[ConsentDBService]
+        WMS[WorldModelService]
+        KDS[KaiDecisionsService]
+    end
+    
+    subgraph db [Database Layer]
+        DBC[DatabaseClient]
+        TQ[TableQuery Builder]
+        ENG[SQLAlchemy Engine]
+    end
+    
+    subgraph pg [PostgreSQL]
+        SP[Session Pooler]
+        PG[(Supabase PostgreSQL)]
+    end
+    
+    R1 --> VDB
+    R2 --> KDS
+    R3 --> WMS
+    VDB --> DBC
+    CDB --> DBC
+    WMS --> DBC
+    KDS --> DBC
+    DBC --> TQ
+    TQ --> ENG
+    ENG --> SP
+    SP --> PG
 ```
 
 ### Forbidden Pattern (DO NOT DO)
 
 ```python
-# ❌ WRONG: API route directly accessing Supabase
+# ❌ WRONG: API route directly accessing database
 @router.post("/preferences")
 async def get_preferences():
-    supabase = get_supabase()  # ❌ Direct access
-    response = supabase.table("vault_food").select("*").execute()
+    db = get_db()  # ❌ Direct access
+    response = db.table("vault_food").select("*").execute()
 ```
 
 ### Required Pattern
 
 ```python
-# ✅ CORRECT: API route → Service layer → Supabase
+# ✅ CORRECT: API route → Service layer → Database
 @router.post("/preferences")
 async def get_preferences():
     # Service validates consent token internally
@@ -42,6 +83,75 @@ async def get_preferences():
     )
 ```
 
+## Database Client (`db/db_client.py`)
+
+The database client provides a Supabase-compatible API using SQLAlchemy for direct PostgreSQL access.
+
+### Connection Configuration
+
+```python
+# Environment variables required in .env
+DB_USER=postgres.your-project-ref
+DB_PASSWORD=your-password
+DB_HOST=aws-1-us-east-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+```
+
+### Usage
+
+```python
+from db.db_client import get_db
+
+db = get_db()
+
+# Select
+result = db.table("users").select("*").eq("id", user_id).execute()
+
+# Insert
+result = db.table("users").insert({"name": "John", "email": "john@example.com"}).execute()
+
+# Update
+result = db.table("users").update({"name": "Jane"}).eq("id", user_id).execute()
+
+# Delete
+result = db.table("users").delete().eq("id", user_id).execute()
+
+# Upsert
+result = db.table("users").upsert({"id": user_id, "name": "John"}, on_conflict="id").execute()
+
+# Raw SQL
+result = db.execute_raw("SELECT * FROM users WHERE id = :id", {"id": user_id})
+
+# RPC (PostgreSQL functions)
+result = db.rpc("is_renaissance_investable", {"p_ticker": "AAPL"})
+```
+
+### Query Builder Methods
+
+| Method | Description |
+|--------|-------------|
+| `select(columns)` | Select columns (default "*") |
+| `insert(data)` | Insert single row or list of rows |
+| `update(data)` | Update rows matching filters |
+| `upsert(data, on_conflict)` | Insert or update on conflict |
+| `delete()` | Delete rows matching filters |
+| `eq(col, val)` | Filter where column equals value |
+| `neq(col, val)` | Filter where column not equals value |
+| `gt(col, val)` | Filter where column greater than value |
+| `gte(col, val)` | Filter where column >= value |
+| `lt(col, val)` | Filter where column less than value |
+| `lte(col, val)` | Filter where column <= value |
+| `like(col, pattern)` | Filter with LIKE pattern |
+| `ilike(col, pattern)` | Filter with case-insensitive LIKE |
+| `is_(col, val)` | Filter where column IS value (NULL checks) |
+| `in_(col, values)` | Filter where column IN list |
+| `order(col, desc)` | Order results |
+| `limit(n)` | Limit results |
+| `offset(n)` | Offset results |
+| `single()` | Expect single result |
+| `execute()` | Execute query and return results |
+
 ## Service Layer Components
 
 ### 1. VaultDBService (`hushh_mcp/services/vault_db.py`)
@@ -52,15 +162,8 @@ Unified database service for agent-mediated vault access.
 
 - Validate consent tokens before all operations
 - Store and retrieve encrypted vault data
-- Handle vault operations for all domains (food, professional, kai_preferences, kai_decisions)
+- Handle vault operations for all domains
 - Log audit events
-
-**Domains Supported:**
-
-- `food` → `vault_food` table
-- `professional` → `vault_professional` table
-- `kai_preferences` → `vault_kai_preferences` table
-- `kai_decisions` → `vault_kai` table
 
 **Key Methods:**
 
@@ -68,177 +171,63 @@ Unified database service for agent-mediated vault access.
 - `store_encrypted_field()` - Store single encrypted field (requires write consent)
 - `store_encrypted_fields()` - Batch store encrypted fields (requires write consent)
 - `delete_encrypted_fields()` - Delete encrypted fields (requires write consent)
-- `check_vault_exists()` - Check if vault has data (no consent required)
-- `get_field_names()` - List field names (requires read consent)
 
-### 2. ConsentDBService (`hushh_mcp/services/consent_db.py`)
+### 2. WorldModelService (`hushh_mcp/services/world_model_service.py`)
+
+Service for the unified world model with dynamic domains.
+
+**Responsibilities:**
+
+- Manage world model index and attributes
+- Handle dynamic domain registration
+- Store encrypted attributes with BYOK encryption
+- Manage user profile embeddings
+
+**Key Methods:**
+
+- `get_user_metadata()` - Get UI-ready world model metadata
+- `store_attribute()` - Store encrypted attribute
+- `get_attributes()` - Get attributes by domain
+- `update_index()` - Update world model index
+
+### 3. ConsentDBService (`hushh_mcp/services/consent_db.py`)
 
 Service layer for consent-related database operations.
 
-**Responsibilities:**
+**Key Methods:**
 
-- Manage pending consent requests
-- Track active consent tokens
-- Maintain consent audit log
-- Insert consent events
+- `get_pending_requests()` - Get pending consent requests
+- `get_active_tokens()` - Get active consent tokens
+- `insert_event()` - Insert consent event
+
+### 4. ChatDBService (`hushh_mcp/services/chat_db_service.py`)
+
+Service for persistent chat history with insertable components.
 
 **Key Methods:**
 
-- `get_pending_requests()` - Get pending consent requests for a user
-- `get_active_tokens()` - Get active (non-expired) consent tokens
-- `is_token_active()` - Check if token is active for a scope
-- `was_recently_denied()` - Check if consent was recently denied (cooldown)
-- `get_audit_log()` - Get paginated audit log
-- `insert_event()` - Insert consent event (REQUESTED, GRANTED, DENIED, REVOKED)
-- `log_operation()` - Log vault owner operation
+- `create_conversation()` - Create new conversation
+- `add_message()` - Add message to conversation
+- `get_messages()` - Get conversation messages
+- `get_conversations()` - List user's conversations
 
-### 3. InvestorDBService (`hushh_mcp/services/investor_db.py`)
+### 5. RenaissanceService (`hushh_mcp/services/renaissance_service.py`)
 
-Service layer for investor profile database operations.
-
-**Responsibilities:**
-
-- Search investor profiles (public data, no consent required)
-- Retrieve investor profiles by ID or CIK
-- Provide investor statistics
+Service for querying the Renaissance investable universe.
 
 **Key Methods:**
 
-- `search_investors()` - Search investors by name (fuzzy matching)
-- `get_investor_by_id()` - Get full investor profile by ID
-- `get_investor_by_cik()` - Get investor profile by SEC CIK
-- `get_investor_stats()` - Get aggregate statistics
-- `upsert_investor()` - Create/update investor profile (admin only)
+- `is_investable()` - Check if ticker is in universe
+- `get_tier_weight()` - Get conviction weight for ticker
+- `get_analysis_context()` - Get full context for analysis
 
-**Note:** Investor search operations are public (no consent required) as they only access public investor profile data from SEC filings.
+## Access Rules
 
-### 4. VaultKeysService (`hushh_mcp/services/vault_keys_service.py`)
+**Who can access the database client:**
 
-Service layer for vault key management operations.
-
-**Responsibilities:**
-
-- Check vault existence
-- Retrieve vault key data for unlock
-- Setup new vault with encryption keys
-- Get multi-domain vault status
-
-**Key Methods:**
-
-- `check_vault_exists()` - Check if user has a vault
-- `get_vault_key()` - Retrieve vault key data (for unlock flow)
-- `setup_vault()` - Create new vault with encrypted keys
-- `get_vault_status()` - Get status across all vault domains
-
-### 5. KaiDecisionsService (`hushh_mcp/services/kai_decisions_service.py`)
-
-Service layer for Kai investment decision storage.
-
-**Responsibilities:**
-
-- Store encrypted investment decisions
-- Retrieve user's decision history
-- Delete decisions
-
-**Key Methods:**
-
-- `store_decision()` - Store encrypted decision (requires VAULT_OWNER)
-- `get_decisions()` - Get paginated decisions (requires VAULT_OWNER)
-- `get_decision_by_id()` - Get single decision (requires VAULT_OWNER)
-- `delete_decision()` - Delete decision (requires VAULT_OWNER)
-
-### 6. UserInvestorProfileService (`hushh_mcp/services/user_investor_profile_db.py`)
-
-Service layer for user identity profiles (encrypted investor identity).
-
-**Responsibilities:**
-
-- Create/update encrypted user profiles
-- Retrieve profile status
-- Delete profiles
-
-**Key Methods:**
-
-- `create_or_update_profile()` - Store encrypted identity
-- `get_status()` - Check if profile exists
-- `get_profile()` - Retrieve encrypted profile
-- `delete_profile()` - Delete user profile
-
-## Supabase Client Access
-
-### Private Module: `db/supabase_client.py`
-
-The Supabase client is a **PRIVATE MODULE** that should ONLY be imported by service layer files.
-
-**Access Rules:**
-
-- ✅ Service classes (`VaultDBService`, `ConsentDBService`, `InvestorDBService`)
+- ✅ Service classes (`VaultDBService`, `ConsentDBService`, `WorldModelService`, etc.)
 - ❌ API routes (forbidden - use service layer instead)
 - ❌ Direct imports in route files (forbidden)
-
-**Initialization:**
-
-```python
-from db.supabase_client import get_supabase
-
-# Singleton pattern - initialized once
-supabase = get_supabase()
-```
-
-**Environment Variables Required:**
-
-- `SUPABASE_URL` - Your Supabase project URL
-- `SUPABASE_KEY` - Your Supabase service role key (secret)
-
-## Migration from asyncpg
-
-### What Changed
-
-**Before (asyncpg):**
-
-```python
-from db.connection import get_pool
-
-pool = await get_pool()
-async with pool.acquire() as conn:
-    rows = await conn.fetch("SELECT * FROM table WHERE user_id = $1", user_id)
-```
-
-**After (Supabase REST API):**
-
-```python
-from hushh_mcp.services.vault_db import VaultDBService
-
-service = VaultDBService()
-data = await service.get_encrypted_fields(
-    user_id=user_id,
-    domain="food",
-    consent_token=consent_token
-)
-```
-
-### Key Differences
-
-1. **No Direct SQL**: Supabase REST API doesn't support raw SQL queries
-2. **Query Builder**: Use Supabase's query builder (`.select()`, `.eq()`, `.insert()`, etc.)
-3. **No Transactions**: Supabase REST API doesn't support transactions - use batch operations
-4. **Post-Processing**: Complex queries (CTEs, DISTINCT ON) require Python post-processing
-5. **JSON Handling**: JSONB fields are automatically handled as JSON
-
-### Complex Query Handling
-
-For queries that used PostgreSQL-specific features (CTEs, DISTINCT ON, window functions), we:
-
-1. Fetch broader results using Supabase filters
-2. Post-process in Python to achieve the same result
-3. Example: `get_pending_requests()` fetches all relevant rows and filters in Python
-
-## Service Layer Responsibilities
-
-1. **Consent Validation**: All service methods validate consent tokens before database access
-2. **Database Operations**: Perform all database operations via Supabase client
-3. **Audit Logging**: Log operations to consent_audit table
-4. **Error Handling**: Handle errors appropriately and return meaningful exceptions
 
 ## API Route Pattern
 
@@ -271,38 +260,53 @@ async def get_preferences(request: Request):
     return {"preferences": data}
 ```
 
-## Deprecated: `db/connection.py`
+## Running Migrations
 
-The `db/connection.py` module (asyncpg) is **deprecated** and will be removed in a future version.
+Migrations use the same database client:
 
-**Current Status:**
+```python
+from db.db_client import get_db_connection
 
-- Marked as deprecated with warnings
-- Kept temporarily for schema creation scripts (`db/migrate.py`) which need asyncpg for DDL
-- **DO NOT use** in:
-  - API routes (use service layer instead)
-  - Service layer (use `db.supabase_client` instead)
+with get_db_connection() as conn:
+    with open("db/migrations/007_renaissance_universe.sql", "r") as f:
+        conn.execute(text(f.read()))
+    conn.commit()
+```
 
-## Verification Checklist
+Or via command line:
 
-After implementing database operations, verify:
+```bash
+cd consent-protocol
+python -c "
+from db.db_client import get_db_connection
+from sqlalchemy import text
 
-- [ ] No API routes directly import `db.supabase_client`
-- [ ] All API routes use service layer methods
-- [ ] All service layer methods validate consent tokens
-- [ ] No direct database access in API routes
-- [ ] Service layer is the only place with Supabase client access
+with get_db_connection() as conn:
+    with open('db/migrations/007_renaissance_universe.sql', 'r') as f:
+        conn.execute(text(f.read()))
+    conn.commit()
+    print('Migration complete!')
+"
+```
 
 ## Security Audit Commands
 
 ```bash
-# Verify no direct Supabase access in API routes
-grep -r "from db.supabase_client import\|from db import supabase_client\|get_supabase()" consent-protocol/api/routes/
+# Verify no direct database access in API routes
+grep -rE "from db\.(db_client|supabase_client) import|get_db\(\)|get_supabase\(\)" consent-protocol/api/routes/
 
-# Should return ZERO results (or only in service layer files)
+# Should return ZERO results
 
-# Verify service layer files have Supabase access
-grep -r "from db.supabase_client import\|get_supabase()" consent-protocol/hushh_mcp/services/
+# Verify service layer files have database access
+grep -r "from db.db_client import" consent-protocol/hushh_mcp/services/
 
 # Should return results (service layer should have access)
 ```
+
+## Benefits of Session Pooler
+
+1. **Direct PostgreSQL Access** - Lower latency than REST API
+2. **Full SQL Power** - Transactions, CTEs, raw queries
+3. **Single Connection Method** - Same pattern for migrations and CRUD
+4. **Supabase-Compatible API** - Easy migration from REST API
+5. **Connection Pooling** - Handled by Supabase's session pooler

@@ -36,7 +36,7 @@ curl -X POST http://localhost:8000/api/v1/request-consent \
   -d '{
     "user_id": "firebase_user_id",
     "developer_token": "dev-partner-001",
-    "scope": "vault_read_food",
+    "scope": "attr.financial.*",
     "expiry_hours": 24
   }'
 ```
@@ -70,12 +70,9 @@ Once user approves, the consent token becomes available.
 ### 6. Access Data
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/food-data \
+curl -X GET http://localhost:8000/api/world-model/attributes/firebase_user_id?domain=financial \
   -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "firebase_user_id",
-    "consent_token": "HCT:dXNlcl9..."
-  }'
+  -H "X-Consent-Token: HCT:dXNlcl9..."
 ```
 
 ---
@@ -97,25 +94,70 @@ Development: http://localhost:8000
 | `GET`  | `/api/consent/pending`         | Get pending consent requests for user  |
 | `POST` | `/api/consent/pending/approve` | User approves a pending request        |
 | `POST` | `/api/consent/pending/deny`    | User denies a pending request          |
-| `POST` | `/api/v1/food-data`            | Get user's food preferences            |
-| `POST` | `/api/v1/professional-data`    | Get user's professional profile        |
 | `GET`  | `/api/v1/list-scopes`          | List all available consent scopes      |
 | `POST` | `/api/validate-token`          | Validate a consent token               |
+
+### World Model Endpoints
+
+| Method   | Endpoint                                    | Description                            |
+| -------- | ------------------------------------------- | -------------------------------------- |
+| `GET`    | `/api/world-model/index/{user_id}`          | Get user's world model index           |
+| `POST`   | `/api/world-model/index`                    | Update world model index               |
+| `GET`    | `/api/world-model/attributes/{user_id}`     | Get encrypted attributes               |
+| `POST`   | `/api/world-model/attributes`               | Store encrypted attribute              |
+| `DELETE` | `/api/world-model/attributes/{user_id}/{domain}/{key}` | Delete attribute        |
+| `GET`    | `/api/world-model/metadata/{user_id}`       | Get UI-ready metadata                  |
+| `GET`    | `/api/world-model/domains`                  | List all registered domains            |
+| `GET`    | `/api/world-model/domains/{user_id}`        | Get user's domains                     |
+| `GET`    | `/api/world-model/scopes/{user_id}`         | Get available scopes (MCP discovery)   |
 
 ---
 
 ## 🔐 Consent Scopes
 
+### Static Scopes (Operations)
+
 | Scope                      | Description                 | Data Fields               |
 | -------------------------- | --------------------------- | ------------------------- |
-| `vault_read_food`          | Read food preferences       | dietary, cuisines, budget |
-| `vault_read_professional`  | Read professional profile   | title, skills, experience |
-| `vault_write_food`         | Write food preferences      | dietary, cuisines, budget |
-| `vault_write_professional` | Write professional profile  | title, skills, experience |
-| `vault_read_finance`       | Read financial data         | budget, transactions      |
-| `vault.read.risk_profile`  | Read investment risk        | risk_profile, mode        |
-| `vault.write.decision`     | Write investment decision   | decision_card (encrypted) |
+| `vault.owner`              | Full vault access (BYOK)    | All user data             |
+| `portfolio.import`         | Import portfolio data       | Holdings, transactions    |
+| `portfolio.analyze`        | Analyze portfolio           | Analysis results          |
+| `portfolio.read`           | Read portfolio data         | Holdings, performance     |
+| `chat.history.read`        | Read chat history           | Conversations, messages   |
+| `chat.history.write`       | Write chat history          | New messages              |
+| `world_model.read`         | Read world model data       | Attributes, index         |
+| `world_model.write`        | Write world model data      | Store attributes          |
+| `world_model.metadata`     | Read world model metadata   | Domain summaries          |
 | `agent.kai.analyze`        | Perform investment analysis | N/A (Functional scope)    |
+| `agent.kai.chat`           | Chat with Kai agent         | N/A (Functional scope)    |
+
+### Dynamic Scopes (Attributes)
+
+Dynamic scopes follow the pattern `attr.{domain}.{attribute}`:
+
+| Pattern                    | Description                 | Examples                  |
+| -------------------------- | --------------------------- | ------------------------- |
+| `attr.{domain}.{key}`      | Specific attribute access   | `attr.financial.holdings` |
+| `attr.{domain}.*`          | All attributes in domain    | `attr.subscriptions.*`    |
+
+**Common Domains:**
+- `financial` - Investment data, risk profile
+- `subscriptions` - Streaming services, memberships
+- `health` - Fitness, wellness data
+- `travel` - Travel preferences, loyalty programs
+- `food` - Dietary preferences, cuisines
+- `professional` - Career, skills, experience
+
+### Legacy Scopes (Deprecated)
+
+| Scope                      | Description                 | Migration Target          |
+| -------------------------- | --------------------------- | ------------------------- |
+| `vault_read_food`          | Read food preferences       | `attr.food.*`             |
+| `vault_read_professional`  | Read professional profile   | `attr.professional.*`     |
+| `vault_write_food`         | Write food preferences      | `attr.food.*`             |
+| `vault_write_professional` | Write professional profile  | `attr.professional.*`     |
+| `vault_read_finance`       | Read financial data         | `attr.financial.*`        |
+| `vault.read.risk_profile`  | Read investment risk        | `attr.financial.risk_profile` |
 
 ---
 
@@ -173,15 +215,30 @@ Development: http://localhost:8000
 }
 ```
 
-**Response (Success):**
+**Response (Success - World Model Attributes):**
 
 ```json
 {
   "status_code": 200,
   "data": {
-    "dietary_preferences": ["Vegetarian", "Gluten-Free"],
-    "favorite_cuisines": ["Italian", "Mexican", "Thai"],
-    "monthly_budget": 500
+    "attributes": [
+      {
+        "domain": "financial",
+        "attribute_key": "holdings_count",
+        "ciphertext": "encrypted...",
+        "iv": "...",
+        "tag": "...",
+        "source": "imported"
+      },
+      {
+        "domain": "financial",
+        "attribute_key": "risk_bucket",
+        "ciphertext": "encrypted...",
+        "iv": "...",
+        "tag": "...",
+        "source": "computed"
+      }
+    ]
   }
 }
 ```
@@ -256,22 +313,31 @@ import requests
 HUSHH_API = "http://localhost:8000"
 DEV_TOKEN = "dev-partner-001"
 
-# Step 1: Request consent
+# Step 1: Request consent for financial data
 consent_resp = requests.post(f"{HUSHH_API}/api/v1/request-consent", json={
     "user_id": "user_firebase_id",
     "developer_token": DEV_TOKEN,
-    "scope": "vault_read_food",
+    "scope": "attr.financial.*",
     "expiry_hours": 24
 })
 consent_token = consent_resp.json()["consent_token"]
 
-# Step 2: Access data
-data_resp = requests.post(f"{HUSHH_API}/api/v1/food-data", json={
-    "user_id": "user_firebase_id",
-    "consent_token": consent_token
-})
-food_preferences = data_resp.json()["data"]
-print(food_preferences)
+# Step 2: Access world model attributes
+data_resp = requests.get(
+    f"{HUSHH_API}/api/world-model/attributes/user_firebase_id",
+    params={"domain": "financial"},
+    headers={"X-Consent-Token": consent_token}
+)
+attributes = data_resp.json()["data"]["attributes"]
+print(attributes)
+
+# Step 3: Get user's world model metadata
+metadata_resp = requests.get(
+    f"{HUSHH_API}/api/world-model/metadata/user_firebase_id",
+    headers={"X-Consent-Token": consent_token}
+)
+metadata = metadata_resp.json()
+print(f"User has {metadata['total_attributes']} attributes across {metadata['available_domains']}")
 ```
 
 ### JavaScript
@@ -280,30 +346,38 @@ print(food_preferences)
 const HUSHH_API = "http://localhost:8000";
 const DEV_TOKEN = "dev-partner-001";
 
-// Step 1: Request consent
+// Step 1: Request consent for financial data
 const consentResp = await fetch(`${HUSHH_API}/api/v1/request-consent`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     user_id: "user_firebase_id",
     developer_token: DEV_TOKEN,
-    scope: "vault_read_food",
+    scope: "attr.financial.*",
     expiry_hours: 24,
   }),
 });
 const { consent_token } = await consentResp.json();
 
-// Step 2: Access data
-const dataResp = await fetch(`${HUSHH_API}/api/v1/food-data`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    user_id: "user_firebase_id",
-    consent_token,
-  }),
-});
+// Step 2: Access world model attributes
+const dataResp = await fetch(
+  `${HUSHH_API}/api/world-model/attributes/user_firebase_id?domain=financial`,
+  {
+    headers: { "X-Consent-Token": consent_token },
+  }
+);
 const { data } = await dataResp.json();
-console.log(data);
+console.log(data.attributes);
+
+// Step 3: Get user's world model metadata
+const metadataResp = await fetch(
+  `${HUSHH_API}/api/world-model/metadata/user_firebase_id`,
+  {
+    headers: { "X-Consent-Token": consent_token },
+  }
+);
+const metadata = await metadataResp.json();
+console.log(`User has ${metadata.total_attributes} attributes`);
 ```
 
 ---
@@ -350,4 +424,4 @@ For developer registration and support:
 
 ---
 
-_Version: 1.0 | Last Updated: 2024-12-14_
+_Version: 2.0 | Last Updated: January 31, 2026 | World Model API_

@@ -41,11 +41,15 @@ interface UseConsentActionsOptions {
 
 function getScopeDataEndpoint(scope: string): string | null {
   const scopeMap: Record<string, string> = {
-    // Underscore format
+    // Dynamic attr.* scopes (canonical - preferred)
+    "attr.food.*": "/api/vault/food",
+    "attr.professional.*": "/api/vault/professional",
+    "attr.financial.*": "/api/vault/finance",
+    // Legacy underscore format (deprecated)
     vault_read_food: "/api/vault/food",
     vault_read_professional: "/api/vault/professional",
     vault_read_finance: "/api/vault/finance",
-    // Dot format (MCP standard)
+    // Legacy dot format (deprecated)
     "vault.read.food": "/api/vault/food",
     "vault.read.professional": "/api/vault/professional",
     "vault.read.finance": "/api/vault/finance",
