@@ -1,6 +1,9 @@
 # mcp/tools/utility_tools.py
 """
 Utility tool handlers (validate_token, delegate, list_scopes).
+
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+Legacy scopes are mapped to dynamic scopes for backward compatibility.
 """
 
 import json
@@ -8,8 +11,9 @@ import logging
 
 from mcp.types import TextContent
 
+from hushh_mcp.consent.scope_helpers import get_scope_description, resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import AGENT_PORTS, ConsentScope
+from hushh_mcp.constants import AGENT_PORTS
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
 
@@ -29,15 +33,10 @@ async def handle_validate_token(args: dict) -> list[TextContent]:
     token_str = args.get("token")
     expected_scope_str = args.get("expected_scope")
     
-    # Determine expected scope if provided
+    # Determine expected scope if provided using centralized resolver
     expected_scope = None
     if expected_scope_str:
-        scope_map = {
-            "vault.read.food": ConsentScope.VAULT_READ_FOOD,
-            "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-            "vault.read.finance": ConsentScope.VAULT_READ_FINANCE,
-        }
-        expected_scope = scope_map.get(expected_scope_str)
+        expected_scope = resolve_scope_to_enum(expected_scope_str)
     
     # Use existing validation logic
     valid, reason, token_obj = validate_token(token_str, expected_scope)
@@ -85,12 +84,9 @@ async def handle_delegate(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     
     # Map scope string to enum
-    scope_map = {
-        "vault.read.food": ConsentScope.VAULT_READ_FOOD,
-        "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-        "agent.food.collect": ConsentScope.AGENT_FOOD_COLLECT,
-    }
-    scope = scope_map.get(scope_str, ConsentScope.CUSTOM_TEMPORARY)
+    # NOTE: Legacy VAULT_READ_* scopes have been removed.
+    # Parse scope using centralized resolver
+    scope = resolve_scope_to_enum(scope_str)
     
     # Create TrustLink
     trust_link = create_trust_link(
@@ -125,30 +121,41 @@ async def handle_delegate(args: dict) -> list[TextContent]:
 
 async def handle_list_scopes() -> list[TextContent]:
     """
-    List all available consent scopes.
+    List all available consent scopes dynamically.
     
     Purpose: Transparency - users and developers can see what data categories exist
+    
+    NOTE: This should ideally fetch from domain_registry for truly dynamic scopes.
+    For now, returns common dynamic scopes as examples.
     """
+    # Common dynamic scopes (in production, fetch from domain_registry)
     scopes = [
         {
-            "scope": "vault.read.food",
+            "scope": "attr.food.*",
             "emoji": "🍽️",
-            "description": "Read food preferences (dietary, cuisines, budget)",
-            "data_fields": ["dietary_restrictions", "favorite_cuisines", "monthly_budget", "allergies", "meal_preferences"],
+            "description": get_scope_description("attr.food.*"),
+            "pattern": "attr.food.{attribute_key}",
             "sensitivity": "medium"
         },
         {
-            "scope": "vault.read.professional",
+            "scope": "attr.professional.*",
             "emoji": "💼",
-            "description": "Read professional profile (title, skills, experience)",
-            "data_fields": ["title", "skills", "experience_level", "job_preferences", "certifications"],
+            "description": get_scope_description("attr.professional.*"),
+            "pattern": "attr.professional.{attribute_key}",
             "sensitivity": "medium"
         },
         {
-            "scope": "vault.read.finance",
+            "scope": "attr.financial.*",
             "emoji": "💰",
-            "description": "Read financial data (budget, transactions)",
-            "data_fields": ["monthly_budget", "spending_categories", "savings_goals"],
+            "description": get_scope_description("attr.financial.*"),
+            "pattern": "attr.financial.{attribute_key}",
+            "sensitivity": "high"
+        },
+        {
+            "scope": "attr.health.*",
+            "emoji": "❤️",
+            "description": get_scope_description("attr.health.*"),
+            "pattern": "attr.health.{attribute_key}",
             "sensitivity": "high"
         },
     ]
@@ -156,8 +163,10 @@ async def handle_list_scopes() -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps({
         "available_scopes": scopes,
         "total_scopes": len(scopes),
+        "scope_format": "attr.{domain}.* for wildcard, attr.{domain}.{attribute_key} for specific",
         "usage": "Call request_consent with user_id and desired scope to obtain a consent token",
         "privacy_principle": "Each scope requires separate, explicit user consent",
-        "security_note": "vault.read.all is NOT available via MCP - full data access requires the Hushh portal.",
-        "hushh_promise": "Your data is never accessed without your permission."
+        "security_note": "vault.owner grants full access and requires passphrase verification.",
+        "hushh_promise": "Your data is never accessed without your permission.",
+        "dynamic_scopes": "Scopes are generated dynamically based on stored user attributes"
     }))]

@@ -5,11 +5,13 @@
  *
  * Demo page showcasing the Food Agent chat interface
  * for collecting dining preferences.
+ * 
+ * TODO: Re-enable FoodAgentChat component when implemented
  */
 
 "use client";
 
-import { FoodAgentChat } from "@/components/chat/food-agent-chat";
+// import { FoodAgentChat } from "@/components/chat/food-agent-chat";
 import { Card } from "@/lib/morphy-ux/morphy";
 import {
   UtensilsCrossed,
@@ -18,91 +20,63 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 
 export default function FoodSetupPage() {
-  const handleComplete = (data: Record<string, unknown>) => {
-    console.log("Preferences saved:", data);
-    // Could redirect to recommendations page here
-  };
-
   return (
-    <main className="min-h-screen">
-      {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/70 dark:bg-black/70 border-b border-orange-100 dark:border-orange-900/30">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-                <UtensilsCrossed className="h-4 w-4 text-white" />
-              </div>
-              <span className="font-semibold">Food Preferences</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldCheck className="h-4 w-4 text-emerald-500" />
-            <span>End-to-end encrypted</span>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Back to Dashboard</span>
+          </Link>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto">
-          {/* Hero */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-sm mb-4">
-              <Sparkles className="h-4 w-4" />
-              <span>AI-Powered Preference Collection</span>
+        {/* Hero Card */}
+        <Card className="p-8 mb-6 text-center">
+          <div className="flex justify-center mb-4">
+            <div className="p-4 bg-orange-100 rounded-full">
+              <UtensilsCrossed className="w-8 h-8 text-orange-600" />
             </div>
-            <h1 className="text-3xl font-bold mb-2">
-              Set Up Your{" "}
-              <span className="bg-gradient-to-r from-orange-500 to-amber-600 bg-clip-text text-transparent">
-                Dining Preferences
-              </span>
-            </h1>
-            <p className="text-muted-foreground max-w-lg mx-auto">
-              Have a quick chat with our Food Agent to personalize your
-              restaurant recommendations. Your data stays encrypted in your
-              vault.
+          </div>
+          <h1 className="text-3xl font-bold mb-2">Food Preferences</h1>
+          <p className="text-gray-600">
+            Tell us about your dining preferences, and we'll help you discover great
+            restaurant options.
+          </p>
+        </Card>
+
+        {/* TODO: Re-enable when FoodAgentChat is implemented */}
+        <Card className="p-6">
+          <p className="text-center text-gray-500">
+            Food Agent Chat component is currently being refactored.
+            <br />
+            Check back soon!
+          </p>
+        </Card>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-2 gap-4 mt-6">
+          <Card className="p-6">
+            <ShieldCheck className="w-6 h-6 text-green-600 mb-3" />
+            <h3 className="font-semibold mb-2">Privacy First</h3>
+            <p className="text-sm text-gray-600">
+              Your preferences are encrypted and stored securely on your device.
             </p>
-          </div>
-
-          {/* Chat Component */}
-          <FoodAgentChat userId="user_demo_001" onComplete={handleComplete} />
-
-          {/* Feature Cards */}
-          <div className="grid grid-cols-3 gap-4 mt-8">
-            <Card variant="none" effect="glass" className="p-4 text-center">
-              <div className="text-2xl mb-2">🥗</div>
-              <div className="font-medium text-sm">Dietary Filters</div>
-              <p className="text-xs text-muted-foreground">
-                Vegan, gluten-free & more
-              </p>
-            </Card>
-            <Card variant="none" effect="glass" className="p-4 text-center">
-              <div className="text-2xl mb-2">🍽️</div>
-              <div className="font-medium text-sm">Cuisine Matching</div>
-              <p className="text-xs text-muted-foreground">
-                Your favorite cuisines
-              </p>
-            </Card>
-            <Card variant="none" effect="glass" className="p-4 text-center">
-              <div className="text-2xl mb-2">💰</div>
-              <div className="font-medium text-sm">Budget Smart</div>
-              <p className="text-xs text-muted-foreground">
-                Within your budget
-              </p>
-            </Card>
-          </div>
+          </Card>
+          <Card className="p-6">
+            <Sparkles className="w-6 h-6 text-purple-600 mb-3" />
+            <h3 className="font-semibold mb-2">AI-Powered</h3>
+            <p className="text-sm text-gray-600">
+              Get personalized recommendations based on your unique tastes.
+            </p>
+          </Card>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

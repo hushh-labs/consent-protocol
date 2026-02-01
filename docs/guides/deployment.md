@@ -12,11 +12,12 @@
 ├──────────────────────┬─────────────────────┬───────────────────┤
 │    hushh-webapp      │  consent-protocol   │   Supabase        │
 │    (Next.js 15)      │  (FastAPI/Python)   │   (PostgreSQL)    │
-│    Port: 8080        │  Port: 8080         │   REST API        │
+│    Port: 8080        │  Port: 8080         │   Session Pooler  │
 ├──────────────────────┼─────────────────────┼───────────────────┤
 │  Artifact Registry   │  Secret Manager     │   Cloud Build     │
-│  Docker images       │  SUPABASE_URL       │   (optional)      │
-│                      │  SUPABASE_KEY       │                   │
+│  Docker images       │  DB_USER            │   (optional)      │
+│                      │  DB_PASSWORD        │                   │
+│                      │  DB_HOST            │                   │
 │                      │  SECRET_KEY         │                   │
 │                      │  VAULT_ENCRYPTION_  │                   │
 │                      │  KEY                │                   │
@@ -103,8 +104,9 @@ deploy/
 
 | Secret                 | Description                    | Used By          |
 | ---------------------- | ------------------------------ | ---------------- |
-| `SUPABASE_URL`         | Supabase project URL           | consent-protocol |
-| `SUPABASE_KEY`         | Supabase service role key      | consent-protocol |
+| `DB_USER`              | Database user (session pooler) | consent-protocol |
+| `DB_PASSWORD`          | Database password              | consent-protocol |
+| `DB_HOST`              | Database host                  | consent-protocol |
 | `SECRET_KEY`           | HMAC signing key (64-char hex) | consent-protocol |
 | `VAULT_ENCRYPTION_KEY` | AES-256 key (64-char hex)      | consent-protocol |
 | `BACKEND_URL`          | consent-protocol URL           | Available        |
@@ -127,17 +129,25 @@ gcloud secrets add-iam-policy-binding SECRET_NAME `
 
 ## Database (Supabase)
 
-Hushh uses **Supabase REST API** for all database operations through a service layer architecture.
+Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL connections through a service layer architecture.
 
 - **Service**: Supabase PostgreSQL (managed)
-- **Database**: `hushh_vault`
-- **Access**: Via Supabase REST API with service role key
+- **Connection**: Direct PostgreSQL via Session Pooler
+- **Access**: Via SQLAlchemy with psycopg2
 
 ### Connection Configuration
 
 Set these environment variables:
 
 ```bash
+# Database Connection (Session Pooler)
+DB_USER=postgres.your-project-ref
+DB_PASSWORD=your-password
+DB_HOST=aws-1-us-east-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
+
+# Optional: Supabase REST API (for backward compatibility)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-service-role-key
 ```
@@ -145,15 +155,25 @@ SUPABASE_KEY=your-supabase-service-role-key
 ### Local Development
 
 1. Create a Supabase project at https://supabase.com
-2. Get your `SUPABASE_URL` and `SUPABASE_KEY` from project settings
-3. Set environment variables in `consent-protocol/.env`
-4. Initialize schema using Supabase Dashboard SQL Editor or migration scripts
+2. Go to Project Settings → Database → Connection Pooling
+3. Copy the Session Pooler credentials
+4. Set environment variables in `consent-protocol/.env`
+5. Run migrations using the db_client
 
 ### Run Migrations
 
-```powershell
-cd hushh-webapp
-node scripts/run-migration.mjs
+```bash
+cd consent-protocol
+python -c "
+from db.db_client import get_db_connection
+from sqlalchemy import text
+
+with get_db_connection() as conn:
+    with open('db/migrations/COMBINED_MIGRATION.sql', 'r') as f:
+        conn.execute(text(f.read()))
+    conn.commit()
+    print('Migration complete!')
+"
 ```
 
 ---

@@ -1,6 +1,9 @@
 # api/routes/consent.py
 """
 Consent management endpoints (pending, approve, deny, revoke, history, active).
+
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+Legacy scopes are mapped to dynamic scopes for backward compatibility.
 """
 
 import logging
@@ -11,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api.utils.firebase_auth import verify_firebase_bearer
+from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
+from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.consent_db import ConsentDBService
@@ -24,20 +29,12 @@ _consent_exports: Dict[str, Dict] = {}
 
 
 def get_scope_description(scope: str) -> str:
-    """Human-readable scope descriptions."""
-    descriptions = {
-        # Dot notation (canonical)
-        "vault.read.food": "Read your food preferences (dietary, cuisines, budget)",
-        "vault.read.professional": "Read your professional profile (title, skills, experience)",
-        "vault.write.food": "Write to your food preferences",
-        "vault.write.professional": "Write to your professional profile",
-        # Underscore notation (legacy fallback)
-        "vault_read_food": "Read your food preferences (dietary, cuisines, budget)",
-        "vault_read_professional": "Read your professional profile (title, skills, experience)",
-        "vault_write_food": "Write to your food preferences",
-        "vault_write_professional": "Write to your professional profile",
-    }
-    return descriptions.get(scope, f"Access: {scope}")
+    """
+    Human-readable scope descriptions.
+    
+    Delegated to centralized dynamic scope resolution.
+    """
+    return get_dynamic_scope_description(scope)
 
 
 # ============================================================================
@@ -87,24 +84,13 @@ async def approve_consent(request: Request):
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
     
-    # Issue consent token - map scope to ConsentScope enum
-    # Handles both underscore (legacy) and dot notation (new)
-    scope_map = {
-        # Underscore notation (legacy from API)
-        "vault_read_food": ConsentScope.VAULT_READ_FOOD,
-        "vault_read_professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-        "vault_write_food": ConsentScope.VAULT_WRITE_FOOD,
-        "vault_write_professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
-        # Dot notation (canonical)
-        "vault.read.food": ConsentScope.VAULT_READ_FOOD,
-        "vault.read.professional": ConsentScope.VAULT_READ_PROFESSIONAL,
-        "vault.write.food": ConsentScope.VAULT_WRITE_FOOD,
-        "vault.write.professional": ConsentScope.VAULT_WRITE_PROFESSIONAL,
-    }
-    
-    consent_scope = scope_map.get(pending_request["scope"])
-    if not consent_scope:
-        raise HTTPException(status_code=400, detail=f"Unknown scope: {pending_request['scope']}")
+    # Issue consent token - map scope to ConsentScope enum using centralized resolver
+    requested_scope = pending_request["scope"]
+    try:
+        consent_scope = resolve_scope_to_enum(requested_scope)
+    except Exception as e:
+        logger.error(f"Failed to resolve scope {requested_scope}: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {requested_scope}")
     
     # Get developer token from metadata or use developer name
     metadata = pending_request.get("metadata", {})

@@ -55,12 +55,14 @@ pip install -r requirements.txt
 ### Backend (consent-protocol/.env)
 
 ```bash
-# ⚠️ DEPRECATED: DATABASE_URL is no longer used for application database access
-# All database operations now use Supabase REST API through service layer
-# This is kept only for schema creation scripts (db/migrate.py) which need asyncpg for DDL
-# DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
+# Database Connection (Session Pooler - REQUIRED)
+DB_USER=postgres.your-project-ref
+DB_PASSWORD=your-password
+DB_HOST=aws-1-us-east-1.pooler.supabase.com
+DB_PORT=5432
+DB_NAME=postgres
 
-# Supabase REST API (REQUIRED for application database access)
+# Optional: Supabase REST API (for backward compatibility)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-service-role-key
 
@@ -100,53 +102,41 @@ DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
 
 ## 3. Database Setup
 
-### Supabase Setup (Current - Recommended)
+### Supabase Setup (Recommended)
 
-Hushh now uses **Supabase REST API** for all database operations through a service layer architecture.
+Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL connections through a service layer architecture.
 
 1. **Create Supabase Project**:
    - Go to https://supabase.com
    - Create a new project
-   - Note your `SUPABASE_URL` and `SUPABASE_KEY` (service role key)
+   - Go to Project Settings → Database → Connection Pooling
+   - Copy the Session Pooler credentials
 
-2. **Initialize Schema**:
-   - Use Supabase Dashboard SQL Editor
-   - Run schema from `consent-protocol/scripts/init_supabase_schema.sql`
-   - Or use migration scripts if migrating from existing database
-
-3. **Configure Environment**:
-   - Set `SUPABASE_URL` and `SUPABASE_KEY` in `consent-protocol/.env`
+2. **Configure Environment**:
+   - Set `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` in `consent-protocol/.env`
    - See `.env` example above
 
+3. **Initialize Schema**:
+   ```bash
+   cd consent-protocol
+   python -c "
+   from db.db_client import get_db_connection
+   from sqlalchemy import text
+
+   with get_db_connection() as conn:
+       with open('db/migrations/COMBINED_MIGRATION.sql', 'r') as f:
+           conn.execute(text(f.read()))
+       conn.commit()
+       print('Migration complete!')
+   "
+   ```
+
 **Architecture:**
-- All database access goes through service layer (`VaultDBService`, `ConsentDBService`, `InvestorDBService`)
+- All database access goes through service layer (`VaultDBService`, `ConsentDBService`, `WorldModelService`)
 - Service layer validates consent tokens before database operations
 - No direct database access from API routes
 
 See `docs/reference/database_service_layer.md` for detailed architecture.
-
-### Option A: Cloud SQL (Legacy - Deprecated)
-
-```bash
-# ⚠️ DEPRECATED: Cloud SQL Proxy is no longer used for application database access
-# Only needed for schema creation scripts if using asyncpg for DDL
-# Install Cloud SQL Proxy
-# Windows: Download cloud-sql-proxy.exe
-# macOS: brew install cloud-sql-proxy
-
-# Authenticate with GCP
-gcloud auth application-default login
-
-# Start proxy (replace with your instance)
-# Windows:
-# ./cloud-sql-proxy.exe YOUR_PROJECT:REGION:INSTANCE --port 5432
-
-# macOS/Linux:
-# ./cloud-sql-proxy YOUR_PROJECT:REGION:INSTANCE --port 5432
-# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
-# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
-# Note: Cloud SQL Proxy is deprecated. Use Supabase REST API instead.
-```
 
 ### Option B: Local PostgreSQL
 
@@ -154,9 +144,24 @@ gcloud auth application-default login
 # Create database
 createdb hushh_vault
 
-# Run migrations (if available)
+# Set environment variables
+export DB_USER=postgres
+export DB_PASSWORD=your-password
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=hushh_vault
+
+# Run migrations
 cd consent-protocol
-python db/migrate.py --full
+python -c "
+from db.db_client import get_db_connection
+from sqlalchemy import text
+
+with get_db_connection() as conn:
+    with open('db/migrations/COMBINED_MIGRATION.sql', 'r') as f:
+        conn.execute(text(f.read()))
+    conn.commit()
+"
 ```
 
 ---

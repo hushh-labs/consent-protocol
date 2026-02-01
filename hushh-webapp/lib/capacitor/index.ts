@@ -731,6 +731,12 @@ export const HushhIdentity = registerPlugin<HushhIdentityPlugin>(
   }
 );
 
+// ==================== HushhWorldModelPlugin ====================
+// World Model operations for dynamic domain/attribute management
+
+export { HushhWorldModel } from "./world-model";
+export type { HushhWorldModelPlugin } from "./world-model";
+
 // ==================== Export all ====================
 
 export * from "./types";
