@@ -5,15 +5,19 @@ Kai Consent Endpoints
 Handles Kai-specific consent grants for analysis operations.
 
 NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+
+SECURITY: All consent grant endpoints require Firebase authentication.
+The authenticated user can only grant consent for their own data.
 """
 
 import logging
 import uuid
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.middleware import require_firebase_auth, verify_user_id_match
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.consent_db import ConsentDBService
@@ -48,13 +52,21 @@ class GrantConsentResponse(BaseModel):
 # ============================================================================
 
 @router.post("/consent/grant", response_model=GrantConsentResponse)
-async def grant_consent(request: GrantConsentRequest):
+async def grant_consent(
+    request: GrantConsentRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     Grant consent for Kai data access.
+    
+    SECURITY: Requires Firebase authentication. User can only grant consent for their own data.
     
     Stateless: Issues tokens for the requested user_id and scopes.
     Does not rely on a pre-existing session.
     """
+    # Verify user is granting consent for their own data
+    verify_user_id_match(firebase_uid, request.user_id)
+    
     service = ConsentDBService()
     
     tokens = {}
