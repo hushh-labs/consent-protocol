@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class SentimentAgent(HushhAgent):
         # Initialize with proper ADK parameters
         super().__init__(
             name="Sentiment Agent",
-            model="gemini-3-flash",  # Default model
+            model=GEMINI_MODEL,  # Standardized model
             system_prompt="""
             You are a Sentiment Analyst focused on market momentum, news catalysts, and sentiment analysis.
             Your job is to evaluate recent market events, news, and social sentiment to identify short-term catalysts.
