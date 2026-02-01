@@ -6,6 +6,7 @@ Handles:
 - File upload (CSV/PDF) for brokerage statements
 - Portfolio summary retrieval
 - KPI derivation and world model integration
+- SSE streaming for real-time parsing progress
 
 Authentication:
 - All endpoints require VAULT_OWNER token (consent-first architecture)
@@ -13,10 +14,13 @@ Authentication:
 - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
 """
 
+import asyncio
+import json
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
@@ -216,4 +220,283 @@ async def get_portfolio_summary(
         losers_count=int(attr_map.get("losers_count", 0)) if "losers_count" in attr_map else None,
         winners_count=int(attr_map.get("winners_count", 0)) if "winners_count" in attr_map else None,
         total_gain_loss_pct=float(attr_map.get("total_gain_loss_pct", 0)) if "total_gain_loss_pct" in attr_map else None,
+    )
+
+
+@router.post("/portfolio/import/stream")
+async def import_portfolio_stream(
+    file: UploadFile,
+    user_id: str = Form(..., description="User's ID"),
+    authorization: str = Header(..., description="Bearer token with VAULT_OWNER token"),
+):
+    """
+    SSE streaming endpoint for portfolio import with real-time progress.
+    
+    Streams Gemini parsing progress as Server-Sent Events (SSE).
+    
+    **Event Types**:
+    - `stage`: Current processing stage (uploading, analyzing, streaming, parsing, complete)
+    - `text`: Streamed text chunk from Gemini
+    - `progress`: Character count and chunk count
+    - `complete`: Final parsed portfolio data
+    - `error`: Error message if parsing fails
+    
+    **Example SSE Events**:
+    ```
+    data: {"stage": "analyzing", "message": "AI analyzing document..."}
+    
+    data: {"stage": "streaming", "text": "{\n  \"account_info\":", "total_chars": 20}
+    
+    data: {"stage": "complete", "portfolio_data": {...}}
+    ```
+    
+    **Authentication**: Requires valid VAULT_OWNER token.
+    """
+    from hushh_mcp.consent.token import validate_token
+    from hushh_mcp.constants import ConsentScope
+    
+    # Manual token validation (can't use Depends with multipart form + file upload)
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization.removeprefix("Bearer ").strip()
+    valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
+    
+    if not valid or not token_obj:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {reason}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify user_id matches token
+    if token_obj.user_id != user_id:
+        logger.warning(f"User ID mismatch: token={token_obj.user_id}, request={user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
+    
+    # Validate file
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    
+    # Read file content
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
+    
+    filename = file.filename
+    
+    async def event_generator():
+        """Generate SSE events for streaming portfolio parsing."""
+        import os
+        import base64
+        from google import genai
+        from google.genai import types
+        from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_VERTEX
+        
+        try:
+            # Stage 1: Uploading
+            yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
+            await asyncio.sleep(0.1)  # Small delay for UI feedback
+            
+            # Initialize Gemini client
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            model_to_use = GEMINI_MODEL
+            
+            if api_key and api_key.startswith("AIza"):
+                client = genai.Client(api_key=api_key)
+                model_to_use = GEMINI_MODEL
+                logger.info("SSE: Using Google AI Studio API key")
+            else:
+                project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
+                if not project_id:
+                    import subprocess
+                    try:
+                        result = subprocess.run(
+                            ['gcloud', 'config', 'get-value', 'project'],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if result.returncode == 0 and result.stdout.strip():
+                            project_id = result.stdout.strip()
+                    except Exception:
+                        pass
+                
+                if not project_id:
+                    yield f"data: {json.dumps({'stage': 'error', 'message': 'No GCP project configured'})}\n\n"
+                    return
+                
+                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+                client = genai.Client(vertexai=True, project=project_id, location=location)
+                model_to_use = GEMINI_MODEL_VERTEX
+                logger.info(f"SSE: Using Vertex AI with project: {project_id}")
+            
+            # Stage 2: Analyzing
+            yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
+            
+            # Encode PDF as base64
+            pdf_base64 = base64.b64encode(content).decode('utf-8')
+            
+            # Build prompt (same as in portfolio_import_service)
+            prompt = """You are a financial document parser. Analyze this brokerage statement PDF and extract ALL financial data.
+
+Return a JSON object with these sections (use null for missing values, NOT 0):
+
+{
+  "account_info": {
+    "holder_name": "string - account holder's full name",
+    "account_number": "string - account number",
+    "account_type": "string - e.g., Individual, TOD, Joint, IRA, 401k",
+    "brokerage": "string - brokerage firm name",
+    "statement_period_start": "string - start date",
+    "statement_period_end": "string - end date"
+  },
+  
+  "account_summary": {
+    "beginning_value": number,
+    "ending_value": number,
+    "cash_balance": number,
+    "equities_value": number,
+    "change_in_value": number
+  },
+  
+  "asset_allocation": {
+    "cash_pct": number (as percentage, e.g., 54.4 for 54.4%),
+    "cash_value": number,
+    "equities_pct": number,
+    "equities_value": number,
+    "bonds_pct": number,
+    "bonds_value": number
+  },
+  
+  "holdings": [
+    {
+      "symbol": "string - ticker symbol",
+      "name": "string - security name",
+      "quantity": number,
+      "price": number - current price per share,
+      "market_value": number - total current value,
+      "cost_basis": number - total cost,
+      "unrealized_gain_loss": number (negative for losses),
+      "unrealized_gain_loss_pct": number,
+      "asset_type": "string - stock, etf, bond, mutual_fund, cash"
+    }
+  ],
+  
+  "income_summary": {
+    "dividends_taxable": number,
+    "interest_income": number,
+    "total_income": number
+  },
+  
+  "realized_gain_loss": {
+    "short_term_gain": number,
+    "long_term_gain": number,
+    "net_realized": number
+  },
+  
+  "cash_balance": number - total cash/sweep balance,
+  "total_value": number - total account value
+}
+
+CRITICAL: Extract ALL holdings. Return ONLY valid JSON, no explanation or markdown."""
+            
+            # Create content with PDF
+            contents = [
+                prompt,
+                types.Part(
+                    inline_data=types.Blob(
+                        mime_type="application/pdf",
+                        data=pdf_base64
+                    )
+                )
+            ]
+            
+            config = types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=32768,
+            )
+            
+            # Stage 3: Streaming
+            yield f"data: {json.dumps({'stage': 'streaming', 'message': 'Extracting financial data...'})}\n\n"
+            
+            full_response = ""
+            chunk_count = 0
+            
+            # Use official Gemini streaming API - await the coroutine first to get the async iterator
+            stream = await client.aio.models.generate_content_stream(
+                model=model_to_use,
+                contents=contents,
+                config=config,
+            )
+            async for chunk in stream:
+                if chunk.text:
+                    full_response += chunk.text
+                    chunk_count += 1
+                    
+                    # Stream EVERY chunk for real-time feedback (not just every 3rd)
+                    yield f"data: {json.dumps({'stage': 'streaming', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count})}\n\n"
+            
+            # Final text chunk
+            yield f"data: {json.dumps({'stage': 'streaming', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'streaming_complete': True})}\n\n"
+            
+            # Stage 4: Parsing
+            yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
+            
+            # Parse JSON from response
+            try:
+                # Clean up response
+                json_text = full_response.strip()
+                if json_text.startswith("```json"):
+                    json_text = json_text[7:]
+                if json_text.startswith("```"):
+                    json_text = json_text[3:]
+                if json_text.endswith("```"):
+                    json_text = json_text[:-3]
+                json_text = json_text.strip()
+                
+                parsed_data = json.loads(json_text)
+                
+                # Build portfolio_data structure for frontend
+                portfolio_data = {
+                    "account_info": parsed_data.get("account_info"),
+                    "account_summary": parsed_data.get("account_summary"),
+                    "asset_allocation": parsed_data.get("asset_allocation"),
+                    "holdings": parsed_data.get("holdings", []),
+                    "income_summary": parsed_data.get("income_summary"),
+                    "realized_gain_loss": parsed_data.get("realized_gain_loss"),
+                    "cash_balance": parsed_data.get("cash_balance", 0),
+                    "total_value": parsed_data.get("total_value", 0),
+                    "kpis": {
+                        "holdings_count": len(parsed_data.get("holdings", [])),
+                        "total_value": parsed_data.get("total_value", 0),
+                    }
+                }
+                
+                # Stage 5: Complete
+                yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True})}\n\n"
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parse error: {e}")
+                yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
+                
+        except Exception as e:
+            logger.error(f"SSE streaming error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            yield f"data: {json.dumps({'stage': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
     )

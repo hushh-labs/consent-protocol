@@ -227,7 +227,7 @@ export function PortfolioOverviewView({
                 variant="none"
                 effect="glass"
                 className="h-auto p-6 flex flex-col items-start gap-3"
-                onClick={onAnalyzeStock}
+                onClick={() => onAnalyzeStock()}
                 showRipple={true}
                 icon={{
                   icon: BarChart3,

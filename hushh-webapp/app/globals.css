@@ -719,3 +719,85 @@ html body[data-scroll-locked] {
     border-radius: calc(var(--radius) * 2);
   }
 }
+
+/* ============================================================================
+ * STREAMING TEXT ANIMATIONS - ChatGPT/Perplexity-style
+ * ============================================================================ */
+
+/* Streaming cursor - crisp blink using step-end for on/off effect */
+@keyframes cursor-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.animate-cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Thinking dots bounce animation */
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-thinking-bounce {
+  animation: thinking-bounce 1.4s ease-in-out infinite;
+}
+
+/* Token fade-in for streaming text */
+@keyframes token-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-token-in {
+  animation: token-fade-in 200ms cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+/* Smooth scroll behavior for streaming containers */
+.streaming-scroll-container {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+/* Scrollbar styling for streaming text containers */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thumb-muted::-webkit-scrollbar-thumb {
+  background-color: var(--muted);
+  border-radius: 4px;
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Stage progress bar pulse */
+@keyframes stage-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-stage-pulse {
+  animation: stage-pulse 1.5s ease-in-out infinite;
+}

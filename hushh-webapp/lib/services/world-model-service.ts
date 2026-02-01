@@ -141,6 +141,18 @@ export class WorldModelService {
       headers: this.getAuthHeaders(),
     });
 
+    // Handle 404 as valid "no data" response for new users
+    if (response.status === 404) {
+      return {
+        userId,
+        domains: [],
+        totalAttributes: 0,
+        modelCompleteness: 0,
+        suggestedDomains: [],
+        lastUpdated: null,
+      };
+    }
+
     if (!response.ok) {
       throw new Error(`Failed to get metadata: ${response.status}`);
     }
@@ -602,6 +614,52 @@ export class WorldModelService {
 
     const data = await response.json();
     return data.portfolios || [];
+  }
+
+  /**
+   * Get encrypted domain data blob for decryption on client.
+   * This retrieves the encrypted blob stored via storeDomainData().
+   * 
+   * @param userId - User's ID
+   * @param domain - Domain key (e.g., "financial")
+   * @returns Encrypted blob with ciphertext, iv, tag, algorithm or null if not found
+   */
+  static async getDomainData(
+    userId: string,
+    domain: string
+  ): Promise<EncryptedValue | null> {
+    if (Capacitor.isNativePlatform()) {
+      // TODO: Add native plugin method for blob retrieval
+      console.warn("[WorldModelService] Native getDomainData not yet implemented");
+    }
+
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(
+      `/api/world-model/domain-data/${userId}/${domain}`,
+      {
+        headers: this.getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      throw new Error(`Failed to get domain data: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.encrypted_blob) {
+      return null;
+    }
+
+    return {
+      ciphertext: data.encrypted_blob.ciphertext,
+      iv: data.encrypted_blob.iv,
+      tag: data.encrypted_blob.tag,
+      algorithm: data.encrypted_blob.algorithm || "aes-256-gcm",
+    };
   }
 }
 
