@@ -41,6 +41,15 @@ class PortfolioImportResponse(BaseModel):
     kpis_stored: list[str] = Field(default_factory=list)
     error: Optional[str] = None
     source: str = "unknown"
+    # Comprehensive financial data (LLM-extracted)
+    portfolio_data: Optional[dict] = None
+    account_info: Optional[dict] = None
+    account_summary: Optional[dict] = None
+    asset_allocation: Optional[dict] = None
+    income_summary: Optional[dict] = None
+    realized_gain_loss: Optional[dict] = None
+    transactions: Optional[list] = None
+    cash_balance: float = 0.0
 
 
 class PortfolioSummaryResponse(BaseModel):
@@ -154,6 +163,15 @@ async def import_portfolio(
         kpis_stored=result.kpis_stored,
         error=result.error,
         source=result.source,
+        # Comprehensive financial data
+        portfolio_data=result.portfolio_data,
+        account_info=result.account_info,
+        account_summary=result.account_summary,
+        asset_allocation=result.asset_allocation,
+        income_summary=result.income_summary,
+        realized_gain_loss=result.realized_gain_loss,
+        transactions=result.transactions,
+        cash_balance=result.cash_balance,
     )
 
 

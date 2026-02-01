@@ -3,12 +3,16 @@
 Database modules for Hushh consent protocol.
 
 Provides modular access to:
-- connection: Pool management
+- connection: Pool management (uses shared pooler method with DB_* env vars)
 - consent: Consent event operations
 - queries: Pending requests, active tokens, audit log
+
+Connection Method:
+    Uses Supabase session pooler with individual environment variables:
+    - DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
 """
 
-from .connection import DATABASE_URL, close_pool, get_pool, hash_token
+from .connection import close_pool, get_pool, hash_token
 from .consent import insert_event
 from .queries import (
     get_active_tokens,
@@ -23,7 +27,6 @@ __all__ = [
     "get_pool",
     "close_pool",
     "hash_token",
-    "DATABASE_URL",
     # Consent events
     "insert_event",
     # Queries
