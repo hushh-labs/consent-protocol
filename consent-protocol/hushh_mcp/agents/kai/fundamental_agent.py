@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
+from hushh_mcp.constants import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class FundamentalAgent(HushhAgent):
         # Initialize with proper ADK parameters
         super().__init__(
             name="Fundamental Agent",
-            model="gemini-3-flash",  # Default model
+            model=GEMINI_MODEL,  # Standardized model
             system_prompt="""
             You are a Fundamental Analyst focused on SEC filings, business moat, and cash flow.
             Your job is to analyze company financials, business models, and long-term viability.

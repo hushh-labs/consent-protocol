@@ -365,10 +365,15 @@ export class HushhVaultWeb extends WebPlugin {
 
   async getPendingConsents(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ pending: any[] }> {
+    const headers: Record<string, string> = {};
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
     const response = await fetch(
-      `/api/consent/pending?userId=${options.userId}`
+      `/api/consent/pending?userId=${options.userId}`,
+      { headers }
     );
     if (!response.ok) throw new Error("Failed to fetch pending");
     const data = await response.json();
@@ -377,10 +382,15 @@ export class HushhVaultWeb extends WebPlugin {
 
   async getActiveConsents(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ active: any[] }> {
+    const headers: Record<string, string> = {};
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
     const response = await fetch(
-      `/api/consent/active?userId=${options.userId}`
+      `/api/consent/active?userId=${options.userId}`,
+      { headers }
     );
     if (!response.ok) throw new Error("Failed to fetch active");
     const data = await response.json();
@@ -389,14 +399,19 @@ export class HushhVaultWeb extends WebPlugin {
 
   async getConsentHistory(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
     page?: number;
     limit?: number;
   }): Promise<{ items: any[] }> {
+    const headers: Record<string, string> = {};
+    if (options.vaultOwnerToken) {
+      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
+    }
     const page = options.page || 1;
     const limit = options.limit || 50;
     const response = await fetch(
-      `/api/consent/history?userId=${options.userId}&page=${page}&limit=${limit}`
+      `/api/consent/history?userId=${options.userId}&page=${page}&limit=${limit}`,
+      { headers }
     );
     if (!response.ok) throw new Error("Failed to fetch history");
     const data = await response.json();

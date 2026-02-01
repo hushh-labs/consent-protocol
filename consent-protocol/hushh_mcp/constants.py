@@ -226,6 +226,22 @@ USER_ID_PREFIX = "user_"
 DEFAULT_CONSENT_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7     # 7 days
 DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30        # 30 days
 
+# ==================== Gemini Model Configuration ====================
+
+# Standard model for all LLM operations across the codebase
+# Using gemini-2.5-flash for optimal balance of speed and capability
+GEMINI_MODEL = "gemini-2.5-flash"
+
+# Full path format (for ADK and direct API calls)
+GEMINI_MODEL_FULL = "models/gemini-2.5-flash"
+
+# Vertex AI model (for Google Cloud deployments)
+# gemini-2.5-flash is the latest GA model on Vertex AI
+GEMINI_MODEL_VERTEX = "gemini-2.5-flash"
+
+# Preview models (for cutting-edge features)
+GEMINI_MODEL_PREVIEW = "gemini-3-flash"  # Latest preview model
+
 # ==================== Exports ====================
 
 __all__ = [
@@ -236,5 +252,9 @@ __all__ = [
     "USER_ID_PREFIX",
     "DEFAULT_CONSENT_TOKEN_EXPIRY_MS",
     "DEFAULT_TRUST_LINK_EXPIRY_MS",
-    "AGENT_PORTS"
+    "AGENT_PORTS",
+    "GEMINI_MODEL",
+    "GEMINI_MODEL_FULL",
+    "GEMINI_MODEL_VERTEX",
+    "GEMINI_MODEL_PREVIEW",
 ]
