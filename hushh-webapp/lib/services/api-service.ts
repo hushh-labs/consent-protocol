@@ -92,6 +92,37 @@ async function apiFetch(
  * API Service for platform-aware API calls
  */
 export class ApiService {
+  // ==================== Auth Helpers ====================
+
+  /**
+   * Get auth headers for API requests.
+   * 
+   * Returns headers object with Authorization if vault_owner_token is available.
+   * This is the centralized method for getting auth headers - use this instead
+   * of manually constructing Authorization headers.
+   * 
+   * @returns HeadersInit object with Authorization header if token exists
+   */
+  static getAuthHeaders(): HeadersInit {
+    if (typeof window === "undefined") {
+      return {};
+    }
+    const token = sessionStorage.getItem("vault_owner_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /**
+   * Get the vault owner token from session storage.
+   * 
+   * @returns The vault owner token or null if not available
+   */
+  static getVaultOwnerToken(): string | null {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return sessionStorage.getItem("vault_owner_token");
+  }
+
   /**
    * Platform-aware fetch wrapper (exposed for other services)
    * Automatically adds base URL and common headers
@@ -884,11 +915,11 @@ export class ApiService {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
+        const vaultOwnerToken = this.getVaultOwnerToken() || undefined;
         const result = await Kai.grantConsent({
           userId: data.userId,
           scopes,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify(result), {
@@ -921,14 +952,14 @@ export class ApiService {
   }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
+        const vaultOwnerToken = this.getVaultOwnerToken() || undefined;
         const result = await Kai.analyze({
           userId: data.userId,
           ticker: data.ticker,
           consentToken: data.consentToken,
           riskProfile: data.riskProfile,
           processingMode: data.processingMode,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify(result.decision), {
@@ -964,11 +995,11 @@ export class ApiService {
   }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
+        const vaultOwnerToken = this.getVaultOwnerToken() || undefined;
         const result = await Kai.storePreferences({
           userId: data.userId,
           preferences: data.preferences as any,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify(result), {
@@ -998,10 +1029,10 @@ export class ApiService {
   static async kaiGetPreferences(data: { userId: string }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
+        const vaultOwnerToken = this.getVaultOwnerToken() || undefined;
         const result = await Kai.getPreferences({
           userId: data.userId,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify(result), {
@@ -1023,9 +1054,11 @@ export class ApiService {
 
   /**
    * Send message to Kai chat agent
-   * 
+   *
    * This is the primary method for conversational interaction with Kai.
    * Supports persistent chat history and insertable UI components.
+   *
+   * Authentication: Requires VAULT_OWNER token (consent-first architecture).
    */
   static async sendKaiMessage(data: {
     userId: string;
@@ -1035,13 +1068,11 @@ export class ApiService {
   }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
         const result = await Kai.chat({
           userId: data.userId,
           message: data.message,
           conversationId: data.conversationId,
           vaultOwnerToken: data.vaultOwnerToken,
-          authToken,
         });
 
         return new Response(JSON.stringify(result), {
@@ -1056,6 +1087,7 @@ export class ApiService {
       }
     }
 
+    // Web: Use VAULT_OWNER token for consent-gated access
     return apiFetch("/api/kai/chat", {
       method: "POST",
       headers: {
@@ -1071,51 +1103,73 @@ export class ApiService {
 
   /**
    * Import portfolio from brokerage statement
-   * 
+   *
    * Accepts CSV or PDF files and returns portfolio analysis with losers.
+   * Uses the Kai plugin for tri-flow architecture compliance.
+   *
+   * Authentication: Requires VAULT_OWNER token (consent-first architecture).
    */
   static async importPortfolio(data: {
     userId: string;
     file: File;
     vaultOwnerToken: string;
   }): Promise<Response> {
-    const formData = new FormData();
-    formData.append("file", data.file);
-    formData.append("user_id", data.userId);
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const authToken = await this.getFirebaseToken();
-        
-        // Native: Direct backend call with FormData
-        const response = await fetch(`${API_BASE}/api/kai/portfolio/import`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: formData,
-        });
-
-        return response;
-      } catch (error) {
-        console.error("[ApiService] Native importPortfolio error:", error);
-        return new Response(JSON.stringify({ error: (error as Error).message }), {
-          status: 500,
-        });
-      }
+    // Use VAULT_OWNER token for consent-gated access
+    if (!data.vaultOwnerToken) {
+      return new Response(
+        JSON.stringify({ error: "Vault must be unlocked to import portfolio" }),
+        { status: 401 }
+      );
     }
 
-    // Web: Use Next.js proxy
-    const url = `${API_BASE}/api/kai/portfolio/import`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${data.vaultOwnerToken}`,
-      },
-      body: formData,
-    });
+    try {
+      // Convert File to base64 for plugin compatibility
+      const fileBase64 = await this.fileToBase64(data.file);
 
-    return response;
+      // Import the Kai plugin
+      const { Kai } = await import("@/lib/capacitor/kai");
+
+      // Use Kai plugin for both web and native (tri-flow compliant)
+      const result = await Kai.importPortfolio({
+        userId: data.userId,
+        fileBase64,
+        fileName: data.file.name,
+        mimeType: data.file.type || "application/octet-stream",
+        vaultOwnerToken: data.vaultOwnerToken,
+      });
+
+      // Wrap result in Response for backward compatibility
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("[ApiService] importPortfolio error:", error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: (error as Error).message,
+        }),
+        { status: 500 }
+      );
+    }
+  }
+
+  /**
+   * Convert a File object to base64 string
+   */
+  private static async fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data URL prefix (e.g., "data:application/pdf;base64,")
+        const base64 = result.split(",")[1] || "";
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   /**
@@ -1191,6 +1245,57 @@ export class ApiService {
     }
 
     return apiFetch("/api/kai/chat/analyze-loser", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Analyze a stock using Kai's 3-agent investment committee
+   * 
+   * Returns a decision card with buy/hold/reduce recommendation.
+   */
+  static async analyzeStock(data: {
+    userId: string;
+    ticker: string;
+    riskProfile?: "conservative" | "balanced" | "aggressive";
+    context?: Record<string, unknown>;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      ticker: data.ticker.toUpperCase(),
+      risk_profile: data.riskProfile || "balanced",
+      processing_mode: "hybrid",
+      context: data.context,
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
+        const response = await fetch(`${API_BASE}/api/kai/analyze`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native analyzeStock error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/analyze", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,

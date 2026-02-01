@@ -2,14 +2,17 @@
  * Vault Context - Memory-Only Vault Key Storage
  * =============================================
  *
- * SECURITY: Stores vault key in React state (memory only)
- * - XSS cannot access via sessionStorage.getItem()
- * - Key is lost on page refresh (security feature)
- * - Each tab has its own isolated vault state
+ * SECURITY MODEL:
+ * - Vault Key: Stored in React state (memory only) - XSS cannot access
+ * - VAULT_OWNER Token: Stored in memory AND synced to sessionStorage
+ *   - Synced to sessionStorage so service layer (ApiService, WorldModelService) can access
+ *   - Token is time-limited (24h) and scope-restricted, so less sensitive than vault key
+ *   - Cleared on logout/lock
  *
  * This follows the BYOK (Bring Your Own Key) security model:
  * - Firebase Auth = Identity (who you are)
- * - Vault Key = Access (unlock encrypted data)
+ * - Vault Key = Access (unlock encrypted data) - NEVER leaves memory
+ * - VAULT_OWNER Token = Consent gate (authorize API calls) - synced for service access
  */
 
 "use client";
@@ -88,6 +91,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setVaultOwnerToken(null);
     setTokenExpiresAt(null);
     removeSessionItem("vault_unlocked");
+    // Clear token from sessionStorage so services can detect locked state
+    // Note: The vault key is NEVER stored in sessionStorage (XSS protection)
+    removeSessionItem("vault_owner_token");
+    removeSessionItem("vault_owner_token_expires_at");
   }, []);
 
   // Auto-Lock on Sign Out
@@ -117,7 +124,7 @@ export function VaultProvider({ children }: VaultProviderProps) {
   const unlockVault = useCallback(
     (key: string, token: string, expiresAt: number) => {
       console.log(
-        "🔓 Vault unlocked (key + VAULT_OWNER token stored in memory only)"
+        "🔓 Vault unlocked (key in memory, token synced to sessionStorage)"
       );
       setVaultKey(key);
       setVaultOwnerToken(token);
@@ -127,6 +134,13 @@ export function VaultProvider({ children }: VaultProviderProps) {
       // (But NOT the actual key - just the state)
       // Uses localStorage on iOS, sessionStorage on web
       setSessionItem("vault_unlocked", "true");
+      
+      // Sync VAULT_OWNER token to sessionStorage for service layer access
+      // This allows ApiService and WorldModelService to include auth headers
+      // Note: The vault key is NEVER stored in sessionStorage (XSS protection)
+      // The consent token is less sensitive as it's time-limited and scope-restricted
+      setSessionItem("vault_owner_token", token);
+      setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
     },
     []
   );

@@ -1,6 +1,9 @@
 # mcp/tools/data_tools.py
 """
 Data access handlers (food preferences, professional profile).
+
+SECURITY: Uses validate_token_with_db for cross-instance revocation consistency.
+This ensures tokens revoked on one Cloud Run instance are rejected on all instances.
 """
 
 import base64
@@ -11,7 +14,7 @@ import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from mcp.types import TextContent
 
-from hushh_mcp.consent.token import validate_token
+from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
 from mcp_modules.config import FASTAPI_URL
 
@@ -58,9 +61,9 @@ async def handle_get_food(args: dict) -> list[TextContent]:
     # Email resolution
     user_id = await resolve_email_to_uid(user_id)
     
-    # Compliance check
+    # Compliance check with cross-instance revocation
     # NOTE: Legacy VAULT_READ_FOOD scope has been removed.
-    valid, reason, token_obj = validate_token(
+    valid, reason, token_obj = await validate_token_with_db(
         consent_token,
         expected_scope=ConsentScope.WORLD_MODEL_READ
     )
@@ -170,9 +173,9 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
     # Email resolution
     user_id = await resolve_email_to_uid(user_id)
     
-    # Compliance check - must have world_model.read scope
+    # Compliance check with cross-instance revocation - must have world_model.read scope
     # NOTE: Legacy VAULT_READ_PROFESSIONAL scope has been removed.
-    valid, reason, token_obj = validate_token(
+    valid, reason, token_obj = await validate_token_with_db(
         consent_token,
         expected_scope=ConsentScope.WORLD_MODEL_READ
     )

@@ -7,6 +7,11 @@ import Capacitor
  * Native plugin for Agent Kai stock analysis.
  * Makes HTTP calls to backend from native code.
  * 
+ * Authentication:
+ * - All consent-gated operations use VAULT_OWNER token
+ * - Token proves both identity (user_id) and consent (vault unlocked)
+ * - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
+ * 
  * Aligned with Android KaiPlugin implementation for consistent behavior.
  */
 
@@ -23,7 +28,10 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "analyze", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storePreferences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPreferences", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "resetPreferences", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "resetPreferences", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "importPortfolio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "chat", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getInitialChatState", returnType: CAPPluginReturnPromise)
     ]
     
     // URLSession with timeouts matching Android (Kai analysis can take 2+ minutes)
@@ -77,7 +85,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        let vaultOwnerToken = call.getString("vaultOwnerToken")
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/consent/grant"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -91,7 +100,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
+        if let token = vaultOwnerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -159,7 +168,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        let vaultOwnerToken = call.getString("vaultOwnerToken")
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/analyze"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -173,7 +183,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
+        if let token = vaultOwnerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -260,7 +270,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        let vaultOwnerToken = call.getString("vaultOwnerToken")
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/preferences/store"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -274,7 +285,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
+        if let token = vaultOwnerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -335,7 +346,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        // Use VAULT_OWNER token for consent-gated access
+        let vaultOwnerToken = call.getString("vaultOwnerToken")
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/preferences/\(userId)"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -349,7 +361,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
+        if let token = vaultOwnerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -450,6 +462,270 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     print("[\(self.TAG)] ✅ resetPreferences success (no body)")
                     call.resolve(["success": true])
+                }
+            } catch {
+                print("[\(self.TAG)] ❌ JSON parsing error: \(error.localizedDescription)")
+                call.reject("JSON parsing error: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+    
+    // MARK: - Portfolio Import
+    
+    @objc func importPortfolio(_ call: CAPPluginCall) {
+        print("[\(TAG)] 🔍 importPortfolio called")
+        
+        guard let userId = call.getString("userId"),
+              let fileName = call.getString("fileName"),
+              let mimeType = call.getString("mimeType"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken"),
+              let fileBase64 = call.getString("fileBase64") else {
+            print("[\(TAG)] ❌ Missing required parameters: userId, fileName, mimeType, vaultOwnerToken, fileBase64")
+            call.reject("Missing required parameters: userId, fileName, mimeType, vaultOwnerToken, fileBase64")
+            return
+        }
+        
+        // Decode base64 file content
+        guard let fileData = Data(base64Encoded: fileBase64) else {
+            print("[\(TAG)] ❌ Invalid base64 file content")
+            call.reject("Invalid base64 file content")
+            return
+        }
+        
+        // Check file size (max 10MB)
+        if fileData.count > 10 * 1024 * 1024 {
+            print("[\(TAG)] ❌ File too large")
+            call.reject("File too large. Maximum size is 10MB.")
+            return
+        }
+        
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/portfolio/import"
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
+        print("[\(TAG)] 📁 File: \(fileName) (\(fileData.count) bytes)")
+        
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+        
+        // Create multipart form data request
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // Use VAULT_OWNER token for consent-gated access
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        
+        // Build multipart body
+        var body = Data()
+        
+        // Add user_id field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
+        
+        // Add file field
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // Close boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[\(self.TAG)] ❌ \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 500 ? String(bodyStr.prefix(500)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[\(self.TAG)] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
+                    return
+                }
+            }
+            
+            guard let data = data else {
+                print("[\(self.TAG)] ❌ No data received")
+                call.reject("No data received")
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("[\(self.TAG)] ✅ importPortfolio success: holdings=\(json["holdings_count"] ?? "?")")
+                    call.resolve(json)
+                } else {
+                    print("[\(self.TAG)] ❌ Invalid response format")
+                    call.reject("Invalid response format")
+                }
+            } catch {
+                print("[\(self.TAG)] ❌ JSON parsing error: \(error.localizedDescription)")
+                call.reject("JSON parsing error: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+    
+    // MARK: - Chat Methods
+    
+    @objc func chat(_ call: CAPPluginCall) {
+        print("[\(TAG)] 🔍 chat called")
+        
+        guard let userId = call.getString("userId"),
+              let message = call.getString("message"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            print("[\(TAG)] ❌ Missing required parameters: userId, message, vaultOwnerToken")
+            call.reject("Missing required parameters: userId, message, vaultOwnerToken")
+            return
+        }
+        
+        let conversationId = call.getString("conversationId")
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/chat"
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
+        
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Use VAULT_OWNER token for consent-gated access
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        
+        var body: [String: Any] = [
+            "user_id": userId,
+            "message": message
+        ]
+        
+        if let convId = conversationId {
+            body["conversation_id"] = convId
+        }
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[\(self.TAG)] ❌ \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[\(self.TAG)] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
+                    return
+                }
+            }
+            
+            guard let data = data else {
+                print("[\(self.TAG)] ❌ No data received")
+                call.reject("No data received")
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("[\(self.TAG)] ✅ chat success")
+                    call.resolve(json)
+                } else {
+                    print("[\(self.TAG)] ❌ Invalid response format")
+                    call.reject("Invalid response format")
+                }
+            } catch {
+                print("[\(self.TAG)] ❌ JSON parsing error: \(error.localizedDescription)")
+                call.reject("JSON parsing error: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+    
+    @objc func getInitialChatState(_ call: CAPPluginCall) {
+        print("[\(TAG)] 🔍 getInitialChatState called")
+        
+        guard let userId = call.getString("userId") else {
+            print("[\(TAG)] ❌ Missing required parameter: userId")
+            call.reject("Missing required parameter: userId")
+            return
+        }
+        
+        // Use VAULT_OWNER token for consent-gated access
+        let vaultOwnerToken = call.getString("vaultOwnerToken")
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/chat/initial-state/\(userId)"
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
+        
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        if let token = vaultOwnerToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[\(self.TAG)] ❌ \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 200 ? String(bodyStr.prefix(200)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[\(self.TAG)] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
+                    return
+                }
+            }
+            
+            guard let data = data else {
+                print("[\(self.TAG)] ❌ No data received")
+                call.reject("No data received")
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("[\(self.TAG)] ✅ getInitialChatState success")
+                    call.resolve(json)
+                } else {
+                    print("[\(self.TAG)] ❌ Invalid response format")
+                    call.reject("Invalid response format")
                 }
             } catch {
                 print("[\(self.TAG)] ❌ JSON parsing error: \(error.localizedDescription)")
