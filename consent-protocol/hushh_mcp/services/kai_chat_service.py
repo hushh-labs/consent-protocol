@@ -22,8 +22,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
+from hushh_mcp.constants import GEMINI_MODEL
 from hushh_mcp.services.attribute_learner import get_attribute_learner
 from hushh_mcp.services.chat_db_service import (
     ChatDBService,
@@ -206,23 +208,23 @@ class KaiChatService:
     """
     
     def __init__(self):
-        self._model = None
+        self._client = None
         self._world_model = None
         self._chat_db = None
         self._attribute_learner = None
         self._intent_classifier = IntentClassifier()
     
     @property
-    def model(self):
-        if self._model is None:
-            api_key = os.environ.get("GOOGLE_API_KEY")
+    def client(self):
+        """Get the google.genai client (from google-adk)."""
+        if self._client is None:
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
             if api_key:
-                genai.configure(api_key=api_key)
-                self._model = genai.GenerativeModel('gemini-1.5-flash')
+                self._client = genai.Client(api_key=api_key)
             else:
                 logger.error("GOOGLE_API_KEY not set!")
                 raise ValueError("GOOGLE_API_KEY environment variable is required")
-        return self._model
+        return self._client
     
     @property
     def world_model(self):
@@ -691,12 +693,15 @@ class KaiChatService:
             # Combine system prompt and user message
             full_prompt = f"{system_prompt}\n\nUser: {user_message}\n\nKai:"
             
-            response = self.model.generate_content(
-                full_prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.7,
-                    max_output_tokens=1024,
-                )
+            config = genai_types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=1024,
+            )
+            
+            response = await self.client.aio.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=full_prompt,
+                config=config,
             )
             
             # Get token count if available
@@ -921,13 +926,16 @@ SUMMARY: [one sentence]
 REASONING: [2-3 sentences]
 """
             
-            # Generate analysis
-            response = self.model.generate_content(
-                analysis_prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.3,  # Lower temperature for more consistent analysis
-                    max_output_tokens=500,
-                )
+            # Generate analysis using new SDK
+            config = genai_types.GenerateContentConfig(
+                temperature=0.3,  # Lower temperature for more consistent analysis
+                max_output_tokens=500,
+            )
+            
+            response = await self.client.aio.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=analysis_prompt,
+                config=config,
             )
             
             # Parse response

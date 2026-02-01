@@ -5,6 +5,7 @@
  *
  * User approves a consent request. Browser decrypts data, re-encrypts with
  * export key, and sends encrypted payload. Server never sees plaintext.
+ * Requires VAULT_OWNER token for authentication (consent-first architecture).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -31,13 +32,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Forward Authorization header (VAULT_OWNER token)
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authorization header required" },
+        { status: 401 }
+      );
+    }
+
     console.log(`[API] User ${userId} approving consent request: ${requestId}`);
     console.log(`[API] Export data present: ${!!encryptedData}`);
 
     // Forward to FastAPI with encrypted export
     const response = await fetch(`${BACKEND_URL}/api/consent/pending/approve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      },
       body: JSON.stringify({
         userId,
         requestId,

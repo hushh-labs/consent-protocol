@@ -4,6 +4,7 @@
  * Cancel Consent API
  *
  * Cancels a pending consent request when MCP disconnects or chat is interrupted.
+ * Requires VAULT_OWNER token for authentication (consent-first architecture).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -23,11 +24,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Forward Authorization header (VAULT_OWNER token)
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authorization header required" },
+        { status: 401 }
+      );
+    }
+
     console.log(`[API] Cancelling consent request: ${requestId}`);
 
     const response = await fetch(`${BACKEND_URL}/api/consent/cancel`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      },
       body: JSON.stringify({ userId, requestId }),
     });
 

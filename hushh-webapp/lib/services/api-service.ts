@@ -215,6 +215,7 @@ export class ApiService {
 
   /**
    * Approve pending consent
+   * Requires VAULT_OWNER token for authentication.
    */
   static async approvePendingConsent(data: {
     token?: string;
@@ -226,11 +227,18 @@ export class ApiService {
     exportKey?: string;
   }): Promise<Response> {
     const requestId = data.requestId || data.token;
+    const vaultOwnerToken = this.getVaultOwnerToken();
+
+    if (!vaultOwnerToken) {
+      return new Response(
+        JSON.stringify({ error: "Vault must be unlocked" }),
+        { status: 401 }
+      );
+    }
 
     if (Capacitor.isNativePlatform()) {
       try {
         const { HushhConsent } = await import("@/lib/capacitor");
-        const authToken = await this.getFirebaseToken();
 
         await HushhConsent.approve({
           requestId: requestId!,
@@ -239,7 +247,7 @@ export class ApiService {
           encryptedIv: data.encryptedIv,
           encryptedTag: data.encryptedTag,
           exportKey: data.exportKey,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -253,6 +261,9 @@ export class ApiService {
 
     return apiFetch("/api/consent/pending/approve", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
       body: JSON.stringify({
         userId: data.userId,
         requestId,
@@ -266,6 +277,7 @@ export class ApiService {
 
   /**
    * Deny pending consent
+   * Requires VAULT_OWNER token for authentication.
    */
   static async denyPendingConsent(data: {
     token?: string;
@@ -273,16 +285,23 @@ export class ApiService {
     userId: string;
   }): Promise<Response> {
     const requestId = data.requestId || data.token;
+    const vaultOwnerToken = this.getVaultOwnerToken();
+
+    if (!vaultOwnerToken) {
+      return new Response(
+        JSON.stringify({ error: "Vault must be unlocked" }),
+        { status: 401 }
+      );
+    }
 
     if (Capacitor.isNativePlatform()) {
       try {
         const { HushhConsent } = await import("@/lib/capacitor");
-        const authToken = await this.getFirebaseToken();
 
         await HushhConsent.deny({
           requestId: requestId!,
           userId: data.userId,
-          authToken,
+          vaultOwnerToken,
         });
 
         return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -296,6 +315,9 @@ export class ApiService {
 
     return apiFetch("/api/consent/pending/deny", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
       body: JSON.stringify({ userId: data.userId, requestId }),
     });
   }
@@ -344,14 +366,23 @@ export class ApiService {
   /**
    * Get pending consent requests
    * Route: GET /api/consent/pending?userId=xxx
+   * Requires VAULT_OWNER token for authentication.
    */
   static async getPendingConsents(userId: string): Promise<Response> {
+    const vaultOwnerToken = this.getVaultOwnerToken();
+
+    if (!vaultOwnerToken) {
+      return new Response(
+        JSON.stringify({ error: "Vault must be unlocked" }),
+        { status: 401 }
+      );
+    }
+
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
         const { pending } = await HushhVault.getPendingConsents({
           userId,
-          authToken,
+          vaultOwnerToken,
         });
         return new Response(JSON.stringify({ pending: pending || [] }), {
           status: 200,
@@ -365,7 +396,12 @@ export class ApiService {
       }
     }
     return apiFetch(
-      `/api/consent/pending?userId=${encodeURIComponent(userId)}`
+      `/api/consent/pending?userId=${encodeURIComponent(userId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${vaultOwnerToken}`,
+        },
+      }
     );
   }
 

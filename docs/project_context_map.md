@@ -62,6 +62,20 @@ npm run dev
 | **Bootstrap** | Firebase | `/api/consent/vault-owner-token` |
 | **Consent-Gated** | VAULT_OWNER | ALL `/kai/*`, `/api/world-model/*` |
 
+### Consent Endpoint Auth Patterns
+
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `/api/consent/vault-owner-token` | Firebase Bearer | Bootstrap - get VAULT_OWNER token |
+| `/api/consent/pending` | VAULT_OWNER | List pending requests |
+| `/api/consent/pending/approve` | VAULT_OWNER | Approve consent |
+| `/api/consent/pending/deny` | VAULT_OWNER | Deny consent |
+| `/api/consent/cancel` | VAULT_OWNER | Cancel pending |
+| `/api/consent/revoke` | VAULT_OWNER | Revoke active consent |
+| `/api/consent/data` | Consent Token | MCP data retrieval |
+
+**Key Principle**: Only `/vault-owner-token` uses Firebase auth (to bootstrap). All other consent operations require the VAULT_OWNER token.
+
 **Full documentation**: `docs/reference/consent_protocol.md`
 
 ### 3. Tri-Flow Architecture

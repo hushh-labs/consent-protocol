@@ -160,8 +160,16 @@ export function ConsentNotificationProvider({
     [shouldShowToast, markAsPending, showConsentToast]
   );
 
-  // Initial fetch on mount
+  // Initial fetch on mount - only if vault is unlocked
   useEffect(() => {
+    // Don't fetch if vault is not unlocked (no vault owner token)
+    if (!isVaultUnlocked) {
+      console.log(
+        "🔔 [NotificationProvider] Vault not unlocked, skipping fetch"
+      );
+      return;
+    }
+
     const userId = sessionStorage.getItem("user_id");
     if (!userId) {
       console.log(
@@ -171,11 +179,12 @@ export function ConsentNotificationProvider({
     }
     console.log("🔔 [NotificationProvider] Initial fetch on mount");
     fetchPendingAndShowToasts(userId);
-  }, [fetchPendingAndShowToasts]);
+  }, [isVaultUnlocked, fetchPendingAndShowToasts]);
 
-  // React to SSE events
+  // React to SSE events - only if vault is unlocked
   useEffect(() => {
     if (!lastEvent) return;
+    if (!isVaultUnlocked) return;
 
     const userId = sessionStorage.getItem("user_id");
     if (!userId) return;
@@ -205,6 +214,7 @@ export function ConsentNotificationProvider({
   }, [
     lastEvent,
     eventCount,
+    isVaultUnlocked,
     shouldDismissToast,
     clearRequest,
     fetchPendingAndShowToasts,
@@ -225,9 +235,12 @@ export function ConsentNotificationProvider({
 export function usePendingConsentCount() {
   const [count, setCount] = useState(0);
   const { lastEvent, eventCount } = useConsentSSE();
+  const { isVaultUnlocked } = useVault();
 
-  // Fetch count from API
+  // Fetch count from API - only if vault is unlocked
   const fetchCount = useCallback(async () => {
+    if (!isVaultUnlocked) return;
+
     const userId = sessionStorage.getItem("user_id");
     if (!userId) return;
 
@@ -239,19 +252,19 @@ export function usePendingConsentCount() {
     } catch (err) {
       console.error("Error fetching pending count:", err);
     }
-  }, []);
+  }, [isVaultUnlocked]);
 
-  // Initial fetch
+  // Initial fetch when vault unlocks
   useEffect(() => {
     fetchCount();
   }, [fetchCount]);
 
   // Refresh on SSE events
   useEffect(() => {
-    if (lastEvent) {
+    if (lastEvent && isVaultUnlocked) {
       fetchCount();
     }
-  }, [lastEvent, eventCount, fetchCount]);
+  }, [lastEvent, eventCount, isVaultUnlocked, fetchCount]);
 
   return count;
 }
