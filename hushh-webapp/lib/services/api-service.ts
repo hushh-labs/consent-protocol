@@ -340,7 +340,7 @@ export class ApiService {
         const result = await HushhConsent.revokeConsent({
           userId: data.userId,
           scope: data.scope || "",
-          authToken,
+          vaultOwnerToken: authToken,
         });
 
         // Pass through the lockVault flag from native plugin response
@@ -415,7 +415,7 @@ export class ApiService {
         const authToken = await this.getFirebaseToken();
         const { active } = await HushhVault.getActiveConsents({
           userId,
-          authToken,
+          vaultOwnerToken: authToken,
         });
         return new Response(JSON.stringify({ active: active || [] }), {
           status: 200,

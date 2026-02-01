@@ -45,6 +45,8 @@ npm install
 
 # Install backend dependencies
 cd ../consent-protocol
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -71,6 +73,13 @@ SECRET_KEY=your-secret-key-here
 
 # Firebase Admin SDK
 GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
+
+# Google AI / Gemini (for Kai portfolio parsing)
+# Use ONE of these - API key OR Vertex AI project
+GOOGLE_API_KEY=AIza...  # Google AI Studio API key
+# OR for Vertex AI:
+# GOOGLE_CLOUD_PROJECT=your-project-id
+# GOOGLE_CLOUD_LOCATION=us-central1
 
 # Port (default: 8000)
 PORT=8000
@@ -172,14 +181,13 @@ with get_db_connection() as conn:
 
 ```bash
 cd consent-protocol
+source .venv/bin/activate  # Activate virtual environment
 python -m uvicorn server:app --reload --port 8000
 
 # Expected output:
-# ✅ PostgreSQL connection pool created
-# 🔑 Food Agent loaded
-# 💼 Professional Profile Agent ready
-# 🚀 Hushh Consent Protocol server initialized - KAI V2 ENABLED
-# INFO: Uvicorn running on http://127.0.0.1:8000
+# ✅ Added CORS origin from FRONTEND_URL: http://localhost:3000
+# 🚀 Hushh Consent Protocol server initialized - KAI V2 + PHASE 2 + WORLD MODEL ENABLED
+# INFO: Uvicorn running on http://0.0.0.0:8000
 ```
 
 ### Terminal 2: Frontend (Next.js)
@@ -217,7 +225,7 @@ curl http://localhost:8000/health
 # Expected response:
 {
   "status": "healthy",
-  "timestamp": 1735968000
+  "agents": ["food_dining", "professional_profile"]
 }
 ```
 
@@ -380,10 +388,11 @@ psql $DATABASE_URL -c "SELECT 1"
 
 ## 11. Next Steps
 
-- **Architecture**: Read `docs/technical/architecture.md`
-- **Consent Protocol**: Read `docs/technical/consent-implementation.md`
-- **Mobile**: Read `docs/technical/mobile.md`
+- **Architecture**: Read `docs/reference/architecture.md`
+- **Consent Protocol**: Read `docs/reference/consent_protocol.md`
+- **Mobile**: Read `docs/guides/mobile_development.md`
 - **API Reference**: Read `docs/reference/developer_api.md`
+- **Kai Agent**: Read `docs/vision/kai/readme.md`
 
 ---
 
@@ -415,4 +424,4 @@ See `.vscode/launch.json` for:
 
 ---
 
-_Last Updated: January 2026 | Version: 5.0 | VAULT_OWNER Token Release_
+_Last Updated: February 2026 | Version: 6.0 | Kai Portfolio UX + World Model Release_

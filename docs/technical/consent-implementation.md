@@ -1,1 +1,0 @@
-../reference/consent-protocol.md

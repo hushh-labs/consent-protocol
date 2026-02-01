@@ -1952,7 +1952,7 @@ Return a JSON object with these sections (use null for missing values, NOT 0):
 }
 
 CRITICAL INSTRUCTIONS:
-1. Extract ALL holdings, not just a sample - scan every page
+1. Extract ALL holdings, not just a sample - scan EVERY page of the PDF
 2. Parse negative numbers correctly: (1,234.56) means -1234.56
 3. Include dividend reinvestment (DRIP) transactions
 4. For holdings, extract the FULL data row including acquisition date, cost basis, gain/loss
@@ -1960,6 +1960,25 @@ CRITICAL INSTRUCTIONS:
 6. Return ONLY valid JSON, no explanation or markdown
 7. If a section has no data, use null for the entire section, not empty objects
 8. For percentages, use the actual number (e.g., 54.4 for 54.4%, not 0.544)
+
+EXTRACTION PRIORITIES (extract ALL of these if present):
+- Account holder name (look for "Account of", "Name:", or header)
+- Account number (may be partially masked like XXX-51910)
+- Statement period dates (e.g., "February 27 - March 31, 2021")
+- Beginning and ending portfolio values
+- Cash/sweep balance (look for "Cash & Cash Investments", "Money Market", "Sweep")
+- Asset allocation percentages (Cash %, Equities %, Bonds %)
+- ALL individual holdings with: symbol, name, quantity, price, market value, cost basis, gain/loss
+- Unrealized gain/loss totals
+- Realized gain/loss (short-term and long-term separately)
+- Income summary: dividends, interest, capital gains distributions
+- Recent transactions if listed
+
+COMMON BROKERAGE FORMATS:
+- JPMorgan: Look for "Account Summary", "Asset Allocation", "Holdings Detail"
+- Fidelity: Look for "Account Summary", "Positions", "Activity"
+- Schwab: Look for "Account Value", "Positions", "Transactions"
+- Robinhood: Look for "Portfolio", "Holdings", "History"
 """
         
         logger.info(f"Sending PDF to Gemini Vision ({len(pdf_bytes)} bytes), model: {model_to_use}")
@@ -1980,13 +1999,36 @@ CRITICAL INSTRUCTIONS:
             max_output_tokens=32768,  # Large output for comprehensive data
         )
         
-        response = await client.aio.models.generate_content(
-            model=model_to_use,
-            contents=contents,
-            config=config,
-        )
+        # Use streaming API for real-time progress feedback
+        logger.info("Starting Gemini streaming response...")
+        full_response = ""
+        chunk_count = 0
         
-        response_text = response.text.strip()
+        try:
+            async for chunk in client.aio.models.generate_content_stream(
+                model=model_to_use,
+                contents=contents,
+                config=config,
+            ):
+                if chunk.text:
+                    full_response += chunk.text
+                    chunk_count += 1
+                    # Log progress every 10 chunks
+                    if chunk_count % 10 == 0:
+                        logger.info(f"Streaming progress: {len(full_response)} chars received ({chunk_count} chunks)")
+            
+            logger.info(f"Streaming complete: {len(full_response)} chars total ({chunk_count} chunks)")
+        except Exception as stream_error:
+            logger.warning(f"Streaming failed, falling back to non-streaming: {stream_error}")
+            # Fallback to non-streaming if streaming fails
+            response = await client.aio.models.generate_content(
+                model=model_to_use,
+                contents=contents,
+                config=config,
+            )
+            full_response = response.text
+        
+        response_text = full_response.strip()
         logger.info(f"Gemini response length: {len(response_text)} chars")
         
         # Clean up response - extract JSON

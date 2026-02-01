@@ -6,8 +6,8 @@
  * Flow:
  * 1. Check if user has financial data in World Model
  * 2. If not, show portfolio import view
- * 3. After import, show loser report
- * 4. Then show portfolio overview with analysis options
+ * 3. After import, go directly to dashboard
+ * 4. Dashboard shows KPIs, prime assets, and search bar for analysis
  *
  * No chat interface - pure UI component flow.
  */
@@ -15,17 +15,21 @@
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
-import { KaiFlow } from "@/components/kai/kai-flow";
+import { KaiFlow, FlowState } from "@/components/kai/kai-flow";
 import { KaiSearchBar } from "@/components/kai/kai-search-bar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 
 export default function KaiPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
   const [holdings, setHoldings] = useState<string[]>([]);
+  const [flowState, setFlowState] = useState<FlowState>("checking");
+  
+  // Ref to call KaiFlow's analyze function
+  const analyzeStockRef = useRef<((symbol: string) => void) | null>(null);
 
   // Loading state while auth/vault initializes
   if (!user) {
@@ -73,14 +77,12 @@ export default function KaiPage() {
     console.log("[Kai] Command:", command, params);
 
     if (command === "analyze" && params?.symbol) {
-      toast.info(`Analyzing ${params.symbol}...`);
-      // TODO: Trigger analysis for specific stock
-    } else if (command === "show_losers") {
-      toast.info("Showing portfolio losers...");
-      // KaiFlow handles this via state
-    } else if (command === "import_portfolio") {
-      toast.info("Opening portfolio import...");
-      // KaiFlow handles this via state
+      // Trigger analysis via KaiFlow
+      if (analyzeStockRef.current) {
+        analyzeStockRef.current(params.symbol as string);
+      } else {
+        toast.info(`Analyzing ${params.symbol}...`);
+      }
     } else if (command === "open_settings") {
       router.push("/dashboard/kai/preferences");
     }
@@ -91,6 +93,12 @@ export default function KaiPage() {
     setHoldings(newHoldings);
   };
 
+  // Track flow state changes
+  const handleStateChange = (state: FlowState) => {
+    console.log("[Kai] Flow state:", state);
+    setFlowState(state);
+  };
+
   return (
     <div className="min-h-[calc(100dvh-120px)] relative pb-32">
       {/* Main Content - KaiFlow handles all states */}
@@ -98,19 +106,19 @@ export default function KaiPage() {
         <KaiFlow
           userId={user.uid}
           vaultOwnerToken={vaultOwnerToken}
-          onStateChange={(state) => {
-            console.log("[Kai] Flow state:", state);
-          }}
+          onStateChange={handleStateChange}
           onHoldingsLoaded={handleHoldingsUpdate}
         />
       </div>
 
-      {/* Search Bar - Fixed at bottom */}
-      <KaiSearchBar
-        onCommand={handleCommand}
-        holdings={holdings}
-        disabled={false}
-      />
+      {/* Search Bar - Only show on dashboard state */}
+      {flowState === "dashboard" && (
+        <KaiSearchBar
+          onCommand={handleCommand}
+          holdings={holdings}
+          disabled={false}
+        />
+      )}
     </div>
   );
 }

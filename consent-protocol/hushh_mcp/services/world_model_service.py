@@ -22,6 +22,7 @@ DEPRECATED TABLES (DO NOT USE):
 - vault_professional (merged into world_model_data.professional)
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -174,9 +175,10 @@ class WorldModelService:
     async def upsert_index_v2(self, index: WorldModelIndexV2) -> bool:
         """Create or update user's world model index (v2)."""
         try:
+            # Serialize dict fields to JSON strings for psycopg2 compatibility
             data = {
                 "user_id": index.user_id,
-                "domain_summaries": index.domain_summaries,
+                "domain_summaries": json.dumps(index.domain_summaries) if index.domain_summaries else "{}",
                 "available_domains": index.available_domains,
                 "computed_tags": index.computed_tags,
                 "activity_score": index.activity_score,
@@ -186,7 +188,7 @@ class WorldModelService:
                 "updated_at": datetime.utcnow().isoformat(),
             }
             
-            self.supabase.table("world_model_index_v2").upsert(data).execute()
+            self.supabase.table("world_model_index_v2").upsert(data, on_conflict="user_id").execute()
             return True
         except Exception as e:
             logger.error(f"Error upserting world model index v2: {e}")
@@ -596,7 +598,7 @@ class WorldModelService:
             if current_data is None:
                 data["created_at"] = datetime.utcnow().isoformat()
             
-            self.supabase.table("world_model_data").upsert(data).execute()
+            self.supabase.table("world_model_data").upsert(data, on_conflict="user_id").execute()
             
             # 3. Update world_model_index_v2
             await self.update_domain_summary(user_id, domain, summary)
@@ -636,6 +638,35 @@ class WorldModelService:
             }
         except Exception as e:
             logger.error(f"Error getting encrypted data: {e}")
+            return None
+    
+    async def get_domain_data(self, user_id: str, domain: str) -> Optional[dict]:
+        """
+        Get user's encrypted data blob for a specific domain.
+        
+        Note: The current architecture stores all domains in a single encrypted blob.
+        This method returns the full blob - the client must decrypt and extract
+        the specific domain data.
+        
+        Args:
+            user_id: User's ID
+            domain: Domain key (e.g., "financial") - used to verify domain exists
+        
+        Returns:
+            dict with keys: ciphertext, iv, tag, algorithm
+            or None if no data exists for this domain
+        """
+        try:
+            # First check if the domain exists in the index
+            index = await self.get_index_v2(user_id)
+            if index is None or domain not in index.available_domains:
+                logger.info(f"Domain {domain} not found in user's available domains")
+                return None
+            
+            # Return the encrypted blob (client will decrypt and extract domain)
+            return await self.get_encrypted_data(user_id)
+        except Exception as e:
+            logger.error(f"Error getting domain data: {e}")
             return None
     
     async def delete_user_data(self, user_id: str) -> bool:
@@ -765,7 +796,7 @@ class WorldModelService:
                 "user_id": user_id,
                 "last_active_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
-            }).execute()
+            }, on_conflict="user_id").execute()
             return True
         except Exception as e:
             logger.error(f"Error updating activity: {e}")
