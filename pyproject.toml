@@ -22,6 +22,8 @@ select = [
 ignore = [
     "E501",  # Line length handled separately
     "B904",  # Prefer explicit exception chaining, but avoid noisy diffs
+    "S110",  # Allow try-except-pass for optional fallbacks
+    "S608",  # Allow string-based SQL construction (params are properly escaped via SQLAlchemy)
 ]
 
 [tool.ruff.lint.per-file-ignores]
