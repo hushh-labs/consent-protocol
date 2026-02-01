@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
+from hushh_mcp.constants import ConsentScope, GEMINI_MODEL
 
 from .config import ANALYSIS_TIMEOUT, ProcessingMode, RiskProfile
 from .debate_engine import DebateEngine
@@ -62,7 +62,7 @@ class KaiOrchestrator(HushhAgent):
         # Initialize with proper ADK parameters
         super().__init__(
             name="Kai Orchestrator",
-            model="gemini-3-flash",  # Default model
+            model=GEMINI_MODEL,  # Standardized model
             system_prompt="""
             You are the Kai Orchestrator, coordinating 3 specialist agents:
             - Fundamental Analyst (blue)

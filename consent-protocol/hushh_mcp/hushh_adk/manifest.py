@@ -14,6 +14,8 @@ from typing import List, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from hushh_mcp.constants import GEMINI_MODEL
+
 
 class AgentToolConfig(BaseModel):
     name: str
@@ -34,7 +36,7 @@ class AgentManifest(BaseModel):
     name: str
     version: str = "1.0.0"
     description: str
-    model: str = "gemini-1.5-flash"
+    model: str = GEMINI_MODEL  # Standardized default model
     system_instruction: str
     
     required_scopes: List[str] = Field(default_factory=list)

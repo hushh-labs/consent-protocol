@@ -2,8 +2,8 @@
 """
 Database connection pool management.
 
-This module provides direct PostgreSQL connection via asyncpg.
-It is the PRIMARY connection method for all database operations.
+This module provides direct PostgreSQL connection via asyncpg using
+Supabase's session pooler credentials.
 
 Usage:
     from db.connection import get_pool
@@ -11,6 +11,14 @@ Usage:
     async def my_function():
         pool = await get_pool()
         result = await pool.fetch("SELECT * FROM users")
+
+Connection Method:
+    Uses individual DB_* environment variables (shared pooler method):
+    - DB_USER: Supabase pooler username (e.g., postgres.project-ref)
+    - DB_PASSWORD: Database password
+    - DB_HOST: Pooler host (e.g., aws-1-us-east-1.pooler.supabase.com)
+    - DB_PORT: Port (default 5432)
+    - DB_NAME: Database name (default postgres)
 """
 
 import hashlib
@@ -19,20 +27,36 @@ import os
 from typing import Optional
 
 import asyncpg
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 # Database connection pool (singleton)
 _pool: Optional[asyncpg.Pool] = None
 
-# Database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    logger.warning(
-        "DATABASE_URL not set. Direct PostgreSQL connection will not be available. "
-        "Set DATABASE_URL in .env file."
-    )
+def _get_database_url() -> str:
+    """
+    Build database URL from individual environment variables.
+    
+    Uses the shared pooler method with DB_USER, DB_PASSWORD, DB_HOST, etc.
+    """
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT", "5432")
+    db_name = os.getenv("DB_NAME", "postgres")
+    
+    if not all([db_user, db_password, db_host]):
+        raise EnvironmentError(
+            "Database credentials not set. Required: DB_USER, DB_PASSWORD, DB_HOST. "
+            "Optional: DB_PORT (default 5432), DB_NAME (default postgres). "
+            "Get these from Supabase Dashboard → Project Settings → Database → Connection Pooling."
+        )
+    
+    return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -42,27 +66,24 @@ async def get_pool() -> asyncpg.Pool:
         asyncpg.Pool: The database connection pool
         
     Raises:
-        EnvironmentError: If DATABASE_URL is not configured
+        EnvironmentError: If database credentials are not configured
     """
     global _pool
     
-    if not DATABASE_URL:
-        raise EnvironmentError(
-            "DATABASE_URL is required for database operations. "
-            "Set DATABASE_URL in your .env file."
-        )
-    
     if _pool is None:
-        logger.info("Connecting to PostgreSQL...")
+        database_url = _get_database_url()
+        db_host = os.getenv("DB_HOST", "")
         
-        # Supabase requires SSL connections
+        logger.info(f"Connecting to PostgreSQL at {db_host}...")
+        
+        # Supabase pooler requires SSL connections
         ssl_config = None
-        if "supabase.co" in DATABASE_URL:
+        if "supabase.com" in db_host or "pooler.supabase" in db_host:
             ssl_config = "require"
-            logger.info("SSL enabled for Supabase connection")
+            logger.info("SSL enabled for Supabase pooler connection")
         
         _pool = await asyncpg.create_pool(
-            DATABASE_URL,
+            database_url,
             min_size=2,
             max_size=10,
             command_timeout=60,
