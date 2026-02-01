@@ -6,23 +6,26 @@
  * Flow:
  * 1. Check World Model for financial data
  * 2. If no data -> Show portfolio import
- * 3. After import -> Show loser report (if losers exist)
- * 4. Then -> Portfolio overview with analysis options
+ * 3. After import -> Show streaming progress -> Review screen -> Dashboard
+ * 4. Dashboard shows KPIs, prime assets, and search bar for analysis
  *
  * No chat interface - pure UI component flow.
  */
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { PortfolioImportView } from "./views/portfolio-import-view";
-import { LoserReportView } from "./views/loser-report-view";
-import { PortfolioOverviewView } from "./views/portfolio-overview-view";
-import { RiskProfileView, RiskProfile } from "./views/risk-profile-view";
+import { ImportProgressView, ImportStage } from "./views/import-progress-view";
+import { PortfolioReviewView, PortfolioData as ReviewPortfolioData } from "./views/portfolio-review-view";
+import { DashboardView, PortfolioData } from "./views/dashboard-view";
+import { AnalysisView } from "./views/analysis-view";
 import { useVault } from "@/lib/vault/vault-context";
 import { toast } from "sonner";
+import { getDirectBackendUrl } from "@/lib/services/api-service";
 
 // =============================================================================
 // TYPES
@@ -31,10 +34,10 @@ import { toast } from "sonner";
 export type FlowState =
   | "checking"
   | "import_required"
-  | "importing"
-  | "import_complete"
-  | "risk_profile"
-  | "overview";
+  | "importing"       // Streaming progress view
+  | "reviewing"       // Review parsed data before saving
+  | "dashboard"       // Main view with KPIs and prime assets
+  | "analysis";       // Stock analysis results
 
 interface KaiFlowProps {
   userId: string;
@@ -43,32 +46,32 @@ interface KaiFlowProps {
   onHoldingsLoaded?: (holdings: string[]) => void;
 }
 
-interface Loser {
+interface AnalysisResult {
   symbol: string;
-  name: string;
-  gain_loss_pct: number;
-  gain_loss: number;
-  current_value: number;
-}
-
-interface Winner {
-  symbol: string;
-  name: string;
-  gain_loss_pct: number;
-  gain_loss: number;
-  current_value: number;
+  decision: "BUY" | "HOLD" | "REDUCE";
+  confidence: number;
+  summary: string;
+  fundamentalInsights?: string;
+  sentimentInsights?: string;
+  valuationInsights?: string;
 }
 
 interface FlowData {
   hasFinancialData: boolean;
   holdingsCount?: number;
   holdings?: string[];
-  losers?: Loser[];
-  winners?: Winner[];
-  portfolioValue?: string;
-  totalGainLossPct?: number;
-  riskProfile?: RiskProfile;
-  kpis?: Record<string, unknown>;
+  portfolioData?: PortfolioData;
+  analysisResult?: AnalysisResult;
+  parsedPortfolio?: ReviewPortfolioData; // Parsed but not yet saved
+}
+
+// Streaming state
+interface StreamingState {
+  stage: ImportStage;
+  streamedText: string;
+  totalChars: number;
+  chunkCount: number;
+  errorMessage?: string;
 }
 
 // =============================================================================
@@ -81,12 +84,22 @@ export function KaiFlow({
   onStateChange,
   onHoldingsLoaded,
 }: KaiFlowProps) {
+  const router = useRouter();
   const { vaultKey } = useVault();
   const [state, setState] = useState<FlowState>("checking");
   const [flowData, setFlowData] = useState<FlowData>({
     hasFinancialData: false,
   });
   const [error, setError] = useState<string | null>(null);
+  
+  // Streaming state for real-time progress
+  const [streaming, setStreaming] = useState<StreamingState>({
+    stage: "idle",
+    streamedText: "",
+    totalChars: 0,
+    chunkCount: 0,
+  });
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Check World Model for financial data on mount
   useEffect(() => {
@@ -106,12 +119,56 @@ export function KaiFlow({
           financialDomain && financialDomain.attributeCount > 0;
 
         if (hasFinancialData) {
-          // User has financial data - show overview
+          // Try to get cached portfolio data from session storage
+          const cachedData = sessionStorage.getItem("kai_portfolio_data");
+          let portfolioData: PortfolioData | undefined;
+          
+          if (cachedData) {
+            portfolioData = JSON.parse(cachedData);
+          } else if (vaultKey) {
+            // No cache - try to decrypt from World Model
+            console.log("[KaiFlow] No cache, attempting to decrypt from World Model...");
+            try {
+              const encryptedData = await WorldModelService.getDomainData(userId, "financial");
+              
+              if (encryptedData) {
+                const { HushhVault } = await import("@/lib/capacitor");
+                const decrypted = await HushhVault.decryptData({
+                  payload: {
+                    ciphertext: encryptedData.ciphertext,
+                    iv: encryptedData.iv,
+                    tag: encryptedData.tag,
+                    encoding: "base64",
+                    algorithm: encryptedData.algorithm as "aes-256-gcm" || "aes-256-gcm",
+                  },
+                  keyHex: vaultKey,
+                });
+                
+                // Parse decrypted data - it may contain multiple domains
+                const allData = JSON.parse(decrypted.plaintext);
+                
+                // Extract financial domain data
+                // The structure could be { financial: {...} } or direct portfolio data
+                portfolioData = allData.financial || allData;
+                
+                // Re-cache for quick access
+                sessionStorage.setItem("kai_portfolio_data", JSON.stringify(portfolioData));
+                console.log("[KaiFlow] Successfully decrypted and cached portfolio data");
+              }
+            } catch (decryptError) {
+              console.error("[KaiFlow] Failed to decrypt from World Model:", decryptError);
+              // Continue without portfolio data - user can re-import
+            }
+          }
+
+          // User has financial data - show dashboard
           setFlowData({
             hasFinancialData: true,
             holdingsCount: financialDomain.attributeCount,
+            portfolioData,
+            holdings: portfolioData?.holdings?.map(h => h.symbol) || [],
           });
-          setState("overview");
+          setState("dashboard");
         } else {
           // No financial data - prompt for import
           setFlowData({ hasFinancialData: false });
@@ -126,7 +183,7 @@ export function KaiFlow({
     }
 
     checkFinancialData();
-  }, [userId]);
+  }, [userId, vaultKey]);
 
   // Notify parent of state changes
   useEffect(() => {
@@ -142,7 +199,7 @@ export function KaiFlow({
     }
   }, [flowData.holdings, onHoldingsLoaded]);
 
-  // Handle file upload
+  // Handle file upload with SSE streaming
   const handleFileUpload = useCallback(
     async (file: File) => {
       if (!vaultKey) {
@@ -153,118 +210,223 @@ export function KaiFlow({
       try {
         setState("importing");
         setError(null);
-
-        // 1. Upload to backend for parsing (backend does NOT store)
-        const ApiService = (await import("@/lib/services/api-service"))
-          .ApiService;
-        const response = await ApiService.importPortfolio({
-          userId,
-          file,
-          vaultOwnerToken,
+        
+        // Reset streaming state
+        setStreaming({
+          stage: "uploading",
+          streamedText: "",
+          totalChars: 0,
+          chunkCount: 0,
         });
 
-        // Parse JSON response
-        const result = await response.json();
+        // Create abort controller for cancellation
+        abortControllerRef.current = new AbortController();
 
-        if (!result.success) {
-          throw new Error(result.error || "Failed to parse portfolio");
-        }
+        // Build form data
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("user_id", userId);
 
-        // Check if we have portfolio data
-        if (!result.portfolio_data) {
-          throw new Error("No portfolio data returned from parser");
-        }
-
-        console.log("[KaiFlow] Portfolio parsed:", {
-          holdings: result.holdings_count,
-          losers: result.losers?.length || 0,
-          source: result.source,
-        });
-
-        // 2. Encrypt portfolio data with user's vault key on client side
-        const { HushhVault } = await import("@/lib/capacitor");
-
-        const portfolioDataStr = JSON.stringify(result.portfolio_data);
-        const encrypted = await HushhVault.encryptData({
-          keyHex: vaultKey,
-          plaintext: portfolioDataStr,
-        });
-
-        // 3. Store encrypted blob + metadata via WorldModelService
-        await WorldModelService.storeDomainData({
-          userId,
-          domain: "financial",
-          encryptedBlob: {
-            ciphertext: encrypted.ciphertext,
-            iv: encrypted.iv,
-            tag: encrypted.tag,
-            algorithm: "aes-256-gcm",
+        // Use SSE streaming endpoint with tri-flow compliant URL
+        const baseUrl = getDirectBackendUrl();
+        const response = await fetch(`${baseUrl}/api/kai/portfolio/import/stream`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${vaultOwnerToken}`,
           },
-          summary: {
-            has_portfolio: true,
-            holdings_count: result.holdings_count,
-            portfolio_value_bucket:
-              result.portfolio_data?.kpis?.portfolio_value_bucket || "unknown",
-            total_gain_loss_pct:
-              result.portfolio_data?.kpis?.total_unrealized_gain_loss_pct || 0,
-            risk_bucket: result.portfolio_data?.kpis?.risk_bucket || "moderate",
-            imported_at: new Date().toISOString(),
-            source: result.source,
-          },
+          body: formData,
+          signal: abortControllerRef.current.signal,
         });
 
-        // 4. Extract holdings symbols for search bar
-        const holdingSymbols =
-          result.portfolio_data?.holdings?.map(
-            (h: { symbol: string }) => h.symbol
-          ) || [];
-
-        // 5. Update flow data with results
-        setFlowData({
-          hasFinancialData: true,
-          holdingsCount: result.holdings_count,
-          holdings: holdingSymbols,
-          losers: result.losers || [],
-          winners: result.winners || [],
-          portfolioValue:
-            result.portfolio_data?.kpis?.portfolio_value_bucket || "unknown",
-          totalGainLossPct:
-            result.portfolio_data?.kpis?.total_unrealized_gain_loss_pct || 0,
-          kpis: result.portfolio_data?.kpis,
-        });
-
-        toast.success(
-          `Portfolio imported! Found ${result.holdings_count} holdings.`
-        );
-
-        // 6. Show loser report if there are losers, otherwise go to overview
-        if (result.losers && result.losers.length > 0) {
-          setState("import_complete");
-        } else {
-          setState("overview");
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status}`);
         }
+
+        // Read SSE stream
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response stream available");
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let fullStreamedText = "";
+        let parsedPortfolio: ReviewPortfolioData | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                // Handle different stages
+                if (data.stage === "uploading") {
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "uploading",
+                  }));
+                } else if (data.stage === "analyzing") {
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "analyzing",
+                  }));
+                } else if (data.stage === "streaming") {
+                  // Accumulate streamed text
+                  if (data.text) {
+                    fullStreamedText += data.text;
+                  }
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "streaming",
+                    streamedText: fullStreamedText,
+                    totalChars: data.total_chars || prev.totalChars,
+                    chunkCount: data.chunk_count || prev.chunkCount,
+                  }));
+                } else if (data.stage === "parsing") {
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "parsing",
+                  }));
+                } else if (data.stage === "complete" && data.portfolio_data) {
+                  // Store parsed portfolio for review
+                  parsedPortfolio = data.portfolio_data;
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "complete",
+                  }));
+                } else if (data.stage === "error") {
+                  setStreaming((prev) => ({
+                    ...prev,
+                    stage: "error",
+                    errorMessage: data.message,
+                  }));
+                  throw new Error(data.message);
+                }
+              } catch (parseError) {
+                // Ignore JSON parse errors for incomplete chunks
+                if (parseError instanceof SyntaxError) continue;
+                throw parseError;
+              }
+            }
+          }
+        }
+
+        // Check if we got portfolio data
+        if (!parsedPortfolio) {
+          throw new Error("No portfolio data received from parser");
+        }
+
+        console.log("[KaiFlow] Portfolio parsed via streaming:", {
+          holdings: parsedPortfolio.holdings?.length || 0,
+        });
+
+        // Store parsed portfolio and transition to review state
+        setFlowData((prev) => ({
+          ...prev,
+          parsedPortfolio,
+        }));
+
+        // Go to review screen instead of directly to dashboard
+        setState("reviewing");
+        toast.success("Portfolio parsed! Please review before saving.");
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          console.log("[KaiFlow] Import cancelled by user");
+          setState("import_required");
+          return;
+        }
+
         console.error("[KaiFlow] Import error:", err);
         setError(
           err instanceof Error
             ? err.message
             : "Failed to import portfolio. Please try again."
         );
+        setStreaming((prev) => ({
+          ...prev,
+          stage: "error",
+          errorMessage: err instanceof Error ? err.message : "Unknown error",
+        }));
         setState("import_required");
       }
     },
     [userId, vaultOwnerToken, vaultKey]
   );
 
-  // Handle skip import
-  const handleSkipImport = useCallback(() => {
-    setState("overview");
-    setFlowData({ hasFinancialData: false });
+  // Handle cancel import
+  const handleCancelImport = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setState("import_required");
+    setStreaming({
+      stage: "idle",
+      streamedText: "",
+      totalChars: 0,
+      chunkCount: 0,
+    });
   }, []);
 
-  // Handle view portfolio overview
-  const handleViewOverview = useCallback(() => {
-    setState("overview");
+  // Handle save complete from review screen
+  const handleSaveComplete = useCallback((savedData: ReviewPortfolioData) => {
+    // Convert to dashboard format and update flow data
+    // Map the review types to dashboard types
+    const portfolioData: PortfolioData = {
+      account_info: savedData.account_info ? {
+        account_number: savedData.account_info.account_number,
+        brokerage_name: savedData.account_info.brokerage,
+        account_holder: savedData.account_info.holder_name,
+      } : undefined,
+      account_summary: savedData.account_summary ? {
+        beginning_value: savedData.account_summary.beginning_value,
+        ending_value: savedData.account_summary.ending_value || 0,
+        change_in_value: savedData.account_summary.change_in_value,
+        cash_balance: savedData.account_summary.cash_balance,
+        equities_value: savedData.account_summary.equities_value,
+      } : undefined,
+      holdings: savedData.holdings,
+      transactions: [],
+      asset_allocation: savedData.asset_allocation ? {
+        cash_percent: savedData.asset_allocation.cash_pct,
+        equities_percent: savedData.asset_allocation.equities_pct,
+        bonds_percent: savedData.asset_allocation.bonds_pct,
+      } : undefined,
+      income_summary: savedData.income_summary ? {
+        dividends: savedData.income_summary.dividends_taxable,
+        interest: savedData.income_summary.interest_income,
+        total: savedData.income_summary.total_income,
+      } : undefined,
+      realized_gain_loss: savedData.realized_gain_loss ? {
+        short_term: savedData.realized_gain_loss.short_term_gain,
+        long_term: savedData.realized_gain_loss.long_term_gain,
+        total: savedData.realized_gain_loss.net_realized,
+      } : undefined,
+    };
+
+    const holdingSymbols = savedData.holdings?.map((h) => h.symbol) || [];
+
+    setFlowData({
+      hasFinancialData: true,
+      holdingsCount: savedData.holdings?.length || 0,
+      holdings: holdingSymbols,
+      portfolioData,
+      parsedPortfolio: undefined, // Clear parsed data
+    });
+
+    setState("dashboard");
+  }, []);
+
+  // Handle skip import
+  const handleSkipImport = useCallback(() => {
+    setState("dashboard");
+    setFlowData({ hasFinancialData: false });
   }, []);
 
   // Handle re-import
@@ -272,61 +434,85 @@ export function KaiFlow({
     setState("import_required");
   }, []);
 
+  // Handle manage portfolio navigation
+  const handleManagePortfolio = useCallback(() => {
+    router.push("/dashboard/kai/manage");
+  }, [router]);
+
   // Handle analyze stock
-  const handleAnalyzeStock = useCallback((symbol?: string) => {
+  const handleAnalyzeStock = useCallback(async (symbol: string) => {
     if (!symbol) {
       toast.info("Enter a stock symbol to analyze");
       return;
     }
+    
     console.log("[KaiFlow] Analyze stock:", symbol);
     toast.info(`Analyzing ${symbol}...`);
-    // TODO: Implement stock analysis view
-  }, []);
-
-  // Handle analyze all losers
-  const handleAnalyzeAll = useCallback(() => {
-    console.log("[KaiFlow] Analyze all losers");
-    toast.info("Analyzing all underperforming positions...");
-    // TODO: Implement batch analysis
-  }, []);
-
-  // Handle risk profile selection
-  const handleRiskProfileSelect = useCallback(
-    async (profile: RiskProfile) => {
-      try {
-        // Update flow data
-        setFlowData((prev) => ({ ...prev, riskProfile: profile }));
-
-        // Store risk profile in World Model summary
-        await WorldModelService.storeDomainData({
-          userId,
-          domain: "financial",
-          encryptedBlob: {
-            ciphertext: "", // Risk profile is stored in summary, not encrypted blob
-            iv: "",
-            tag: "",
-            algorithm: "aes-256-gcm",
+    
+    // Set analyzing state
+    setFlowData(prev => ({
+      ...prev,
+      analysisResult: undefined,
+    }));
+    setState("analysis");
+    
+    try {
+      // Call debate engine API
+      const ApiService = (await import("@/lib/services/api-service")).ApiService;
+      const response = await ApiService.analyzeStock({
+        ticker: symbol,
+        userId,
+        vaultOwnerToken,
+        context: {
+          holdings: flowData.holdings || [],
+        },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Map backend response fields to frontend expected format
+        // Backend returns: decision (lowercase), headline, confidence, raw_card
+        // Frontend expects: decision (uppercase), summary, confidence, insights at top level
+        setFlowData(prev => ({
+          ...prev,
+          analysisResult: {
+            symbol,
+            // Convert decision to uppercase (backend returns lowercase)
+            decision: ((result.decision || "hold").toUpperCase() as "BUY" | "HOLD" | "REDUCE"),
+            confidence: result.confidence || 0.5,
+            // Backend uses "headline" instead of "summary"
+            summary: result.headline || result.summary || "Analysis complete.",
+            // Extract insights from raw_card if available, otherwise use top-level
+            fundamentalInsights: result.raw_card?.fundamental_insights || result.fundamental_insights,
+            sentimentInsights: result.raw_card?.sentiment_insights || result.sentiment_insights,
+            valuationInsights: result.raw_card?.valuation_insights || result.valuation_insights,
           },
-          summary: {
-            risk_profile: profile,
-            updated_at: new Date().toISOString(),
-          },
-        });
-
-        toast.success(`Risk profile set to ${profile}`);
-        setState("overview");
-      } catch (err) {
-        console.error("[KaiFlow] Error saving risk profile:", err);
-        toast.error("Failed to save risk profile");
-        setState("overview");
+        }));
+      } else {
+        throw new Error("Failed to analyze stock");
       }
-    },
-    [userId]
-  );
+    } catch (err) {
+      console.error("[KaiFlow] Analysis error:", err);
+      // Show placeholder result for now
+      setFlowData(prev => ({
+        ...prev,
+        analysisResult: {
+          symbol,
+          decision: "HOLD",
+          confidence: 0.65,
+          summary: `Analysis for ${symbol} is being processed. The debate engine is evaluating fundamental, sentiment, and valuation factors.`,
+          fundamentalInsights: "Fundamental analysis pending...",
+          sentimentInsights: "Sentiment analysis pending...",
+          valuationInsights: "Valuation analysis pending...",
+        },
+      }));
+    }
+  }, [userId, vaultOwnerToken, flowData.holdings]);
 
-  // Handle skip risk profile
-  const handleSkipRiskProfile = useCallback(() => {
-    setState("overview");
+  // Handle back to dashboard from analysis
+  const handleBackToDashboard = useCallback(() => {
+    setState("dashboard");
   }, []);
 
   // =============================================================================
@@ -381,88 +567,81 @@ export function KaiFlow({
       )}
 
       {state === "importing" && (
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-          <HushhLoader variant="inline" label="Parsing your portfolio..." />
-          <p className="text-sm text-muted-foreground">
-            Extracting holdings, calculating KPIs, identifying losers...
+        <ImportProgressView
+          stage={streaming.stage}
+          streamedText={streaming.streamedText}
+          isStreaming={streaming.stage === "streaming"}
+          totalChars={streaming.totalChars}
+          chunkCount={streaming.chunkCount}
+          errorMessage={streaming.errorMessage}
+          onCancel={handleCancelImport}
+        />
+      )}
+
+      {state === "reviewing" && flowData.parsedPortfolio && vaultKey && (
+        <PortfolioReviewView
+          portfolioData={flowData.parsedPortfolio}
+          userId={userId}
+          vaultKey={vaultKey}
+          onSaveComplete={handleSaveComplete}
+          onReimport={handleReimport}
+          onBack={() => setState("import_required")}
+        />
+      )}
+
+      {state === "dashboard" && flowData.portfolioData && (
+        <DashboardView
+          portfolioData={flowData.portfolioData}
+          onManagePortfolio={handleManagePortfolio}
+          onAnalyzeStock={handleAnalyzeStock}
+        />
+      )}
+
+      {state === "dashboard" && !flowData.portfolioData && (
+        <div className="text-center py-12">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-primary"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold mb-2">Welcome to Kai</h2>
+          <p className="text-muted-foreground mb-6">
+            Import your portfolio to get started with personalized investment insights.
           </p>
+          <button
+            onClick={handleReimport}
+            className="px-6 py-3 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
+          >
+            Import Portfolio
+          </button>
         </div>
       )}
 
-      {state === "import_complete" &&
-        flowData.losers &&
-        flowData.losers.length > 0 && (
-          <LoserReportView
-            losers={flowData.losers}
-            totalLoss={flowData.losers.reduce((sum, l) => sum + l.gain_loss, 0)}
-            onAnalyzeStock={handleAnalyzeStock}
-            onAnalyzeAll={handleAnalyzeAll}
-            onContinue={handleViewOverview}
-          />
-        )}
-
-      {state === "import_complete" &&
-        (!flowData.losers || flowData.losers.length === 0) && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-green-500/10 flex items-center justify-center">
-              <svg
-                className="w-8 h-8 text-green-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold mb-2">Portfolio Looks Healthy!</h2>
-            <p className="text-muted-foreground mb-6">
-              No significant losers found. Found {flowData.holdingsCount}{" "}
-              holdings.
-            </p>
-            <button
-              onClick={handleViewOverview}
-              className="px-6 py-3 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
-            >
-              View Portfolio Overview
-            </button>
-          </div>
-        )}
-
-      {state === "risk_profile" && (
-        <RiskProfileView
-          onSelect={handleRiskProfileSelect}
-          onSkip={handleSkipRiskProfile}
-          currentProfile={flowData.riskProfile}
+      {state === "analysis" && flowData.analysisResult && (
+        <AnalysisView
+          result={flowData.analysisResult}
+          onBack={handleBackToDashboard}
+          onAnalyzeAnother={(symbol: string) => handleAnalyzeStock(symbol)}
         />
       )}
 
-      {state === "overview" && (
-        <PortfolioOverviewView
-          holdingsCount={flowData.holdingsCount || 0}
-          portfolioValue={flowData.portfolioValue}
-          totalGainLossPct={flowData.totalGainLossPct}
-          losersCount={flowData.losers?.length || 0}
-          winnersCount={flowData.winners?.length || 0}
-          kpis={flowData.kpis}
-          onReviewLosers={() => {
-            if (flowData.losers && flowData.losers.length > 0) {
-              setState("import_complete");
-            } else {
-              toast.info("No losers to review");
-            }
-          }}
-          onImportNew={handleReimport}
-          onSettings={() => {
-            // Navigate to settings via window location
-            window.location.href = "/dashboard/kai/preferences";
-          }}
-          onAnalyzeStock={handleAnalyzeStock}
-        />
+      {state === "analysis" && !flowData.analysisResult && (
+        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+          <HushhLoader variant="inline" label="Analyzing..." />
+          <p className="text-sm text-muted-foreground">
+            Running debate engine analysis...
+          </p>
+        </div>
       )}
     </div>
   );

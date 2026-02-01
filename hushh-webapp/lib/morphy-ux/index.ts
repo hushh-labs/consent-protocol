@@ -57,3 +57,22 @@ export * from "./motion";
 // Icon utilities
 export { useIconWeight } from "./icon-theme-context";
 export * from "./icon-utils";
+
+// Streaming components (ChatGPT/Perplexity-style)
+export { useStreamingText } from "./hooks/use-streaming-text";
+export type {
+  UseStreamingTextOptions,
+  UseStreamingTextReturn,
+} from "./hooks/use-streaming-text";
+export { StreamingCursor } from "./streaming-cursor";
+export type { StreamingCursorProps } from "./streaming-cursor";
+export { StreamingTextDisplay } from "./streaming-text";
+export type { StreamingTextDisplayProps } from "./streaming-text";
+export {
+  ThinkingIndicator,
+  StreamingStageIndicator,
+} from "./thinking-indicator";
+export type {
+  ThinkingIndicatorProps,
+  StreamingStageIndicatorProps,
+} from "./thinking-indicator";
