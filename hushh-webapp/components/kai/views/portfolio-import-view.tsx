@@ -14,8 +14,9 @@
 import { useState, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
-import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 // =============================================================================
 // TYPES
@@ -194,6 +195,28 @@ export function PortfolioImportView({
             Don't see your brokerage? We'll do our best to parse generic CSV
             formats.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Plaid Integration - Coming Soon */}
+      <Card variant="none" effect="glass" showRipple={false}>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <Link2 className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-medium">Connect with Plaid</h3>
+                <p className="text-sm text-muted-foreground">
+                  Automatically sync your brokerage accounts
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0">
+              Coming Soon
+            </Badge>
+          </div>
         </CardContent>
       </Card>
 
