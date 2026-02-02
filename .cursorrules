@@ -119,3 +119,38 @@ Use the actual provider name (e.g. Cursor AI, Claude, GPT, etc.) so the project 
 ### Responses
 When completing a task or finishing a substantive response, **always** include a one-line signature at the end with the AI model provider used, e.g.:
 `Signed-off-by: Cursor AI (Claude)`
+
+## Subagent Delegation
+
+This project uses specialized Cursor subagents for domain-specific expertise. Delegate to the appropriate subagent for better context and reduced hallucinations.
+
+### Available Subagents
+
+| Domain | Subagent | When to Use |
+|--------|----------|-------------|
+| Security/Consent | `/compliance-auditor` | Any code touching user data, auth flows, GDPR/CCPA |
+| Platform Parity | `/tri-flow-validator` | Creating API routes, plugins, or data-access features |
+| Documentation | `/docs-specialist` | Finding specs, architecture details, onboarding info |
+| Frontend | `/frontend-architect` | React, Next.js, Capacitor, Morphy-UX components |
+| Backend | `/backend-architect` | Python, FastAPI, services, database operations |
+| AI Agents | `/agent-developer` | HushhAgent, ADK tools, Kai debate framework |
+| Validation | `/verifier` | Before marking tasks complete, PR reviews |
+| New Contributors | `/onboarding-guide` | Setup, project structure, first issues |
+
+### Automatic Delegation Triggers
+
+- **Security code** → Always invoke `/compliance-auditor`
+- **New feature** → Always invoke `/tri-flow-validator` to check 6-step completeness
+- **Task complete** → Always invoke `/verifier` before marking done
+
+### Subagent Files
+
+All subagents are defined in `.cursor/agents/`:
+- `compliance-auditor.md` - Security and consent enforcement
+- `tri-flow-validator.md` - Platform parity validation
+- `docs-specialist.md` - Documentation navigation
+- `frontend-architect.md` - React/Next.js/Capacitor
+- `backend-architect.md` - Python/FastAPI/ADK
+- `agent-developer.md` - HushhAgent development
+- `verifier.md` - Implementation validation
+- `onboarding-guide.md` - New contributor helper
