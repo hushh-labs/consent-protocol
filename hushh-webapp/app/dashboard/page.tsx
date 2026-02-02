@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhIdentity, HushhVault } from "@/lib/capacitor";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 import {
   TrendingUp,
   UserCheck,
@@ -215,6 +216,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { getVaultKey, vaultOwnerToken, vaultKey } = useVault();
+  const { registerSteps, completeStep, reset } = useStepProgress();
   const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
   const [domainStatus, setDomainStatus] = useState({
     totalActive: 0,
@@ -222,7 +224,7 @@ export default function DashboardPage() {
   });
   const [activeConsentsCount, setActiveConsentsCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isLocked, setIsLocked] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   // Decrypt encrypted payload helper
   const decryptPayload = useCallback(
@@ -243,34 +245,40 @@ export default function DashboardPage() {
     [vaultKey]
   );
 
-  // Auth & Vault protection
+  // Consolidated init effect - handles auth check and data loading
   useEffect(() => {
-    if (!authLoading) {
+    let cancelled = false;
+
+    async function init() {
+      // Wait for auth to finish loading
+      if (authLoading) return;
+
+      // Register steps only once
+      if (!initialized) {
+        registerSteps(3);
+        setInitialized(true);
+      }
+
+      // Step 1: Auth check
       if (!isAuthenticated) {
         router.push("/");
-      } else {
-        const key = getVaultKey();
-        setIsLocked(!key);
+        return;
       }
-    }
-  }, [authLoading, isAuthenticated, getVaultKey, router]);
+      completeStep();
 
-  // Handle unlock success
-  const handleUnlockSuccess = () => {
-    setIsLocked(false);
-  };
-
-  // Fetch vault status and active consents
-  useEffect(() => {
-    async function loadStatus() {
+      // Check vault requirements
       if (!user || !vaultOwnerToken) {
         setLoading(false);
+        completeStep(); // Step 2
+        completeStep(); // Step 3
         return;
       }
 
       const currentVaultKey = getVaultKey();
       if (!currentVaultKey) {
         setLoading(false);
+        completeStep(); // Step 2
+        completeStep(); // Step 3
         return;
       }
 
@@ -280,6 +288,8 @@ export default function DashboardPage() {
           ApiService.getVaultStatus(user.uid, vaultOwnerToken),
           ApiService.getActiveConsents(user.uid, vaultOwnerToken),
         ]);
+
+        if (cancelled) return;
 
         const counts: Record<string, number> = {};
 
@@ -299,12 +309,20 @@ export default function DashboardPage() {
           }
         }
 
+        if (activeRes.ok) {
+          const data = await activeRes.json();
+          setActiveConsentsCount((data.active || []).length);
+        }
+
+        // Step 2: Vault status + consents loaded
+        if (!cancelled) completeStep();
+
         // Fetch encrypted investor profile and decrypt to count holdings
         try {
           const encrypted = await HushhIdentity.getEncryptedProfile({
             vaultOwnerToken,
           });
-          if (encrypted?.profile_data) {
+          if (encrypted?.profile_data && !cancelled) {
             const plaintext = await decryptPayload(encrypted.profile_data);
             const profile = JSON.parse(plaintext);
             // Count holdings from decrypted profile
@@ -322,21 +340,30 @@ export default function DashboardPage() {
           counts.investor = 0;
         }
 
-        setDataCounts(counts);
-
-        if (activeRes.ok) {
-          const data = await activeRes.json();
-          setActiveConsentsCount((data.active || []).length);
+        // Step 3: Investor profile loaded
+        if (!cancelled) {
+          completeStep();
+          setDataCounts(counts);
         }
       } catch (error) {
         console.error("Failed to load vault status:", error);
+        // Complete remaining steps on error to finish progress
+        if (!cancelled) {
+          completeStep();
+          completeStep();
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    loadStatus();
-  }, [user, vaultOwnerToken, getVaultKey, decryptPayload]);
+    init();
+
+    return () => {
+      cancelled = true;
+      reset();
+    };
+  }, [authLoading, isAuthenticated, user?.uid, vaultOwnerToken]);
 
   // Calculate totals
   const totalDomains = domainStatus.total;
