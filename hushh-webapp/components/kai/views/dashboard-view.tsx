@@ -1,21 +1,23 @@
 // components/kai/views/dashboard-view.tsx
 
 /**
- * Dashboard View - Robinhood-style portfolio dashboard
+ * Dashboard View - Comprehensive portfolio dashboard
  *
  * Features:
  * - Large portfolio value at top with gain/loss
- * - Performance sparkline chart
+ * - Portfolio history chart (real data from statements)
  * - Asset allocation donut chart
- * - KPI cards grid (Holdings, Gain/Loss, Income, Risk)
+ * - Enhanced income card with detailed breakdown
+ * - Cash flow summary
+ * - Recent transaction activity
+ * - KPI cards grid (Holdings, Gain/Loss, Risk)
  * - Prime Assets section showing top holdings by value
- * - Settings icon to navigate to Manage Portfolio page
  * - Connect Plaid Coming Soon card
  */
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { 
   Settings, 
   TrendingUp, 
@@ -23,15 +25,27 @@ import {
   Link2, 
   Wallet, 
   PieChart as PieChartIcon,
-  DollarSign,
   Shield,
   ChevronRight,
+  Upload,
+  Trash2,
+  MoreVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Badge } from "@/components/ui/badge";
-import { PortfolioSparkline } from "../charts/portfolio-sparkline";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { PortfolioHistoryChart, type HistoricalDataPoint } from "../charts/portfolio-history-chart";
 import { AssetAllocationDonut } from "../charts/asset-allocation-donut";
+import { TransactionActivity, type Transaction } from "../cards/transaction-activity";
+import { IncomeDetailCard, type IncomeDetail, type IncomeSummary, type YtdMetrics } from "../cards/income-detail-card";
+import { CashFlowCard, type CashFlow } from "../cards/cash-flow-card";
 import { KPICard } from "../cards/kpi-card";
 
 // =============================================================================
@@ -62,33 +76,40 @@ export interface PortfolioData {
     account_number?: string;
     brokerage_name?: string;
     statement_period?: string;
+    statement_period_start?: string;
+    statement_period_end?: string;
     account_holder?: string;
   };
   account_summary?: AccountSummary;
   holdings?: Holding[];
-  transactions?: unknown[];
+  transactions?: Transaction[];
   asset_allocation?: {
     cash_percent?: number;
+    cash_pct?: number;
     equities_percent?: number;
+    equities_pct?: number;
     bonds_percent?: number;
+    bonds_pct?: number;
     other_percent?: number;
   };
-  income_summary?: {
-    dividends?: number;
-    interest?: number;
-    total?: number;
-  };
+  income_summary?: IncomeSummary;
+  income_detail?: IncomeDetail;
   realized_gain_loss?: {
     short_term?: number;
     long_term?: number;
     total?: number;
   };
+  historical_values?: HistoricalDataPoint[];
+  cash_flow?: CashFlow;
+  ytd_metrics?: YtdMetrics;
 }
 
 interface DashboardViewProps {
   portfolioData: PortfolioData;
   onManagePortfolio: () => void;
   onAnalyzeStock?: (symbol: string) => void;
+  onReupload?: () => void;
+  onClearData?: () => void;
 }
 
 // =============================================================================
@@ -117,11 +138,10 @@ export function DashboardView({
   portfolioData,
   onManagePortfolio,
   onAnalyzeStock,
+  onReupload,
+  onClearData,
 }: DashboardViewProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState("1M");
-  
   // Calculate totals with robust fallback logic
-  // First, compute holdings total as a reliable fallback
   const holdingsTotal = useMemo(() => {
     if (!portfolioData.holdings) return 0;
     return portfolioData.holdings.reduce(
@@ -130,9 +150,9 @@ export function DashboardView({
     );
   }, [portfolioData.holdings]);
 
-  const cashBalance = portfolioData.account_summary?.cash_balance || 0;
+  const cashBalance = portfolioData.account_summary?.cash_balance || 
+    portfolioData.cash_flow?.closing_balance || 0;
   
-  // Use ending_value if available, otherwise compute from holdings + cash
   const totalValue = 
     portfolioData.account_summary?.ending_value ||
     (holdingsTotal + cashBalance) ||
@@ -164,30 +184,33 @@ export function DashboardView({
   const allocationData = useMemo(() => {
     const data = [];
     const allocation = portfolioData.asset_allocation;
+    const cashPct = allocation?.cash_percent || allocation?.cash_pct;
+    const equitiesPct = allocation?.equities_percent || allocation?.equities_pct;
+    const bondsPct = allocation?.bonds_percent || allocation?.bonds_pct;
     
-    if (allocation?.cash_percent || cashBalance > 0) {
+    if (cashPct || cashBalance > 0) {
       data.push({
         name: "Cash",
-        value: cashBalance || (totalValue * (allocation?.cash_percent || 0) / 100),
+        value: cashBalance || (totalValue * (cashPct || 0) / 100),
         color: "#6366f1",
       });
     }
-    if (allocation?.equities_percent || holdingsTotal > 0) {
+    if (equitiesPct || holdingsTotal > 0) {
       data.push({
         name: "Equities",
-        value: holdingsTotal || (totalValue * (allocation?.equities_percent || 0) / 100),
+        value: holdingsTotal || (totalValue * (equitiesPct || 0) / 100),
         color: "#10b981",
       });
     }
-    if (allocation?.bonds_percent) {
+    if (bondsPct) {
       data.push({
         name: "Bonds",
-        value: totalValue * allocation.bonds_percent / 100,
+        value: totalValue * bondsPct / 100,
         color: "#f59e0b",
       });
     }
     
-    // If no allocation data, create from holdings + cash
+    // Fallback: create from holdings + cash
     if (data.length === 0 && totalValue > 0) {
       if (cashBalance > 0) {
         data.push({ name: "Cash", value: cashBalance, color: "#6366f1" });
@@ -200,26 +223,11 @@ export function DashboardView({
     return data;
   }, [portfolioData.asset_allocation, cashBalance, holdingsTotal, totalValue]);
 
-  // Generate sparkline data (mock for now - would come from historical data)
-  const sparklineData = useMemo(() => {
-    const points = [];
-    const baseValue = beginningValue || totalValue;
-    for (let i = 0; i < 30; i++) {
-      const progress = i / 29;
-      const targetValue = totalValue;
-      const variance = (Math.random() - 0.5) * (baseValue * 0.02);
-      const value = baseValue + (targetValue - baseValue) * progress + variance;
-      points.push({
-        date: `Day ${i + 1}`,
-        value: Math.max(0, value),
-      });
-    }
-    return points;
-  }, [beginningValue, totalValue]);
-
-  // Income summary
-  const totalIncome = portfolioData.income_summary?.total || 
-    (portfolioData.income_summary?.dividends || 0) + (portfolioData.income_summary?.interest || 0);
+  // Statement period string
+  const statementPeriod = portfolioData.account_info?.statement_period ||
+    (portfolioData.account_info?.statement_period_start && portfolioData.account_info?.statement_period_end
+      ? `${portfolioData.account_info.statement_period_start} - ${portfolioData.account_info.statement_period_end}`
+      : undefined);
 
   // Risk bucket (derive from allocation)
   const riskBucket = useMemo(() => {
@@ -232,8 +240,63 @@ export function DashboardView({
   const isPositive = changeInValue >= 0;
   const holdingsCount = portfolioData.holdings?.length || 0;
 
+  // Check what data we have
+  const hasHistoricalData = portfolioData.historical_values && portfolioData.historical_values.length >= 2;
+  const hasTransactions = portfolioData.transactions && portfolioData.transactions.length > 0;
+  const hasCashFlow = portfolioData.cash_flow && 
+    (portfolioData.cash_flow.opening_balance || portfolioData.cash_flow.closing_balance);
+  const hasIncomeDetail = portfolioData.income_detail || portfolioData.income_summary;
+
   return (
-    <div className="w-full space-y-6 pb-36">
+    <div className="w-full space-y-6">
+      {/* Header with Actions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Portfolio Dashboard</h1>
+          {portfolioData.account_info?.brokerage_name && (
+            <p className="text-sm text-muted-foreground">
+              {portfolioData.account_info.brokerage_name}
+              {statementPeriod && ` • ${statementPeriod}`}
+            </p>
+          )}
+        </div>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className="p-2 rounded-full hover:bg-muted transition-colors"
+              aria-label="Portfolio options"
+            >
+              <MoreVertical className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {onReupload && (
+              <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload New Statement
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={onManagePortfolio} className="cursor-pointer">
+              <Settings className="w-4 h-4 mr-2" />
+              Manage Portfolio
+            </DropdownMenuItem>
+            {onClearData && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={onClearData} 
+                  className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Clear All Data
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {/* Big Portfolio Value */}
       <div className="text-center py-6">
         <p className="text-sm text-muted-foreground mb-2">Total Portfolio Value</p>
@@ -257,31 +320,14 @@ export function DashboardView({
         </div>
       </div>
 
-      {/* Performance Sparkline Chart */}
-      <Card variant="none" effect="glass" showRipple={false}>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            {["1M", "3M", "6M", "1Y", "ALL"].map((period) => (
-              <button
-                key={period}
-                onClick={() => setSelectedPeriod(period)}
-                className={cn(
-                  "px-3 py-1 text-xs font-medium rounded-full transition-colors",
-                  period === selectedPeriod
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                )}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
-          <PortfolioSparkline data={sparklineData} height={120} showAxes={true} />
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            Portfolio Value Over Time
-          </p>
-        </CardContent>
-      </Card>
+      {/* Portfolio History Chart - Uses real data or shows period summary */}
+      <PortfolioHistoryChart
+        data={portfolioData.historical_values}
+        beginningValue={beginningValue}
+        endingValue={totalValue}
+        statementPeriod={statementPeriod}
+        height={180}
+      />
 
       {/* Asset Allocation & Income Row */}
       <div className="grid grid-cols-2 gap-4">
@@ -302,35 +348,85 @@ export function DashboardView({
           </CardContent>
         </Card>
 
-        {/* Income Summary */}
-        <Card variant="none" effect="glass" showRipple={false}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <DollarSign className="w-4 h-4" />
-              Income YTD
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-3">
-            <div className="text-center py-4">
-              <p className="text-2xl font-bold text-emerald-500">
-                {formatCurrency(totalIncome)}
-              </p>
-            </div>
-            {portfolioData.income_summary?.dividends !== undefined && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Dividends</span>
-                <span>{formatCurrency(portfolioData.income_summary.dividends)}</span>
+        {/* Enhanced Income Card */}
+        {hasIncomeDetail ? (
+          <IncomeDetailCard
+            incomeSummary={portfolioData.income_summary}
+            incomeDetail={portfolioData.income_detail}
+            ytdMetrics={portfolioData.ytd_metrics}
+          />
+        ) : (
+          <Card variant="none" effect="glass" showRipple={false}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                Income
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="text-center py-8">
+                <p className="text-muted-foreground text-sm">No income data</p>
               </div>
-            )}
-            {portfolioData.income_summary?.interest !== undefined && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Interest</span>
-                <span>{formatCurrency(portfolioData.income_summary.interest)}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Cash Flow & Gain/Loss Row */}
+      {hasCashFlow && (
+        <div className="grid grid-cols-2 gap-4">
+          <CashFlowCard cashFlow={portfolioData.cash_flow} />
+          
+          {/* Realized Gain/Loss Card */}
+          {portfolioData.realized_gain_loss && (
+            <Card variant="none" effect="glass" showRipple={false}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  Realized Gain/Loss
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {portfolioData.realized_gain_loss.short_term !== undefined && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Short-term</span>
+                    <span className={cn(
+                      portfolioData.realized_gain_loss.short_term >= 0 
+                        ? "text-emerald-500" 
+                        : "text-red-500"
+                    )}>
+                      {formatCurrency(portfolioData.realized_gain_loss.short_term)}
+                    </span>
+                  </div>
+                )}
+                {portfolioData.realized_gain_loss.long_term !== undefined && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Long-term</span>
+                    <span className={cn(
+                      portfolioData.realized_gain_loss.long_term >= 0 
+                        ? "text-emerald-500" 
+                        : "text-red-500"
+                    )}>
+                      {formatCurrency(portfolioData.realized_gain_loss.long_term)}
+                    </span>
+                  </div>
+                )}
+                {portfolioData.realized_gain_loss.total !== undefined && (
+                  <div className="flex justify-between text-sm pt-2 border-t border-border">
+                    <span className="font-medium">Total</span>
+                    <span className={cn(
+                      "font-medium",
+                      portfolioData.realized_gain_loss.total >= 0 
+                        ? "text-emerald-500" 
+                        : "text-red-500"
+                    )}>
+                      {formatCurrency(portfolioData.realized_gain_loss.total)}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-3 gap-3">
@@ -355,6 +451,14 @@ export function DashboardView({
           size="sm"
         />
       </div>
+
+      {/* Recent Transaction Activity */}
+      {hasTransactions && (
+        <TransactionActivity 
+          transactions={portfolioData.transactions} 
+          maxItems={5}
+        />
+      )}
 
       {/* Prime Assets Section */}
       <div>

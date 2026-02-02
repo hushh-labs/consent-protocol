@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { 
   User, 
   Mail, 
@@ -73,40 +74,61 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isAuthenticated, signOut } = useAuth();
+  const { user, isAuthenticated, loading: authLoading, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { registerSteps, completeStep, reset } = useStepProgress();
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [totalAttributes, setTotalAttributes] = useState(0);
   const [loadingDomains, setLoadingDomains] = useState(true);
+  const [initialized, setInitialized] = useState(false);
 
-  // Redirect to login if not authenticated (in useEffect to avoid render error)
+  // Consolidated init effect - handles auth check and data loading
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push("/");
-    }
-  }, [isAuthenticated, router]);
+    let cancelled = false;
 
-  // Load world model data
-  useEffect(() => {
-    const loadWorldModelData = async () => {
+    async function init() {
+      // Wait for auth to finish loading
+      if (authLoading) return;
+
+      // Register steps only once
+      if (!initialized) {
+        registerSteps(2);
+        setInitialized(true);
+      }
+
+      // Step 1: Auth check
+      if (!isAuthenticated) {
+        router.push("/");
+        return;
+      }
+      completeStep();
+
+      // Step 2: Load world model data
       if (!user?.uid) return;
-      
+
       try {
         setLoadingDomains(true);
         const metadata = await WorldModelService.getMetadata(user.uid);
-        setDomains(metadata.domains);
-        setTotalAttributes(metadata.totalAttributes);
+        if (!cancelled) {
+          setDomains(metadata.domains);
+          setTotalAttributes(metadata.totalAttributes);
+          completeStep();
+        }
       } catch (error) {
         console.error("Failed to load world model data:", error);
+        if (!cancelled) completeStep(); // Complete step on error
       } finally {
-        setLoadingDomains(false);
+        if (!cancelled) setLoadingDomains(false);
       }
-    };
-    
-    if (user?.uid) {
-      loadWorldModelData();
     }
-  }, [user?.uid]);
+
+    init();
+
+    return () => {
+      cancelled = true;
+      reset();
+    };
+  }, [authLoading, isAuthenticated, user?.uid]);
 
   const handleSignOut = async () => {
     try {
@@ -140,12 +162,12 @@ export default function ProfilePage() {
   const provider = getProvider();
 
   // Show nothing while checking auth or if not authenticated
-  if (!isAuthenticated) {
+  if (authLoading || !isAuthenticated) {
     return null;
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-2xl space-y-6">
+    <div className="container mx-auto py-8 px-4 max-w-2xl space-y-6 pb-28">
       {/* Profile Header */}
       <div className="text-center space-y-4">
         {user?.photoURL ? (
