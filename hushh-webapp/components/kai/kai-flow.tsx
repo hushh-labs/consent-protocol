@@ -539,10 +539,39 @@ export function KaiFlow({
     setFlowData({ hasFinancialData: false });
   }, []);
 
-  // Handle re-import
+  // Handle re-import (upload new statement)
   const handleReimport = useCallback(() => {
     setState("import_required");
   }, []);
+
+  // Handle clear all data with confirmation
+  const handleClearData = useCallback(async () => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      "Are you sure you want to clear all portfolio data? This action cannot be undone."
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    try {
+      // Clear session storage
+      sessionStorage.removeItem("kai_portfolio_data");
+      
+      // Clear World Model financial domain
+      await WorldModelService.clearDomain(userId, "financial");
+      
+      // Reset flow state
+      setFlowData({ hasFinancialData: false });
+      setState("import_required");
+      
+      toast.success("Portfolio data cleared successfully");
+    } catch (err) {
+      console.error("[KaiFlow] Error clearing data:", err);
+      toast.error("Failed to clear data. Please try again.");
+    }
+  }, [userId]);
 
   // Handle manage portfolio navigation
   const handleManagePortfolio = useCallback(() => {
@@ -638,7 +667,7 @@ export function KaiFlow({
   }
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full flex flex-col">
       {/* Error display */}
       {error && (
         <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-600 dark:text-red-400">
@@ -706,6 +735,8 @@ export function KaiFlow({
           portfolioData={flowData.portfolioData}
           onManagePortfolio={handleManagePortfolio}
           onAnalyzeStock={handleAnalyzeStock}
+          onReupload={handleReimport}
+          onClearData={handleClearData}
         />
       )}
 

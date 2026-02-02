@@ -14,63 +14,61 @@
 
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
-import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { KaiFlow, FlowState } from "@/components/kai/kai-flow";
 import { KaiSearchBar } from "@/components/kai/kai-search-bar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export default function KaiPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
   const [holdings, setHoldings] = useState<string[]>([]);
   const [flowState, setFlowState] = useState<FlowState>("checking");
+  const [initialized, setInitialized] = useState(false);
   
   // Ref to call KaiFlow's analyze function
   const analyzeStockRef = useRef<((symbol: string) => void) | null>(null);
 
-  // Loading state while auth/vault initializes
-  if (!user) {
-    return (
-      <HushhLoader
-        variant="fullscreen"
-        label="Loading..."
-        className="backdrop-blur-sm"
-      />
-    );
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Consolidated init effect - handles auth check and flow state tracking
+  useEffect(() => {
+    // Wait for auth to finish loading
+    if (authLoading) return;
+
+    // Register steps only once
+    if (!initialized) {
+      registerSteps(2);
+      setInitialized(true);
+    }
+
+    // Step 1: Auth check
+    if (user) {
+      completeStep();
+    }
+
+    return () => reset();
+  }, [authLoading, user?.uid]);
+
+  // Step 2: KaiFlow init (when flow state changes from "checking")
+  // This is separate because flowState changes independently of auth
+  useEffect(() => {
+    if (initialized && flowState !== "checking") {
+      completeStep();
+    }
+  }, [flowState, initialized]);
+
+  // Show nothing while auth is loading
+  if (authLoading || !user) {
+    return null;
   }
 
-  // Vault must be unlocked to use Kai
-  if (!isVaultUnlocked || !vaultKey || !vaultOwnerToken) {
-    return (
-      <div className="min-h-[calc(100dvh-120px)] flex items-center justify-center p-6">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-amber-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold">Unlock Your Vault</h2>
-          <p className="text-muted-foreground">
-            Your vault must be unlocked to access Kai. Your financial data is
-            encrypted with your personal key.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // NOTE: Vault check is handled by VaultLockGuard in the dashboard layout.
+  // We trust the layout guard and don't duplicate the check here.
+  // If we reach this point, the vault is guaranteed to be unlocked.
 
   // Handle search bar commands
   const handleCommand = (command: string, params?: Record<string, unknown>) => {
@@ -100,9 +98,9 @@ export default function KaiPage() {
   };
 
   return (
-    <div className="min-h-[calc(100dvh-120px)] relative pb-32">
+    <div className="relative min-h-0 pb-40">
       {/* Main Content - KaiFlow handles all states */}
-      <div className="w-full h-full p-6">
+      <div className="w-full p-6">
         <KaiFlow
           userId={user.uid}
           vaultOwnerToken={vaultOwnerToken}

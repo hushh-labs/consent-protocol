@@ -39,7 +39,7 @@ import {
   Crown,
   LineChart,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/morphy-ux/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
@@ -66,6 +66,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { VaultFlow } from "@/components/vault/vault-flow";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 interface PendingConsent {
   id: string;
@@ -471,8 +472,10 @@ export default function ConsentsPage() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [activeConsents, setActiveConsents] = useState<ActiveConsent[]>([]);
   const [loading, setLoading] = useState(true);
+  const { registerSteps, completeStep, reset } = useStepProgress();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   // Tab from URL param (e.g., ?tab=session)
   const tabFromUrl = searchParams.get("tab");
@@ -529,14 +532,31 @@ export default function ConsentsPage() {
     }
   }, []);
 
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
 
+  // Consolidated init effect - handles auth check and data loading
   useEffect(() => {
+    let cancelled = false;
+
     async function initSession() {
+      // Wait for auth to finish loading
+      if (authLoading) return;
+
+      // Register steps only once
+      if (!initialized) {
+        registerSteps(3);
+        setInitialized(true);
+      }
+
+      // Step 1: Auth check
+      completeStep();
+
       // Load session info from platform-aware storage
       const token = await getSessionItem("session_token");
       const expiresAt = await getSessionItem("session_token_expires");
       const uid = await getSessionItem("user_id");
+
+      if (cancelled) return;
 
       if (uid) {
         setUserId(uid);
@@ -544,14 +564,31 @@ export default function ConsentsPage() {
         // Initial fetch - use token from storage or context
         const effectiveToken = token || vaultOwnerToken || "";
         
-        Promise.all([
-          fetchPendingConsents(uid),
-          fetchAuditLog(uid),
-          ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken)] : []),
-        ]).finally(() => {
-          setLoading(false);
-        });
+        try {
+          // Step 2: Fetch pending consents
+          await fetchPendingConsents(uid);
+          if (!cancelled) completeStep();
+
+          // Step 3: Fetch active consents + audit log
+          await Promise.all([
+            fetchAuditLog(uid),
+            ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken)] : []),
+          ]);
+          if (!cancelled) completeStep();
+        } catch (error) {
+          console.error("Error loading consents:", error);
+          // Complete remaining steps on error
+          if (!cancelled) {
+            completeStep();
+            completeStep();
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
       } else {
+        // No user - complete remaining steps
+        completeStep();
+        completeStep();
         setLoading(false);
       }
 
@@ -565,8 +602,14 @@ export default function ConsentsPage() {
         });
       }
     }
+
     initSession();
-  }, [fetchPendingConsents, fetchAuditLog, fetchActiveConsents, vaultOwnerToken]);
+
+    return () => {
+      cancelled = true;
+      reset();
+    };
+  }, [authLoading, vaultOwnerToken]);
 
   // =========================================================================
   // SSE: React to consent events via unified context (no duplicate connection)
@@ -760,11 +803,11 @@ export default function ConsentsPage() {
   };
 
   if (loading) {
-    return <HushhLoader label="Loading consents..." />;
+    return null;
   }
 
   return (
-    <div className="container mx-auto max-w-4xl py-6 px-4 md:px-6 space-y-6">
+    <div className="container mx-auto max-w-4xl py-6 px-4 md:px-6 space-y-6 pb-28">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
