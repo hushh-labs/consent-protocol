@@ -2,11 +2,12 @@
  * ImportProgressView Component
  *
  * Real-time streaming progress UI for portfolio import.
- * Displays Gemini AI extraction progress like ChatGPT/Perplexity.
+ * Displays Gemini AI extraction progress with thinking mode support.
  *
  * Features:
- * - Stage progress indicators (Upload → Analyze → Extract → Complete)
- * - Real-time streaming text display with blinking cursor
+ * - Stage progress indicators (Upload → Analyze → Think → Extract → Complete)
+ * - Real-time thought summaries from Gemini thinking mode
+ * - Streaming text display with blinking cursor
  * - Character count and chunk count stats
  * - Cancel button
  * - Auto-scroll as content grows
@@ -23,13 +24,16 @@ import {
 } from "@/lib/morphy-ux";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X, FileText, Sparkles, Database, CheckCircle2 } from "lucide-react";
+import { X, FileText, Sparkles, Database, CheckCircle2, Brain, Zap } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export type ImportStage =
   | "idle"
   | "uploading"
   | "analyzing"
-  | "streaming"
+  | "thinking"
+  | "extracting"
+  | "streaming" // Legacy - maps to extracting
   | "parsing"
   | "complete"
   | "error";
@@ -45,6 +49,10 @@ export interface ImportProgressViewProps {
   totalChars: number;
   /** Total chunks received */
   chunkCount: number;
+  /** Array of thought summaries from Gemini thinking mode */
+  thoughts?: string[];
+  /** Total thought count */
+  thoughtCount?: number;
   /** Error message if stage is 'error' */
   errorMessage?: string;
   /** Cancel handler */
@@ -53,15 +61,17 @@ export interface ImportProgressViewProps {
   className?: string;
 }
 
-const STAGES = ["Upload", "Analyze", "Extract", "Complete"] as const;
+const STAGES = ["Upload", "Analyze", "Think", "Extract", "Complete"] as const;
 
 const stageToIndex: Record<ImportStage, number> = {
   idle: -1,
   uploading: 0,
   analyzing: 1,
-  streaming: 2,
-  parsing: 2,
-  complete: 3,
+  thinking: 2,
+  extracting: 3,
+  streaming: 3, // Legacy mapping
+  parsing: 3,
+  complete: 4,
   error: -1,
 };
 
@@ -69,7 +79,9 @@ const stageIcons: Record<ImportStage, React.ReactNode> = {
   idle: <FileText className="w-5 h-5" />,
   uploading: <FileText className="w-5 h-5 animate-pulse" />,
   analyzing: <Sparkles className="w-5 h-5 animate-pulse" />,
-  streaming: <Sparkles className="w-5 h-5 animate-pulse" />,
+  thinking: <Brain className="w-5 h-5 animate-pulse text-purple-500" />,
+  extracting: <Zap className="w-5 h-5 animate-pulse text-amber-500" />,
+  streaming: <Zap className="w-5 h-5 animate-pulse text-amber-500" />,
   parsing: <Database className="w-5 h-5 animate-pulse" />,
   complete: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
   error: <X className="w-5 h-5 text-red-500" />,
@@ -79,6 +91,8 @@ const stageMessages: Record<ImportStage, string> = {
   idle: "Ready to import",
   uploading: "Processing uploaded file...",
   analyzing: "AI analyzing document structure...",
+  thinking: "AI reasoning about your portfolio...",
+  extracting: "Extracting financial data...",
   streaming: "Extracting financial data...",
   parsing: "Processing extracted data...",
   complete: "Import complete!",
@@ -91,6 +105,8 @@ export function ImportProgressView({
   isStreaming,
   totalChars,
   chunkCount,
+  thoughts = [],
+  thoughtCount = 0,
   errorMessage,
   onCancel,
   className,
@@ -106,6 +122,10 @@ export function ImportProgressView({
     }
     return streamedText;
   }, [streamedText]);
+
+  // Determine if we're in a thinking or extracting phase
+  const isThinking = stage === "thinking";
+  const isExtracting = stage === "extracting" || stage === "streaming" || stage === "parsing";
 
   return (
     <Card className={cn("w-full", className)}>
@@ -138,25 +158,77 @@ export function ImportProgressView({
 
         {/* Status Message */}
         <div className="flex items-center gap-2">
-          {(stage === "analyzing" || stage === "streaming" || stage === "parsing") && (
+          {(stage === "analyzing" || isThinking || isExtracting) && (
             <ThinkingIndicator
               message={stageMessages[stage]}
               variant="minimal"
               size="sm"
             />
           )}
-          {stage !== "analyzing" && stage !== "streaming" && stage !== "parsing" && (
+          {stage !== "analyzing" && !isThinking && !isExtracting && (
             <p className="text-sm text-muted-foreground">
               {stageMessages[stage]}
             </p>
           )}
         </div>
 
-        {/* Streaming Text Display */}
-        {(stage === "streaming" || stage === "parsing" || displayText) && (
+        {/* Thinking Display - Show AI reasoning */}
+        <AnimatePresence mode="wait">
+          {(isThinking || thoughts.length > 0) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-2"
+            >
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Brain className="w-3.5 h-3.5 text-purple-500" />
+                  AI Reasoning
+                </span>
+                {thoughtCount > 0 && (
+                  <span>{thoughtCount} thought{thoughtCount !== 1 ? "s" : ""}</span>
+                )}
+              </div>
+              <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl p-4 max-h-[150px] overflow-y-auto">
+                <div className="space-y-2">
+                  {thoughts.length > 0 ? (
+                    thoughts.map((thought, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="text-sm text-purple-700 dark:text-purple-300"
+                      >
+                        <span className="text-purple-500 mr-1.5">•</span>
+                        {thought}
+                      </motion.div>
+                    ))
+                  ) : isThinking ? (
+                    <div className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400">
+                      <div className="flex gap-1">
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                      <span>Analyzing document structure...</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Streaming Text Display - JSON Extraction */}
+        {(isExtracting || displayText) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>AI Response</span>
+              <span className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Data Extraction
+              </span>
               <span>
                 {totalChars.toLocaleString()} chars • {chunkCount} chunks
               </span>
@@ -164,12 +236,12 @@ export function ImportProgressView({
             <div className="bg-muted/30 rounded-xl border border-border/50 overflow-hidden">
               <StreamingTextDisplay
                 text={displayText}
-                isStreaming={isStreaming}
-                showCursor={isStreaming}
+                isStreaming={isStreaming && isExtracting}
+                showCursor={isStreaming && isExtracting}
                 cursorColor="primary"
                 className="h-[200px] p-4"
                 textClassName="font-mono text-xs"
-                placeholder="Waiting for AI response..."
+                placeholder="Waiting for extraction..."
               />
             </div>
           </div>
@@ -193,6 +265,7 @@ export function ImportProgressView({
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {totalChars.toLocaleString()} characters processed
+              {thoughtCount > 0 && ` • ${thoughtCount} AI reasoning steps`}
             </p>
           </div>
         )}
