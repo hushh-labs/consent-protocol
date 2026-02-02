@@ -12,11 +12,14 @@
  * 
  * IMPORTANT: This service MUST NOT use direct fetch("/api/...") calls.
  * All web requests go through ApiService.apiFetch() for consistent auth handling.
+ * 
+ * Caching: Uses CacheService for in-memory caching with TTL to reduce API calls.
  */
 
 import { Capacitor } from "@capacitor/core";
 import { HushhWorldModel } from "@/lib/capacitor";
 import { ApiService } from "./api-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "./cache-service";
 
 // ==================== Types ====================
 
@@ -112,14 +115,33 @@ export class WorldModelService {
   /**
    * Get user's world model metadata for UI display.
    * This is the primary method for fetching profile data.
+   * 
+   * Uses in-memory caching with 5-minute TTL to reduce API calls.
+   * 
+   * @param userId - User's ID
+   * @param forceRefresh - If true, bypasses cache and fetches fresh data
    */
-  static async getMetadata(userId: string): Promise<WorldModelMetadata> {
+  static async getMetadata(userId: string, forceRefresh = false): Promise<WorldModelMetadata> {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.WORLD_MODEL_METADATA(userId);
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = cache.get<WorldModelMetadata>(cacheKey);
+      if (cached) {
+        console.log("[WorldModelService] Using cached metadata");
+        return cached;
+      }
+    }
+
+    let result: WorldModelMetadata;
+
     if (Capacitor.isNativePlatform()) {
       // Use Capacitor plugin for native platforms
-      const result = await HushhWorldModel.getMetadata({ userId });
-      return {
-        userId: result.userId,
-        domains: result.domains.map((d) => ({
+      const nativeResult = await HushhWorldModel.getMetadata({ userId });
+      result = {
+        userId: nativeResult.userId,
+        domains: nativeResult.domains.map((d) => ({
           key: d.key,
           displayName: d.displayName,
           icon: d.icon,
@@ -129,54 +151,58 @@ export class WorldModelService {
           availableScopes: d.availableScopes,
           lastUpdated: d.lastUpdated,
         })),
-        totalAttributes: result.totalAttributes,
-        modelCompleteness: result.modelCompleteness,
-        suggestedDomains: result.suggestedDomains,
-        lastUpdated: result.lastUpdated,
+        totalAttributes: nativeResult.totalAttributes,
+        modelCompleteness: nativeResult.modelCompleteness,
+        suggestedDomains: nativeResult.suggestedDomains,
+        lastUpdated: nativeResult.lastUpdated,
       };
+    } else {
+      // Web: Use ApiService.apiFetch() for tri-flow compliance
+      const response = await ApiService.apiFetch(`/api/world-model/metadata/${userId}`, {
+        headers: this.getAuthHeaders(),
+      });
+
+      // Handle 404 as valid "no data" response for new users
+      if (response.status === 404) {
+        result = {
+          userId,
+          domains: [],
+          totalAttributes: 0,
+          modelCompleteness: 0,
+          suggestedDomains: [],
+          lastUpdated: null,
+        };
+      } else if (!response.ok) {
+        throw new Error(`Failed to get metadata: ${response.status}`);
+      } else {
+        const data = await response.json();
+
+        // Transform snake_case to camelCase
+        result = {
+          userId: data.user_id,
+          domains: (data.domains || []).map((d: Record<string, unknown>) => ({
+            key: (d.domain_key || d.key) as string,
+            displayName: (d.display_name || d.displayName) as string,
+            icon: (d.icon_name || d.icon) as string,
+            color: (d.color_hex || d.color) as string,
+            attributeCount: (d.attribute_count || d.attributeCount) as number,
+            summary: (d.summary || {}) as Record<string, string | number>,
+            availableScopes: (d.available_scopes || []) as string[],
+            lastUpdated: (d.last_updated || null) as string | null,
+          })),
+          totalAttributes: data.total_attributes || 0,
+          modelCompleteness: data.model_completeness || 0,
+          suggestedDomains: data.suggested_domains || [],
+          lastUpdated: data.last_updated,
+        };
+      }
     }
 
-    // Web: Use ApiService.apiFetch() for tri-flow compliance
-    const response = await ApiService.apiFetch(`/api/world-model/metadata/${userId}`, {
-      headers: this.getAuthHeaders(),
-    });
+    // Cache the result
+    cache.set(cacheKey, result, CACHE_TTL.MEDIUM);
+    console.log("[WorldModelService] Cached metadata for", userId);
 
-    // Handle 404 as valid "no data" response for new users
-    if (response.status === 404) {
-      return {
-        userId,
-        domains: [],
-        totalAttributes: 0,
-        modelCompleteness: 0,
-        suggestedDomains: [],
-        lastUpdated: null,
-      };
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to get metadata: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    // Transform snake_case to camelCase
-    return {
-      userId: data.user_id,
-      domains: (data.domains || []).map((d: Record<string, unknown>) => ({
-        key: (d.domain_key || d.key) as string,
-        displayName: (d.display_name || d.displayName) as string,
-        icon: (d.icon_name || d.icon) as string,
-        color: (d.color_hex || d.color) as string,
-        attributeCount: (d.attribute_count || d.attributeCount) as number,
-        summary: (d.summary || {}) as Record<string, string | number>,
-        availableScopes: (d.available_scopes || []) as string[],
-        lastUpdated: (d.last_updated || null) as string | null,
-      })),
-      totalAttributes: data.total_attributes || 0,
-      modelCompleteness: data.model_completeness || 0,
-      suggestedDomains: data.suggested_domains || [],
-      lastUpdated: data.last_updated,
-    };
+    return result;
   }
 
   /**
@@ -660,6 +686,39 @@ export class WorldModelService {
       tag: data.encrypted_blob.tag,
       algorithm: data.encrypted_blob.algorithm || "aes-256-gcm",
     };
+  }
+
+  /**
+   * Clear all data for a specific domain.
+   * This removes the encrypted blob and updates the world model index.
+   * 
+   * @param userId - User's ID
+   * @param domain - Domain key (e.g., "financial")
+   * @returns Success status
+   */
+  static async clearDomain(
+    userId: string,
+    domain: string
+  ): Promise<boolean> {
+    if (Capacitor.isNativePlatform()) {
+      // TODO: Add native plugin method for domain clearing
+      console.warn("[WorldModelService] Native clearDomain not yet implemented");
+    }
+
+    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    const response = await ApiService.apiFetch(
+      `/api/world-model/domain-data/${userId}/${domain}`,
+      {
+        method: "DELETE",
+        headers: this.getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Failed to clear domain: ${response.status}`);
+    }
+
+    return true;
   }
 }
 

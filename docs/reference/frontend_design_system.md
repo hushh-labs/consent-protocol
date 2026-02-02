@@ -204,11 +204,17 @@ import { Shield, Lock } from "lucide-react";
 - Opacity: `transition-opacity 0.2s`
 - Colors: `transition-colors 0.2s`
 
-### Animation
+### Animation (GSAP + Morphy-UX)
 
-- Use Framer Motion for page transitions
-- `initial={{ opacity: 0, y: 20 }}`
-- `animate={{ opacity: 1, y: 0 }}`
+- Page transitions and expressive motion use **GSAP**, wired through Morphy-UX helpers in `lib/morphy-ux/gsap.ts` and tokens in `lib/morphy-ux/motion.ts`.
+- Default route-change pattern:
+  - Fade + small vertical shift on content container when the app router pathname changes.
+  - Short durations (`xs`/`sm` tokens) tuned for mobile.
+- Motion tokens:
+  - Durations: `xs`, `sm`, `md`, `lg`, `xl`, `xxl` in `motionDurations`.
+  - Easing: `standard`, `accelerate`, `decelerate`, `emphasized` in `motionEasings`.
+  - Distances: `tiny`, `xs`, `sm`, `md`, `lg` in `motionDistances`.
+- Always respect `prefers-reduced-motion` — Morphy-UX helpers bail out early when users request reduced motion.
 
 ---
 
@@ -272,4 +278,520 @@ import { Shield, Lock } from "lucide-react";
 
 ---
 
-_Version: 5.2 | Updated January 2026 | Fixed import paths and color tokens_
+## 13. Morphy-UX Component Prop Contracts
+
+Morphy-UX primitives share a small set of **standard props** so that behavior feels consistent across the app.
+
+### 13.1 Shared interaction props
+
+- **`variant?: ColorVariant`**: Visual style of the surface.
+  - Examples: `"gradient"`, `"muted"`, `"metallic"`, `"blue-gradient"`, `"orange-gradient"`, `"multi"`.
+  - Backed by tokens in `lib/morphy-ux/tokens/colors.ts` and CSS variables (`--morphy-*`).
+- **`effect?: "fill" | "glass" | "fade"`**:
+  - `"fill"`: Solid surface, strongest emphasis.
+  - `"glass"`: Glassmorphism with backdrop blur (used for primary cards/buttons).
+  - `"fade"`: Low-emphasis surface with minimal blur.
+- **`showRipple?: boolean`**:
+  - Enables Material 3 state layers + ripple (`<MaterialRipple>`).
+  - Use for primary actions and interactive cards; disable for purely static containers.
+
+### 13.2 `Button` (`lib/morphy-ux/button.tsx` / `lib/morphy-ux/morphy.tsx`)
+
+- **Core props**
+  - `variant?: ColorVariant` — Defaults to `"gradient"` for primary CTAs.
+  - `effect?: "fill" | "glass" | "fade"` — Defaults to `"glass"`.
+  - `size?: "sm" | "default" | "lg" | "xl" | "icon" | "icon-sm"` — From `buttonVariants`.
+  - `showRipple?: boolean` — Defaults to `true`.
+- **Layout & state**
+  - `fullWidth?: boolean` — Stretches the button to `w-full` for mobile-first layouts and bottom actions.
+  - `loading?: boolean` — Sets `aria-busy`, disables the button, and applies a `cursor-wait` state.
+- **Composition**
+  - `asChild?: boolean` — Radix `Slot` pattern (wraps links or custom components).
+  - `icon?: { icon; title?; weight?; gradient? }` — Standardized icon block:
+    - `gradient: true` → solid brand gradient chip behind the icon.
+    - Size scales automatically with `size`.
+
+**Usage guidelines**
+
+- Use `variant="gradient"` + `effect="glass"` for primary CTAs (e.g., "Unlock vault", "Continue").
+- Use `fullWidth` for **single-column mobile flows** and bottom-of-screen actions.
+- Use `loading` while awaiting consent/vault API responses to make wait states explicit.
+
+### 13.3 `Card` (`lib/morphy-ux/card.tsx` / `lib/morphy-ux/morphy.tsx`)
+
+- **Core props**
+  - `variant?: ColorVariant` — Defaults to `"none"` for neutral containers.
+  - `effect?: "fill" | "glass" | "fade"` — Defaults to `"glass"`.
+  - `showRipple?: boolean` — Disabled by default; enable only for clickable cards.
+- **Interaction & layout**
+  - `interactive?: boolean` — Adds pointer cursor and subtle affordances for clickable cards.
+  - `selected?: boolean` — Highlights the border using `--morphy-primary-start` (used for selected plans, portfolio tiles, etc.).
+  - `fullHeight?: boolean` — Stretches the card to fill the parent height (useful in dashboard grids).
+- **Icon block**
+  - `icon?: { icon; title?; position?; gradient? }` — In-flow icon block with optional title.
+  - `position`: `"top-left" | "top-right" | "bottom-left" | "bottom-right"`.
+
+**Usage guidelines**
+
+- Use `interactive` + `showRipple` for **clickable tiles** (Kai cards, navigation cards).
+- Use `selected` to reflect current choice in comparisons (e.g., risk profile, plan selection).
+- For read-only status summaries (e.g., consent history), keep `interactive={false}` and `showRipple={false}`.
+
+### 13.4 Feedback & toasts (`lib/morphy-ux/toast-utils.tsx`)
+
+- **Tone**
+  - `FeedbackTone = "success" | "error" | "warning" | "info"` — Shared across toasts and status messaging.
+- **Morphy Toast options**
+  - `variant?: ColorVariant` — e.g., `"green-gradient"` for success, `"orange-gradient"` for warnings.
+  - `duration?: number` — Default 3–5s depending on tone.
+  - `description?: string` — Secondary explanatory copy.
+- **Patterns**
+  - Success: short, optimistic; auto-dismiss ~3s.
+  - Error: actionable; longer duration (~5s) and clear next step.
+  - Warning: cautionary but not blocking; ~4s.
+  - Info: low-intensity, often about background tasks.
+
+---
+
+## 14. Human-Centered, Responsive UX (Hushh Flows)
+
+Design every flow as if you are **personally using your own data agent on a small phone first**, then scale up to desktop.
+
+### 14.1 Vault flows (creation, unlock, recovery)
+
+- **Mental model**
+  - Treat vault flows as **high-focus, low-distraction** experiences.
+  - Avoid competing CTAs or dense content around passphrase/recovery key steps.
+- **Layout**
+  - Mobile: use `fullWidth` buttons for primary actions and keep the main CTA close to the thumb (bottom of the viewport where possible).
+  - Desktop: center the content, but preserve the same step order and wording.
+- **Feedback**
+  - Use `morphyToast.success` for **unlocked vault** events with short copy (“Vault unlocked, VAULT_OWNER token issued”).
+  - Use `morphyToast.error` for failures with a clear next step (“Check your passphrase and try again”).
+
+### 14.2 Consent review & history
+
+- **Mental model**
+  - Treat each consent card as a **contract snapshot**: who, what data, why, for how long.
+  - Make revoke actions as visible and easy as accept/approve actions.
+- **Layout**
+  - On mobile, present consents in a **single-column card stack** using `Card` with `variant="muted"` and clear typography hierarchy.
+  - On desktop, consider a two-column layout: left = active/pending consents, right = history/details.
+- **Interaction**
+  - Use `interactive` + `selected` on cards when the user is choosing between alternatives (e.g., scopes, durations).
+  - Avoid hover-only affordances—everything important must be visible without hover for touch users.
+
+### 14.3 Kai portfolio & dense dashboards
+
+- **Mental model**
+  - Kai views are for **sense-making**, not just data dumps: prioritize clarity over raw density.
+  - Group related metrics into **small, focused cards** rather than one massive table.
+- **Layout**
+  - Use cards with `fullHeight` inside responsive grids (e.g., 1 column on mobile, 2–3 on desktop).
+  - Reserve gradients and strong color for the **most important actions and KPIs**; keep secondary data subdued.
+- **Responsiveness**
+  - Typography should never drop below comfortable reading sizes on mobile; prefer wrapping over shrinking.
+  - Ensure key CTAs remain visible without scrolling after Kai finishes a major analysis step.
+
+### 14.4 Accessibility & touch ergonomics
+
+- Minimum touch target: 44×44px (Apple HIG) for all tap targets, including card-level actions.
+- Preserve clear focus outlines and keyboard navigation for all interactive Morphy-UX primitives.
+- Avoid hover-only disclosures for critical information; always provide a tap/click alternative.
+
+---
+
+## 15. Step-Based Progress System
+
+The app uses a **step-based progress system** that tracks real loading progress based on actual async operations. This replaces the previous PageLoadingProvider approach.
+
+### 15.1 Architecture
+
+```
+StepProgressProvider (app/providers.tsx)
+    └── StepProgressBar (components/ui/step-progress-bar.tsx)
+    └── CacheProvider (lib/cache/cache-context.tsx)
+    └── VaultProvider (lib/vault/vault-context.tsx)
+    └── Page Components
+```
+
+- **`StepProgressProvider`**: Context provider that tracks step completion progress globally.
+- **`StepProgressBar`**: Thin progress bar at top of viewport that shows real progress percentage.
+- **`CacheProvider`**: In-memory cache for sharing data across page navigations.
+
+### 15.2 How Pages Should Use the Progress System
+
+**For pages with async data loading:**
+
+```tsx
+import { useStepProgress } from "@/lib/progress/step-progress-context";
+
+export default function MyPage() {
+  const { registerSteps, completeStep, reset } = useStepProgress();
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      // Wait for auth to finish loading
+      if (authLoading) return;
+
+      // Register steps only once
+      if (!initialized) {
+        registerSteps(3); // Total number of loading steps
+        setInitialized(true);
+      }
+
+      // Step 1: Auth check
+      if (!isAuthenticated) {
+        router.push("/");
+        return;
+      }
+      completeStep();
+
+      // Step 2: Fetch data
+      try {
+        await fetchData();
+        if (!cancelled) completeStep();
+      } catch (error) {
+        if (!cancelled) completeStep(); // Complete on error too
+      }
+
+      // Step 3: Additional processing
+      if (!cancelled) completeStep();
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+      reset();
+    };
+  }, [authLoading, isAuthenticated]);
+
+  return <div>Page content</div>;
+}
+```
+
+### 15.3 Key Principles
+
+1. **Register steps once** - Use an `initialized` state to prevent duplicate registration
+2. **Complete steps on error** - Always complete steps even on failure to finish the progress bar
+3. **Use cancellation** - Track `cancelled` flag to prevent state updates on unmounted components
+4. **Minimal dependencies** - Only include essential dependencies in useEffect to reduce re-renders
+
+### 15.4 When to Use `HushhLoader` Directly
+
+- **`variant="inline"` or `variant="compact"`**: For inline loading states within a component
+- **Redirect pages**: For pages that immediately redirect (e.g., `/chat` redirecting to `/dashboard/kai`)
+
+---
+
+## 16. Caching System
+
+The app uses a **global caching layer** to reduce API calls and improve page load performance.
+
+### 16.1 Architecture
+
+```
+CacheService (lib/services/cache-service.ts)
+    └── Singleton with TTL support
+    └── In-memory Map storage
+
+CacheProvider (lib/cache/cache-context.tsx)
+    └── React context for UI reactivity
+    └── Wraps CacheService for component access
+```
+
+### 16.2 CacheService Usage
+
+```tsx
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
+
+const cache = CacheService.getInstance();
+
+// Set with TTL
+cache.set(CACHE_KEYS.WORLD_MODEL_METADATA(userId), data, CACHE_TTL.MEDIUM);
+
+// Get (returns null if expired)
+const cached = cache.get<WorldModelMetadata>(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+
+// Invalidate
+cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+cache.invalidatePattern("world_model_"); // Prefix match
+cache.clear(); // Clear all
+```
+
+### 16.3 Cache Keys and TTLs
+
+| Key Pattern | TTL | Usage |
+|-------------|-----|-------|
+| `world_model_metadata_{userId}` | 5 min | User's domain metadata |
+| `vault_status_{userId}` | 1 min | Vault status and domain counts |
+| `active_consents_{userId}` | 1 min | Active consent tokens |
+| `portfolio_data_{userId}` | 5 min | Kai portfolio data |
+
+### 16.4 CacheProvider Hook
+
+```tsx
+import { useCache } from "@/lib/cache/cache-context";
+
+function MyComponent() {
+  const { 
+    getWorldModelMetadata, 
+    setWorldModelMetadata,
+    invalidateUser 
+  } = useCache();
+
+  // Check cache first
+  const cached = getWorldModelMetadata(userId);
+  if (cached) {
+    // Use cached data
+  }
+
+  // Invalidate on logout
+  invalidateUser(userId);
+}
+```
+
+### 16.5 Prefetch on Vault Unlock
+
+When the vault is unlocked, common data is prefetched in the background:
+
+- World Model metadata
+- Vault status
+- Active consents
+
+This happens automatically in `VaultProvider.unlockVault()`.
+
+---
+
+## 17. Page Transitions
+
+The app uses **GSAP-powered opacity crossfade transitions** between routes.
+
+### 17.1 Architecture
+
+```
+RootLayoutClient (app/layout-client.tsx)
+    └── Two-page overlay system
+    └── GSAP opacity animations
+    └── Preserves flex layout during transitions
+```
+
+### 17.2 Critical Implementation Notes
+
+**NEVER set `display: block` during transitions** - This breaks the flex layout hierarchy and causes scroll issues.
+
+```tsx
+// ❌ WRONG - Breaks flex layout
+newPage.style.display = "block";
+
+// ✅ CORRECT - Only animate opacity
+newPage.style.opacity = "0";
+gsap.to(newPage, { opacity: 1, ... });
+```
+
+**Always clean up inline styles** after transitions:
+
+```tsx
+onComplete: () => {
+  newPage.style.removeProperty("display");
+  newPage.style.removeProperty("opacity");
+}
+```
+
+### 17.3 Scroll Container Hierarchy
+
+For scrolling to work correctly, the flex hierarchy must be preserved:
+
+```
+body (h-screen, overflow-hidden)
+  └── container (flex-1, min-h-0)
+      └── providers wrapper (flex-1, min-h-0)
+          └── scroll container (flex-1, overflow-y-auto, min-h-0)
+              └── page content
+```
+
+**Key rule**: Every flex container in the chain must have `min-h-0` to allow shrinking below content size.
+
+---
+
+## 19. Background Styling
+
+### 16.1 App Background Classes
+
+| Class                   | Description                                      |
+| ----------------------- | ------------------------------------------------ |
+| `.morphy-app-bg`        | Main app background gradient                     |
+| `.morphy-app-bg-radial` | Subtle radial glow overlay from top              |
+
+### 16.2 Light Mode Background
+
+Clean white to subtle blue gradient:
+
+```css
+.morphy-app-bg {
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #ffffff 40%,
+    #f2f8ff 70%,
+    #e6f2ff 100%
+  );
+}
+```
+
+### 16.3 Dark Mode Background
+
+Deep dark gradient without gold tones:
+
+```css
+.dark .morphy-app-bg {
+  background: linear-gradient(
+    145deg,
+    #09090c 0%,
+    #0c0c14 15%,
+    #0f0f1a 30%,
+    #121218 50%,
+    #0f101a 65%,
+    #0c0c14 80%,
+    #09090c 100%
+  );
+}
+```
+
+### 16.4 Brand Colors
+
+| Token                      | Light Mode           | Dark Mode            |
+| -------------------------- | -------------------- | -------------------- |
+| `--morphy-primary-start`   | `#e91e63` (Pink)     | `#e91e63` (Pink)     |
+| `--morphy-primary-end`     | `#9c27b0` (Purple)   | `#9c27b0` (Purple)   |
+| `--morphy-secondary-start` | `#c0c0c0` (Silver)   | `#e91e63` (Pink)     |
+| `--morphy-secondary-end`   | `#e8e8e8` (Silver)   | `#9c27b0` (Purple)   |
+
+---
+
+_Version: 5.3 | Updated February 2026 | Added Root Loader and Background documentation_
+
+---
+
+## 20. Kai Dashboard Components
+
+The Kai investment dashboard uses specialized components for displaying portfolio data.
+
+### 17.1 Component Architecture
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `PortfolioHistoryChart` | `components/kai/charts/portfolio-history-chart.tsx` | Real historical data visualization |
+| `TransactionActivity` | `components/kai/cards/transaction-activity.tsx` | Recent trades and activity |
+| `IncomeDetailCard` | `components/kai/cards/income-detail-card.tsx` | Detailed income breakdown |
+| `CashFlowCard` | `components/kai/cards/cash-flow-card.tsx` | Cash flow summary |
+| `AssetAllocationDonut` | `components/kai/charts/asset-allocation-donut.tsx` | Asset allocation pie chart |
+
+### 17.2 Data Integrity Principle
+
+**Charts should only display real data.** Never use `Math.random()` or mock data in production charts.
+
+Available data from brokerage statements:
+- `historical_values[]` - Quarterly/monthly portfolio values from statement charts
+- `transactions[]` - BUY, SELL, DIVIDEND, REINVEST activity
+- `cash_flow` - Opening/closing balances, deposits, withdrawals
+- `income_detail` - Dividends, interest, capital gains breakdown
+- `ytd_metrics` - Year-to-date totals
+
+If historical data is unavailable, show a **Period Summary** fallback instead of fake charts.
+
+### 17.3 PortfolioHistoryChart Usage
+
+```tsx
+import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
+
+// With real historical data
+<PortfolioHistoryChart
+  data={portfolioData.historical_values}
+  beginningValue={beginningValue}
+  endingValue={totalValue}
+  statementPeriod="Feb 27 - Mar 31, 2021"
+  height={180}
+/>
+
+// Falls back to period summary if data.length < 2
+```
+
+### 17.4 TransactionActivity Usage
+
+```tsx
+import { TransactionActivity } from "@/components/kai/cards/transaction-activity";
+
+<TransactionActivity 
+  transactions={portfolioData.transactions}
+  maxItems={5}
+/>
+```
+
+---
+
+## 21. Tabs and Segmented Controls
+
+### 18.1 Component Selection
+
+| Use Case | Component | Import |
+|----------|-----------|--------|
+| Content panels that switch | `Tabs` | `@/lib/morphy-ux/ui/tabs` |
+| Single value selection | `SegmentedControl` | `@/lib/morphy-ux/ui/segmented-control` |
+
+**NEVER** import tabs from `@/components/ui/tabs` - always use Morphy-UX tabs for Material 3 ripple effects.
+
+### 18.2 Morphy-UX Tabs
+
+```tsx
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/lib/morphy-ux/ui/tabs";
+
+<Tabs value={activeTab} onValueChange={setActiveTab}>
+  <TabsList>
+    <TabsTrigger value="overview">Overview</TabsTrigger>
+    <TabsTrigger value="details">Details</TabsTrigger>
+  </TabsList>
+  <TabsContent value="overview">...</TabsContent>
+  <TabsContent value="details">...</TabsContent>
+</Tabs>
+```
+
+### 18.3 SegmentedControl
+
+For single-value selection (theme toggle, period selectors):
+
+```tsx
+import { SegmentedControl } from "@/lib/morphy-ux/ui/segmented-control";
+
+// Compact variant (equal-width segments)
+<SegmentedControl
+  value={selectedPeriod}
+  onValueChange={setSelectedPeriod}
+  variant="compact"
+  options={[
+    { value: "1M", label: "1M" },
+    { value: "3M", label: "3M" },
+    { value: "1Y", label: "1Y" },
+  ]}
+/>
+
+// Expanding variant (active segment expands with label)
+<SegmentedControl
+  value={theme}
+  onValueChange={setTheme}
+  variant="expanding"
+  options={[
+    { value: "light", label: "Light", icon: Sun },
+    { value: "dark", label: "Dark", icon: Moon },
+    { value: "system", label: "System", icon: Monitor },
+  ]}
+/>
+```
+
+---
+
+_Version: 5.5 | Updated February 2026 | Updated to Step-Based Progress System, added Caching System and Page Transitions documentation_
