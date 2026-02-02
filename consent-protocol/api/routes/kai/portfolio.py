@@ -233,19 +233,21 @@ async def import_portfolio_stream(
     SSE streaming endpoint for portfolio import with real-time progress.
     
     Streams Gemini parsing progress as Server-Sent Events (SSE).
+    Uses Gemini 2.5 Flash thinking mode for visible AI reasoning.
     
     **Event Types**:
-    - `stage`: Current processing stage (uploading, analyzing, streaming, parsing, complete)
-    - `text`: Streamed text chunk from Gemini
+    - `stage`: Current processing stage (uploading, analyzing, thinking, extracting, parsing, complete)
+    - `thought`: AI reasoning/thinking summary (visible to user)
+    - `text`: Streamed text chunk from Gemini (JSON extraction)
     - `progress`: Character count and chunk count
     - `complete`: Final parsed portfolio data
     - `error`: Error message if parsing fails
     
     **Example SSE Events**:
     ```
-    data: {"stage": "analyzing", "message": "AI analyzing document..."}
+    data: {"stage": "thinking", "thought": "I can see this is a Schwab brokerage statement..."}
     
-    data: {"stage": "streaming", "text": "{\n  \"account_info\":", "total_chars": 20}
+    data: {"stage": "extracting", "text": "{\n  \"account_info\":", "total_chars": 20}
     
     data: {"stage": "complete", "portfolio_data": {...}}
     ```
@@ -293,12 +295,14 @@ async def import_portfolio_stream(
     filename = file.filename
     
     async def event_generator():
-        """Generate SSE events for streaming portfolio parsing."""
+        """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import os
         import base64
         from google import genai
         from google.genai import types
         from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_VERTEX
+        
+        thinking_enabled = True  # Flag to track if thinking is available
         
         try:
             # Stage 1: Uploading
@@ -342,7 +346,7 @@ async def import_portfolio_stream(
             # Encode PDF as base64
             pdf_base64 = base64.b64encode(content).decode('utf-8')
             
-            # Build prompt (same as in portfolio_import_service)
+            # Build prompt for comprehensive extraction
             prompt = """You are a financial document parser. Analyze this brokerage statement PDF and extract ALL financial data.
 
 Return a JSON object with these sections (use null for missing values, NOT 0):
@@ -417,33 +421,81 @@ CRITICAL: Extract ALL holdings. Return ONLY valid JSON, no explanation or markdo
                 )
             ]
             
-            config = types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=32768,
-            )
+            # Configure with thinking enabled for Gemini 2.5 Flash
+            # This allows us to stream thought summaries to the user
+            try:
+                config = types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=32768,
+                    thinking_config=types.ThinkingConfig(
+                        include_thoughts=True,
+                        thinking_budget=8192,  # Allow substantial reasoning for complex documents
+                    )
+                )
+                logger.info("SSE: Thinking mode enabled with budget=8192")
+            except Exception as thinking_error:
+                # Fallback if thinking config not supported
+                logger.warning(f"SSE: Thinking config not supported, falling back: {thinking_error}")
+                thinking_enabled = False
+                config = types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=32768,
+                )
             
-            # Stage 3: Streaming
-            yield f"data: {json.dumps({'stage': 'streaming', 'message': 'Extracting financial data...'})}\n\n"
+            # Stage 3: Thinking/Streaming
+            if thinking_enabled:
+                yield f"data: {json.dumps({'stage': 'thinking', 'message': 'AI reasoning about document structure...'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting financial data...'})}\n\n"
             
             full_response = ""
             chunk_count = 0
+            thought_count = 0
+            in_extraction_phase = False
             
-            # Use official Gemini streaming API - await the coroutine first to get the async iterator
+            # Use official Gemini streaming API with thinking support
             stream = await client.aio.models.generate_content_stream(
                 model=model_to_use,
                 contents=contents,
                 config=config,
             )
-            async for chunk in stream:
-                if chunk.text:
-                    full_response += chunk.text
-                    chunk_count += 1
-                    
-                    # Stream EVERY chunk for real-time feedback (not just every 3rd)
-                    yield f"data: {json.dumps({'stage': 'streaming', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count})}\n\n"
             
-            # Final text chunk
-            yield f"data: {json.dumps({'stage': 'streaming', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'streaming_complete': True})}\n\n"
+            async for chunk in stream:
+                # Handle chunks with thinking support
+                if hasattr(chunk, 'candidates') and chunk.candidates:
+                    candidate = chunk.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content:
+                        for part in candidate.content.parts:
+                            if not hasattr(part, 'text') or not part.text:
+                                continue
+                            
+                            # Check if this is a thought (reasoning) or actual response
+                            is_thought = hasattr(part, 'thought') and part.thought
+                            
+                            if is_thought:
+                                # Stream thought summary to frontend
+                                thought_count += 1
+                                yield f"data: {json.dumps({'stage': 'thinking', 'thought': part.text, 'thought_count': thought_count, 'is_thought': True})}\n\n"
+                            else:
+                                # This is the actual JSON response
+                                if not in_extraction_phase:
+                                    in_extraction_phase = True
+                                    yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting structured data...'})}\n\n"
+                                
+                                full_response += part.text
+                                chunk_count += 1
+                                
+                                # Stream extraction progress
+                                yield f"data: {json.dumps({'stage': 'extracting', 'text': part.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                else:
+                    # Fallback for non-thinking response format
+                    if chunk.text:
+                        full_response += chunk.text
+                        chunk_count += 1
+                        yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+            
+            # Final extraction complete
+            yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
             
             # Stage 4: Parsing
             yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
@@ -479,7 +531,7 @@ CRITICAL: Extract ALL holdings. Return ONLY valid JSON, no explanation or markdo
                 }
                 
                 # Stage 5: Complete
-                yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True})}\n\n"
+                yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
                 
             except json.JSONDecodeError as e:
                 logger.error(f"JSON parse error: {e}")
