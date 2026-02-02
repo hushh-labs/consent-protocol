@@ -71,6 +71,8 @@ interface StreamingState {
   streamedText: string;
   totalChars: number;
   chunkCount: number;
+  thoughts: string[];  // Array of thought summaries from Gemini thinking mode
+  thoughtCount: number;
   errorMessage?: string;
 }
 
@@ -98,6 +100,8 @@ export function KaiFlow({
     streamedText: "",
     totalChars: 0,
     chunkCount: 0,
+    thoughts: [],
+    thoughtCount: 0,
   });
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -124,8 +128,15 @@ export function KaiFlow({
           let portfolioData: PortfolioData | undefined;
           
           if (cachedData) {
-            portfolioData = JSON.parse(cachedData);
-          } else if (vaultKey) {
+            try {
+              portfolioData = JSON.parse(cachedData);
+            } catch (cacheParseError) {
+              console.warn("[KaiFlow] Failed to parse cached data, clearing cache");
+              sessionStorage.removeItem("kai_portfolio_data");
+            }
+          }
+          
+          if (!portfolioData && vaultKey) {
             // No cache - try to decrypt from World Model
             console.log("[KaiFlow] No cache, attempting to decrypt from World Model...");
             try {
@@ -156,8 +167,21 @@ export function KaiFlow({
                 console.log("[KaiFlow] Successfully decrypted and cached portfolio data");
               }
             } catch (decryptError) {
+              // Handle encryption key mismatch or corrupted data
               console.error("[KaiFlow] Failed to decrypt from World Model:", decryptError);
-              // Continue without portfolio data - user can re-import
+              
+              // Check if this is a decryption error (key mismatch)
+              const errorMessage = decryptError instanceof Error ? decryptError.message : "";
+              if (errorMessage.includes("decrypt") || errorMessage.includes("tag") || errorMessage.includes("authentication")) {
+                console.warn("[KaiFlow] Possible encryption key mismatch - clearing cache and prompting re-import");
+                sessionStorage.removeItem("kai_portfolio_data");
+                toast.error("Unable to decrypt portfolio data. Please re-import your statement.");
+                setFlowData({ hasFinancialData: false });
+                setState("import_required");
+                return;
+              }
+              
+              // For other errors, continue without portfolio data - user can re-import
             }
           }
 
@@ -207,6 +231,21 @@ export function KaiFlow({
         return;
       }
 
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setError("File too large. Maximum size is 10MB.");
+        toast.error("File too large. Maximum size is 10MB.");
+        return;
+      }
+
+      // Validate file type
+      const validTypes = ["application/pdf", "text/csv", "application/vnd.ms-excel"];
+      if (!validTypes.includes(file.type) && !file.name.endsWith(".csv") && !file.name.endsWith(".pdf")) {
+        setError("Invalid file type. Please upload a PDF or CSV file.");
+        toast.error("Invalid file type. Please upload a PDF or CSV file.");
+        return;
+      }
+
       try {
         setState("importing");
         setError(null);
@@ -217,10 +256,21 @@ export function KaiFlow({
           streamedText: "",
           totalChars: 0,
           chunkCount: 0,
+          thoughts: [],
+          thoughtCount: 0,
         });
 
-        // Create abort controller for cancellation
+        // Create abort controller for cancellation with timeout
         abortControllerRef.current = new AbortController();
+        
+        // Set a timeout for the entire operation (5 minutes for large PDFs)
+        const timeoutId = setTimeout(() => {
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            setError("Import timed out. Please try again with a smaller file.");
+            toast.error("Import timed out. Please try again.");
+          }
+        }, 5 * 60 * 1000);
 
         // Build form data
         const formData = new FormData();
@@ -229,17 +279,37 @@ export function KaiFlow({
 
         // Use SSE streaming endpoint with tri-flow compliant URL
         const baseUrl = getDirectBackendUrl();
-        const response = await fetch(`${baseUrl}/api/kai/portfolio/import/stream`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${vaultOwnerToken}`,
-          },
-          body: formData,
-          signal: abortControllerRef.current.signal,
-        });
+        
+        let response: Response;
+        try {
+          response = await fetch(`${baseUrl}/api/kai/portfolio/import/stream`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${vaultOwnerToken}`,
+            },
+            body: formData,
+            signal: abortControllerRef.current.signal,
+          });
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          if (fetchError instanceof Error && fetchError.name === "AbortError") {
+            throw fetchError;
+          }
+          throw new Error("Network error. Please check your connection and try again.");
+        }
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Upload failed: ${response.status}`);
+          const errorText = await response.text().catch(() => "Unknown error");
+          if (response.status === 401) {
+            throw new Error("Session expired. Please refresh the page and try again.");
+          } else if (response.status === 413) {
+            throw new Error("File too large for server. Please try a smaller file.");
+          } else if (response.status >= 500) {
+            throw new Error("Server error. Please try again in a few moments.");
+          }
+          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
         }
 
         // Read SSE stream
@@ -252,11 +322,20 @@ export function KaiFlow({
         let buffer = "";
         let fullStreamedText = "";
         let parsedPortfolio: ReviewPortfolioData | null = null;
+        let lastActivityTime = Date.now();
+        const STREAM_TIMEOUT = 120000; // 2 minutes without activity
 
         while (true) {
+          // Check for stream timeout (no activity)
+          if (Date.now() - lastActivityTime > STREAM_TIMEOUT) {
+            reader.cancel();
+            throw new Error("Stream timeout - no data received. Please try again.");
+          }
+
           const { done, value } = await reader.read();
           if (done) break;
 
+          lastActivityTime = Date.now();
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
@@ -277,17 +356,31 @@ export function KaiFlow({
                     ...prev,
                     stage: "analyzing",
                   }));
-                } else if (data.stage === "streaming") {
-                  // Accumulate streamed text
-                  if (data.text) {
+                } else if (data.stage === "thinking") {
+                  // Handle thinking stage with thought summaries
+                  setStreaming((prev) => {
+                    const newThoughts = data.thought 
+                      ? [...prev.thoughts, data.thought]
+                      : prev.thoughts;
+                    return {
+                      ...prev,
+                      stage: "thinking",
+                      thoughts: newThoughts,
+                      thoughtCount: data.thought_count || newThoughts.length,
+                    };
+                  });
+                } else if (data.stage === "extracting" || data.stage === "streaming") {
+                  // Handle extraction stage (JSON streaming)
+                  if (data.text && !data.is_thought) {
                     fullStreamedText += data.text;
                   }
                   setStreaming((prev) => ({
                     ...prev,
-                    stage: "streaming",
+                    stage: "extracting",
                     streamedText: fullStreamedText,
                     totalChars: data.total_chars || prev.totalChars,
                     chunkCount: data.chunk_count || prev.chunkCount,
+                    thoughtCount: data.thought_count || prev.thoughtCount,
                   }));
                 } else if (data.stage === "parsing") {
                   setStreaming((prev) => ({
@@ -300,6 +393,7 @@ export function KaiFlow({
                   setStreaming((prev) => ({
                     ...prev,
                     stage: "complete",
+                    thoughtCount: data.thought_count || prev.thoughtCount,
                   }));
                 } else if (data.stage === "error") {
                   setStreaming((prev) => ({
@@ -371,7 +465,23 @@ export function KaiFlow({
       streamedText: "",
       totalChars: 0,
       chunkCount: 0,
+      thoughts: [],
+      thoughtCount: 0,
     });
+  }, []);
+
+  // Handle retry import after error
+  const handleRetryImport = useCallback(() => {
+    setError(null);
+    setStreaming({
+      stage: "idle",
+      streamedText: "",
+      totalChars: 0,
+      chunkCount: 0,
+      thoughts: [],
+      thoughtCount: 0,
+    });
+    setState("import_required");
   }, []);
 
   // Handle save complete from review screen
@@ -570,9 +680,11 @@ export function KaiFlow({
         <ImportProgressView
           stage={streaming.stage}
           streamedText={streaming.streamedText}
-          isStreaming={streaming.stage === "streaming"}
+          isStreaming={streaming.stage === "extracting" || streaming.stage === "streaming" || streaming.stage === "thinking"}
           totalChars={streaming.totalChars}
           chunkCount={streaming.chunkCount}
+          thoughts={streaming.thoughts}
+          thoughtCount={streaming.thoughtCount}
           errorMessage={streaming.errorMessage}
           onCancel={handleCancelImport}
         />
