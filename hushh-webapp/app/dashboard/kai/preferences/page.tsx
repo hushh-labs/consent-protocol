@@ -71,6 +71,7 @@ import {
   storePreferences,
 } from "@/lib/services/kai-service";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 type DecryptedKaiPrefs = {
   riskProfile: string | null;
@@ -83,6 +84,7 @@ export default function KaiPreferencesPage() {
   const { isVaultUnlocked, vaultKey, vaultOwnerToken } = useVault();
 
   const [loading, setLoading] = useState(false);
+  const { registerSteps, completeStep, reset } = useStepProgress();
   const [isEditing, setIsEditing] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
 
@@ -122,6 +124,12 @@ export default function KaiPreferencesPage() {
   const canLoad = useMemo(() => {
     return !!user?.uid && !!vaultKey && !!vaultOwnerToken;
   }, [user?.uid, vaultKey, vaultOwnerToken]);
+
+  // Register 2 steps: Auth check, Load preferences
+  useEffect(() => {
+    registerSteps(2);
+    return () => reset();
+  }, [registerSteps, reset]);
 
   const decryptPayload = useCallback(
     async (payload: { ciphertext: string; iv: string; tag?: string }) => {
@@ -178,6 +186,9 @@ export default function KaiPreferencesPage() {
   const loadAll = useCallback(async () => {
     if (!user?.uid || !vaultOwnerToken) return;
     if (!vaultKey) return;
+
+    // Step 1: Auth check complete
+    completeStep();
 
     setLoading(true);
     setProfileNotFound(false);
@@ -241,13 +252,17 @@ export default function KaiPreferencesPage() {
       // Auto-detect suggestions (low friction)
       const auto = await IdentityService.autoDetect();
       setAutoDetectMatches(auto.matches || []);
+
+      // Step 2: Preferences loaded
+      completeStep();
     } catch (err) {
       console.error("[KaiPreferences] Load error:", err);
       toast.error("Failed to load preferences");
+      completeStep(); // Complete step on error
     } finally {
       setLoading(false);
     }
-  }, [decryptPayload, user?.uid, vaultKey, vaultOwnerToken, profileNotFound]);
+  }, [decryptPayload, user?.uid, vaultKey, vaultOwnerToken, profileNotFound, completeStep]);
 
   useEffect(() => {
     if (!canLoad) return;
@@ -622,7 +637,7 @@ export default function KaiPreferencesPage() {
       </div>
 
       {loading ? (
-        <HushhLoader label="Loading preferences..." />
+        null
       ) : (
         <>
           <Card

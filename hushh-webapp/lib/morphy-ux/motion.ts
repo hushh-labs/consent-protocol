@@ -3,7 +3,7 @@
 // =============================================================================
 
 export const motionDurations = {
-  // Enter/exit
+  // Enter/exit – tuned for mobile-first responsiveness
   xs: 120,
   sm: 180,
   md: 240,
@@ -16,7 +16,9 @@ export const motionDurations = {
 export type MotionDurationKey = keyof typeof motionDurations;
 
 export const motionEasings = {
+  // Standard Material-like curve
   standard: "cubic-bezier(0.2, 0.0, 0.0, 1)",
+  // Acceleration / deceleration variants
   accelerate: "cubic-bezier(0.3, 0.0, 1, 1)",
   decelerate: "cubic-bezier(0.0, 0.0, 0.2, 1)",
   emphasized: "cubic-bezier(0.2, 0.0, 0, 1)",

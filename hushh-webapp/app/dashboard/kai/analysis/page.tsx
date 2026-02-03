@@ -10,19 +10,25 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 export default function KaiAnalysisPage() {
   const router = useRouter();
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Register 1 step: Redirect
+  useEffect(() => {
+    registerSteps(1);
+    return () => reset();
+  }, [registerSteps, reset]);
 
   useEffect(() => {
+    // Step 1: Redirect complete
+    completeStep();
     // Redirect to the main Kai page which now handles all flows
     router.replace("/dashboard/kai");
-  }, [router]);
+  }, [router, completeStep]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <HushhLoader variant="inline" label="Loading Kai..." />
-    </div>
-  );
+  // Return null - progress bar shows at top
+  return null;
 }

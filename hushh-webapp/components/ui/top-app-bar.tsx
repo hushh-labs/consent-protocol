@@ -7,6 +7,10 @@
  * On root-level pages (/dashboard, /consents, /profile), triggers exit dialog.
  * On sub-pages (Level 2+), navigates to parent route.
  *
+ * On native: StatusBarBlur (safe-area strip) and TopAppBar (breadcrumb bar) share
+ * the same transparent blur style so the Capacitor status bar area and breadcrumb
+ * bar match (one continuous frosted look).
+ *
  * Place this at the layout level for seamless integration.
  */
 
@@ -26,12 +30,38 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
+/** Shared style so Capacitor status bar area and breadcrumb bar match (masked blur on all platforms) */
+const BAR_GLASS_CLASS = "top-bar-glass";
+
+/**
+ * StatusBarBlur - Native-only strip under the system status bar.
+ * Uses the same transparent blur as TopAppBar so both bands match.
+ * Render before TopAppBar (e.g. in providers).
+ */
+export function StatusBarBlur() {
+  const [isNative, setIsNative] = useState(false);
+  useEffect(() => {
+    setIsNative(Capacitor.isNativePlatform());
+  }, []);
+  if (!isNative) return null;
+  return (
+    <div
+      className={cn(
+        "fixed top-0 left-0 right-0 z-40",
+        "h-[env(safe-area-inset-top)] min-h-0",
+        BAR_GLASS_CLASS,
+      )}
+      aria-hidden
+    />
+  );
+}
+
 interface TopAppBarProps {
   className?: string;
 }
 
 export function TopAppBar({ className }: TopAppBarProps) {
-  const { isRootLevel, handleBack } = useNavigation();
+  const { handleBack } = useNavigation();
   const [isNative, setIsNative] = useState(false);
   const pathname = usePathname();
 
@@ -48,12 +78,11 @@ export function TopAppBar({ className }: TopAppBarProps) {
   return (
     <div
       className={cn(
-        // Fixed at top, full width
-        "fixed top-0 left-0 right-0 z-50",
-        // App bar height only (body handles safe area padding)
-        "h-[48px]",
-        // Theme-aware background using CSS variable
-        "bg-background",
+        // Fixed: on native sit below StatusBarBlur so both bands use same style
+        "fixed left-0 right-0 z-50",
+        isNative ? "top-[env(safe-area-inset-top)] h-[64px]" : "top-0 h-[64px]",
+        // Match StatusBarBlur so Capacitor status bar area and breadcrumb bar match
+        BAR_GLASS_CLASS,
         // Flex container for back button
         "flex items-center pb-2 px-4",
         className,
@@ -65,11 +94,11 @@ export function TopAppBar({ className }: TopAppBarProps) {
           className="p-2 -ml-2 rounded-full hover:bg-muted/50 active:bg-muted/80 transition-colors"
           aria-label="Go back"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-6 w-6" />
         </button>
 
         <Breadcrumb>
-          <BreadcrumbList>
+          <BreadcrumbList className="text-lg">
             {pathname
               .split("/")
               .filter(Boolean)
@@ -106,20 +135,28 @@ export function TopAppBar({ className }: TopAppBarProps) {
  * TopAppBarSpacer - Smart spacer that handles top content padding
  * - Landing Page: No spacer needed (body padding handles safe area)
  * - Sub Pages: Adds padding for TopAppBar only (body handles safe area)
+ * - Native with overlay: spacer = 64px + safe-area so content clears blurred bar
  */
 export function TopAppBarSpacer() {
-  const { isRootLevel } = useNavigation();
-
   const pathname = usePathname();
-  
+  const [isNative, setIsNative] = useState(false);
+
+  useEffect(() => {
+    setIsNative(Capacitor.isNativePlatform());
+  }, []);
+
   // Landing page: No spacer needed, body padding handles safe area
   if (pathname === "/") {
     return null;
   }
 
-  // Sub-pages: Only clear the fixed TopAppBar height (48px)
-  // Body padding already handles safe area
+  // Sub-pages: clear the fixed TopAppBar; on native bar extends into safe area
   return (
-    <div className="w-full shrink-0 transition-[height] h-[48px]" />
+    <div
+      className={cn(
+        "w-full shrink-0 transition-[height]",
+        isNative ? "h-[calc(64px+env(safe-area-inset-top))]" : "h-[64px]",
+      )}
+    />
   );
 }

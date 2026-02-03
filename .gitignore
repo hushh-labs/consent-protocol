@@ -40,3 +40,4 @@ Pipfile.lock
 .DS_Store
 Thumbs.db
 CURSOR_TOOLS.md
+continue-dev-tools-usage.md

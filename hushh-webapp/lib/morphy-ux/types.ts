@@ -28,6 +28,54 @@ export type ColorVariant =
 // New effect type for component styling
 export type ComponentEffect = "fill" | "glass" | "fade";
 
+// Shared interactive props for Morphy-UX components
+export interface MorphyInteractiveProps {
+  /**
+   * Visual variant for the component (gradient, muted, metallic, etc.).
+   * Defaults are component-specific, but all map back to ColorVariant.
+   */
+  variant?: ColorVariant;
+  /**
+   * Surface treatment / physics preset.
+   * - "fill": solid surface
+   * - "glass": glassmorphism with backdrop blur
+   * - "fade": low-emphasis surface with reduced blur
+   */
+  effect?: ComponentEffect;
+  /**
+   * Enables Material 3 ripple and state-layer interactions.
+   */
+  showRipple?: boolean;
+}
+
+// Base props for button-like components (used by Button)
+export interface MorphyButtonBaseProps extends MorphyInteractiveProps {
+  /**
+   * Stretch the button to fill its container width.
+   */
+  fullWidth?: boolean;
+  /**
+   * Show a loading state and disable user interaction.
+   */
+  loading?: boolean;
+}
+
+// Base props for card/surface components
+export interface MorphyCardBaseProps extends MorphyInteractiveProps {
+  /**
+   * Marks the card as interactive (pointer cursor, hover affordances).
+   */
+  interactive?: boolean;
+  /**
+   * Highlights the card as selected.
+   */
+  selected?: boolean;
+  /**
+   * Stretches the card to fill the available height.
+   */
+  fullHeight?: boolean;
+}
+
 // ============================================================================
 // DIRECTION & GRADIENT TYPES
 // ============================================================================
@@ -57,6 +105,9 @@ export interface IconConfig {
   title?: string;
   position?: IconPosition;
 }
+
+// Feedback tones for alerts, toasts, and inline status messaging
+export type FeedbackTone = "success" | "error" | "warning" | "info";
 
 // ============================================================================
 // COMPONENT VARIANT TYPES

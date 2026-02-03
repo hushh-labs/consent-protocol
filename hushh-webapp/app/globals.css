@@ -90,27 +90,29 @@ html body[data-scroll-locked] {
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
   
-  /* Crystal Gold Theme */
-  --crystal-gold-50: #FDF8E7;
-  --crystal-gold-100: #F9EDCC;
-  --crystal-gold-200: #F4E4BA;
-  --crystal-gold-300: #E8D5A3;
-  --crystal-gold-400: #D4AF37;
-  --crystal-gold-500: #C5A028;
-  --crystal-gold-600: #B8860B;
-  --crystal-gold-700: #996515;
-  --crystal-gold-800: #7A4F0F;
-  --crystal-gold-900: #5C3A0A;
+  /* Primary Brand Theme - Pink/Purple */
+  --brand-primary: #e91e63;
+  --brand-secondary: #9c27b0;
+  --brand-50: #fce4ec;
+  --brand-100: #f8bbd9;
+  --brand-200: #f48fb1;
+  --brand-300: #f06292;
+  --brand-400: #ec407a;
+  --brand-500: #e91e63;
+  --brand-600: #d81b60;
+  --brand-700: #c2185b;
+  --brand-800: #ad1457;
+  --brand-900: #880e4f;
   
   /* Crystal Glass Effect */
   --crystal-glass-bg: rgba(255, 255, 255, 0.12);
-  --crystal-glass-border: rgba(212, 175, 55, 0.2);
+  --crystal-glass-border: rgba(233, 30, 99, 0.2);
   --crystal-glass-blur: 20px;
   
-  /* App Background - Light Gold Gradient */
-  --app-bg-start: #FFFDF7;
-  --app-bg-mid: #FDF8E7;
-  --app-bg-end: #F9EDCC;
+  /* App Background - Clean White/Blue Gradient */
+  --app-bg-start: #FFFFFF;
+  --app-bg-mid: #F8FAFC;
+  --app-bg-end: #F1F5F9;
   
   --glass1: #ffffff60 !important;
   --glass2: #6464643b !important;
@@ -120,15 +122,15 @@ html body[data-scroll-locked] {
   --activeShadowColor: var(--shadow1);
   --fadeGrey: #e5e7eb80;
   
-  /* Hushh Brand Color Tokens - Crystal Gold */
-  --morphy-primary-start: #D4AF37;
-  --morphy-primary-end: #B8860B;
-  --morphy-secondary-start: #F4E4BA;
-  --morphy-secondary-end: #E8D5A3;
+  /* Hushh Brand Color Tokens - Pink/Purple (hushh.ai brand) */
+  --morphy-primary-start: #e91e63; /* Pink */
+  --morphy-primary-end: #9c27b0;   /* Purple */
+  --morphy-secondary-start: #c0c0c0; /* Silver gradient start */
+  --morphy-secondary-end: #e8e8e8;   /* Silver gradient end */
 
-  /* Gold accent gradient */
-  --morphy-accent-start: #D4AF37;
-  --morphy-accent-end: #B8860B;
+  /* Alternative accent gradient - using primary colors */
+  --morphy-accent-start: #e91e63;
+  --morphy-accent-end: #9c27b0;
 
   /* Pre-computed gradients */
   --morphy-primary-gradient: linear-gradient(
@@ -147,28 +149,28 @@ html body[data-scroll-locked] {
     var(--morphy-accent-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens - Gold */
-  --md-ripple-hover-color: var(--crystal-gold-400);
-  --md-ripple-pressed-color: var(--crystal-gold-600);
+  /* Material 3 Expressive Ripple Tokens */
+  --md-ripple-hover-color: var(--morphy-primary-start);
+  --md-ripple-pressed-color: var(--morphy-primary-start);
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }
 
-/* Theme-aware gradient text - Crystal Gold */
+/* Theme-aware gradient text - pink/purple consistently */
 .hushh-gradient-text {
-  background-image: linear-gradient(to right, #D4AF37, #B8860B);
+  background-image: linear-gradient(to right, #e91e63, #9c27b0);
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
 }
 
 .dark .hushh-gradient-text {
-  background-image: linear-gradient(to right, #D4AF37, #F4E4BA);
+  background-image: linear-gradient(to right, #c0c0c0, #e8e8e8);
 }
 
-/* Crystal Gold Text */
-.text-crystal-gold {
-  background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
+/* Hushh Brand Text */
+.text-hushh-brand {
+  background: linear-gradient(135deg, #e91e63 0%, #9c27b0 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -193,11 +195,12 @@ html body[data-scroll-locked] {
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  /* Chart colors - higher lightness for contrast on dark card (0.205) */
+  --chart-1: oklch(0.58 0.24 264);
+  --chart-2: oklch(0.72 0.17 162);
+  --chart-3: oklch(0.78 0.19 70);
+  --chart-4: oklch(0.68 0.26 304);
+  --chart-5: oklch(0.68 0.25 16);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -208,13 +211,13 @@ html body[data-scroll-locked] {
   --sidebar-ring: oklch(0.556 0 0);
   
   /* Crystal Glass Effect - Dark Mode */
-  --crystal-glass-bg: rgba(212, 175, 55, 0.06);
-  --crystal-glass-border: rgba(212, 175, 55, 0.15);
+  --crystal-glass-bg: rgba(233, 30, 99, 0.06);
+  --crystal-glass-border: rgba(233, 30, 99, 0.15);
   
-  /* App Background - Dark Gold Gradient */
+  /* App Background - Dark Gradient */
   --app-bg-start: #0A0A0C;
-  --app-bg-mid: #12100D;
-  --app-bg-end: #1A1510;
+  --app-bg-mid: #0F0F14;
+  --app-bg-end: #141418;
   
   --glass1: #ffffff40 !important;
   --glass2: #6464643b !important;
@@ -224,11 +227,11 @@ html body[data-scroll-locked] {
   --activeShadowColor: var(--shadow2);
   --fadeGrey: #e5e7eb80;
   
-  /* Morphy UI Color Tokens - Dark Mode Crystal Gold */
-  --morphy-primary-start: #D4AF37;
-  --morphy-primary-end: #B8860B;
-  --morphy-secondary-start: #D4AF37;
-  --morphy-secondary-end: #F4E4BA;
+  /* Morphy UI Color Tokens - Dark Mode */
+  --morphy-primary-start: #e91e63;
+  --morphy-primary-end: #9c27b0;
+  --morphy-secondary-start: #e91e63;
+  --morphy-secondary-end: #9c27b0;
 
   /* Ensure gradient colors are available immediately in dark mode */
   --morphy-secondary-gradient: linear-gradient(
@@ -237,9 +240,9 @@ html body[data-scroll-locked] {
     var(--morphy-secondary-end)
   );
 
-  /* Material 3 Expressive Ripple Tokens - Gold */
-  --md-ripple-hover-color: #D4AF37;
-  --md-ripple-pressed-color: #B8860B;
+  /* Material 3 Expressive Ripple Tokens - Pink/Purple for Hushh brand */
+  --md-ripple-hover-color: #e91e63;
+  --md-ripple-pressed-color: #9c27b0;
   --md-ripple-hover-opacity: 0.08;
   --md-ripple-pressed-opacity: 0.12;
 }
@@ -350,6 +353,28 @@ html body[data-scroll-locked] {
   will-change: transform;
 }
 
+/* iOS WKWebView: mirror backdrop-blur-xl for WebKit */
+[class*="backdrop-blur-xl"] {
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* Top bar (StatusBarBlur + TopAppBar): masked blur - glass + faded bottom edge, all platforms */
+.top-bar-glass {
+  background-color: color-mix(in oklch, lab(100 0 0 / 0.83) 40%, transparent);
+  backdrop-filter: blur(3px) saturate(180%);
+  -webkit-backdrop-filter: blur(3px) saturate(180%);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}
+
+.dark .top-bar-glass {
+  background-color: color-mix(in oklch, lab(0 0 0 / 0.83) 40%, transparent);
+}
+
 /* 
  * MORPHY TRANSITION SYSTEM
  * Standardized 200ms duration for all interactive transitions
@@ -403,22 +428,27 @@ html body[data-scroll-locked] {
   pointer-events: none;
 }
 
-/* Subtle App Background Gradients - Crystal Gold Theme */
+/* Subtle App Background Gradients - Clean Professional Theme */
 .morphy-app-bg {
   background: linear-gradient(
     180deg,
-    var(--app-bg-start, #FFFDF7) 0%,
-    var(--app-bg-mid, #FDF8E7) 50%,
-    var(--app-bg-end, #F9EDCC) 100%
+    #ffffff 0%,
+    #ffffff 40%,
+    #f2f8ff 70%,
+    #e6f2ff 100%
   );
 }
 
 .dark .morphy-app-bg {
   background: linear-gradient(
-    180deg,
-    var(--app-bg-start, #0A0A0C) 0%,
-    var(--app-bg-mid, #12100D) 50%,
-    var(--app-bg-end, #1A1510) 100%
+    145deg,
+    #09090c 0%,
+    #0c0c14 15%,
+    #0f0f1a 30%,
+    #121218 50%,
+    #0f101a 65%,
+    #0c0c14 80%,
+    #09090c 100%
   );
 }
 
@@ -436,9 +466,9 @@ html body[data-scroll-locked] {
 .dark .morphy-app-bg-radial {
   background: radial-gradient(
     ellipse at 50% 0%,
-    rgba(251, 191, 36, 0.06) 0%,
-    rgba(245, 158, 11, 0.04) 25%,
-    rgba(245, 158, 11, 0.02) 45%,
+    rgba(233, 30, 99, 0.06) 0%,
+    rgba(156, 39, 176, 0.04) 25%,
+    rgba(156, 39, 176, 0.02) 45%,
     transparent 70%
   );
 }
@@ -592,28 +622,28 @@ html body[data-scroll-locked] {
   border: 1px solid #0d7590 !important;
 }
 
-/* Dark mode morphy toast styling */
+/* Dark mode morphy toast styling - using primary brand colors */
 .dark .morphy-toast-dark[data-sonner-toast] {
-  background: #fbbf24 !important;
-  color: #000000 !important;
-  border: 1px solid #f59e0b !important;
+  background: #e91e63 !important;
+  color: #ffffff !important;
+  border: 1px solid #c2185b !important;
 }
 
 .dark .morphy-toast-dark[data-sonner-toast] [data-sonner-toast-icon] {
-  color: #000000 !important;
+  color: #ffffff !important;
 }
 
 /* More specific dark mode selectors */
 .dark .morphy-toast-dark[data-sonner-toast][data-type="error"] {
-  background: #fbbf24 !important;
-  color: #000000 !important;
-  border: 1px solid #f59e0b !important;
+  background: #e91e63 !important;
+  color: #ffffff !important;
+  border: 1px solid #c2185b !important;
 }
 
 .dark .morphy-toast-dark[data-sonner-toast][data-type="success"] {
-  background: #fbbf24 !important;
-  color: #000000 !important;
-  border: 1px solid #f59e0b !important;
+  background: #e91e63 !important;
+  color: #ffffff !important;
+  border: 1px solid #c2185b !important;
 }
 
 /* ============================================================================
@@ -631,14 +661,14 @@ html body[data-scroll-locked] {
     0 4px 30px rgba(0, 0, 0, 0.1);
 }
 
-/* Gold accent variant */
+/* Primary accent variant */
 .crystal-glass-gold {
   background: linear-gradient(
     135deg,
-    rgba(212, 175, 55, 0.1) 0%,
-    rgba(184, 134, 11, 0.05) 100%
+    rgba(233, 30, 99, 0.1) 0%,
+    rgba(156, 39, 176, 0.05) 100%
   );
-  border: 1px solid rgba(212, 175, 55, 0.25);
+  border: 1px solid rgba(233, 30, 99, 0.25);
   border-radius: var(--radius);
   backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--crystal-glass-blur, 20px)) saturate(180%);
@@ -647,10 +677,10 @@ html body[data-scroll-locked] {
 .dark .crystal-glass-gold {
   background: linear-gradient(
     135deg,
-    rgba(212, 175, 55, 0.08) 0%,
-    rgba(184, 134, 11, 0.04) 100%
+    rgba(233, 30, 99, 0.08) 0%,
+    rgba(156, 39, 176, 0.04) 100%
   );
-  border: 1px solid rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(233, 30, 99, 0.2);
 }
 
 /* Crystal button variants */
@@ -665,25 +695,25 @@ html body[data-scroll-locked] {
 
 .crystal-btn:hover {
   background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(212, 175, 55, 0.3);
+  border-color: rgba(233, 30, 99, 0.3);
 }
 
 .dark .crystal-btn:hover {
-  background: rgba(212, 175, 55, 0.1);
+  background: rgba(233, 30, 99, 0.1);
 }
 
 .crystal-btn-gold {
-  background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
+  background: linear-gradient(135deg, #e91e63 0%, #9c27b0 100%);
   color: white;
   font-weight: 600;
   border: none;
   border-radius: var(--radius);
-  box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+  box-shadow: 0 4px 15px rgba(233, 30, 99, 0.3);
   transition: all 200ms ease-in-out;
 }
 
 .crystal-btn-gold:hover {
-  box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+  box-shadow: 0 6px 20px rgba(233, 30, 99, 0.4);
   transform: translateY(-1px);
 }
 
@@ -701,7 +731,7 @@ html body[data-scroll-locked] {
 }
 
 .crystal-card:hover {
-  border-color: rgba(212, 175, 55, 0.3);
+  border-color: rgba(233, 30, 99, 0.3);
   box-shadow: 
     inset 0 1px 1px rgba(255, 255, 255, 0.1),
     0 8px 40px rgba(0, 0, 0, 0.15);
