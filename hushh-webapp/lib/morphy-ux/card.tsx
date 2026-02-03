@@ -3,7 +3,11 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
-import { type ColorVariant, type ComponentEffect } from "@/lib/morphy-ux/types";
+import {
+  type ColorVariant,
+  type ComponentEffect,
+  type MorphyCardBaseProps,
+} from "@/lib/morphy-ux/types";
 import { type IconWeight } from "@phosphor-icons/react";
 import {
   getVariantStyles,
@@ -15,11 +19,10 @@ import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 // CARD COMPONENT
 // ============================================================================
 
-export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface CardProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    MorphyCardBaseProps {
   asChild?: boolean;
-  variant?: ColorVariant;
-  effect?: ComponentEffect;
-  showRipple?: boolean;
   icon?: {
     icon: React.ComponentType<{ className?: string; weight?: IconWeight }>;
     title?: string;
@@ -37,6 +40,9 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       asChild = false,
       showRipple = false,
       icon,
+      interactive,
+      selected,
+      fullHeight,
       children,
       ...props
     },
@@ -146,6 +152,9 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
             : variant === "muted"
             ? ""
             : "!border-transparent",
+          interactive ? "cursor-pointer" : "",
+          fullHeight ? "h-full" : "",
+          selected ? "border-[var(--morphy-primary-start)]" : "",
           className
         )}
         {...props}

@@ -4,6 +4,9 @@
  * Consent History API
  *
  * Returns paginated consent audit history for the archived/logs tab.
+ *
+ * SECURITY: Requires VAULT_OWNER token per BYOK authorization model.
+ * The backend validates the token and ensures user_id matches.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -15,6 +18,15 @@ const BACKEND_URL = getPythonApiUrl();
 
 export async function GET(request: NextRequest) {
   try {
+    // BYOK Authorization: Require VAULT_OWNER token
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authorization header with VAULT_OWNER token required" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const page = searchParams.get("page") || "1";
@@ -31,9 +43,16 @@ export async function GET(request: NextRequest) {
       `[API] Fetching consent history for user: ${userId}, page: ${page}`
     );
 
+    // Forward Authorization header to backend for token validation
+    // Backend validates VAULT_OWNER token and checks user_id match
     const response = await fetch(
       `${BACKEND_URL}/api/consent/history?userId=${userId}&page=${page}&limit=${limit}`,
-      { method: "GET" }
+      {
+        method: "GET",
+        headers: {
+          Authorization: authHeader,
+        },
+      }
     );
 
     if (!response.ok) {

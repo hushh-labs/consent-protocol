@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 // Power words from Nav's persona
 const POWER_WORDS = [
@@ -26,20 +27,34 @@ const POWER_WORDS = [
 
 export default function AgentNavPage() {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { registerSteps, completeStep, reset } = useStepProgress();
   const [currentWord, setCurrentWord] = useState("");
   const [wordIndex, setWordIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isTyping, setIsTyping] = useState(false); // Added missing state
+  const [isTyping, setIsTyping] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showCursor, setShowCursor] = useState(true);
 
+  // Register 1 step: Auth check
+  useEffect(() => {
+    registerSteps(1);
+    return () => reset();
+  }, [registerSteps, reset]);
+
+  // Step 1: Auth check complete
+  useEffect(() => {
+    if (!authLoading) {
+      completeStep();
+    }
+  }, [authLoading, completeStep]);
+
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       router.push("/");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, authLoading, router]);
 
   // Blinking cursor effect
   useEffect(() => {
@@ -93,7 +108,8 @@ export default function AgentNavPage() {
     return () => clearTimeout(timer);
   }, [currentWord, isDeleting, wordIndex]);
 
-  if (!isAuthenticated) {
+  // Show nothing while checking auth
+  if (authLoading || !isAuthenticated) {
     return null;
   }
 

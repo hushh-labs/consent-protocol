@@ -66,6 +66,11 @@ export default function KaiPage() {
     return null;
   }
 
+  // Show nothing if vault owner token is not available
+  if (!vaultOwnerToken) {
+    return null;
+  }
+
   // NOTE: Vault check is handled by VaultLockGuard in the dashboard layout.
   // We trust the layout guard and don't duplicate the check here.
   // If we reach this point, the vault is guaranteed to be unlocked.

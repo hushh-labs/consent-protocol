@@ -12,7 +12,7 @@
  * Only accessible when vault is unlocked.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -30,6 +30,7 @@ import {
   TrendingUp,
   ArrowRight,
 } from "lucide-react";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 type AgentType = "food" | "professional" | "kai";
 
@@ -72,6 +73,15 @@ const agents: Agent[] = [
 export default function AgentNavPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Register 1 step: Page load
+  useEffect(() => {
+    registerSteps(1);
+    // Step 1: Page loaded (vault guard handles auth)
+    completeStep();
+    return () => reset();
+  }, [registerSteps, completeStep, reset]);
 
   const filteredAgents = agents.filter(
     (agent) =>

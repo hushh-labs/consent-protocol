@@ -497,7 +497,7 @@ export function KaiChat({
                 "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
                 msg.role === "user"
                   ? "bg-muted"
-                  : "bg-gradient-to-br from-[var(--crystal-gold-400)]/20 to-[var(--crystal-gold-600)]/10 border border-[var(--crystal-gold-400)]/20"
+                  : "bg-gradient-to-br from-[var(--morphy-primary-start)]/20 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20"
               )}
             >
               {msg.role === "user" ? (
@@ -512,7 +512,7 @@ export function KaiChat({
               className={cn(
                 "p-3 rounded-2xl text-sm",
                 msg.role === "user"
-                  ? "bg-[var(--crystal-gold-500)] text-white rounded-tr-sm"
+                  ? "bg-primary text-primary-foreground rounded-tr-sm"
                   : "crystal-glass rounded-tl-sm"
               )}
             >
@@ -532,7 +532,7 @@ export function KaiChat({
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex gap-3 mr-auto">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[var(--crystal-gold-400)]/20 to-[var(--crystal-gold-600)]/10 border border-[var(--crystal-gold-400)]/20 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[var(--morphy-primary-start)]/20 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 flex items-center justify-center">
               <HushhLogoIcon size={16} className="opacity-80" />
             </div>
             <div className="crystal-glass p-3 rounded-2xl rounded-tl-sm">
@@ -614,7 +614,7 @@ export function KaiChat({
             className={cn(
               "shrink-0 rounded-full transition-all",
               input.trim()
-                ? "bg-gradient-to-r from-[var(--crystal-gold-400)] to-[var(--crystal-gold-600)] text-white shadow-md"
+                ? "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white shadow-md"
                 : "bg-muted text-muted-foreground"
             )}
             onClick={handleSend}

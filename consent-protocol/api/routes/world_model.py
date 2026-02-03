@@ -150,6 +150,48 @@ async def get_domain_data(
     return {"encrypted_blob": data}
 
 
+class DeleteDomainResponse(BaseModel):
+    """Response from delete domain operation."""
+    success: bool
+    message: Optional[str] = None
+
+
+@router.delete("/domain-data/{user_id}/{domain}", response_model=DeleteDomainResponse)
+async def delete_domain_data(
+    user_id: str,
+    domain: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Delete a specific domain from user's world model.
+    
+    This removes the domain from the index (available_domains and domain_summaries).
+    The client should also update their local encrypted blob to remove the domain data.
+    
+    **Authentication**: Requires valid VAULT_OWNER token.
+    """
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
+    
+    world_model = get_world_model_service()
+    success = await world_model.delete_domain_data(user_id, domain)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete {domain} domain data"
+        )
+    
+    return DeleteDomainResponse(
+        success=True,
+        message=f"Successfully deleted {domain} domain data"
+    )
+
+
 # ==================== METADATA ENDPOINT ====================
 
 class DomainMetadata(BaseModel):

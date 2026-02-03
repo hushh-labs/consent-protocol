@@ -2,7 +2,11 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import { type ColorVariant, type ComponentEffect } from "@/lib/morphy-ux/types";
+import {
+  type ColorVariant,
+  type ComponentEffect,
+  type MorphyButtonBaseProps,
+} from "@/lib/morphy-ux/types";
 import { getVariantStyles } from "@/lib/morphy-ux/utils";
 import { MaterialRipple } from "@/lib/morphy-ux/material-ripple";
 import { type IconWeight } from "@phosphor-icons/react";
@@ -37,11 +41,9 @@ const buttonVariants = cva(
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+    VariantProps<typeof buttonVariants>,
+    MorphyButtonBaseProps {
   asChild?: boolean;
-  variant?: ColorVariant;
-  effect?: ComponentEffect;
-  showRipple?: boolean;
   icon?: {
     icon: React.ComponentType<{ className?: string; weight?: IconWeight }>;
     title?: string;
@@ -60,6 +62,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       asChild = false,
       showRipple = true,
       icon,
+      fullWidth,
+      loading = false,
       children,
       ...props
     },
@@ -67,6 +71,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const iconWeight = useIconWeight();
     const Comp = asChild ? Slot : "button";
+
+    // Normalize disabled/loading state
+    const { disabled, ...restProps } = props;
+    const isDisabled = disabled || loading;
 
     // Get centralized styles
     const variantStyles = getVariantStyles(variant, effect);
@@ -160,12 +168,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           "border border-transparent transition-[border-color,box-shadow,background-color] duration-200",
           // Hover border effect for all buttons - silver accent in dark mode for hushh brand
           "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]",
+          fullWidth ? "w-full" : "",
+          loading ? "cursor-wait" : "",
           className
         )}
         style={{ outline: "none" }}
         ref={ref}
-        type={props.type || "button"}
-        {...props}
+        type={restProps.type || "button"}
+        disabled={isDisabled}
+        aria-busy={loading || undefined}
+        data-loading={loading || undefined}
+        {...restProps}
       >
         {IconComponent && renderIconBlock()}
         {children}
