@@ -4,7 +4,8 @@
  * Kai Search Bar - Command palette for triggering stock analysis
  *
  * Features:
- * - Positioned just above bottom nav (bottom-[72px])
+ * - Positioned above bottom nav with proper spacing (bottom-[88px])
+ * - Centered with max-width for symmetric appearance
  * - Matches bottom nav glass styling
  * - Typing triggers stock analysis
  * - Auto-complete suggestions based on portfolio holdings
@@ -130,67 +131,69 @@ export function KaiSearchBar({
   };
 
   return (
-    <div className="fixed bottom-[72px] left-4 right-4 z-40">
-      {/* Suggestions Dropdown */}
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="mb-2 rounded-2xl border overflow-hidden shadow-xl backdrop-blur-xl"
+    <div className="fixed bottom-[88px] left-0 right-0 z-40 px-6">
+      <div className="max-w-lg mx-auto">
+        {/* Suggestions Dropdown */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="mb-2 rounded-2xl border overflow-hidden shadow-xl backdrop-blur-xl"
+            style={{
+              backgroundColor: "var(--glass-fill)",
+              borderColor: "var(--glass-border)",
+            }}
+          >
+            {suggestions.map((suggestion, index) => (
+              <button
+                key={index}
+                onClick={() => handleSuggestionClick(suggestion)}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
+                  index === selectedIndex
+                    ? "bg-primary/10"
+                    : "hover:bg-muted/50"
+                )}
+              >
+                <BarChart3 className="w-5 h-5 text-primary shrink-0" />
+                <span className="text-sm font-medium">{suggestion.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Search Input - Matches bottom nav styling */}
+        <div
+          className="backdrop-blur-xl border rounded-2xl"
           style={{
             backgroundColor: "var(--glass-fill)",
             borderColor: "var(--glass-border)",
           }}
         >
-          {suggestions.map((suggestion, index) => (
-            <button
-              key={index}
-              onClick={() => handleSuggestionClick(suggestion)}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
-                index === selectedIndex
-                  ? "bg-primary/10"
-                  : "hover:bg-muted/50"
-              )}
-            >
-              <BarChart3 className="w-5 h-5 text-primary shrink-0" />
-              <span className="text-sm font-medium">{suggestion.label}</span>
-            </button>
-          ))}
+          <form onSubmit={handleSubmit} className="flex items-center gap-3 px-4 py-3">
+            <Search className="w-5 h-5 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value.toUpperCase())}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder}
+              disabled={disabled}
+              maxLength={5}
+              className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground disabled:opacity-50"
+            />
+            {input && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInput("");
+                  setShowSuggestions(false);
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </form>
         </div>
-      )}
-
-      {/* Search Input - Matches bottom nav styling */}
-      <div
-        className="backdrop-blur-xl border rounded-2xl"
-        style={{
-          backgroundColor: "var(--glass-fill)",
-          borderColor: "var(--glass-border)",
-        }}
-      >
-        <form onSubmit={handleSubmit} className="flex items-center gap-3 px-4 py-3">
-          <Search className="w-5 h-5 text-muted-foreground shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value.toUpperCase())}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            disabled={disabled}
-            maxLength={5}
-            className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground disabled:opacity-50"
-          />
-          {input && (
-            <button
-              type="button"
-              onClick={() => {
-                setInput("");
-                setShowSuggestions(false);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Clear
-            </button>
-          )}
-        </form>
       </div>
     </div>
   );

@@ -69,13 +69,15 @@ export const prefersReducedMotion = () => {
 
 export const animateOnce = async (
   target: Element | Element[] | string,
-  vars: Record<string, unknown>
+  vars: Record<string, unknown>,
+  durationOverrideMs?: number
 ) => {
   if (prefersReducedMotion()) return;
   const gsap = await getGsap();
   if (!gsap) return;
   gsap.to(target, {
-    duration: (motionDefaults.durationMs / 1000) as number,
+    duration: ((durationOverrideMs ?? motionDefaults.durationMs) /
+      1000) as number,
     ease: motionDefaults.easing,
     overwrite: "auto",
     ...vars,

@@ -409,7 +409,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         >
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <Key className="h-6 w-6 text-amber-500" />
+              <Key className="h-6 w-6 text-orange-500" />
               <DialogTitle>Save Your Recovery Key</DialogTitle>
             </div>
             <DialogDescription>
@@ -419,9 +419,9 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           </DialogHeader>
 
           <div className="space-y-4">
-            <Alert className="bg-amber-500/10 border-amber-500/50">
-              <AlertCircle className="h-4 w-4 text-amber-500" />
-              <AlertDescription className="text-amber-700 dark:text-amber-300">
+            <Alert className="bg-orange-500/10 border-orange-500/50">
+              <AlertCircle className="h-4 w-4 text-orange-500" />
+              <AlertDescription className="text-orange-700 dark:text-orange-300">
                 Write this down or save it securely. You cannot recover it
                 later!
               </AlertDescription>

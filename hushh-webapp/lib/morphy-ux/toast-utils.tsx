@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { type ColorVariant } from "./types";
+import { type ColorVariant, type FeedbackTone } from "./types";
 import { getVariantStylesNoHover, getIconColor } from "./utils";
 import {
   CheckCircleIcon,
@@ -16,8 +16,8 @@ import { useIconWeight } from "./icon-theme-context";
 // GLOBAL TOAST PERSISTENCE SYSTEM
 // ============================================================================
 
-// Toast options interface
-interface ToastOptions {
+// Toast options interface for persisted toasts (routing-safe)
+interface PersistentToastOptions {
   duration?: number;
   action?: {
     label: string;
@@ -31,10 +31,10 @@ interface ToastOptions {
 
 interface PersistentToast {
   id: string;
-  type: "success" | "error" | "warning" | "info";
+  type: FeedbackTone;
   message: string;
   duration?: number;
-  options?: ToastOptions;
+  options?: PersistentToastOptions;
   timestamp: number;
 }
 
@@ -95,9 +95,9 @@ class GlobalToastManager {
   }
 
   private showToast(
-    type: "success" | "error" | "warning" | "info",
+    type: FeedbackTone,
     message: string,
-    options?: ToastOptions
+    options?: PersistentToastOptions
   ) {
     switch (type) {
       case "success":
@@ -117,9 +117,9 @@ class GlobalToastManager {
 
   // Public methods for persistent toasts
   persistToast(
-    type: "success" | "error" | "warning" | "info",
+    type: FeedbackTone,
     message: string,
-    options?: ToastOptions
+    options?: PersistentToastOptions
   ) {
     if (typeof window === "undefined") return;
 

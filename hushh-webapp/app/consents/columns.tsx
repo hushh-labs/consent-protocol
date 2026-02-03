@@ -116,7 +116,7 @@ export const getActionInfo = (action: string, isTimedOut?: boolean) => {
     REQUESTED: {
       label: "Access Requested",
       icon: "clipboard",
-      className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+      className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     },
     CONSENT_GRANTED: {
       label: "Access Granted",

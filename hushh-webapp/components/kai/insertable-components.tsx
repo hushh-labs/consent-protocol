@@ -50,18 +50,18 @@ function AnalysisComponent({ data }: { data: Record<string, unknown> }) {
 
   const decisionColors = {
     BUY: "text-emerald-500 bg-emerald-500/10",
-    HOLD: "text-amber-500 bg-amber-500/10",
+    HOLD: "text-orange-500 bg-orange-500/10",
     REDUCE: "text-red-500 bg-red-500/10",
   };
 
   const DecisionIcon = decision === "BUY" ? TrendingUp : decision === "REDUCE" ? TrendingDown : Minus;
 
   return (
-    <Card className="crystal-glass border-[var(--crystal-gold-400)]/20">
+    <Card className="crystal-glass border-primary/20">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-[var(--crystal-gold-500)]" />
+            <BarChart3 className="h-5 w-5 text-primary" />
             {ticker}
           </CardTitle>
           {renaissanceTier && (
@@ -96,7 +96,7 @@ function AnalysisComponent({ data }: { data: Record<string, unknown> }) {
         {/* Confidence Bar */}
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-[var(--crystal-gold-400)] to-[var(--crystal-gold-600)] transition-all duration-500"
+            className="h-full bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] transition-all duration-500"
             style={{ width: `${confidence * 100}%` }}
           />
         </div>
@@ -143,7 +143,7 @@ function PortfolioImportComponent({
 
   if (status === "complete") {
     return (
-      <Card className="crystal-glass-gold">
+      <Card className="crystal-glass">
         <CardContent className="flex items-center gap-3 p-4">
           <CheckCircle className="h-6 w-6 text-emerald-500" />
           <div>
@@ -161,7 +161,7 @@ function PortfolioImportComponent({
     <Card className="crystal-glass">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-3">
-          <Upload className="h-6 w-6 text-[var(--crystal-gold-500)]" />
+          <Upload className="h-6 w-6 text-primary" />
           <div>
             <p className="font-medium">Import Your Portfolio</p>
             <p className="text-sm text-muted-foreground">
@@ -229,14 +229,14 @@ function DecisionCardComponent({ data }: { data: Record<string, unknown> }) {
   };
 
   return (
-    <Card className="crystal-glass border-[var(--crystal-gold-400)]/20">
+    <Card className="crystal-glass border-primary/20">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="font-bold text-lg">{decision.ticker}</span>
           <Badge
             className={cn(
               decision.decision === "BUY" && "bg-emerald-500",
-              decision.decision === "HOLD" && "bg-amber-500",
+              decision.decision === "HOLD" && "bg-orange-500",
               decision.decision === "REDUCE" && "bg-red-500"
             )}
           >
@@ -274,7 +274,7 @@ function LoserReportComponent({
 
   if (losers.length === 0) {
     return (
-      <Card className="crystal-glass-gold">
+      <Card className="crystal-glass">
         <CardContent className="flex items-center gap-3 p-4">
           <CheckCircle className="h-6 w-6 text-emerald-500" />
           <div>
@@ -428,10 +428,10 @@ function LoserAnalysisPromptComponent({
   };
 
   return (
-    <Card className="crystal-glass border-[var(--crystal-gold-400)]/20">
+    <Card className="crystal-glass border-primary/20">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-3">
-          <BarChart3 className="h-6 w-6 text-[var(--crystal-gold-500)]" />
+          <BarChart3 className="h-6 w-6 text-primary" />
           <div>
             <p className="font-medium">Ready to Analyze</p>
             <p className="text-sm text-muted-foreground">
@@ -489,12 +489,12 @@ function AnalysisSummaryComponent({
 
   const decisionColors = {
     BUY: "bg-emerald-500",
-    HOLD: "bg-amber-500",
+    HOLD: "bg-orange-500",
     REDUCE: "bg-red-500",
   };
 
   const tierColors = {
-    ACE: "bg-gradient-to-r from-yellow-400 to-amber-500 text-black",
+    ACE: "bg-gradient-to-r from-purple-400 to-pink-500 text-white",
     KING: "bg-gradient-to-r from-purple-500 to-indigo-500",
     QUEEN: "bg-gradient-to-r from-pink-500 to-rose-500",
     JACK: "bg-gradient-to-r from-blue-500 to-cyan-500",
@@ -507,7 +507,7 @@ function AnalysisSummaryComponent({
   };
 
   return (
-    <Card className="crystal-glass border-[var(--crystal-gold-400)]/20">
+    <Card className="crystal-glass border-primary/20">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
@@ -538,7 +538,7 @@ function AnalysisSummaryComponent({
         
         {/* Renaissance Status */}
         {isRenaissanceInvestable === false && (
-          <p className="text-xs text-amber-500 mb-2">
+          <p className="text-xs text-orange-500 mb-2">
             Not in Renaissance investable universe
           </p>
         )}
@@ -594,7 +594,7 @@ function PortfolioSummaryComponent({
 
   const riskColors: Record<string, string> = {
     conservative: "text-emerald-500",
-    moderate: "text-amber-500",
+    moderate: "text-orange-500",
     aggressive: "text-red-500",
   };
 
@@ -605,10 +605,10 @@ function PortfolioSummaryComponent({
   };
 
   return (
-    <Card className="crystal-glass border-[var(--crystal-gold-400)]/20">
+    <Card className="crystal-glass border-primary/20">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
-          <PieChart className="h-5 w-5 text-[var(--crystal-gold-500)]" />
+          <PieChart className="h-5 w-5 text-primary" />
           Portfolio Summary
         </CardTitle>
       </CardHeader>
@@ -699,7 +699,7 @@ function ConsentRequestComponent({
 
   if (status === "approved") {
     return (
-      <Card className="crystal-glass-gold">
+      <Card className="crystal-glass">
         <CardContent className="flex items-center gap-3 p-4">
           <CheckCircle className="h-6 w-6 text-emerald-500" />
           <div>
@@ -714,10 +714,10 @@ function ConsentRequestComponent({
   }
 
   return (
-    <Card className="crystal-glass border-amber-500/20">
+    <Card className="crystal-glass border-orange-500/20">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-3">
-          <Shield className="h-6 w-6 text-amber-500" />
+          <Shield className="h-6 w-6 text-orange-500" />
           <div>
             <p className="font-medium">Consent Request</p>
             <p className="text-sm text-muted-foreground">

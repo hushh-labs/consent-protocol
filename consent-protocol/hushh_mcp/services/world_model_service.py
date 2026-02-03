@@ -691,6 +691,70 @@ class WorldModelService:
             logger.error(f"Error deleting user data: {e}")
             return False
     
+    async def delete_domain_data(self, user_id: str, domain: str) -> bool:
+        """
+        Delete a specific domain from user's world model.
+        
+        This removes the domain from the index (available_domains and domain_summaries).
+        Note: The encrypted blob still contains the domain data, but since the client
+        manages the blob, it will be overwritten on next save without this domain.
+        
+        For complete deletion, the client should:
+        1. Call this endpoint to remove from index
+        2. Decrypt their blob, remove the domain, re-encrypt and save
+        
+        Args:
+            user_id: User's ID
+            domain: Domain key to delete (e.g., "financial")
+            
+        Returns:
+            bool: Success status
+        """
+        try:
+            # Get current index
+            index = await self.get_index_v2(user_id)
+            if index is None:
+                logger.warning(f"No index found for user {user_id} when deleting domain {domain}")
+                return True  # Nothing to delete
+            
+            # Check if domain exists
+            if domain not in index.available_domains:
+                logger.info(f"Domain {domain} not in user {user_id}'s available domains")
+                return True  # Domain doesn't exist, consider it deleted
+            
+            # Remove domain from available_domains
+            index.available_domains = [d for d in index.available_domains if d != domain]
+            
+            # Remove domain from domain_summaries
+            if domain in index.domain_summaries:
+                del index.domain_summaries[domain]
+            
+            # Update total_attributes (recalculate from remaining domains)
+            total_attrs = 0
+            for d, summary in index.domain_summaries.items():
+                total_attrs += (
+                    summary.get("holdings_count") or 
+                    summary.get("attribute_count") or 
+                    summary.get("item_count") or 
+                    0
+                )
+            index.total_attributes = total_attrs
+            
+            # If no domains left, delete the entire index and data
+            if not index.available_domains:
+                logger.info(f"No domains left for user {user_id}, deleting all data")
+                return await self.delete_user_data(user_id)
+            
+            # Update the index
+            success = await self.upsert_index_v2(index)
+            if success:
+                logger.info(f"Successfully deleted domain {domain} for user {user_id}")
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error deleting domain {domain} for user {user_id}: {e}")
+            return False
+    
     # ==================== LEGACY: PORTFOLIO OPERATIONS (DEPRECATED) ====================
     # These methods use the OLD vault_portfolios table
     # New code should use store_domain_data() instead

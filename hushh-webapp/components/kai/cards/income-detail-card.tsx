@@ -133,7 +133,7 @@ export function IncomeDetailCard({
     <Card variant="none" effect="glass" showRipple={false} className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <DollarSign className="w-4 h-4" />
+          <DollarSign className="w-5 h-5" />
           Income
         </CardTitle>
       </CardHeader>
