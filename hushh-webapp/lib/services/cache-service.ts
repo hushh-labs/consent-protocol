@@ -122,6 +122,8 @@ export const CACHE_KEYS = {
   ACTIVE_CONSENTS: (userId: string) => `active_consents_${userId}`,
   PORTFOLIO_DATA: (userId: string) => `portfolio_data_${userId}`,
   DOMAIN_DATA: (userId: string, domain: string) => `domain_data_${userId}_${domain}`,
+  PENDING_CONSENTS: (userId: string) => `pending_consents_${userId}`,
+  CONSENT_AUDIT_LOG: (userId: string) => `consent_audit_log_${userId}`,
 } as const;
 
 // TTL constants

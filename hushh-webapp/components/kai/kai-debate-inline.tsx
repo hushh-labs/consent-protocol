@@ -150,7 +150,7 @@ function AgentCard({
     const r = rec.toLowerCase();
     if (r.includes("buy") || r.includes("bullish")) return <TrendingUp className="w-4 h-4 text-green-500" />;
     if (r.includes("reduce") || r.includes("bearish")) return <TrendingDown className="w-4 h-4 text-red-500" />;
-    return <Minus className="w-4 h-4 text-yellow-500" />;
+    return <Minus className="w-4 h-4 text-orange-500" />;
   };
 
   return (
@@ -740,7 +740,7 @@ export default function KaiDebateInline({
                     <p className="text-xs text-muted-foreground capitalize">{agent}</p>
                     <p className={`font-bold uppercase ${
                       vote === "buy" ? "text-green-500" :
-                      vote === "reduce" ? "text-red-500" : "text-yellow-500"
+                      vote === "reduce" ? "text-red-500" : "text-orange-500"
                     }`}>{vote}</p>
                   </Card>
                 ))}
@@ -854,7 +854,7 @@ export default function KaiDebateInline({
                   <Card className="border-border/50 bg-card/50">
                      <CardHeader className="pb-2">
                        <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                         <Wallet className="w-4 h-4 text-amber-500" />
+                         <Wallet className="w-4 h-4 text-primary" />
                          Capital Allocation Audit
                        </CardTitle>
                      </CardHeader>
@@ -873,7 +873,7 @@ export default function KaiDebateInline({
                               className={`text-lg font-black ${
                                 (fullResult.raw_card.key_metrics?.fundamental?.earnings_quality ?? 0) > 1
                                   ? "text-emerald-500"
-                                  : "text-amber-500"
+                                  : "text-orange-500"
                               }`}
                             >
                               {fullResult.raw_card.key_metrics?.fundamental?.earnings_quality != null

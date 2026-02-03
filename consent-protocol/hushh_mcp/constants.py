@@ -229,18 +229,17 @@ DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30        # 30 days
 # ==================== Gemini Model Configuration ====================
 
 # Standard model for all LLM operations across the codebase
-# Using gemini-2.5-flash for optimal balance of speed and capability
-GEMINI_MODEL = "gemini-2.5-flash"
+# Using gemini-3-flash-preview for enhanced document parsing capabilities
+GEMINI_MODEL = "gemini-3-flash-preview"
 
 # Full path format (for ADK and direct API calls)
-GEMINI_MODEL_FULL = "models/gemini-2.5-flash"
+GEMINI_MODEL_FULL = "models/gemini-3-flash-preview"
 
 # Vertex AI model (for Google Cloud deployments)
-# gemini-2.5-flash is the latest GA model on Vertex AI
-GEMINI_MODEL_VERTEX = "gemini-2.5-flash"
+GEMINI_MODEL_VERTEX = "gemini-3-flash-preview"
 
-# Preview models (for cutting-edge features)
-GEMINI_MODEL_PREVIEW = "gemini-3-flash"  # Latest preview model
+# Stable model fallback (for production stability if preview has issues)
+GEMINI_MODEL_STABLE = "gemini-2.5-flash"
 
 # ==================== Exports ====================
 
@@ -256,5 +255,5 @@ __all__ = [
     "GEMINI_MODEL",
     "GEMINI_MODEL_FULL",
     "GEMINI_MODEL_VERTEX",
-    "GEMINI_MODEL_PREVIEW",
+    "GEMINI_MODEL_STABLE",
 ]

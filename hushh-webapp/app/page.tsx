@@ -11,6 +11,7 @@ import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
 
 // --- Welcome Component for First-Time Users ---
@@ -110,10 +111,20 @@ function LoginScreenContent() {
 
   // Use Reactive Auth State
   const { user, loading: authLoading, setNativeUser } = useAuth();
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Register 1 step: Auth state check
+  useEffect(() => {
+    registerSteps(1);
+    return () => reset();
+  }, [registerSteps, reset]);
 
   useEffect(() => {
     // If loading, do nothing yet
     if (authLoading) return;
+
+    // Step 1: Auth check complete
+    completeStep();
 
     // Check pending redirects from Google Sign-In
     getRedirectResult(auth)
@@ -137,11 +148,11 @@ function LoginScreenContent() {
       console.log("[Login] User authenticated, navigating to:", redirectPath);
       router.push(redirectPath);
     }
-  }, [redirectPath, user, authLoading]); // FIXED: Removed router/setNativeUser - stable refs
+  }, [redirectPath, user, authLoading, completeStep]); // FIXED: Removed router/setNativeUser - stable refs
 
   // Show spinner while checking session OR if user authenticated (while redirecting)
   if (authLoading || user) {
-    return <HushhLoader label="Checking session..." variant="fullscreen" />;
+    return null;
   }
 
   const handleGoogleLogin = async () => {
@@ -272,9 +283,9 @@ function LoginScreenContent() {
         <div className="p-2 space-y-4">
           {/* Review Mode Alert */}
           {isAppReviewMode() && (
-            <Alert className="bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800">
-              <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <AlertDescription className="text-amber-800 dark:text-amber-200">
+            <Alert className="bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800">
+              <Shield className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              <AlertDescription className="text-orange-800 dark:text-orange-200">
                 App Review Mode Active - Reviewer test account available below
               </AlertDescription>
             </Alert>
@@ -335,7 +346,7 @@ function LoginScreenContent() {
               {isAppReviewMode() && (
                 <Button
                   variant="none"
-                  className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-orange-600 text-white hover:from-amber-600 hover:via-orange-600 hover:to-orange-700 h-12 rounded-xl shadow-lg transition-all"
+                  className="w-full bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white hover:opacity-90 h-12 rounded-xl shadow-lg transition-all"
                   onClick={handleReviewerLogin}
                 >
                   <Shield className="w-5 h-5 mr-3" />

@@ -6,21 +6,27 @@
  * Features:
  * - Donut chart showing portfolio allocation
  * - Interactive segments with hover effects
- * - Center label showing total or selected segment
- * - Responsive design
+ * - Center label using Recharts Label component (proper z-index)
+ * - Responsive design with shadcn ChartContainer
+ * - Theme-aware colors from design system
  */
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
-  Tooltip,
+  Label,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 interface AllocationData {
   name: string;
@@ -36,28 +42,42 @@ interface AssetAllocationDonutProps {
   className?: string;
 }
 
-// Default colors for asset types
+// Theme-aware colors using CSS variables
+const CHART_COLORS = [
+  "hsl(var(--chart-2))",  // Emerald/Teal for equities
+  "hsl(var(--chart-1))",  // Orange for cash
+  "hsl(var(--chart-4))",  // Yellow for bonds
+  "hsl(var(--chart-3))",  // Blue for ETF
+  "hsl(var(--chart-5))",  // Orange variant for mutual funds
+];
+
+// Fallback colors for specific asset types
 const DEFAULT_COLORS: Record<string, string> = {
-  cash: "#6366f1",      // Indigo
-  equities: "#10b981",  // Emerald
-  bonds: "#f59e0b",     // Amber
-  etf: "#8b5cf6",       // Violet
-  mutual_funds: "#ec4899", // Pink
-  other: "#64748b",     // Slate
+  cash: "hsl(var(--chart-1))",
+  equities: "hsl(var(--chart-2))",
+  bonds: "hsl(var(--chart-4))",
+  etf: "hsl(var(--chart-3))",
+  mutual_funds: "hsl(var(--chart-5))",
+  other: "hsl(var(--muted-foreground))",
 };
 
 function formatCurrency(value: number): string {
   if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
+    return `$${(value / 1000000).toFixed(2)}M`;
   }
   if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
+    return `$${(value / 1000).toFixed(2)}K`;
   }
-  return `$${value.toFixed(0)}`;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatPercent(value: number): string {
-  return `${value.toFixed(1)}%`;
+  return `${value.toFixed(2)}%`;
 }
 
 export function AssetAllocationDonut({
@@ -66,37 +86,31 @@ export function AssetAllocationDonut({
   showLegend = true,
   className,
 }: AssetAllocationDonutProps) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
   // Calculate total and percentages
   const { chartData, total } = useMemo(() => {
     const totalValue = data.reduce((sum, item) => sum + item.value, 0);
     const processedData = data
       .filter(item => item.value > 0)
-      .map(item => ({
+      .map((item, index) => ({
         ...item,
         percent: totalValue > 0 ? (item.value / totalValue) * 100 : 0,
-        color: item.color || DEFAULT_COLORS[item.name.toLowerCase()] || DEFAULT_COLORS.other,
+        // Use provided color, fallback to asset type color, then to indexed color
+        color: item.color || DEFAULT_COLORS[item.name.toLowerCase()] || CHART_COLORS[index % CHART_COLORS.length],
       }));
     return { chartData: processedData, total: totalValue };
   }, [data]);
 
-  // Get center label content
-  const centerLabel = useMemo(() => {
-    if (activeIndex !== null && chartData[activeIndex]) {
-      const item = chartData[activeIndex];
-      return {
-        title: item.name,
-        value: formatCurrency(item.value),
-        percent: formatPercent(item.percent || 0),
+  // Chart config for shadcn ChartContainer
+  const chartConfig = useMemo<ChartConfig>(() => {
+    const config: ChartConfig = {};
+    chartData.forEach((item) => {
+      config[item.name] = {
+        label: item.name,
+        color: item.color,
       };
-    }
-    return {
-      title: "Total",
-      value: formatCurrency(total),
-      percent: "100%",
-    };
-  }, [activeIndex, chartData, total]);
+    });
+    return config;
+  }, [chartData]);
 
   if (chartData.length === 0) {
     return (
@@ -108,79 +122,93 @@ export function AssetAllocationDonut({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="relative" style={{ height }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              innerRadius="60%"
-              outerRadius="85%"
-              paddingAngle={2}
-              dataKey="value"
-              onMouseEnter={(_, index) => setActiveIndex(index)}
-              onMouseLeave={() => setActiveIndex(null)}
-              animationDuration={800}
-              animationEasing="ease-out"
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={entry.color}
-                  stroke="transparent"
-                  style={{
-                    filter: activeIndex === index ? "brightness(1.1)" : "none",
-                    transition: "filter 0.2s ease",
-                    cursor: "pointer",
-                  }}
-                />
-              ))}
-            </Pie>
-            <Tooltip
-              content={({ active, payload }) => {
-                if (!active || !payload?.length || !payload[0]) return null;
-                const item = payload[0].payload as AllocationData & { percent: number };
-                return (
-                  <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg px-3 py-2 shadow-lg">
-                    <p className="text-xs text-muted-foreground">{item.name}</p>
-                    <p className="text-sm font-semibold">{formatCurrency(item.value)}</p>
-                    <p className="text-xs text-muted-foreground">{formatPercent(item.percent)}</p>
-                  </div>
-                );
+      <ChartContainer config={chartConfig} className="mx-auto" style={{ height }}>
+        <PieChart>
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                hideLabel
+                formatter={(value, name, item) => {
+                  const payload = item.payload as AllocationData & { percent: number };
+                  return (
+                    <div className="flex flex-col gap-1">
+                      <span className="font-semibold text-sm">{payload.name}</span>
+                      <span className="text-foreground text-base font-bold">{formatCurrency(payload.value)}</span>
+                      <span className="text-muted-foreground text-xs">{formatPercent(payload.percent)} of portfolio</span>
+                    </div>
+                  );
+                }}
+              />
+            }
+          />
+          <Pie
+            data={chartData}
+            cx="50%"
+            cy="50%"
+            innerRadius="55%"
+            outerRadius="85%"
+            paddingAngle={2}
+            dataKey="value"
+            nameKey="name"
+            strokeWidth={2}
+            animationDuration={800}
+            animationEasing="ease-out"
+          >
+            {chartData.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.color}
+                stroke="transparent"
+              />
+            ))}
+            <Label
+              content={({ viewBox }) => {
+                if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                  return (
+                    <text
+                      x={viewBox.cx}
+                      y={viewBox.cy}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                    >
+                      <tspan
+                        x={viewBox.cx}
+                        y={viewBox.cy}
+                        className="fill-foreground text-lg font-bold"
+                      >
+                        {formatCurrency(total)}
+                      </tspan>
+                      <tspan
+                        x={viewBox.cx}
+                        y={(viewBox.cy || 0) + 18}
+                        className="fill-muted-foreground text-xs"
+                      >
+                        Total
+                      </tspan>
+                    </text>
+                  );
+                }
+                return null;
               }}
             />
-          </PieChart>
-        </ResponsiveContainer>
-        
-        {/* Center Label */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">{centerLabel.title}</p>
-            <p className="text-lg font-bold">{centerLabel.value}</p>
-          </div>
-        </div>
-      </div>
+          </Pie>
+        </PieChart>
+      </ChartContainer>
 
-      {/* Legend */}
+      {/* Legend - simplified, no percentages (tooltip shows details) */}
       {showLegend && (
-        <div className="flex flex-wrap justify-center gap-3 mt-3">
+        <div className="flex flex-wrap justify-center gap-4 mt-2">
           {chartData.map((item, index) => (
             <div
               key={index}
-              className={cn(
-                "flex items-center gap-1.5 text-xs cursor-pointer transition-opacity",
-                activeIndex !== null && activeIndex !== index && "opacity-50"
-              )}
-              onMouseEnter={() => setActiveIndex(index)}
-              onMouseLeave={() => setActiveIndex(null)}
+              className="flex items-center gap-2 text-sm"
             >
               <div
-                className="w-2.5 h-2.5 rounded-full"
+                className="w-3 h-3 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="text-muted-foreground">{item.name}</span>
-              <span className="font-medium">{formatPercent(item.percent || 0)}</span>
+              <span className="text-foreground">{item.name}</span>
             </div>
           ))}
         </div>

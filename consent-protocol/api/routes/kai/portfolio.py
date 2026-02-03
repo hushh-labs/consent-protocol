@@ -335,7 +335,7 @@ async def import_portfolio_stream(
                     yield f"data: {json.dumps({'stage': 'error', 'message': 'No GCP project configured'})}\n\n"
                     return
                 
-                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
                 client = genai.Client(vertexai=True, project=project_id, location=location)
                 model_to_use = GEMINI_MODEL_VERTEX
                 logger.info(f"SSE: Using Vertex AI with project: {project_id}")
@@ -346,69 +346,154 @@ async def import_portfolio_stream(
             # Encode PDF as base64
             pdf_base64 = base64.b64encode(content).decode('utf-8')
             
-            # Build prompt for comprehensive extraction
-            prompt = """You are a financial document parser. Analyze this brokerage statement PDF and extract ALL financial data.
+            # Build prompt for comprehensive forensic extraction
+            prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
 
-Return a JSON object with these sections (use null for missing values, NOT 0):
+### INSTRUCTIONS:
+1. DO NOT SUMMARIZE. Extract all text, numbers, and dates verbatim.
+2. CAPTURE ALL TABLES: If a table spans multiple pages, merge the rows into a single list in the JSON.
+3. IGNORE LAYOUT: Do not provide coordinates, but preserve the logical grouping of data.
+4. HANDLE NULLS: If a field is blank or "N/A", use null. Do not hallucinate values.
+5. DISCLAIMERS & FOOTNOTES: Extract the full text of all legal messages, footnotes, and fine print.
+6. Parse negative numbers correctly: (1,234.56) means -1234.56
+7. Return ONLY valid JSON, no explanation or markdown.
+
+### JSON STRUCTURE REQUIREMENTS:
+Extract data into the following nested objects:
 
 {
-  "account_info": {
-    "holder_name": "string - account holder's full name",
-    "account_number": "string - account number",
-    "account_type": "string - e.g., Individual, TOD, Joint, IRA, 401k",
-    "brokerage": "string - brokerage firm name",
-    "statement_period_start": "string - start date",
-    "statement_period_end": "string - end date"
+  "account_metadata": {
+    "institution_name": "string - e.g., J.P. Morgan or Fidelity",
+    "account_holder": "string - Full name and address",
+    "account_number": "string - Full number (may be partially masked)",
+    "statement_period_start": "string - Start date",
+    "statement_period_end": "string - End date",
+    "account_type": "string - e.g., Individual TOD, Traditional IRA, 401k"
   },
-  
-  "account_summary": {
+
+  "portfolio_summary": {
     "beginning_value": number,
     "ending_value": number,
-    "cash_balance": number,
-    "equities_value": number,
-    "change_in_value": number
+    "total_change": number,
+    "net_deposits_withdrawals": number,
+    "investment_gain_loss": number
   },
-  
-  "asset_allocation": {
-    "cash_pct": number (as percentage, e.g., 54.4 for 54.4%),
-    "cash_value": number,
-    "equities_pct": number,
-    "equities_value": number,
-    "bonds_pct": number,
-    "bonds_value": number
-  },
-  
-  "holdings": [
+
+  "asset_allocation": [
+    { "category": "string - e.g., Equities, Bonds, Cash", "market_value": number, "percentage": number }
+  ],
+
+  "detailed_holdings": [
     {
-      "symbol": "string - ticker symbol",
-      "name": "string - security name",
+      "asset_class": "string - e.g., Equities, Fixed Income, Cash",
+      "description": "string - Full security name",
+      "symbol_cusip": "string - Ticker symbol or CUSIP",
       "quantity": number,
-      "price": number - current price per share,
-      "market_value": number - total current value,
-      "cost_basis": number - total cost,
-      "unrealized_gain_loss": number (negative for losses),
+      "price": number,
+      "market_value": number,
+      "cost_basis": number,
+      "unrealized_gain_loss": number,
       "unrealized_gain_loss_pct": number,
-      "asset_type": "string - stock, etf, bond, mutual_fund, cash"
+      "acquisition_date": "string or null",
+      "estimated_annual_income": number,
+      "est_yield": number
     }
   ],
-  
-  "income_summary": {
-    "dividends_taxable": number,
-    "interest_income": number,
-    "total_income": number
+
+  "activity_and_transactions": [
+    {
+      "date": "string",
+      "transaction_type": "string - e.g., Buy, Sell, Dividend, Reinvest, Transfer",
+      "description": "string - Full text description",
+      "quantity": number,
+      "price": number,
+      "amount": number,
+      "realized_gain_loss": number or null
+    }
+  ],
+
+  "cash_management": {
+    "checking_activity": [
+      { "date": "string", "check_number": "string", "payee": "string", "amount": number }
+    ],
+    "debit_card_activity": [
+      { "date": "string", "merchant": "string", "amount": number }
+    ],
+    "deposits_and_withdrawals": [
+      { "date": "string", "type": "string - ACH, Wire, Transfer", "description": "string", "amount": number }
+    ]
   },
-  
+
+  "income_summary": {
+    "taxable_dividends": number,
+    "qualified_dividends": number,
+    "tax_exempt_interest": number,
+    "taxable_interest": number,
+    "capital_gains_distributions": number,
+    "total_income": number,
+    "year_to_date_totals": {
+      "dividends_ytd": number,
+      "interest_ytd": number,
+      "capital_gains_ytd": number,
+      "total_income_ytd": number
+    }
+  },
+
   "realized_gain_loss": {
     "short_term_gain": number,
+    "short_term_loss": number,
     "long_term_gain": number,
+    "long_term_loss": number,
+    "net_short_term": number,
+    "net_long_term": number,
     "net_realized": number
   },
-  
-  "cash_balance": number - total cash/sweep balance,
-  "total_value": number - total account value
+
+  "projections_and_mrd": {
+    "estimated_cash_flow": [
+      { "month": "string - e.g., Jan 2024", "projected_income": number }
+    ],
+    "mrd_estimate": {
+      "year": number,
+      "required_amount": number,
+      "amount_taken": number,
+      "remaining": number
+    }
+  },
+
+  "historical_values": [
+    { "date": "string - e.g., Mar 2020, Q1 2021", "value": number }
+  ],
+
+  "cash_flow": {
+    "opening_balance": number,
+    "deposits": number,
+    "withdrawals": number,
+    "dividends_received": number,
+    "interest_received": number,
+    "trades_proceeds": number,
+    "trades_cost": number,
+    "fees_paid": number,
+    "closing_balance": number
+  },
+
+  "ytd_metrics": {
+    "net_deposits_ytd": number,
+    "withdrawals_ytd": number,
+    "income_ytd": number,
+    "realized_gain_loss_ytd": number,
+    "fees_ytd": number
+  },
+
+  "legal_and_disclosures": [
+    "string - Full verbatim text of all disclaimers, USA PATRIOT ACT notices, SIPC information, and fine print"
+  ],
+
+  "cash_balance": number,
+  "total_value": number
 }
 
-CRITICAL: Extract ALL holdings. Return ONLY valid JSON, no explanation or markdown."""
+CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no explanation or markdown."""
             
             # Create content with PDF
             contents = [
@@ -514,21 +599,82 @@ CRITICAL: Extract ALL holdings. Return ONLY valid JSON, no explanation or markdo
                 
                 parsed_data = json.loads(json_text)
                 
+                # Transform Gemini response to match frontend expected structure
+                # Gemini uses different field names than our frontend expects
+                
+                # Map account_metadata -> account_info
+                account_metadata = parsed_data.get("account_metadata", {})
+                account_info = {
+                    "holder_name": account_metadata.get("account_holder"),
+                    "account_number": account_metadata.get("account_number"),
+                    "account_type": account_metadata.get("account_type"),
+                    "brokerage_name": account_metadata.get("institution_name"),
+                    "statement_period_start": account_metadata.get("statement_period_start"),
+                    "statement_period_end": account_metadata.get("statement_period_end"),
+                }
+                
+                # Map portfolio_summary -> account_summary
+                portfolio_summary = parsed_data.get("portfolio_summary", {})
+                account_summary = {
+                    "beginning_value": portfolio_summary.get("beginning_value"),
+                    "ending_value": portfolio_summary.get("ending_value"),
+                    "change_in_value": portfolio_summary.get("total_change"),
+                    "cash_balance": parsed_data.get("cash_balance", 0),
+                    "net_deposits_withdrawals": portfolio_summary.get("net_deposits_withdrawals"),
+                    "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
+                }
+                
+                # Map detailed_holdings -> holdings with field name normalization
+                detailed_holdings = parsed_data.get("detailed_holdings", [])
+                holdings = []
+                for h in detailed_holdings:
+                    holding = {
+                        "symbol": h.get("symbol_cusip", h.get("symbol", "")),
+                        "name": h.get("description", h.get("name", "Unknown")),
+                        "quantity": h.get("quantity", 0),
+                        "price": h.get("price", 0),
+                        "price_per_unit": h.get("price", 0),
+                        "market_value": h.get("market_value", 0),
+                        "cost_basis": h.get("cost_basis"),
+                        "unrealized_gain_loss": h.get("unrealized_gain_loss"),
+                        "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
+                        "asset_type": h.get("asset_class"),
+                        "acquisition_date": h.get("acquisition_date"),
+                        "estimated_annual_income": h.get("estimated_annual_income"),
+                        "est_yield": h.get("est_yield"),
+                    }
+                    holdings.append(holding)
+                
+                # Calculate total_value if not provided
+                total_value = parsed_data.get("total_value", 0)
+                if not total_value and account_summary.get("ending_value"):
+                    total_value = account_summary["ending_value"]
+                if not total_value and holdings:
+                    total_value = sum(h.get("market_value", 0) for h in holdings)
+                
                 # Build portfolio_data structure for frontend
                 portfolio_data = {
-                    "account_info": parsed_data.get("account_info"),
-                    "account_summary": parsed_data.get("account_summary"),
+                    "account_info": account_info,
+                    "account_summary": account_summary,
                     "asset_allocation": parsed_data.get("asset_allocation"),
-                    "holdings": parsed_data.get("holdings", []),
+                    "holdings": holdings,
                     "income_summary": parsed_data.get("income_summary"),
                     "realized_gain_loss": parsed_data.get("realized_gain_loss"),
+                    "cash_flow": parsed_data.get("cash_flow"),
+                    "cash_management": parsed_data.get("cash_management"),
+                    "projections_and_mrd": parsed_data.get("projections_and_mrd"),
+                    "historical_values": parsed_data.get("historical_values"),
+                    "ytd_metrics": parsed_data.get("ytd_metrics"),
+                    "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
                     "cash_balance": parsed_data.get("cash_balance", 0),
-                    "total_value": parsed_data.get("total_value", 0),
+                    "total_value": total_value,
                     "kpis": {
-                        "holdings_count": len(parsed_data.get("holdings", [])),
-                        "total_value": parsed_data.get("total_value", 0),
+                        "holdings_count": len(holdings),
+                        "total_value": total_value,
                     }
                 }
+                
+                logger.info(f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}")
                 
                 # Stage 5: Complete
                 yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"

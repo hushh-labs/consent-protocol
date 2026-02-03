@@ -255,6 +255,63 @@ class CashFlow:
 
 
 @dataclass
+class CheckTransaction:
+    """Individual check transaction."""
+    date: str = ""
+    check_number: str = ""
+    payee: str = ""
+    amount: float = 0.0
+
+
+@dataclass
+class DebitTransaction:
+    """Individual debit card transaction."""
+    date: str = ""
+    merchant: str = ""
+    amount: float = 0.0
+
+
+@dataclass
+class BankTransfer:
+    """Bank transfer (ACH, wire, etc.)."""
+    date: str = ""
+    type: str = ""  # ACH, Wire, Transfer
+    description: str = ""
+    amount: float = 0.0
+
+
+@dataclass
+class CashManagement:
+    """Cash management activity including checks, debit, and transfers."""
+    checking_activity: list[CheckTransaction] = field(default_factory=list)
+    debit_card_activity: list[DebitTransaction] = field(default_factory=list)
+    deposits_and_withdrawals: list[BankTransfer] = field(default_factory=list)
+
+
+@dataclass
+class MonthlyProjection:
+    """Monthly income projection."""
+    month: str = ""
+    projected_income: float = 0.0
+
+
+@dataclass
+class MRDEstimate:
+    """Required Minimum Distribution estimate."""
+    year: int = 0
+    required_amount: float = 0.0
+    amount_taken: float = 0.0
+    remaining: float = 0.0
+
+
+@dataclass
+class ProjectionsAndMRD:
+    """Income projections and Required Minimum Distribution data."""
+    estimated_cash_flow: list[MonthlyProjection] = field(default_factory=list)
+    mrd_estimate: Optional[MRDEstimate] = None
+
+
+@dataclass
 class ComprehensivePortfolio:
     """
     Complete financial profile extracted from brokerage statement.
@@ -276,6 +333,18 @@ class ComprehensivePortfolio:
     # Activity
     transactions: list[Transaction] = field(default_factory=list)
     cash_flow: Optional[CashFlow] = None
+    
+    # Cash management (NEW - checks, debit, transfers)
+    cash_management: Optional[CashManagement] = None
+    
+    # Projections (NEW - income projections and MRD)
+    projections_and_mrd: Optional[ProjectionsAndMRD] = None
+    
+    # Historical data
+    historical_values: list[dict] = field(default_factory=list)
+    
+    # Legal disclosures (NEW)
+    legal_and_disclosures: list[str] = field(default_factory=list)
     
     # Totals
     cash_balance: float = 0.0
@@ -1820,7 +1889,7 @@ Statement text (first 12000 chars):
                 if not project_id:
                     raise ValueError("No GCP project found. Set GOOGLE_CLOUD_PROJECT env var.")
                 
-                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
                 
                 client = genai.Client(
                     vertexai=True,
@@ -1838,103 +1907,124 @@ Statement text (first 12000 chars):
         # Encode PDF as base64
         pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
         
-        prompt = """You are a financial document parser. Analyze this brokerage statement PDF and extract ALL financial data.
+        prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
 
-Return a JSON object with these sections (use null for missing values, NOT 0):
+### INSTRUCTIONS:
+1. DO NOT SUMMARIZE. Extract all text, numbers, and dates verbatim.
+2. CAPTURE ALL TABLES: If a table spans multiple pages, merge the rows into a single list in the JSON.
+3. IGNORE LAYOUT: Do not provide coordinates, but preserve the logical grouping of data.
+4. HANDLE NULLS: If a field is blank or "N/A", use null. Do not hallucinate values.
+5. DISCLAIMERS & FOOTNOTES: Extract the full text of all legal messages, footnotes, and fine print.
+6. Parse negative numbers correctly: (1,234.56) means -1234.56
+7. Return ONLY valid JSON, no explanation or markdown.
+
+### JSON STRUCTURE REQUIREMENTS:
+Extract data into the following nested objects:
 
 {
-  "account_info": {
-    "holder_name": "string - account holder's full name",
-    "account_number": "string - account number",
-    "account_type": "string - e.g., Individual, TOD, Joint, IRA, 401k",
-    "brokerage": "string - brokerage firm name",
-    "statement_period_start": "string - start date",
-    "statement_period_end": "string - end date",
-    "tax_lot_method": "string - FIFO, LIFO, etc."
+  "account_metadata": {
+    "institution_name": "string - e.g., J.P. Morgan or Fidelity",
+    "account_holder": "string - Full name and address",
+    "account_number": "string - Full number (may be partially masked)",
+    "statement_period_start": "string - Start date",
+    "statement_period_end": "string - End date",
+    "account_type": "string - e.g., Individual TOD, Traditional IRA, 401k"
   },
-  
-  "account_summary": {
+
+  "portfolio_summary": {
     "beginning_value": number,
     "ending_value": number,
-    "net_deposits_period": number,
-    "net_deposits_ytd": number,
-    "withdrawals_period": number,
-    "withdrawals_ytd": number,
-    "total_income_period": number,
-    "total_income_ytd": number,
-    "total_fees": number,
-    "change_in_value": number
+    "total_change": number,
+    "net_deposits_withdrawals": number,
+    "investment_gain_loss": number
   },
-  
-  "asset_allocation": {
-    "cash_pct": number (as percentage, e.g., 54.4 for 54.4%),
-    "cash_value": number,
-    "equities_pct": number,
-    "equities_value": number,
-    "bonds_pct": number,
-    "bonds_value": number,
-    "mutual_funds_pct": number,
-    "mutual_funds_value": number,
-    "etf_pct": number,
-    "etf_value": number
-  },
-  
-  "holdings": [
+
+  "asset_allocation": [
+    { "category": "string - e.g., Equities, Bonds, Cash", "market_value": number, "percentage": number }
+  ],
+
+  "detailed_holdings": [
     {
-      "symbol": "string - ticker symbol",
-      "name": "string - security name",
-      "cusip": "string or null",
-      "acquisition_date": "string or null",
+      "asset_class": "string - e.g., Equities, Fixed Income, Cash",
+      "description": "string - Full security name",
+      "symbol_cusip": "string - Ticker symbol or CUSIP",
       "quantity": number,
-      "price": number - current price per share,
-      "market_value": number - total current value,
-      "unit_cost": number - cost per share,
-      "cost_basis": number - total cost,
-      "unrealized_gain_loss": number (negative for losses),
+      "price": number,
+      "market_value": number,
+      "cost_basis": number,
+      "unrealized_gain_loss": number,
       "unrealized_gain_loss_pct": number,
-      "term": "string - ST or LT for short/long term",
-      "est_annual_income": number or null,
-      "est_yield": number or null (as percentage),
-      "asset_type": "string - stock, etf, bond, mutual_fund, preferred, cash",
-      "dividend_reinvest": boolean
+      "acquisition_date": "string or null",
+      "estimated_annual_income": number,
+      "est_yield": number
     }
   ],
-  
-  "income_summary": {
-    "dividends_taxable": number,
-    "dividends_nontaxable": number,
-    "dividends_qualified": number,
-    "interest_income": number,
-    "capital_gains_dist": number,
-    "total_income": number
+
+  "activity_and_transactions": [
+    {
+      "date": "string",
+      "transaction_type": "string - e.g., Buy, Sell, Dividend, Reinvest, Transfer",
+      "description": "string - Full text description",
+      "quantity": number,
+      "price": number,
+      "amount": number,
+      "realized_gain_loss": number or null
+    }
+  ],
+
+  "cash_management": {
+    "checking_activity": [
+      { "date": "string", "check_number": "string", "payee": "string", "amount": number }
+    ],
+    "debit_card_activity": [
+      { "date": "string", "merchant": "string", "amount": number }
+    ],
+    "deposits_and_withdrawals": [
+      { "date": "string", "type": "string - ACH, Wire, Transfer", "description": "string", "amount": number }
+    ]
   },
-  
+
+  "income_summary": {
+    "taxable_dividends": number,
+    "qualified_dividends": number,
+    "tax_exempt_interest": number,
+    "taxable_interest": number,
+    "capital_gains_distributions": number,
+    "total_income": number,
+    "year_to_date_totals": {
+      "dividends_ytd": number,
+      "interest_ytd": number,
+      "capital_gains_ytd": number,
+      "total_income_ytd": number
+    }
+  },
+
   "realized_gain_loss": {
     "short_term_gain": number,
-    "short_term_loss": number (as positive number),
+    "short_term_loss": number,
     "long_term_gain": number,
-    "long_term_loss": number (as positive number),
+    "long_term_loss": number,
     "net_short_term": number,
     "net_long_term": number,
     "net_realized": number
   },
-  
-  "transactions": [
-    {
-      "date": "string",
-      "settle_date": "string or null",
-      "type": "string - BUY, SELL, DIVIDEND, REINVEST, TRANSFER",
-      "symbol": "string",
-      "description": "string",
-      "quantity": number,
-      "price": number,
-      "amount": number,
-      "cost_basis": number or null,
-      "realized_gain_loss": number or null,
-      "fees": number or null
+
+  "projections_and_mrd": {
+    "estimated_cash_flow": [
+      { "month": "string - e.g., Jan 2024", "projected_income": number }
+    ],
+    "mrd_estimate": {
+      "year": number,
+      "required_amount": number,
+      "amount_taken": number,
+      "remaining": number
     }
+  },
+
+  "historical_values": [
+    { "date": "string - e.g., Mar 2020, Q1 2021", "value": number }
   ],
-  
+
   "cash_flow": {
     "opening_balance": number,
     "deposits": number,
@@ -1946,38 +2036,44 @@ Return a JSON object with these sections (use null for missing values, NOT 0):
     "fees_paid": number,
     "closing_balance": number
   },
-  
-  "cash_balance": number - total cash/sweep balance,
-  "total_value": number - total account value
+
+  "ytd_metrics": {
+    "net_deposits_ytd": number,
+    "withdrawals_ytd": number,
+    "income_ytd": number,
+    "realized_gain_loss_ytd": number,
+    "fees_ytd": number
+  },
+
+  "legal_and_disclosures": [
+    "string - Full verbatim text of all disclaimers, USA PATRIOT ACT notices, SIPC information, and fine print"
+  ],
+
+  "cash_balance": number,
+  "total_value": number
 }
 
-CRITICAL INSTRUCTIONS:
-1. Extract ALL holdings, not just a sample - scan EVERY page of the PDF
-2. Parse negative numbers correctly: (1,234.56) means -1234.56
-3. Include dividend reinvestment (DRIP) transactions
-4. For holdings, extract the FULL data row including acquisition date, cost basis, gain/loss
-5. Match symbols to their corresponding data carefully - PDF tables may span multiple lines
-6. Return ONLY valid JSON, no explanation or markdown
-7. If a section has no data, use null for the entire section, not empty objects
-8. For percentages, use the actual number (e.g., 54.4 for 54.4%, not 0.544)
-
-EXTRACTION PRIORITIES (extract ALL of these if present):
-- Account holder name (look for "Account of", "Name:", or header)
+### EXTRACTION PRIORITIES:
+- Account holder name and full address
 - Account number (may be partially masked like XXX-51910)
-- Statement period dates (e.g., "February 27 - March 31, 2021")
-- Beginning and ending portfolio values
-- Cash/sweep balance (look for "Cash & Cash Investments", "Money Market", "Sweep")
-- Asset allocation percentages (Cash %, Equities %, Bonds %)
-- ALL individual holdings with: symbol, name, quantity, price, market value, cost basis, gain/loss
-- Unrealized gain/loss totals
-- Realized gain/loss (short-term and long-term separately)
-- Income summary: dividends, interest, capital gains distributions
-- Recent transactions if listed
+- Statement period dates
+- Beginning and ending portfolio values with change breakdown
+- ALL individual holdings with: symbol, name, quantity, price, market value, cost basis, gain/loss, acquisition date, estimated income
+- Cash/sweep balance and all cash management activity
+- Asset allocation by category with percentages
+- Unrealized and realized gain/loss (short-term and long-term separately)
+- Income breakdown: taxable dividends, qualified dividends, tax-exempt interest, capital gains
+- ALL transactions including dividend reinvestments
+- HISTORICAL CHART DATA: Extract ALL data points from any portfolio value charts
+- Required Minimum Distribution (MRD/RMD) data if present
+- Monthly income projections if available
+- ALL legal disclaimers, footnotes, and fine print verbatim
 
-COMMON BROKERAGE FORMATS:
-- JPMorgan: Look for "Account Summary", "Asset Allocation", "Holdings Detail"
-- Fidelity: Look for "Account Summary", "Positions", "Activity"
-- Schwab: Look for "Account Value", "Positions", "Transactions"
+### COMMON BROKERAGE FORMATS:
+- JPMorgan: Look for "Account Summary", "Asset Allocation", "Holdings Detail", "Important Information"
+- Fidelity: Look for "Account Summary", "Positions", "Activity", "Disclosures"
+- Schwab: Look for "Account Value", "Positions", "Transactions", "Important Disclosures"
+- Vanguard: Look for "Account Overview", "Holdings", "Transaction History"
 - Robinhood: Look for "Portfolio", "Holdings", "History"
 """
         

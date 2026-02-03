@@ -15,16 +15,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2, Save, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
 import { HushhLoader } from "@/components/ui/hushh-loader";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { useAuth } from "@/lib/firebase";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { HushhVault } from "@/lib/capacitor";
+import { useCache } from "@/lib/cache/cache-context";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
 
 // =============================================================================
@@ -107,6 +109,7 @@ export default function ManagePortfolioPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { vaultKey, isVaultUnlocked } = useVault();
+  const { getPortfolioData, setPortfolioData: setCachePortfolioData } = useCache();
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -120,12 +123,23 @@ export default function ManagePortfolioPage() {
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [editingIndex, setEditingIndex] = useState<number>(-1);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Register 2 steps: Auth check, Load holdings
+  useEffect(() => {
+    registerSteps(2);
+    return () => reset();
+  }, [registerSteps, reset]);
 
   // Load portfolio data on mount
   useEffect(() => {
     async function loadPortfolio() {
+      // Step 1: Auth check
+      completeStep();
+
       if (!user?.uid || !vaultKey) {
         setIsLoading(false);
+        completeStep(); // Complete step 2 even if no data
         return;
       }
 
@@ -135,30 +149,32 @@ export default function ManagePortfolioPage() {
         const financialDomain = response.domains.find(d => d.key === "financial");
         
         if (financialDomain && financialDomain.attributeCount > 0) {
-          // For now, we'll use the summary data
-          // In a full implementation, we'd decrypt the blob
-          // This is a placeholder - actual decryption would happen here
-          
-          // Try to get from session storage (cached from import)
-          const cachedData = sessionStorage.getItem("kai_portfolio_data");
-          if (cachedData) {
-            const parsed = JSON.parse(cachedData);
+          // Prefer CacheProvider (shared with dashboard) then sessionStorage
+          const parsed = getPortfolioData(user.uid) ?? (() => {
+            const cachedData = sessionStorage.getItem("kai_portfolio_data");
+            return cachedData ? JSON.parse(cachedData) : null;
+          })();
+          if (parsed) {
             setPortfolioData(parsed);
             setHoldings(parsed.holdings || []);
             setAccountInfo(parsed.account_info || {});
             setAccountSummary(parsed.account_summary || { ending_value: 0 });
           }
         }
+        
+        // Step 2: Holdings loaded
+        completeStep();
       } catch (error) {
         console.error("[ManagePortfolio] Error loading portfolio:", error);
         toast.error("Failed to load portfolio data");
+        completeStep(); // Complete step 2 on error
       } finally {
         setIsLoading(false);
       }
     }
 
     loadPortfolio();
-  }, [user?.uid, vaultKey]);
+  }, [user?.uid, vaultKey, completeStep]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -208,9 +224,9 @@ export default function ManagePortfolioPage() {
       });
 
       if (result.success) {
-        // Update session cache
+        setCachePortfolioData(user.uid, updatedPortfolioData);
         sessionStorage.setItem("kai_portfolio_data", JSON.stringify(updatedPortfolioData));
-        
+
         toast.success("Portfolio saved securely");
         setHasChanges(false);
         router.push("/dashboard/kai");
@@ -271,11 +287,7 @@ export default function ManagePortfolioPage() {
 
   // Loading state
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <HushhLoader variant="inline" label="Loading portfolio..." />
-      </div>
-    );
+    return null;
   }
 
   // Vault not unlocked
@@ -298,22 +310,7 @@ export default function ManagePortfolioPage() {
 
   return (
     <div className="min-h-screen pb-24">
-      {/* Header */}
-      <div className="sticky top-0 z-40 backdrop-blur-xl border-b border-border bg-background/80">
-        <div className="flex items-center justify-between p-4">
-          <button
-            onClick={() => router.back()}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back</span>
-          </button>
-          <h1 className="font-semibold">Manage Portfolio</h1>
-          <div className="w-16" /> {/* Spacer for centering */}
-        </div>
-      </div>
-
-      <div className="p-4 space-y-6">
+      <div className="p-4 space-y-4">
         {/* Account Info */}
         {(accountInfo.account_number || accountInfo.brokerage_name) && (
           <Card variant="muted" effect="glass" showRipple={false}>
