@@ -75,9 +75,10 @@ async function apiFetch(
 ): Promise<Response> {
   const url = `${API_BASE}${path}`;
 
-  const defaultHeaders: HeadersInit = {
-    "Content-Type": "application/json",
-  };
+  const defaultHeaders: HeadersInit =
+    options.body instanceof FormData
+      ? {}
+      : { "Content-Type": "application/json" };
 
   // Dynamically import tracker to avoid creating a hard dependency for environments
   // that don't care about progress (e.g., certain server-side usage).
@@ -591,240 +592,6 @@ export class ApiService {
   }
 
   /**
-   * Get food preferences (encrypted)
-   * Requires VAULT_OWNER token for consent-first architecture
-   *
-   * Platform routing:
-   * - Native: HushhVault plugin → Backend (direct)
-   * - Web: Next.js proxy → Backend
-   *
-   * Route: POST /api/vault/food/preferences (web) or direct backend call (native)
-   */
-  static async getFoodPreferences(
-    userId: string,
-    vaultOwnerToken: string
-  ): Promise<Response> {
-    // Native: Use plugin (bypasses Next.js, calls backend directly)
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const authToken = await this.getFirebaseToken();
-
-        const { preferences } = await HushhVault.getFoodPreferences({
-          userId,
-          vaultOwnerToken,
-          authToken,
-        });
-
-        if (!preferences) {
-          return new Response(null, { status: 404 });
-        }
-
-        return new Response(JSON.stringify({ preferences }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error("[ApiService] Native getFoodPreferences error:", error);
-        return new Response(null, { status: 500 });
-      }
-    }
-
-    // Web: Use Next.js proxy with token in query param
-    const url = `/api/vault/food/preferences?userId=${encodeURIComponent(
-      userId
-    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
-    return apiFetch(url, { method: "GET" });
-  }
-
-  /**
-   * Store food preferences (encrypted)
-   * Route: POST /api/vault/food
-   */
-  static async storeFoodPreferences(data: {
-    userId: string;
-    preferences: Record<string, unknown>;
-    consentToken?: string;
-  }): Promise<Response> {
-    return apiFetch("/api/vault/food", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Store single encrypted food preference field
-   *
-   * Platform routing:
-   * - Web: POST /api/vault/food → Python /api/food/preferences/store
-   * - Native: HushhVault.storePreferencesToCloud → Python /api/food/preferences/store
-   */
-  static async storeFoodPreference(data: {
-    userId: string;
-    fieldName: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-    consentToken: string;
-  }): Promise<Response> {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const authToken = await this.getFirebaseToken();
-        await HushhVault.storePreferencesToCloud({
-          userId: data.userId,
-          domain: "food",
-          fieldName: data.fieldName,
-          ciphertext: data.ciphertext,
-          iv: data.iv,
-          tag: data.tag,
-          consentToken: data.consentToken,
-          authToken: authToken,
-        });
-        return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e) {
-        console.error("❌ [ApiService] Native storeFoodPreference error:", e);
-        return new Response(JSON.stringify({ error: (e as Error).message }), {
-          status: 500,
-        });
-      }
-    }
-
-    // Web: Use Next.js proxy
-    return apiFetch("/api/vault/food", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Store single encrypted food preference field (used by Chat Agent)
-   * @deprecated Use storeFoodPreference instead
-   */
-  static async storeEncryptedFoodPreference(data: {
-    userId: string;
-    fieldName: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-    consentTokenId: string;
-  }): Promise<Response> {
-    return apiFetch("/api/vault/food", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Get professional profile (encrypted)
-   * Requires VAULT_OWNER token for consent-first architecture
-   *
-   * Platform routing:
-   * - Native: HushhVault plugin → Backend (direct)
-   * - Web: Next.js proxy → Backend
-   *
-   * Route: POST /api/vault/professional/preferences (web) or direct backend call (native)
-   */
-  static async getProfessionalProfile(
-    userId: string,
-    vaultOwnerToken: string
-  ): Promise<Response> {
-    // Native: Use plugin (bypasses Next.js, calls backend directly)
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const authToken = await this.getFirebaseToken();
-
-        const { preferences } = await HushhVault.getProfessionalData({
-          userId,
-          vaultOwnerToken,
-          authToken,
-        });
-
-        if (!preferences) {
-          return new Response(null, { status: 404 });
-        }
-
-        return new Response(JSON.stringify({ preferences }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error(
-          "[ApiService] Native getProfessionalProfile error:",
-          error
-        );
-        return new Response(null, { status: 500 });
-      }
-    }
-
-    // Web: Use Next.js proxy with token in query param
-    const url = `/api/vault/professional/preferences?userId=${encodeURIComponent(
-      userId
-    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
-    return apiFetch(url, { method: "GET" });
-  }
-
-  /**
-   * Store professional profile (encrypted)
-   * Route: POST /api/vault/professional
-   */
-  static async storeProfessionalProfile(data: {
-    userId: string;
-    preferences: Record<string, unknown>;
-    consentToken?: string;
-  }): Promise<Response> {
-    return apiFetch("/api/vault/professional", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Store single encrypted professional preference field
-   *
-   * Platform routing:
-   * - Web: POST /api/vault/professional → Python /api/professional/preferences/store
-   * - Native: HushhVault.storePreferencesToCloud → Python /api/professional/preferences/store
-   */
-  static async storeProfessionalPreference(data: {
-    userId: string;
-    fieldName: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-    consentToken: string;
-  }): Promise<Response> {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const authToken = await this.getFirebaseToken();
-        await HushhVault.storePreferencesToCloud({
-          userId: data.userId,
-          domain: "professional",
-          fieldName: data.fieldName,
-          ciphertext: data.ciphertext,
-          iv: data.iv,
-          tag: data.tag,
-          consentToken: data.consentToken,
-          authToken: authToken,
-        });
-        return new Response(JSON.stringify({ success: true }), { status: 200 });
-      } catch (e) {
-        console.error(
-          "❌ [ApiService] Native storeProfessionalPreference error:",
-          e
-        );
-        return new Response(JSON.stringify({ error: (e as Error).message }), {
-          status: 500,
-        });
-      }
-    }
-
-    // Web: Use Next.js proxy
-    return apiFetch("/api/vault/professional", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
    * Store preferences to vault (generic)
    * Route: POST /api/vault/store-preferences
    */
@@ -842,29 +609,7 @@ export class ApiService {
         // Iterate through all preference keys and store them individually
         // This maps to the /api/$domain/preferences/store endpoint via the plugin
         for (const [key, value] of Object.entries(data.preferences)) {
-          // Use explicit domain if provided, otherwise auto-detect from field name
-          let domain = data.domain || "general";
-          if (!data.domain) {
-            // Auto-detect domain from field name (fallback)
-            if (
-              [
-                "dietary_restrictions",
-                "cuisine_preferences",
-                "monthly_food_budget",
-              ].includes(key)
-            ) {
-              domain = "food";
-            } else if (
-              [
-                "professional_title",
-                "skills",
-                "experience_level",
-                "job_preferences",
-              ].includes(key)
-            ) {
-              domain = "professional";
-            }
-          }
+          const domain = data.domain || "general";
           promises.push(
             HushhVault.storePreferencesToCloud({
               userId: data.userId,
@@ -907,20 +652,6 @@ export class ApiService {
     sessionState?: Record<string, unknown>;
   }): Promise<Response> {
     return apiFetch("/api/chat", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  /**
-   * Send message to food dining agent
-   */
-  static async sendFoodAgentMessage(data: {
-    message: string;
-    userId: string;
-    sessionState?: Record<string, unknown>;
-  }): Promise<Response> {
-    return apiFetch("/api/agents/food-dining/chat", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -1164,6 +895,26 @@ export class ApiService {
    *
    * Authentication: Requires VAULT_OWNER token (consent-first architecture).
    */
+  /**
+   * Import portfolio via streaming endpoint (SSE).
+   * Tri-flow compliant: use this instead of direct fetch() in components.
+   */
+  static async importPortfolioStream(params: {
+    formData: FormData;
+    vaultOwnerToken: string;
+    signal?: AbortSignal;
+  }): Promise<Response> {
+    const headers: HeadersInit = {
+      Authorization: `Bearer ${params.vaultOwnerToken}`,
+    };
+    return apiFetch("/api/kai/portfolio/import/stream", {
+      method: "POST",
+      body: params.formData,
+      headers,
+      signal: params.signal,
+    });
+  }
+
   static async importPortfolio(data: {
     userId: string;
     file: File;

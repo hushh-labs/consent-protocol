@@ -27,7 +27,7 @@ export default function ChatPage() {
     // Step 1: Redirect complete
     completeStep();
     // Redirect to the new Kai dashboard
-    router.replace("/dashboard/kai");
+    router.replace("/kai/dashboard");
   }, [router, completeStep]);
 
   // Return null - progress bar shows at top

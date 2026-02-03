@@ -14,11 +14,9 @@
  * - Production: Loads from AGENT_PORTS_JSON env var (from Secrets Manager)
  */
 
-// Default port assignments (matches constants.py)
+// Default port assignments (matches constants.py; food/professional removed)
 const DEFAULT_AGENT_PORTS: Record<string, number> = {
   agent_orchestrator: 10000,
-  agent_food_dining: 10001,
-  agent_professional_profile: 10002,
   agent_identity: 10003,
   agent_shopper: 10004,
 };

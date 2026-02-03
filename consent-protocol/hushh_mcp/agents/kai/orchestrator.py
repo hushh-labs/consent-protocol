@@ -19,7 +19,7 @@ from typing import Any, Dict, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope, GEMINI_MODEL
+from hushh_mcp.constants import GEMINI_MODEL, ConsentScope
 
 from .config import ANALYSIS_TIMEOUT, ProcessingMode, RiskProfile
 from .debate_engine import DebateEngine

@@ -8,7 +8,7 @@ Each parser handles a specific file type:
 """
 
 from .csv_parser import CSVParser
-from .pdf_parser import PDFParser
 from .image_parser import ImageParser
+from .pdf_parser import PDFParser
 
 __all__ = ["CSVParser", "PDFParser", "ImageParser"]

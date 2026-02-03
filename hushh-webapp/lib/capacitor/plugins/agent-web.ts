@@ -10,22 +10,15 @@ import { SettingsService } from "../../services/settings-service";
 
 const AGENT_IDS = {
   orchestrator: 'agent_orchestrator',
-  foodDining: 'agent_food_dining',
-  professionalProfile: 'agent_professional_profile',
   identity: 'agent_identity',
   shopper: 'agent_shopper',
 };
 
 const AGENT_PORTS = {
   agent_orchestrator: 10000,
-  agent_food_dining: 10001,
-  agent_professional_profile: 10002,
   agent_identity: 10003,
   agent_shopper: 10004,
 };
-
-const FOOD_KEYWORDS = ['food', 'diet', 'restaurant', 'cuisine', 'eat', 'meal', 'dining', 'vegetarian', 'vegan', 'allergy', 'budget', 'hungry'];
-const PROFESSIONAL_KEYWORDS = ['resume', 'job', 'career', 'skill', 'professional', 'experience', 'work', 'employment', 'title', 'linkedin'];
 
 export class HushhAgentWeb implements HushhAgentPlugin {
   
@@ -59,7 +52,7 @@ export class HushhAgentWeb implements HushhAgentPlugin {
     }
     
     return {
-      response: `👋 Hi! I can help you with:\n\n• 🍽️ **Food & Dining** preferences\n• 💼 **Professional profile**\n\nWhat would you like to set up?`,
+      response: `👋 Hi! I can help with investment analysis (Kai) and world-model domains. What would you like to do?`,
       isComplete: false,
       needsConsent: false,
     };
@@ -82,8 +75,6 @@ export class HushhAgentWeb implements HushhAgentPlugin {
     return {
       agents: [
         { id: AGENT_IDS.orchestrator, name: 'Orchestrator', port: AGENT_PORTS.agent_orchestrator, available: true },
-        { id: AGENT_IDS.foodDining, name: 'Food & Dining', port: AGENT_PORTS.agent_food_dining, available: true },
-        { id: AGENT_IDS.professionalProfile, name: 'Professional Profile', port: AGENT_PORTS.agent_professional_profile, available: true },
         { id: AGENT_IDS.identity, name: 'Identity', port: AGENT_PORTS.agent_identity, available: false },
         { id: AGENT_IDS.shopper, name: 'Shopper', port: AGENT_PORTS.agent_shopper, available: false },
       ],
@@ -92,36 +83,12 @@ export class HushhAgentWeb implements HushhAgentPlugin {
     };
   }
   
-  private classifyIntentSync(message: string): {
+  private classifyIntentSync(_message: string): {
     hasDelegate: boolean;
     targetAgent: string;
     targetPort?: number;
     domain: string;
   } {
-    const msg = message.toLowerCase();
-    
-    for (const keyword of FOOD_KEYWORDS) {
-      if (msg.includes(keyword)) {
-        return {
-          hasDelegate: true,
-          targetAgent: AGENT_IDS.foodDining,
-          targetPort: AGENT_PORTS.agent_food_dining,
-          domain: 'food_dining',
-        };
-      }
-    }
-    
-    for (const keyword of PROFESSIONAL_KEYWORDS) {
-      if (msg.includes(keyword)) {
-        return {
-          hasDelegate: true,
-          targetAgent: AGENT_IDS.professionalProfile,
-          targetPort: AGENT_PORTS.agent_professional_profile,
-          domain: 'professional',
-        };
-      }
-    }
-    
     return {
       hasDelegate: false,
       targetAgent: AGENT_IDS.orchestrator,
@@ -139,30 +106,13 @@ export class HushhAgentWeb implements HushhAgentPlugin {
     // Full agent logic is in the Swift implementation
     const step = (sessionState.step as string) || 'greeting';
     
-    if (agentId === AGENT_IDS.foodDining) {
-      if (step === 'greeting') {
-        return {
-          response: `👋 Hi! I'm your Food & Dining assistant.\n\nLet's start with **dietary restrictions**.`,
-          sessionState: { step: 'dietary', collected: {} },
-          isComplete: false,
-          needsConsent: false,
-          uiType: 'checkbox',
-          options: ['Vegetarian', 'Vegan', 'Gluten-free', 'Dairy-free', 'Nut-free', 'Halal', 'Kosher'],
-          allowCustom: true,
-          allowNone: true,
-        };
-      }
-    }
-    
-    if (agentId === AGENT_IDS.professionalProfile) {
-      if (step === 'greeting') {
-        return {
-          response: `👋 Hi! I'm your Professional Profile assistant.\n\nWhat's your **job title**?`,
-          sessionState: { step: 'title', collected: {} },
-          isComplete: false,
-          needsConsent: false,
-        };
-      }
+    if (agentId === AGENT_IDS.identity && step === 'greeting') {
+      return {
+        response: `👋 Hi! I'm your Identity assistant.`,
+        sessionState: { step: 'title', collected: {} },
+        isComplete: false,
+        needsConsent: false,
+      };
     }
     
     return {
