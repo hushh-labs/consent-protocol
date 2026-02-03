@@ -222,9 +222,9 @@ import { Shield, Lock } from "lucide-react";
 
 1. **Viewport Height**: use `100dvh` for full-screen containers to handle mobile browser bars.
 2. **Safe Areas (Hardware Notch)**:
-   - **Formula**: `max(env(safe-area-inset-top), 32px)`
+   - **Formula**: `max(env(safe-area-inset-top), 32px)` where a fallback is needed.
    - _Why 32px?_ Ensures functional padding on emulators or web views that report 0px.
-   - **Header Spacing**: `calc(Safe Area + 48px)` for fixed Top App Bars.
+   - **Top bar**: Fixed bar is **64px** tall (breadcrumb bar); on native, StatusBarBlur adds `env(safe-area-inset-top)` above it. Main scroll container uses `pt-[64px]` so content clears the bar and can scroll under it for the masked-blur effect.
 3. **Toast Positioning**:
    - Place toasts at `margin-top: max(env(safe-area-inset-top), 4rem)` to avoid blocking the header or status bar.
    - Use `z-index: 9999` to float above all sheets/modals.
@@ -236,6 +236,8 @@ import { Shield, Lock } from "lucide-react";
    }
    ```
 5. **Backgrounds**: Use fixed, oversized backgrounds (`h-[120vh]`) to prevent white gaps during scroll bounces.
+
+**Top bar (StatusBarBlur + TopAppBar):** The app chrome uses a single "masked blur" style (`.top-bar-glass` in `globals.css`): theme-aware semi-transparent background (`color-mix` with `lab` for light/dark), `backdrop-filter: blur(3px) saturate(180%)`, and a bottom-edge mask so the bar fades into content. On native, `use-status-bar` sets the Capacitor status bar to overlay the WebView; StatusBarBlur (safe-area strip) and TopAppBar (64px breadcrumb bar) share this style so both bands match. Content scrolls under the bar; the main scroll container has `pt-[64px]` and no spacer in the layout.
 
 ---
 
