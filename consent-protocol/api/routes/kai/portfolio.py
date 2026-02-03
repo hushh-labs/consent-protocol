@@ -295,12 +295,12 @@ async def import_portfolio_stream(
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import base64
-        import os
 
         from google import genai
         from google.genai import types
+        from google.genai.types import HttpOptions
 
-        from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_VERTEX
+        from hushh_mcp.constants import GEMINI_MODEL
         
         thinking_enabled = True  # Flag to track if thinking is available
         
@@ -309,36 +309,10 @@ async def import_portfolio_stream(
             yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
             await asyncio.sleep(0.1)  # Small delay for UI feedback
             
-            # Initialize Gemini client
-            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
+            client = genai.Client(http_options=HttpOptions(api_version="v1"))
             model_to_use = GEMINI_MODEL
-            
-            if api_key and api_key.startswith("AIza"):
-                client = genai.Client(api_key=api_key)
-                model_to_use = GEMINI_MODEL
-                logger.info("SSE: Using Google AI Studio API key")
-            else:
-                project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT")
-                if not project_id:
-                    import subprocess
-                    try:
-                        result = subprocess.run(
-                            ['gcloud', 'config', 'get-value', 'project'],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        if result.returncode == 0 and result.stdout.strip():
-                            project_id = result.stdout.strip()
-                    except Exception:
-                        pass
-                
-                if not project_id:
-                    yield f"data: {json.dumps({'stage': 'error', 'message': 'No GCP project configured'})}\n\n"
-                    return
-                
-                location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-                client = genai.Client(vertexai=True, project=project_id, location=location)
-                model_to_use = GEMINI_MODEL_VERTEX
-                logger.info(f"SSE: Using Vertex AI with project: {project_id}")
+            logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
             
             # Stage 2: Analyzing
             yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
