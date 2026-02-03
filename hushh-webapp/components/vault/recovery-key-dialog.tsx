@@ -53,7 +53,7 @@ export function RecoveryKeyDialog({
       <DialogContent className="sm:max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-6 w-6 text-yellow-500" />
+            <AlertTriangle className="h-6 w-6 text-orange-500" />
             Save Your Recovery Key
           </DialogTitle>
           <DialogDescription>

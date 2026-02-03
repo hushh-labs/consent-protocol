@@ -11,6 +11,10 @@
  * - Auth ❌ → Redirect to login
  * - Auth ✅ + Vault ❌ → Show passphrase unlock dialog
  * - Auth ✅ + Vault ✅ → Render children
+ *
+ * IMPORTANT: Uses stabilization to prevent false "locked" states during
+ * navigation. Once unlocked in a session, stays unlocked unless explicitly
+ * locked or session ends.
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -54,6 +58,19 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const [userId, setUserId] = useState<string | null>(null);
 
   // ============================================================================
+  // Stabilization: Once unlocked, stay unlocked during navigation
+  // This prevents race conditions where React state briefly shows unlocked=false
+  // ============================================================================
+  const wasUnlockedRef = useRef(false);
+
+  // Track when vault becomes unlocked
+  useEffect(() => {
+    if (isVaultUnlocked) {
+      wasUnlockedRef.current = true;
+    }
+  }, [isVaultUnlocked]);
+
+  // ============================================================================
   // Effects
   // Use ref for mount state to prevent stale closure issues
   const mountedRef = useRef(true);
@@ -69,6 +86,8 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
       // 2. Check Auth Status
       if (!user) {
+        // User logged out - reset stabilization
+        wasUnlockedRef.current = false;
         setStatus("no_auth");
         return;
       }
@@ -76,7 +95,10 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       setUserId(user.uid);
 
       // 3. Check Vault Lock Status
-      if (isVaultUnlocked) {
+      // STABILIZATION: If vault was previously unlocked in this session,
+      // trust that state even if isVaultUnlocked is momentarily false
+      // (can happen during React re-renders/navigation)
+      if (isVaultUnlocked || wasUnlockedRef.current) {
         setStatus("unlocked");
         return;
       }
@@ -90,11 +112,11 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     return () => {
       mountedRef.current = false;
     };
-  }, [user, authLoading, isVaultUnlocked]); // FIXED: Removed `router` - not used in effect
+  }, [user, authLoading, isVaultUnlocked]);
 
-  // Vault status sync effect
+  // Vault status sync effect - also respects stabilization
   useEffect(() => {
-    if (isVaultUnlocked && status !== "unlocked") {
+    if ((isVaultUnlocked || wasUnlockedRef.current) && status !== "unlocked") {
       setStatus("unlocked");
     }
   }, [isVaultUnlocked, status]);
@@ -104,6 +126,8 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   // ============================================================================
 
   const handleLogout = async () => {
+    // Reset stabilization on logout
+    wasUnlockedRef.current = false;
     await signOut();
   };
 
@@ -134,6 +158,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
           <VaultFlow
             user={user!}
             onSuccess={() => {
+              wasUnlockedRef.current = true;
               setStatus("unlocked");
             }}
           />

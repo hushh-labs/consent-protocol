@@ -59,9 +59,9 @@ const config: CapacitorConfig = {
       enabled: true,
     },
     StatusBar: {
-      overlaysWebView: false, // false for stable layout (prevents iOS bounce)
+      overlaysWebView: true, // transparent status bar; blur strip in app
       style: "DARK",
-      backgroundColor: "#0a0a0a",
+      backgroundColor: "#00000000",
     },
   },
 };

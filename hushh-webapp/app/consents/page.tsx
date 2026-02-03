@@ -45,6 +45,7 @@ import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { useConsentSSE } from "@/lib/consent";
 import { ApiService, getApiBaseUrl } from "@/lib/services/api-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import { getSessionItem } from "@/lib/utils/session-storage";
 import { useConsentActions } from "@/lib/consent";
 import { DataTable } from "@/components/ui/data-table";
@@ -141,7 +142,7 @@ const getActionInfoLocal = (
     REQUESTED: {
       label: "Access Requested",
       icon: "clipboard",
-      className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+      className: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     },
     CONSENT_GRANTED: {
       label: "Access Granted",
@@ -400,7 +401,7 @@ function AppAuditLog({
                       ? "border-l-red-500"
                       : lastEvent.is_timed_out
                       ? "border-l-orange-500"
-                      : "border-l-yellow-500";
+                      : "border-l-orange-500";
 
                   return (
                     <div
@@ -485,47 +486,88 @@ export default function ConsentsPage() {
       : "pending"
   );
 
-  const fetchPendingConsents = useCallback(async (uid: string) => {
+  const fetchPendingConsents = useCallback(async (uid: string, forceRefresh = false) => {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.PENDING_CONSENTS(uid);
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = cache.get<PendingConsent[]>(cacheKey);
+      if (cached) {
+        setPending(cached);
+        return;
+      }
+    }
+    
     try {
       const response = await ApiService.getPendingConsents(uid);
       if (response.ok) {
         const data = await response.json();
-        setPending(data.pending || []);
+        const pendingData = data.pending || [];
+        setPending(pendingData);
+        cache.set(cacheKey, pendingData, CACHE_TTL.SHORT);
       }
     } catch (err) {
       console.error("Error fetching pending consents:", err);
     }
   }, []);
 
-  const fetchAuditLog = useCallback(async (uid: string) => {
+  const fetchAuditLog = useCallback(async (uid: string, forceRefresh = false) => {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.CONSENT_AUDIT_LOG(uid);
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = cache.get<ConsentAuditEntry[]>(cacheKey);
+      if (cached) {
+        setAuditLog(cached);
+        return;
+      }
+    }
+    
     try {
       const response = await ApiService.getConsentHistory(uid, 1, 50);
       if (response.ok) {
         const data = await response.json();
-        console.log("🔍 [AuditLog] Fetched data:", data);
+        let auditData: ConsentAuditEntry[] = [];
         // Handle various potential response structures
         if (Array.isArray(data)) {
-          setAuditLog(data);
+          auditData = data;
         } else if (data.items) {
-          setAuditLog(data.items);
+          auditData = data.items;
         } else if (data.history) {
-          setAuditLog(data.history);
-        } else {
-          setAuditLog([]);
+          auditData = data.history;
         }
+        setAuditLog(auditData);
+        cache.set(cacheKey, auditData, CACHE_TTL.SHORT);
       }
     } catch (err) {
       console.error("Error fetching audit log:", err);
     }
   }, []);
 
-  const fetchActiveConsents = useCallback(async (uid: string, token: string) => {
+  const fetchActiveConsents = useCallback(async (uid: string, token: string, forceRefresh = false) => {
     if (!token) return;
+    
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.ACTIVE_CONSENTS(uid);
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = cache.get<ActiveConsent[]>(cacheKey);
+      if (cached) {
+        setActiveConsents(cached);
+        return;
+      }
+    }
+    
     try {
       const response = await ApiService.getActiveConsents(uid, token);
       if (response.ok) {
         const data = await response.json();
-        setActiveConsents(data.active || []);
+        const activeData = data.active || [];
+        setActiveConsents(activeData);
+        cache.set(cacheKey, activeData, CACHE_TTL.SHORT);
       }
     } catch (err) {
       console.error("Error fetching active consents:", err);
@@ -630,28 +672,29 @@ export default function ConsentsPage() {
 
     // Debounce 300ms to let DB commit before refreshing
     const timer = setTimeout(() => {
+      // SSE events should force refresh to get latest data
       switch (action) {
         case "REQUESTED":
           // New request - only need to refresh pending
-          fetchPendingConsents(userId);
-          fetchAuditLog(userId);
+          fetchPendingConsents(userId, true);
+          fetchAuditLog(userId, true);
           break;
         case "CONSENT_GRANTED":
           // Approval - pending → active, update all
-          fetchPendingConsents(userId);
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
-          fetchAuditLog(userId);
+          fetchPendingConsents(userId, true);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
+          fetchAuditLog(userId, true);
           break;
         case "CONSENT_DENIED":
         case "TIMEOUT":
           // Denied/timeout - remove from pending, update audit
-          fetchPendingConsents(userId);
-          fetchAuditLog(userId);
+          fetchPendingConsents(userId, true);
+          fetchAuditLog(userId, true);
           break;
         case "REVOKED":
           // Revoke - remove from active, update audit
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
-          fetchAuditLog(userId);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
+          fetchAuditLog(userId, true);
 
           // If VAULT_OWNER was revoked via SSE (e.g., from another tab), lock vault
           if (scope === "vault.owner" || scope === "VAULT_OWNER") {
@@ -667,9 +710,9 @@ export default function ConsentsPage() {
           break;
         default:
           // Any other event - refresh all to be safe
-          fetchPendingConsents(userId);
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
-          fetchAuditLog(userId);
+          fetchPendingConsents(userId, true);
+          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
+          fetchAuditLog(userId, true);
       }
     }, 300);
 
@@ -701,10 +744,10 @@ export default function ConsentsPage() {
       if (!userId) return;
       const effectiveToken = session?.token || vaultOwnerToken || "";
 
-      // Refresh all tables after action
-      fetchPendingConsents(userId);
-      if (effectiveToken) fetchActiveConsents(userId, effectiveToken);
-      fetchAuditLog(userId);
+      // Refresh all tables after action (force refresh)
+      fetchPendingConsents(userId, true);
+      if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
+      fetchAuditLog(userId, true);
     };
 
     window.addEventListener("consent-action-complete", handleConsentAction);
@@ -721,13 +764,14 @@ export default function ConsentsPage() {
   const refreshAll = useCallback(() => {
     if (userId) {
       const effectiveToken = session?.token || vaultOwnerToken || "";
+      // Force refresh after actions
       const promises: Promise<any>[] = [
-        fetchPendingConsents(userId),
-        fetchAuditLog(userId),
+        fetchPendingConsents(userId, true),
+        fetchAuditLog(userId, true),
       ];
       
       if (effectiveToken) {
-        promises.push(fetchActiveConsents(userId, effectiveToken));
+        promises.push(fetchActiveConsents(userId, effectiveToken, true));
       }
       
       Promise.all(promises);
@@ -827,10 +871,11 @@ export default function ConsentsPage() {
           onClick={() => {
             if (userId) {
               const effectiveToken = session?.token || vaultOwnerToken || "";
-              fetchPendingConsents(userId);
-              fetchAuditLog(userId);
+              // Force refresh to bypass cache
+              fetchPendingConsents(userId, true);
+              fetchAuditLog(userId, true);
               if (effectiveToken) {
-                fetchActiveConsents(userId, effectiveToken);
+                fetchActiveConsents(userId, effectiveToken, true);
               }
               toast.success("Refreshed", { duration: 1500 });
             }
@@ -892,7 +937,7 @@ export default function ConsentsPage() {
             </Card>
           ) : (
             pending.map((request) => (
-              <Card key={request.id} className="border-l-4 border-l-yellow-500">
+              <Card key={request.id} className="border-l-4 border-l-orange-500">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <div>

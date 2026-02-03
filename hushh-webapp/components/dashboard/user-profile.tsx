@@ -89,7 +89,7 @@ function DomainCard({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left p-4 rounded-ios-lg crystal-glass hover:crystal-glass-gold transition-all duration-200 group"
+      className="w-full text-left p-4 rounded-ios-lg crystal-glass hover:bg-muted/80 transition-all duration-200 group"
     >
       <div className="flex items-start gap-3">
         <div
@@ -102,7 +102,7 @@ function DomainCard({
           />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm group-hover:text-[var(--crystal-gold-500)] transition-colors">
+          <h3 className="font-semibold text-sm group-hover:text-primary transition-colors">
             {domain.displayName}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -133,8 +133,8 @@ function EmptyState() {
 
   return (
     <div className="text-center py-8 px-4">
-      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--crystal-gold-100)] dark:bg-[var(--crystal-gold-900)]/20 flex items-center justify-center">
-        <MessageSquare className="h-8 w-8 text-[var(--crystal-gold-500)]" />
+      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+        <MessageSquare className="h-8 w-8 text-primary" />
       </div>
       <h3 className="font-semibold text-lg mb-2">No data yet</h3>
       <p className="text-sm text-muted-foreground mb-4">
@@ -214,7 +214,7 @@ export function UserProfile() {
   };
 
   const handleDomainClick = (domainKey: string) => {
-    router.push(`/dashboard/consent?domain=${domainKey}`);
+    router.push(`/dashboard/domain/${domainKey}`);
   };
 
   if (!userData) return null;
@@ -226,14 +226,14 @@ export function UserProfile() {
         <CardHeader>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-4">
-              <Avatar className="h-20 w-20 ring-2 ring-[var(--crystal-gold-500)]/20">
+              <Avatar className="h-20 w-20 ring-2 ring-primary/20">
                 {userData.photoURL && (
                   <AvatarImage
                     src={userData.photoURL}
                     alt={userData.displayName}
                   />
                 )}
-                <AvatarFallback className="text-2xl bg-gradient-to-br from-[var(--crystal-gold-400)] to-[var(--crystal-gold-600)] text-white">
+                <AvatarFallback className="text-2xl bg-gradient-to-br from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white">
                   {userData.displayName.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
@@ -324,7 +324,7 @@ export function UserProfile() {
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-[var(--crystal-gold-500)]" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : domains.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

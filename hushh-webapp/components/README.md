@@ -1,6 +1,10 @@
 # Component Development Guidelines
 
-## ⛔ CRITICAL: Network Calls in Components
+## 1. Tri-Flow Architecture (Data Access)
+
+### ⛔ CRITICAL: Network Calls in Components
+
+Components **must never** talk directly to backend routes or databases.
 
 ### ❌ NEVER DO THIS:
 
@@ -16,6 +20,7 @@ const response = await fetch("/api/vault/food", { method: "POST", ... });
 ```typescript
 // CORRECT: Use platform-aware service
 import { ApiService } from "@/lib/services/api-service";
+
 const response = await ApiService.storePreferences({ ... });
 ```
 
@@ -32,61 +37,141 @@ If your component needs network access:
 
 Exception: Only test files and API routes themselves can use fetch().
 
-## Tri-Flow Architecture
+### Tri-Flow Diagram
 
-Every feature that touches backend data must implement:
-
-```
+```text
 Component → Service → [Web Proxy OR Native Plugin] → Python Backend
 ```
 
 **Missing any layer = broken on native platforms.**
 
-## Examples
+---
 
-### ✅ Correct Pattern
+## 2. Morphy-UX vs Shadcn/Radix
 
-```typescript
-// components/food/food-editor.tsx
-import { ApiService } from "@/lib/services/api-service";
+Hushh uses **Shadcn + Radix** as low-level primitives and **Morphy-UX** for physics, brand, and interaction.
 
-async function handleSave() {
-  const response = await ApiService.storePreferences({
-    userId,
-    domain: "food",
-    preferences: encryptedData,
-    consentToken,
-  });
-  
-  if (!response.ok) {
-    throw new Error("Failed to save");
-  }
-}
+- **`components/ui/*`**: Stock Shadcn/Radix components (updatable via CLI).
+- **`lib/morphy-ux/*`**: Core Morphy-UX tokens, motion, and primitives (Button, Card, ripple, toasts).
+- **`lib/morphy-ux/ui/*`**: Morphy-enhanced versions of specific UI primitives (e.g., sidebar tabs).
+
+### When to use what
+
+- Use **Morphy-UX primitives** (`Button`, `Card`, toasts) for:
+  - All top-level CTAs (vault, consents, Kai actions).
+  - Interactive dashboards and navigation tiles.
+  - Any element that needs brand physics (ripple, glassmorphism).
+- Use **Shadcn/Radix primitives** when:
+  - You need a low-level control that Morphy-UX does not yet wrap.
+  - You are building an internal-only tool where brand polish is not required.
+
+See `[docs/reference/frontend_design_system.md](../../docs/reference/frontend_design_system.md)` for full prop contracts.
+
+---
+
+## 3. Morphy-UX Primitives (Button, Card, Feedback)
+
+### 3.1 Button (primary interactive element)
+
+```tsx
+import { Button } from "@/lib/morphy-ux/morphy";
+
+<Button
+  variant="gradient"
+  effect="glass"
+  size="lg"
+  fullWidth
+  loading={isSubmitting}
+  showRipple
+>
+  Continue
+</Button>
 ```
 
-### ❌ Wrong Pattern
+- **Props (high level)**
+  - `variant`: visual style (`"gradient"`, `"muted"`, `"blue-gradient"`, etc.).
+  - `effect`: `"fill" | "glass" | "fade"`.
+  - `size`: `"sm" | "default" | "lg" | "xl" | "icon" | "icon-sm"`.
+  - `fullWidth`: stretches to `w-full` (ideal for mobile flows).
+  - `loading`: disables the button and shows a busy state.
+  - `showRipple`: enables Material 3 state layers.
 
-```typescript
-// DON'T DO THIS
-async function handleSave() {
-  const response = await fetch("/api/vault/food", {  // Breaks on native!
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
+### 3.2 Card (surfaces & tiles)
+
+```tsx
+import { Card } from "@/lib/morphy-ux/morphy";
+
+<Card
+  variant="muted"
+  effect="glass"
+  interactive
+  selected={isSelected}
+  fullHeight
+>
+  {/* Consent / Kai / Vault content */}
+</Card>
 ```
 
-## Before Creating a Component
+- **Props (high level)**
+  - `variant`, `effect`, `showRipple` — same semantics as `Button`.
+  - `interactive`: pointer cursor + hover affordances for clickable cards.
+  - `selected`: highlights with brand border.
+  - `fullHeight`: fills available vertical space (dashboards).
+
+### 3.3 Feedback (toasts)
+
+```tsx
+import { morphyToast } from "@/lib/morphy-ux/morphy";
+
+morphyToast.success("Vault unlocked", {
+  description: "VAULT_OWNER token issued for this session.",
+});
+```
+
+Use:
+- `success` for completed actions.
+- `error` with a clear next step.
+- `warning` for risky actions.
+- `info` for background events (syncing, imports, etc.).
+
+---
+
+## 4. Kai Module Notes
+
+Kai is **data-dense** and must remain visually consistent with the rest of the app.
+
+- Prefer Morphy-UX `Button` and `Card` in:
+  - `components/kai/kai-chat.tsx`
+  - `components/kai/kai-debate-inline.tsx`
+  - `components/kai/views/*`
+- Avoid:
+  - Raw `<button>` elements.
+  - Stock `@/components/ui/button` for primary CTAs.
+  - Hover-only scale effects (`hover:scale-*`) on KPI tiles.
+
+When in doubt:
+- Use Morphy-UX for **anything user-facing**, especially portfolio actions and analysis CTAs.
+- Keep Shadcn-only usage to internal utilities or temporary scaffolding.
+
+---
+
+## 5. Before Creating a Component
 
 Ask yourself:
 1. Does this component make network calls?
 2. If yes, does the service method exist?
 3. If no, have I implemented all 3 layers (Web + iOS + Android)?
+4. Am I using Morphy-UX primitives where the user **feels** the brand and physics?
 
 If you answered "no" to question 3, **STOP** and implement the full tri-flow first.
 
-## See Also
+If you answered "no" to question 4 for a user-facing surface, strongly consider switching to Morphy-UX.
 
-- [Project Context Map](../docs/PROJECT_CONTEXT_MAP.md) - Tri-flow rules
-- [Feature Checklist](../docs/FEATURE_CHECKLIST.md) - Implementation guide
-- [Route Contracts](../docs/technical/ROUTE_CONTRACTS.md) - Endpoint documentation
+---
+
+## 6. See Also
+
+- `[docs/project_context_map.md](../../docs/project_context_map.md)` – Tri-flow rules.
+- `[docs/guides/feature_checklist.md](../../docs/guides/feature_checklist.md)` – Implementation guide.
+- `[docs/reference/route_contracts.md](../../docs/reference/route_contracts.md)` – Endpoint documentation.
+- `[docs/reference/frontend_design_system.md](../../docs/reference/frontend_design_system.md)` – Design tokens, props, and UX patterns.
