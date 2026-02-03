@@ -186,21 +186,7 @@ class VaultKeysService:
         
         supabase = self._get_supabase()
         
-        # Get counts for each domain
-        food_response = supabase.table("vault_food")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        food_count = food_response.count if hasattr(food_response, 'count') and food_response.count is not None else 0
-        
-        prof_response = supabase.table("vault_professional")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        prof_count = prof_response.count if hasattr(prof_response, 'count') and prof_response.count is not None else 0
-        
+        # Kai domain only (food/professional removed; use world-model for domain data)
         kai_check_response = supabase.table("user_investor_profiles")\
             .select("user_id")\
             .eq("user_id", user_id)\
@@ -218,8 +204,6 @@ class VaultKeysService:
         kai_has_data = kai_onboarded or kai_prefs_count > 0
         
         domains = {
-            "food": {"hasData": food_count > 0, "fieldCount": food_count},
-            "professional": {"hasData": prof_count > 0, "fieldCount": prof_count},
             "kai": {
                 "hasData": kai_has_data,
                 "onboarded": kai_onboarded,
@@ -227,12 +211,13 @@ class VaultKeysService:
             }
         }
         
-        total_active = sum(1 for d in domains.values() if d["hasData"])
+        total_active = 1 if kai_has_data else 0
+        total = 1
         
-        logger.info(f"✅ Vault status for {user_id}: {total_active}/3 domains active")
+        logger.info(f"✅ Vault status for {user_id}: {total_active}/{total} domains active")
         
         return {
             "domains": domains,
             "totalActive": total_active,
-            "total": 3
+            "total": total
         }

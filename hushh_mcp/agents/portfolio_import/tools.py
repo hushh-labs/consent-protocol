@@ -151,6 +151,7 @@ async def extract_with_llm(text: str, brokerage: str = "unknown") -> Dict[str, A
         raise PermissionError("No active context - consent required")
     
     import os
+
     from hushh_mcp.constants import GEMINI_MODEL
     
     try:

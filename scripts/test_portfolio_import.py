@@ -10,8 +10,8 @@ Example:
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +32,7 @@ async def test_import(file_path: str):
     filename = os.path.basename(file_path)
     
     print(f"\n{'='*60}")
-    print(f"Testing Portfolio Import Agent")
+    print("Testing Portfolio Import Agent")
     print(f"File: {filename}")
     print(f"Size: {len(file_content):,} bytes")
     print(f"{'='*60}\n")
@@ -58,14 +58,14 @@ async def test_import(file_path: str):
         print(f"Error: {result.error}")
     
     if result.winners:
-        print(f"\nTop Winners:")
+        print("\nTop Winners:")
         for w in result.winners[:5]:
             print(f"  {w['symbol']}: +{w['gain_loss_pct']:.1f}% (${w['gain_loss']:,.2f})")
     
     if result.losers:
-        print(f"\nTop Losers:")
-        for l in result.losers[:5]:
-            print(f"  {l['symbol']}: {l['gain_loss_pct']:.1f}% (${l['gain_loss']:,.2f})")
+        print("\nTop Losers:")
+        for loser in result.losers[:5]:
+            print(f"  {loser['symbol']}: {loser['gain_loss_pct']:.1f}% (${loser['gain_loss']:,.2f})")
     
     if result.kpis_stored:
         print(f"\nKPIs Stored: {len(result.kpis_stored)}")
@@ -75,7 +75,7 @@ async def test_import(file_path: str):
     if result.portfolio_data:
         holdings = result.portfolio_data.get('holdings', [])
         if holdings:
-            print(f"\nSample Holdings (first 5):")
+            print("\nSample Holdings (first 5):")
             for h in holdings[:5]:
                 print(f"  {h['symbol']}: {h['quantity']} shares @ ${h['price_per_unit']:.2f} = ${h['market_value']:,.2f}")
     
