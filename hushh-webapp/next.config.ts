@@ -15,6 +15,17 @@ import type { NextConfig } from "next";
 const isCapacitorBuild = process.env.CAPACITOR_BUILD === "true";
 
 const config: NextConfig = {
+  // Redirect legacy dashboard routes to Kai-first routes
+  async redirects() {
+    return [
+      { source: "/dashboard", destination: "/kai", permanent: false },
+      { source: "/dashboard/kai", destination: "/kai/dashboard", permanent: false },
+      { source: "/dashboard/kai/:path*", destination: "/kai/dashboard/:path*", permanent: false },
+      { source: "/dashboard/domain/:path*", destination: "/kai", permanent: false },
+      { source: "/dashboard/agent-nav", destination: "/agent-nav", permanent: false },
+    ];
+  },
+
   // Dynamic output mode
   // 'standalone' is REQUIRED for Docker/Cloud Run builds to reduce image size
   output: isCapacitorBuild ? "export" : "standalone",

@@ -31,12 +31,9 @@ import { ApiService } from "@/lib/services/api-service";
 
 const formatScope = (scope: string): { label: string; emoji: string } => {
   const scopeMap: Record<string, { label: string; emoji: string }> = {
-    vault_read_food: { label: "Food Preferences", emoji: "🍽️" },
-    vault_read_professional: { label: "Professional Profile", emoji: "💼" },
     vault_read_finance: { label: "Financial Data", emoji: "💰" },
     vault_read_all: { label: "All Data", emoji: "🔓" },
-    "vault.read.food": { label: "Food Preferences", emoji: "🍽️" },
-    "vault.read.professional": { label: "Professional Profile", emoji: "💼" },
+    "vault.read.finance": { label: "Financial Data", emoji: "💰" },
   };
   return scopeMap[scope] || { label: scope.replace(/_/g, " "), emoji: "📋" };
 };

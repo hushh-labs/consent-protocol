@@ -87,11 +87,7 @@ export const appColumns: ColumnDef<AppSummary>[] = [
 // Scope formatting for drawer (no emojis)
 export const formatScope = (scope: string) => {
   const scopeMap: Record<string, { icon: string; label: string }> = {
-    vault_read_food: { icon: "utensils", label: "Food Preferences" },
-    vault_read_professional: { icon: "briefcase", label: "Professional Profile" },
     vault_read_finance: { icon: "wallet", label: "Finance" },
-    "vault.read.food": { icon: "utensils", label: "Food Preferences" },
-    "vault.read.professional": { icon: "briefcase", label: "Professional Profile" },
     "vault.read.finance": { icon: "wallet", label: "Finance" },
     "vault.owner": { icon: "crown", label: "Owner Access" },
     "agent.kai.analyze": { icon: "line-chart", label: "Kai Analysis" },

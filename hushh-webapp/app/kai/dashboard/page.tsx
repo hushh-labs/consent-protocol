@@ -71,7 +71,7 @@ export default function KaiPage() {
     return null;
   }
 
-  // NOTE: Vault check is handled by VaultLockGuard in the dashboard layout.
+  // NOTE: Vault check is handled by VaultLockGuard in the kai layout.
   // We trust the layout guard and don't duplicate the check here.
   // If we reach this point, the vault is guaranteed to be unlocked.
 
@@ -87,7 +87,7 @@ export default function KaiPage() {
         toast.info(`Analyzing ${params.symbol}...`);
       }
     } else if (command === "open_settings") {
-      router.push("/dashboard/kai/preferences");
+      router.push("/kai/dashboard/preferences");
     }
   };
 

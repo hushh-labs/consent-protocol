@@ -9,7 +9,7 @@ import io
 import logging
 import os
 import re
-from typing import List, Optional
+from typing import List
 
 from ..agent import EnhancedHolding, EnhancedPortfolio
 
@@ -263,6 +263,7 @@ class ImageParser:
         
         try:
             from google.genai import types
+
             from hushh_mcp.constants import GEMINI_MODEL
             
             prompt = f"""Extract investment holdings from this {brokerage} portfolio document text (extracted via OCR).
@@ -326,12 +327,14 @@ Text:
             return portfolio
         
         try:
-            from google.genai import types
-            from hushh_mcp.constants import GEMINI_MODEL
             import base64
+
+            from google.genai import types
+
+            from hushh_mcp.constants import GEMINI_MODEL
             
             # Encode image as base64
-            image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+            base64.b64encode(image_bytes).decode('utf-8')
             
             # Determine mime type
             ext = filename.lower().split('.')[-1]

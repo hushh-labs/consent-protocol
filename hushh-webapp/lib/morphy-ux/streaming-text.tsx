@@ -30,7 +30,7 @@
 
 "use client";
 
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { cn } from "./cn";
 import { StreamingCursor } from "./streaming-cursor";
 import {
@@ -79,62 +79,63 @@ export function StreamingTextDisplay({
   onFormatComplete,
 }: StreamingTextDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Track if user has manually scrolled up - start as false (auto-scroll enabled)
   const [userScrolledUp, setUserScrolledUp] = useState(false);
-  // Track if user has interacted with scroll at all
   const hasUserScrolledRef = useRef(false);
   const parserContextRef = useRef<ParserContext>(createParserContext());
   const lastTextLengthRef = useRef(0);
-  // Track previous scroll height to detect programmatic vs user scroll
   const lastScrollHeightRef = useRef(0);
 
-  // Format text if formatAsHuman is enabled
-  const displayText = useMemo(() => {
-    if (!formatAsHuman || !text) {
-      return text;
-    }
-
-    // Check if we have new content to process
-    const newContent = text.slice(lastTextLengthRef.current);
-    if (newContent) {
-      const result = formatJsonChunk(newContent, parserContextRef.current);
-      lastTextLengthRef.current = text.length;
-      
-      // If streaming is done, try to format the complete JSON
-      if (!isStreaming) {
-        const completeFormatted = tryFormatComplete(parserContextRef.current);
-        if (completeFormatted) {
-          onFormatComplete?.(completeFormatted);
-          return completeFormatted;
-        }
-      }
-      
-      return result.text;
-    }
-
-    // If streaming just stopped, try to format complete
-    if (!isStreaming) {
-      const completeFormatted = tryFormatComplete(parserContextRef.current);
-      if (completeFormatted) {
-        onFormatComplete?.(completeFormatted);
-        return completeFormatted;
-      }
-    }
-
-    return parserContextRef.current.lastOutput || text;
-  }, [text, isStreaming, formatAsHuman, onFormatComplete]);
+  // Formatted text from JSON (updated in effect to avoid reading refs during render)
+  const [formattedText, setFormattedText] = useState("");
+  const displayText = formatAsHuman ? formattedText : text;
 
   // Reset parser context and scroll state when text is cleared
   useEffect(() => {
     if (!text || text.length === 0) {
       parserContextRef.current = createParserContext();
       lastTextLengthRef.current = 0;
-      // Reset scroll state when starting fresh
+      setFormattedText("");
       setUserScrolledUp(false);
       hasUserScrolledRef.current = false;
       lastScrollHeightRef.current = 0;
     }
   }, [text]);
+
+  // Compute formatted text in effect (refs are safe here)
+  useEffect(() => {
+    if (!formatAsHuman) {
+      setFormattedText(text);
+      return;
+    }
+    if (!text) {
+      setFormattedText("");
+      return;
+    }
+    const newContent = text.slice(lastTextLengthRef.current);
+    if (newContent) {
+      const result = formatJsonChunk(newContent, parserContextRef.current);
+      lastTextLengthRef.current = text.length;
+      if (!isStreaming) {
+        const completeFormatted = tryFormatComplete(parserContextRef.current);
+        if (completeFormatted) {
+          onFormatComplete?.(completeFormatted);
+          setFormattedText(completeFormatted);
+          return;
+        }
+      }
+      setFormattedText(result.text);
+      return;
+    }
+    if (!isStreaming) {
+      const completeFormatted = tryFormatComplete(parserContextRef.current);
+      if (completeFormatted) {
+        onFormatComplete?.(completeFormatted);
+        setFormattedText(completeFormatted);
+        return;
+      }
+    }
+    setFormattedText(parserContextRef.current.lastOutput || text);
+  }, [text, isStreaming, formatAsHuman, onFormatComplete]);
 
   // Check if scrolled to bottom
   const checkIfAtBottom = useCallback(() => {

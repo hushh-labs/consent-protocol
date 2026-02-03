@@ -17,4 +17,4 @@ def health_check():
 @router.get("/health")
 def health():
     """Detailed health check with agent list."""
-    return {"status": "healthy", "agents": ["food_dining", "professional_profile"]}
+    return {"status": "healthy", "agents": ["kai"]}

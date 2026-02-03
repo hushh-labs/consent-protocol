@@ -33,6 +33,9 @@ export function RootLayoutClient({
   const previousChildrenRef = useRef<ReactNode>(null);
   const [displayChildren, setDisplayChildren] = useState<ReactNode>(children);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  /** Previous children rendered for fade-out; kept in state so we don't read refs during render */
+  const [previousChildrenForTransition, setPreviousChildrenForTransition] =
+    useState<ReactNode>(null);
   const oldPageRef = useRef<HTMLDivElement | null>(null);
   const newPageRef = useRef<HTMLDivElement | null>(null);
   const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -78,9 +81,10 @@ export function RootLayoutClient({
     previousPathnameRef.current = pathname;
     setIsTransitioning(true);
 
-    // Store current display children as old page before updating
+    // Store current display children as old page before updating (ref for logic, state for render)
     const oldChildren = displayChildren;
     previousChildrenRef.current = oldChildren;
+    setPreviousChildrenForTransition(oldChildren);
 
     // Update display children to new page immediately (will be hidden initially)
     setDisplayChildren(children);
@@ -120,6 +124,7 @@ export function RootLayoutClient({
               if (oldPage) {
                 oldPage.style.display = "none";
               }
+              setPreviousChildrenForTransition(null);
               setIsTransitioning(false);
             },
           });
@@ -172,13 +177,13 @@ export function RootLayoutClient({
       {/* Two-page overlay system for seamless transitions */}
       <div ref={containerRef} className="flex-1 flex flex-col min-h-0 relative">
         {/* Old page (fading out) */}
-        {isTransitioning && previousChildrenRef.current && (
+        {isTransitioning && previousChildrenForTransition != null && (
           <div
             ref={oldPageRef}
             className="absolute inset-0 flex-1 flex flex-col"
             style={{ opacity: 1, pointerEvents: "none" }}
           >
-            {previousChildrenRef.current}
+            {previousChildrenForTransition}
           </div>
         )}
 

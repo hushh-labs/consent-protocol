@@ -4,7 +4,7 @@
  * TopAppBar - Smart Mobile Navigation Header
  *
  * Shows back button on all pages except the landing page ("/").
- * On root-level pages (/dashboard, /consents, /profile), triggers exit dialog.
+ * On root-level pages (/kai, /consents, /profile), triggers exit dialog.
  * On sub-pages (Level 2+), navigates to parent route.
  *
  * On native: StatusBarBlur (safe-area strip) and TopAppBar (breadcrumb bar) share
