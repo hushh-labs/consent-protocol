@@ -192,8 +192,8 @@ export default function ProfilePage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-[var(--crystal-gold-500)]/10 flex items-center justify-center">
-                <Folder className="h-5 w-5 text-[var(--crystal-gold-500)]" />
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Folder className="h-5 w-5 text-primary" />
               </div>
               <span>Your Data Profile</span>
             </div>
@@ -207,7 +207,7 @@ export default function ProfilePage() {
         <CardContent className="pt-4">
           {loadingDomains ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-[var(--crystal-gold-500)]" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : domains.length > 0 ? (
             <div className="grid grid-cols-2 gap-3">
@@ -216,7 +216,7 @@ export default function ProfilePage() {
                 return (
                   <button
                     key={domain.key}
-                    onClick={() => router.push(`/dashboard/consent?domain=${domain.key}`)}
+                    onClick={() => router.push(`/dashboard/domain/${domain.key}`)}
                     className="p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-left group"
                   >
                     <div className="flex items-center gap-3">
@@ -230,14 +230,14 @@ export default function ProfilePage() {
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate group-hover:text-[var(--crystal-gold-500)] transition-colors">
+                        <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
                           {domain.displayName}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {domain.attributeCount} attribute{domain.attributeCount !== 1 ? "s" : ""}
                         </p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-[var(--crystal-gold-500)] transition-colors" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                   </button>
                 );
@@ -245,16 +245,15 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="text-center py-6">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--crystal-gold-100)] dark:bg-[var(--crystal-gold-900)]/20 flex items-center justify-center">
-                <MessageSquare className="h-6 w-6 text-[var(--crystal-gold-500)]" />
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+                <MessageSquare className="h-6 w-6 text-primary" />
               </div>
               <p className="text-sm text-muted-foreground mb-3">
                 No data yet. Chat with Kai to build your profile.
               </p>
               <Button
-                variant="none"
+                variant="gradient"
                 size="sm"
-                className="bg-[var(--crystal-gold-500)] text-white hover:bg-[var(--crystal-gold-600)]"
                 onClick={() => router.push("/chat")}
               >
                 Ask Agent Kai

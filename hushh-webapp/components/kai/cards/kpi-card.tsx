@@ -20,11 +20,12 @@ import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 interface KPICardProps {
   title: string;
   value: string;
+  description?: string;
   change?: number;
   changeLabel?: string;
   icon?: React.ReactNode;
   variant?: "default" | "success" | "warning" | "danger" | "info";
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   onClick?: () => void;
   className?: string;
 }
@@ -38,32 +39,40 @@ const variantStyles = {
 };
 
 const sizeStyles = {
+  xs: {
+    padding: "p-3",
+    title: "text-xs",
+    value: "text-base",
+    change: "text-xs",
+    icon: "w-5 h-5",
+  },
   sm: {
     padding: "p-3",
     title: "text-xs",
     value: "text-lg",
     change: "text-xs",
-    icon: "w-4 h-4",
+    icon: "w-5 h-5",
   },
   md: {
     padding: "p-4",
     title: "text-xs",
-    value: "text-2xl",
-    change: "text-sm",
-    icon: "w-5 h-5",
+    value: "text-xl",
+    change: "text-xs",
+    icon: "w-6 h-6",
   },
   lg: {
     padding: "p-5",
     title: "text-sm",
-    value: "text-3xl",
+    value: "text-2xl",
     change: "text-sm",
-    icon: "w-6 h-6",
+    icon: "w-7 h-7",
   },
 };
 
 export function KPICard({
   title,
   value,
+  description,
   change,
   changeLabel,
   icon,
@@ -98,24 +107,29 @@ export function KPICard({
     >
       <CardContent className={styles.padding}>
         {/* Header with icon and title */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-1.5">
           {icon && (
             <div className={cn("text-muted-foreground", styles.icon)}>
               {icon}
             </div>
           )}
-          <span className={cn("text-muted-foreground", styles.title, !icon && "w-full")}>
+          <span className={cn("text-muted-foreground uppercase tracking-wide", styles.title, !icon && "w-full")}>
             {title}
           </span>
         </div>
 
         {/* Value */}
-        <p className={cn("font-bold tracking-tight", styles.value)}>{value}</p>
+        <p className={cn("font-bold tracking-tight leading-tight", styles.value)}>{value}</p>
+
+        {/* Optional one-line description */}
+        {description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{description}</p>
+        )}
 
         {/* Change indicator */}
         {change !== undefined && (
           <div className={cn("flex items-center gap-1 mt-1", styles.change, trendColor)}>
-            <TrendIcon className="w-4 h-4" />
+            <TrendIcon className="w-3.5 h-3.5" />
             <span>
               {isPositive && !isNeutral ? "+" : ""}
               {change.toFixed(2)}%

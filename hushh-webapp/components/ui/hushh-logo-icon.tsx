@@ -51,7 +51,7 @@ export function HushhLogoAvatar({
   return (
     <div 
       className={cn(
-        "rounded-full bg-gradient-to-br from-[var(--crystal-gold-400)] to-[var(--crystal-gold-600)] flex items-center justify-center shadow-md",
+        "rounded-full bg-gradient-to-br from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] flex items-center justify-center shadow-md",
         sizeClasses[size],
         className
       )}

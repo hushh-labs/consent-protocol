@@ -18,6 +18,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
+import { useCache } from "@/lib/cache/cache-context";
 import { PortfolioImportView } from "./views/portfolio-import-view";
 import { ImportProgressView, ImportStage } from "./views/import-progress-view";
 import { PortfolioReviewView, PortfolioData as ReviewPortfolioData } from "./views/portfolio-review-view";
@@ -77,6 +79,142 @@ interface StreamingState {
 }
 
 // =============================================================================
+// NORMALIZATION HELPERS
+// =============================================================================
+
+/**
+ * Normalize backend portfolio data to match frontend ReviewPortfolioData interface.
+ * Handles field name differences between backend (Python) and frontend (TypeScript).
+ * Also handles Gemini's raw response format (account_metadata, detailed_holdings, etc.)
+ */
+function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPortfolioData {
+  console.log("[KaiFlow] Raw backend data:", JSON.stringify(backendData, null, 2).slice(0, 2000));
+  
+  // Get holdings from multiple possible sources
+  const rawHoldings = (
+    backendData.holdings || 
+    backendData.detailed_holdings || 
+    []
+  ) as Array<Record<string, unknown>>;
+  
+  // Normalize holdings - handle various field name formats
+  const normalizedHoldings = rawHoldings.map((h) => ({
+    symbol: String(h.symbol || h.symbol_cusip || ""),
+    name: String(h.name || h.description || "Unknown"),
+    quantity: Number(h.quantity || 0),
+    price: Number(h.price || h.price_per_unit || 0),
+    market_value: Number(h.market_value || 0),
+    cost_basis: h.cost_basis !== undefined ? Number(h.cost_basis) : undefined,
+    unrealized_gain_loss: h.unrealized_gain_loss !== undefined ? Number(h.unrealized_gain_loss) : undefined,
+    unrealized_gain_loss_pct: h.unrealized_gain_loss_pct !== undefined ? Number(h.unrealized_gain_loss_pct) : undefined,
+    asset_type: h.asset_type ? String(h.asset_type) : (h.asset_class ? String(h.asset_class) : undefined),
+  }));
+
+  console.log("[KaiFlow] Normalized holdings:", normalizedHoldings.length, normalizedHoldings.slice(0, 2));
+
+  // Get account info from multiple possible sources
+  const accountInfo = (
+    backendData.account_info || 
+    backendData.account_metadata
+  ) as Record<string, unknown> | undefined;
+  
+  const normalizedAccountInfo = accountInfo ? {
+    holder_name: accountInfo.holder_name || accountInfo.account_holder 
+      ? String(accountInfo.holder_name || accountInfo.account_holder) 
+      : undefined,
+    account_number: accountInfo.account_number ? String(accountInfo.account_number) : undefined,
+    account_type: accountInfo.account_type ? String(accountInfo.account_type) : undefined,
+    brokerage: accountInfo.brokerage_name || accountInfo.brokerage || accountInfo.institution_name 
+      ? String(accountInfo.brokerage_name || accountInfo.brokerage || accountInfo.institution_name) 
+      : undefined,
+    statement_period_start: accountInfo.statement_period_start ? String(accountInfo.statement_period_start) : undefined,
+    statement_period_end: accountInfo.statement_period_end ? String(accountInfo.statement_period_end) : undefined,
+  } : undefined;
+
+  // Get account summary from multiple possible sources
+  const accountSummary = (
+    backendData.account_summary || 
+    backendData.portfolio_summary
+  ) as Record<string, unknown> | undefined;
+  
+  const normalizedAccountSummary = accountSummary ? {
+    beginning_value: accountSummary.beginning_value !== undefined ? Number(accountSummary.beginning_value) : undefined,
+    ending_value: accountSummary.ending_value !== undefined ? Number(accountSummary.ending_value) : undefined,
+    cash_balance: accountSummary.cash_balance !== undefined ? Number(accountSummary.cash_balance) : 
+      (backendData.cash_balance !== undefined ? Number(backendData.cash_balance) : undefined),
+    equities_value: accountSummary.equities_value !== undefined ? Number(accountSummary.equities_value) : undefined,
+    change_in_value: accountSummary.change_in_value !== undefined ? Number(accountSummary.change_in_value) : 
+      (accountSummary.total_change !== undefined ? Number(accountSummary.total_change) : undefined),
+  } : undefined;
+
+  // Normalize asset_allocation
+  const assetAllocation = backendData.asset_allocation as Record<string, unknown> | undefined;
+  const normalizedAssetAllocation = assetAllocation ? {
+    cash_pct: assetAllocation.cash_pct !== undefined ? Number(assetAllocation.cash_pct) : undefined,
+    cash_value: assetAllocation.cash_value !== undefined ? Number(assetAllocation.cash_value) : undefined,
+    equities_pct: assetAllocation.equities_pct !== undefined ? Number(assetAllocation.equities_pct) : undefined,
+    equities_value: assetAllocation.equities_value !== undefined ? Number(assetAllocation.equities_value) : undefined,
+    bonds_pct: assetAllocation.bonds_pct !== undefined ? Number(assetAllocation.bonds_pct) : undefined,
+    bonds_value: assetAllocation.bonds_value !== undefined ? Number(assetAllocation.bonds_value) : undefined,
+  } : undefined;
+
+  // Normalize income_summary
+  const incomeSummary = backendData.income_summary as Record<string, unknown> | undefined;
+  const normalizedIncomeSummary = incomeSummary ? {
+    dividends_taxable: incomeSummary.dividends_taxable !== undefined ? Number(incomeSummary.dividends_taxable) : 
+      (incomeSummary.taxable_dividends !== undefined ? Number(incomeSummary.taxable_dividends) : undefined),
+    interest_income: incomeSummary.interest_income !== undefined ? Number(incomeSummary.interest_income) : 
+      (incomeSummary.taxable_interest !== undefined ? Number(incomeSummary.taxable_interest) : undefined),
+    total_income: incomeSummary.total_income !== undefined ? Number(incomeSummary.total_income) : undefined,
+  } : undefined;
+
+  // Normalize realized_gain_loss
+  const realizedGainLoss = backendData.realized_gain_loss as Record<string, unknown> | undefined;
+  const normalizedRealizedGainLoss = realizedGainLoss ? {
+    short_term_gain: realizedGainLoss.short_term_gain !== undefined ? Number(realizedGainLoss.short_term_gain) : undefined,
+    long_term_gain: realizedGainLoss.long_term_gain !== undefined ? Number(realizedGainLoss.long_term_gain) : undefined,
+    net_realized: realizedGainLoss.net_realized !== undefined ? Number(realizedGainLoss.net_realized) : undefined,
+  } : undefined;
+
+  // Calculate total_value if not provided
+  let totalValue = backendData.total_value !== undefined ? Number(backendData.total_value) : undefined;
+  if (totalValue === undefined || totalValue === 0) {
+    // Try to derive from account_summary.ending_value
+    if (normalizedAccountSummary?.ending_value) {
+      totalValue = normalizedAccountSummary.ending_value;
+    } else {
+      // Calculate from holdings
+      totalValue = normalizedHoldings.reduce((sum, h) => sum + (h.market_value || 0), 0);
+    }
+  }
+
+  // Get cash_balance from multiple sources
+  const cashBalance = backendData.cash_balance !== undefined ? Number(backendData.cash_balance) : 
+    (normalizedAccountSummary?.cash_balance !== undefined ? normalizedAccountSummary.cash_balance : undefined);
+
+  const result: ReviewPortfolioData = {
+    account_info: normalizedAccountInfo,
+    account_summary: normalizedAccountSummary,
+    asset_allocation: normalizedAssetAllocation,
+    holdings: normalizedHoldings,
+    income_summary: normalizedIncomeSummary,
+    realized_gain_loss: normalizedRealizedGainLoss,
+    cash_balance: cashBalance,
+    total_value: totalValue,
+  };
+
+  console.log("[KaiFlow] Final normalized data:", {
+    holdingsCount: result.holdings?.length || 0,
+    hasAccountInfo: !!result.account_info,
+    hasAccountSummary: !!result.account_summary,
+    totalValue: result.total_value,
+    cashBalance: result.cash_balance,
+  });
+
+  return result;
+}
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
@@ -88,6 +226,7 @@ export function KaiFlow({
 }: KaiFlowProps) {
   const router = useRouter();
   const { vaultKey } = useVault();
+  const { getPortfolioData, setPortfolioData, invalidateDomain } = useCache();
   const [state, setState] = useState<FlowState>("checking");
   const [flowData, setFlowData] = useState<FlowData>({
     hasFinancialData: false,
@@ -123,19 +262,9 @@ export function KaiFlow({
           financialDomain && financialDomain.attributeCount > 0;
 
         if (hasFinancialData) {
-          // Try to get cached portfolio data from session storage
-          const cachedData = sessionStorage.getItem("kai_portfolio_data");
-          let portfolioData: PortfolioData | undefined;
-          
-          if (cachedData) {
-            try {
-              portfolioData = JSON.parse(cachedData);
-            } catch (cacheParseError) {
-              console.warn("[KaiFlow] Failed to parse cached data, clearing cache");
-              sessionStorage.removeItem("kai_portfolio_data");
-            }
-          }
-          
+          // Prefer CacheProvider (in-memory + sessionStorage) for reuse with Manage page
+          let portfolioData: PortfolioData | undefined = getPortfolioData(userId) ?? undefined;
+
           if (!portfolioData && vaultKey) {
             // No cache - try to decrypt from World Model
             console.log("[KaiFlow] No cache, attempting to decrypt from World Model...");
@@ -161,9 +290,7 @@ export function KaiFlow({
                 // Extract financial domain data
                 // The structure could be { financial: {...} } or direct portfolio data
                 portfolioData = allData.financial || allData;
-                
-                // Re-cache for quick access
-                sessionStorage.setItem("kai_portfolio_data", JSON.stringify(portfolioData));
+                setPortfolioData(userId, portfolioData as PortfolioData);
                 console.log("[KaiFlow] Successfully decrypted and cached portfolio data");
               }
             } catch (decryptError) {
@@ -174,7 +301,7 @@ export function KaiFlow({
               const errorMessage = decryptError instanceof Error ? decryptError.message : "";
               if (errorMessage.includes("decrypt") || errorMessage.includes("tag") || errorMessage.includes("authentication")) {
                 console.warn("[KaiFlow] Possible encryption key mismatch - clearing cache and prompting re-import");
-                sessionStorage.removeItem("kai_portfolio_data");
+                invalidateDomain(userId, "financial");
                 toast.error("Unable to decrypt portfolio data. Please re-import your statement.");
                 setFlowData({ hasFinancialData: false });
                 setState("import_required");
@@ -388,8 +515,14 @@ export function KaiFlow({
                     stage: "parsing",
                   }));
                 } else if (data.stage === "complete" && data.portfolio_data) {
-                  // Store parsed portfolio for review
-                  parsedPortfolio = data.portfolio_data;
+                  // Store parsed portfolio for review - normalize backend data to frontend format
+                  parsedPortfolio = normalizePortfolioData(data.portfolio_data);
+                  console.log("[KaiFlow] Normalized portfolio data:", {
+                    holdings: parsedPortfolio.holdings?.length || 0,
+                    hasAccountInfo: !!parsedPortfolio.account_info,
+                    hasAccountSummary: !!parsedPortfolio.account_summary,
+                    totalValue: parsedPortfolio.total_value,
+                  });
                   setStreaming((prev) => ({
                     ...prev,
                     stage: "complete",
@@ -533,11 +666,15 @@ export function KaiFlow({
     setState("dashboard");
   }, []);
 
-  // Handle skip import
+  // Handle skip import - preserve existing data if available
   const handleSkipImport = useCallback(() => {
     setState("dashboard");
-    setFlowData({ hasFinancialData: false });
-  }, []);
+    // Only reset flowData if there's no existing portfolio data
+    // This preserves data when user clicks "Upload New Statement" then skips
+    if (!flowData.portfolioData) {
+      setFlowData({ hasFinancialData: false });
+    }
+  }, [flowData.portfolioData]);
 
   // Handle re-import (upload new statement)
   const handleReimport = useCallback(() => {
@@ -561,6 +698,10 @@ export function KaiFlow({
       
       // Clear World Model financial domain
       await WorldModelService.clearDomain(userId, "financial");
+      
+      // Invalidate cache to ensure fresh data on next load
+      CacheService.getInstance().invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+      CacheService.getInstance().invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
       
       // Reset flow state
       setFlowData({ hasFinancialData: false });

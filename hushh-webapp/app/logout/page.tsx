@@ -14,9 +14,17 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { ApiService } from "@/lib/services/api-service";
 import { clearSessionStorage } from "@/lib/utils/session-storage";
+import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 export default function LogoutPage() {
   const router = useRouter();
+  const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Register 1 step: Logout
+  useEffect(() => {
+    registerSteps(1);
+    return () => reset();
+  }, [registerSteps, reset]);
 
   useEffect(() => {
     const handleLogout = async () => {
@@ -51,10 +59,14 @@ export default function LogoutPage() {
         // Sign out from Firebase
         await signOut(auth);
 
+        // Step 1: Logout complete
+        completeStep();
+
         console.log("✅ Logged out successfully");
         router.push("/login");
       } catch (error) {
         console.error("Logout failed:", error);
+        completeStep(); // Complete step on error
         // Still clear storage and redirect even if Firebase logout fails
         localStorage.clear();
         sessionStorage.clear();
@@ -63,17 +75,8 @@ export default function LogoutPage() {
     };
 
     handleLogout();
-  }, [router]);
+  }, [router, completeStep]);
 
-  return (
-    <main className="flex-1 flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-4xl mb-4 animate-pulse">👋</div>
-        <p className="text-muted-foreground">Securely logging out...</p>
-        <p className="text-xs text-muted-foreground mt-2">
-          Clearing vault keys...
-        </p>
-      </div>
-    </main>
-  );
+  // Return null - progress bar shows at top
+  return null;
 }

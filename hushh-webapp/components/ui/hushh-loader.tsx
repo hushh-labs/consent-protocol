@@ -19,6 +19,9 @@ export interface HushhLoaderProps {
  * IMPORTANT:
  * - No debug strings (per product decision).
  * - UI-only. No backend/plugin involvement.
+ * - All variants now render their own spinner (no delegation to root loader).
+ * - Use inline/compact for component-level loading states.
+ * - Use page/fullscreen for full-page loading states.
  */
 export function HushhLoader({
   label = "Loading…",
@@ -49,7 +52,7 @@ export function HushhLoader({
           : isPage
           ? "min-h-[60vh] w-full"
           : isInline
-          ? "w-full"
+          ? "w-full py-8"
           : "",
         className
       )}

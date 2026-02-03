@@ -65,6 +65,9 @@ const API_BASE = getApiBaseUrl();
 /**
  * Platform-aware fetch wrapper
  * Automatically adds base URL and common headers
+ *
+ * Wrapped with API progress tracking so the route progress bar can reflect
+ * real network activity across the app.
  */
 async function apiFetch(
   path: string,
@@ -76,16 +79,32 @@ async function apiFetch(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(url, {
-    ...options,
-    credentials: "include",
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  });
+  // Dynamically import tracker to avoid creating a hard dependency for environments
+  // that don't care about progress (e.g., certain server-side usage).
+  let trackStart: (() => void) | undefined;
+  let trackEnd: (() => void) | undefined;
+  try {
+    const tracker = await import("../motion/api-progress-tracker");
+    trackStart = tracker.trackRequestStart;
+    trackEnd = tracker.trackRequestEnd;
+  } catch {
+    // If tracker cannot be loaded, we silently ignore and continue.
+  }
 
-  return response;
+  trackStart?.();
+  try {
+    const response = await fetch(url, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    });
+    return response;
+  } finally {
+    trackEnd?.();
+  }
 }
 
 /**

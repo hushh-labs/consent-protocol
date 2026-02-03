@@ -761,26 +761,28 @@ export function PortfolioReviewView({
 
       {/* Save Button - Fixed at bottom */}
       <div className="fixed bottom-20 left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t">
-        <Button
-          className="w-full h-12 text-base font-semibold"
-          onClick={handleSave}
-          disabled={isSaving || holdings.length === 0}
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Encrypting & Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-5 w-5 mr-2" />
-              Save to Vault
-            </>
-          )}
-        </Button>
-        <p className="text-xs text-center text-muted-foreground mt-2">
-          Data will be encrypted with your vault key before saving
-        </p>
+        <div className="max-w-lg mx-auto">
+          <Button
+            className="w-full h-14 text-base font-semibold rounded-xl"
+            onClick={handleSave}
+            disabled={isSaving || holdings.length === 0}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Encrypting & Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-5 w-5 mr-2" />
+                Save to Vault
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-center text-muted-foreground mt-2">
+            Data will be encrypted with your vault key before saving
+          </p>
+        </div>
       </div>
     </div>
   );

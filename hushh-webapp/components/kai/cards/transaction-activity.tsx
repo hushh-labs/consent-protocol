@@ -100,6 +100,7 @@ function TransactionIcon({ type }: TransactionIconProps) {
   };
   
   const config = iconConfig[normalizedType] || iconConfig.TRANSFER;
+  if (!config) return null;
   const Icon = config.icon;
   
   return (

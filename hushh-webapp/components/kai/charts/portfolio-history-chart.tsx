@@ -46,18 +46,20 @@ interface PortfolioHistoryChartProps {
   statementPeriod?: string;
   height?: number;
   className?: string;
+  /** When true, renders without card wrapper for embedding */
+  inline?: boolean;
 }
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
-function formatCurrency(value: number): string {
+function formatCurrency(value: number, decimals: number = 2): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value);
 }
 
@@ -148,19 +150,24 @@ export function PortfolioHistoryChart({
   statementPeriod,
   height = 200,
   className,
+  inline = false,
 }: PortfolioHistoryChartProps) {
   // Determine if we have enough data for a chart
   const hasChartData = data && data.length >= 2;
   
   // Calculate if performance is positive
   const isPositive = useMemo(() => {
-    if (hasChartData && data) {
-      return data[data.length - 1].value >= data[0].value;
+    if (hasChartData && data && data.length >= 2) {
+      const lastItem = data[data.length - 1];
+      const firstItem = data[0];
+      if (lastItem && firstItem) {
+        return lastItem.value >= firstItem.value;
+      }
     }
     return endingValue >= beginningValue;
   }, [data, hasChartData, beginningValue, endingValue]);
 
-  // Chart config for shadcn ChartContainer
+  // Chart config for shadcn ChartContainer - uses CSS variables for theme support
   const chartConfig = useMemo<ChartConfig>(() => ({
     value: {
       label: "Portfolio Value",
@@ -168,12 +175,12 @@ export function PortfolioHistoryChart({
     },
   }), [isPositive]);
 
-  const strokeColor = isPositive ? "var(--chart-2)" : "var(--destructive)";
-  const fillColor = isPositive ? "#10b981" : "#ef4444";
+  // Use CSS variables for theme-aware colors
+  const chartColor = isPositive ? "hsl(var(--chart-2))" : "hsl(var(--destructive))";
 
-  // If no historical data, show period summary fallback
+  // If no historical data, show period summary fallback (only when not inline)
   if (!hasChartData) {
-    if (beginningValue > 0 || endingValue > 0) {
+    if (!inline && (beginningValue > 0 || endingValue > 0)) {
       return (
         <Card variant="none" effect="glass" showRipple={false} className={className}>
           <CardContent className="p-4">
@@ -189,69 +196,84 @@ export function PortfolioHistoryChart({
     return null;
   }
 
-  return (
-    <Card variant="none" effect="glass" showRipple={false} className={className}>
-      <CardContent className="p-4">
-        {statementPeriod && (
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
-            <Calendar className="w-4 h-4" />
-            <span>{statementPeriod}</span>
-          </div>
-        )}
-        
-        <ChartContainer 
-          config={chartConfig} 
-          className="w-full"
-          style={{ height }}
+  // Chart content (shared between inline and card modes)
+  const chartContent = (
+    <>
+      {!inline && statementPeriod && (
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+          <Calendar className="w-4 h-4" />
+          <span>{statementPeriod}</span>
+        </div>
+      )}
+      
+      <ChartContainer 
+        config={chartConfig} 
+        className="w-full"
+        style={{ height }}
+      >
+        <AreaChart
+          data={data}
+          accessibilityLayer
+          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
-          <AreaChart
-            data={data}
-            accessibilityLayer
-            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-          >
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              interval="preserveStartEnd"
-            />
-            <YAxis 
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={formatAxisValue}
-              width={55}
-              domain={["dataMin * 0.95", "dataMax * 1.05"]}
-            />
-            <ChartTooltip 
-              content={
-                <ChartTooltipContent 
-                  formatter={(value) => formatCurrency(value as number)}
-                />
-              }
-            />
-            <defs>
-              <linearGradient id="portfolioHistoryGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={fillColor} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={fillColor} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area
-              dataKey="value"
-              type="monotone"
-              fill="url(#portfolioHistoryGradient)"
-              stroke={fillColor}
-              strokeWidth={2}
-              animationDuration={1000}
-              animationEasing="ease-out"
-            />
-          </AreaChart>
-        </ChartContainer>
-        
+          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          <XAxis 
+            dataKey="date" 
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            interval="preserveStartEnd"
+          />
+          <YAxis 
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatAxisValue}
+            width={55}
+            domain={["dataMin * 0.95", "dataMax * 1.05"]}
+          />
+          <ChartTooltip 
+            content={
+              <ChartTooltipContent 
+                formatter={(value) => formatCurrency(value as number)}
+              />
+            }
+          />
+          <defs>
+            <linearGradient id="portfolioHistoryGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            dataKey="value"
+            type="monotone"
+            fill="url(#portfolioHistoryGradient)"
+            stroke={chartColor}
+            strokeWidth={2}
+            animationDuration={1000}
+            animationEasing="ease-out"
+          />
+        </AreaChart>
+      </ChartContainer>
+      
+      {!inline && (
         <p className="text-xs text-muted-foreground text-center mt-2">
           Portfolio Value Over Time
         </p>
+      )}
+    </>
+  );
+
+  // Inline mode: return just the chart content
+  if (inline) {
+    return <div className={className}>{chartContent}</div>;
+  }
+
+  // Card mode: wrap in card
+  return (
+    <Card variant="none" effect="glass" showRipple={false} className={className}>
+      <CardContent className="p-4">
+        {chartContent}
       </CardContent>
     </Card>
   );

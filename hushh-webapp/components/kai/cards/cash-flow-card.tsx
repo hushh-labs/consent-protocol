@@ -133,7 +133,7 @@ export function CashFlowCard({ cashFlow, className }: CashFlowCardProps) {
     <Card variant="none" effect="glass" showRipple={false} className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <Banknote className="w-4 h-4" />
+          <Banknote className="w-5 h-5" />
           Cash Flow
         </CardTitle>
       </CardHeader>
@@ -150,7 +150,7 @@ export function CashFlowCard({ cashFlow, className }: CashFlowCardProps) {
             label="Deposits" 
             value={deposits}
             type="positive"
-            icon={<ArrowDownLeft className="w-3 h-3 text-emerald-500" />}
+            icon={<ArrowDownLeft className="w-4 h-4 text-emerald-500" />}
           />
         )}
         {dividends_received > 0 && (
@@ -181,7 +181,7 @@ export function CashFlowCard({ cashFlow, className }: CashFlowCardProps) {
             label="Withdrawals" 
             value={withdrawals}
             type="negative"
-            icon={<ArrowUpRight className="w-3 h-3 text-red-500" />}
+            icon={<ArrowUpRight className="w-4 h-4 text-red-500" />}
           />
         )}
         {trades_cost > 0 && (
@@ -204,9 +204,9 @@ export function CashFlowCard({ cashFlow, className }: CashFlowCardProps) {
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
               {isPositiveNet ? (
-                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
               ) : (
-                <TrendingDown className="w-4 h-4 text-red-500" />
+                <TrendingDown className="w-5 h-5 text-red-500" />
               )}
               <span className="text-sm text-muted-foreground">Net Activity</span>
             </div>
