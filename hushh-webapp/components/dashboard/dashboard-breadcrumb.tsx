@@ -15,9 +15,8 @@ import {
 import { Home } from "lucide-react";
 
 const pathNameMap: Record<string, string> = {
+  kai: "Kai",
   dashboard: "Dashboard",
-  food: "Food & Dining",
-  professional: "Professional Profile",
   fashion: "Fashion",
   transactions: "Transactions",
   travel: "Travel",
@@ -37,15 +36,15 @@ export function DashboardBreadcrumb() {
   // Always show at least Dashboard
   if (segments.length === 0) return null;
 
-  // If on root dashboard, just show Dashboard
-  if (segments.length === 1 && segments[0] === "dashboard") {
+  // If on root kai, just show Kai
+  if (segments.length === 1 && segments[0] === "kai") {
     return (
       <Breadcrumb>
         <BreadcrumbList className="flex items-center">
           <BreadcrumbItem>
             <BreadcrumbPage className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              Dashboard
+              Kai
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
@@ -58,9 +57,9 @@ export function DashboardBreadcrumb() {
       <BreadcrumbList className="flex items-center">
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
-            <Link href="/dashboard" className="flex items-center gap-1">
+            <Link href="/kai" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              Dashboard
+              Kai
             </Link>
           </BreadcrumbLink>
         </BreadcrumbItem>

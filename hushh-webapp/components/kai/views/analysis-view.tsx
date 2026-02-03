@@ -66,15 +66,11 @@ function getDecisionBgColor(decision: string): string {
   }
 }
 
-function getDecisionIcon(decision: string) {
-  switch (decision) {
-    case "BUY":
-      return TrendingUp;
-    case "REDUCE":
-      return TrendingDown;
-    default:
-      return Minus;
-  }
+/** Renders the icon for a decision (no component created during render). */
+function renderDecisionIcon(decision: string, className?: string): React.ReactNode {
+  if (decision === "BUY") return <TrendingUp className={className} />;
+  if (decision === "REDUCE") return <TrendingDown className={className} />;
+  return <Minus className={className} />;
 }
 
 function getConfidenceLabel(confidence: number): string {
@@ -100,8 +96,6 @@ export function AnalysisView({
 }: AnalysisViewProps) {
   const [activeTab, setActiveTab] = useState<"fundamental" | "sentiment" | "valuation">("fundamental");
   const [searchInput, setSearchInput] = useState("");
-
-  const DecisionIcon = getDecisionIcon(result.decision);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,9 +133,10 @@ export function AnalysisView({
                   getDecisionBgColor(result.decision)
                 )}
               >
-                <DecisionIcon
-                  className={cn("w-6 h-6", getDecisionColor(result.decision))}
-                />
+                {renderDecisionIcon(
+                  result.decision,
+                  cn("w-6 h-6", getDecisionColor(result.decision))
+                )}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Recommendation</p>

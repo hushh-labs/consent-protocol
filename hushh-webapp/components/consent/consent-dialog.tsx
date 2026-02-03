@@ -55,23 +55,6 @@ const SCOPE_DESCRIPTIONS: Record<
   string,
   { title: string; description: string }
 > = {
-  "vault.write.food": {
-    title: "Save Food Preferences",
-    description:
-      "Store your dietary restrictions, favorite cuisines, and budget",
-  },
-  "vault.read.food": {
-    title: "Read Food Preferences",
-    description: "Access your stored dietary and cuisine preferences",
-  },
-  "vault.write.professional": {
-    title: "Save Professional Profile",
-    description: "Store your skills, experience, and career preferences",
-  },
-  "vault.read.professional": {
-    title: "Read Professional Profile",
-    description: "Access your career data for recommendations",
-  },
   "vault.write.finance": {
     title: "Save Financial Preferences",
     description: "Store budget and spending preferences",

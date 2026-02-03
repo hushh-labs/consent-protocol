@@ -1,4 +1,4 @@
-// app/dashboard/kai/manage/page.tsx
+// app/kai/dashboard/manage/page.tsx
 
 /**
  * Manage Portfolio Page - Full holdings editor
@@ -229,7 +229,7 @@ export default function ManagePortfolioPage() {
 
         toast.success("Portfolio saved securely");
         setHasChanges(false);
-        router.push("/dashboard/kai");
+        router.push("/kai/dashboard");
       } else {
         throw new Error("Failed to save portfolio");
       }
@@ -299,8 +299,8 @@ export default function ManagePortfolioPage() {
             <p className="text-muted-foreground mb-4">
               Please unlock your vault to manage your portfolio.
             </p>
-            <Button onClick={() => router.push("/dashboard")}>
-              Go to Dashboard
+            <Button onClick={() => router.push("/kai")}>
+              Go to Kai
             </Button>
           </CardContent>
         </Card>

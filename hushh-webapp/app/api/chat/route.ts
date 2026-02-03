@@ -15,7 +15,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateFirebaseToken } from "@/lib/auth/validate";
 import { isDevelopment, logSecurityEvent } from "@/lib/config";
-import { AGENT_PORTS } from "@/lib/agents/ports";
 
 // Backend URL - use server-side env var or fallback to client-side or localhost
 const BACKEND_URL =
@@ -94,52 +93,6 @@ export async function POST(req: NextRequest) {
         `[API] Orchestrator delegated to ${target_agent} (port ${target_port})`
       );
 
-      // For food agent, start the conversational flow
-      if (target_agent === "agent_food_dining") {
-        const foodResponse = await callFoodAgentChat(message, userId, null);
-        return NextResponse.json({
-          content: foodResponse.response,
-          delegation: orchestratorResponse.delegation,
-          sessionState: foodResponse.sessionState,
-          agentId: "agent_food_dining",
-          needsConsent: foodResponse.needsConsent || false,
-          isComplete: foodResponse.isComplete || false,
-          ui_type: foodResponse.ui_type || null,
-          options: foodResponse.options || null,
-          allow_custom: foodResponse.allow_custom,
-          allow_none: foodResponse.allow_none,
-          // CONSENT PROTOCOL: Pass through consent token
-          consent_token: foodResponse.consent_token,
-          consent_issued_at: foodResponse.consent_issued_at,
-          consent_expires_at: foodResponse.consent_expires_at,
-        });
-      }
-
-      // For professional profile agent
-      if (target_agent === "agent_professional_profile") {
-        const profResponse = await callProfessionalAgentChat(
-          message,
-          userId,
-          null
-        );
-        return NextResponse.json({
-          content: profResponse.response,
-          delegation: orchestratorResponse.delegation,
-          sessionState: profResponse.sessionState,
-          agentId: "agent_professional_profile",
-          needsConsent: profResponse.needsConsent || false,
-          isComplete: profResponse.isComplete || false,
-          ui_type: profResponse.ui_type || null,
-          options: profResponse.options || null,
-          allow_custom: profResponse.allow_custom,
-          allow_none: profResponse.allow_none,
-          // CONSENT PROTOCOL: Pass through consent token
-          consent_token: profResponse.consent_token,
-          consent_issued_at: profResponse.consent_issued_at,
-          consent_expires_at: profResponse.consent_expires_at,
-        });
-      }
-
       // For other agents, return delegation info (frontend can follow up)
       return NextResponse.json({
         content: orchestratorResponse.response,
@@ -192,114 +145,12 @@ async function callOrchestrator(message: string, userId: string) {
 /**
  * Fallback intent classification when Python orchestrator is unavailable
  */
-function fallbackIntentClassification(message: string) {
-  const msg = message.toLowerCase();
-
-  // Simple keyword matching
-  if (
-    msg.includes("food") ||
-    msg.includes("diet") ||
-    msg.includes("restaurant") ||
-    msg.includes("cuisine") ||
-    msg.includes("eat") ||
-    msg.includes("preference")
-  ) {
-    return {
-      response: "I'll connect you to our Food & Dining specialist.",
-      delegation: {
-        target_agent: "agent_food_dining",
-        target_port: 10001, // Matches AGENT_PORTS in constants.py
-        domain: "food_dining",
-      },
-    };
-  }
-
-  if (
-    msg.includes("resume") ||
-    msg.includes("job") ||
-    msg.includes("career") ||
-    msg.includes("skill") ||
-    msg.includes("professional")
-  ) {
-    return {
-      response: "I'll connect you to our Professional Profile specialist.",
-      delegation: {
-        target_agent: "agent_professional_profile",
-        target_port: 10002, // Matches AGENT_PORTS in constants.py
-        domain: "professional",
-      },
-    };
-  }
-
-  // No specific domain detected
+function fallbackIntentClassification(_message: string) {
+  // No specific domain detected; use Kai or world-model flows
   return {
     response:
-      "Hi! I can help you with:\n\n• 🍽️ Food & Dining preferences\n• 💼 Professional profile\n\nWhat would you like to set up?",
+      "Hi! I can help with investment analysis (Kai) and world-model domains. What would you like to do?",
     delegation: null,
-  };
-}
-
-/**
- * Call Food Agent Chat endpoint (conversational flow)
- */
-async function callFoodAgentChat(
-  message: string,
-  userId: string,
-  sessionState: Record<string, unknown> | null
-) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/api/agents/food-dining/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, message, sessionState }),
-    });
-
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (e) {
-    console.log("[API] Food agent not running");
-  }
-
-  return {
-    response: "The Food Agent is being set up. Please try again in a moment.",
-    sessionState: { step: "error" },
-    needsConsent: false,
-    isComplete: false,
-  };
-}
-
-/**
- * Call Professional Profile Agent Chat endpoint (conversational flow)
- */
-async function callProfessionalAgentChat(
-  message: string,
-  userId: string,
-  sessionState: Record<string, unknown> | null
-) {
-  try {
-    const response = await fetch(
-      `${BACKEND_URL}/api/agents/professional-profile/chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, message, sessionState }),
-      }
-    );
-
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (e) {
-    console.log("[API] Professional agent not running");
-  }
-
-  return {
-    response:
-      "The Professional Profile Agent is being set up. Please try again in a moment.",
-    sessionState: { step: "error" },
-    needsConsent: false,
-    isComplete: false,
   };
 }
 
@@ -312,49 +163,6 @@ async function handleDomainAgentChat(
   userId: string,
   sessionState: Record<string, unknown>
 ) {
-  if (agentId === "agent_food_dining") {
-    const response = await callFoodAgentChat(message, userId, sessionState);
-    return NextResponse.json({
-      content: response.response,
-      sessionState: response.sessionState,
-      agentId: "agent_food_dining",
-      needsConsent: response.needsConsent || false,
-      isComplete: response.isComplete || false,
-      ui_type: response.ui_type || null,
-      options: response.options || null,
-      allow_custom: response.allow_custom,
-      allow_none: response.allow_none,
-      // CONSENT PROTOCOL: Pass through consent token
-      consent_token: response.consent_token,
-      consent_issued_at: response.consent_issued_at,
-      consent_expires_at: response.consent_expires_at,
-    });
-  }
-
-  // Professional profile agent
-  if (agentId === "agent_professional_profile") {
-    const response = await callProfessionalAgentChat(
-      message,
-      userId,
-      sessionState
-    );
-    return NextResponse.json({
-      content: response.response,
-      sessionState: response.sessionState,
-      agentId: "agent_professional_profile",
-      needsConsent: response.needsConsent || false,
-      isComplete: response.isComplete || false,
-      ui_type: response.ui_type || null,
-      options: response.options || null,
-      allow_custom: response.allow_custom,
-      allow_none: response.allow_none,
-      // CONSENT PROTOCOL: Pass through consent token
-      consent_token: response.consent_token,
-      consent_issued_at: response.consent_issued_at,
-      consent_expires_at: response.consent_expires_at,
-    });
-  }
-
   // Other domain agents - not yet implemented
   return NextResponse.json({
     content: "This agent is not yet available.",

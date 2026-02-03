@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Home", icon: "🏠" },
   { href: "/docs", label: "Docs", icon: "📚" },
-  { href: "/dashboard", label: "Dashboard", icon: "📊", requiresAuth: true },
+  { href: "/kai", label: "Kai", icon: "📈", requiresAuth: true },
   { href: "/login", label: "Account", icon: "👤", showWhenLoggedOut: true },
 ];
 
@@ -40,7 +40,7 @@ export function BottomNav() {
   const items = user
     ? [
         ...visibleItems.filter((i) => i.href !== "/login"),
-        { href: "/dashboard", label: "Profile", icon: "👤" },
+        { href: "/profile", label: "Profile", icon: "👤" },
       ]
     : visibleItems;
 
@@ -50,23 +50,20 @@ export function BottomNav() {
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-  // Sticky Dashboard Logic
-  const [dashboardHref, setDashboardHref] = React.useState("/dashboard");
+  // Sticky Kai path
+  const [kaiHref, setKaiHref] = React.useState("/kai");
 
   React.useEffect(() => {
-    // 1. Recover last path on mount
-    const saved = localStorage.getItem("lastDashboardPath");
+    const saved = localStorage.getItem("lastKaiPath");
     if (saved) {
-      setDashboardHref(saved);
+      setKaiHref(saved);
     }
   }, []);
 
   React.useEffect(() => {
-    // 2. Save path whenever we are inside /dashboard (but not exactly /dashboard if we want deep linking)
-    // Actually, saving any /dashboard path is good.
-    if (pathname.startsWith("/dashboard")) {
-      localStorage.setItem("lastDashboardPath", pathname);
-      setDashboardHref(pathname);
+    if (pathname.startsWith("/kai")) {
+      localStorage.setItem("lastKaiPath", pathname);
+      setKaiHref(pathname);
     }
   }, [pathname]);
 
@@ -91,11 +88,9 @@ export function BottomNav() {
             )
             .slice(0, 5)
             .map((item) => {
-              // Override href for Dashboard item only
+              // Override href for Kai item; Profile uses /profile
               const finalHref =
-                item.label === "Dashboard" || item.label === "Profile"
-                  ? dashboardHref
-                  : item.href;
+                item.label === "Kai" ? kaiHref : item.href;
 
               return (
                 <Link

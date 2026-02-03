@@ -463,7 +463,7 @@ export function KaiChat({
           variant="ghost"
           size="icon"
           className="shrink-0"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/kai")}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

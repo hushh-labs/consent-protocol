@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
 import { AuthService } from "@/lib/services/auth-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import {
   createVaultWithPassphrase as webCreateVault,
   unlockVaultWithPassphrase as webUnlockVault,
@@ -204,11 +205,21 @@ export class VaultService {
 
   /**
    * Check if a vault exists for the given user
+   * Cached per session to avoid repeated API calls across page navigations.
    * iOS: Uses HushhVault native plugin
    * Web: Calls /api/vault/check
    */
   static async checkVault(userId: string): Promise<boolean> {
+    const cache = CacheService.getInstance();
+    const cacheKey = CACHE_KEYS.VAULT_CHECK(userId);
+    const cached = cache.get<boolean>(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+
     console.log("🔐 [VaultService] checkVault called for:", userId);
+
+    let hasVault: boolean;
 
     if (Capacitor.isNativePlatform()) {
       console.log("🔐 [VaultService] Using native plugin for checkVault");
@@ -220,31 +231,44 @@ export class VaultService {
         );
         const result = await HushhVault.hasVault({ userId, authToken });
         console.log("🔐 [VaultService] hasVault result:", result);
-        return result.exists;
+        hasVault = result.exists;
       } catch (error) {
         console.error("❌ [VaultService] Native hasVault error:", error);
         throw error;
       }
+    } else {
+      // Web: use API route with Firebase auth
+      console.log("🌐 [VaultService] Using API for checkVault");
+      const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
+
+      const authToken = await this.getFirebaseToken();
+      const headers: HeadersInit = {};
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        console.error("❌ [VaultService] checkVault failed:", response.status);
+        throw new Error("Vault check failed");
+      }
+      const data = await response.json();
+      hasVault = data.hasVault;
     }
 
-    // Web: use API route with Firebase auth
-    console.log("🌐 [VaultService] Using API for checkVault");
-    const url = this.getApiUrl(`/api/vault/check?userId=${userId}`);
+    cache.set(cacheKey, hasVault, CACHE_TTL.SESSION);
+    return hasVault;
+  }
 
-    // Get Firebase token for authentication (required in production)
-    const authToken = await this.getFirebaseToken();
-    const headers: HeadersInit = {};
-    if (authToken) {
-      headers["Authorization"] = `Bearer ${authToken}`;
-    }
-
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-      console.error("❌ [VaultService] checkVault failed:", response.status);
-      throw new Error("Vault check failed");
-    }
-    const data = await response.json();
-    return data.hasVault;
+  /**
+   * Set vault check cache to true (call after create or unlock so subsequent checks skip API).
+   */
+  static setVaultCheckCache(userId: string, exists: boolean): void {
+    CacheService.getInstance().set(
+      CACHE_KEYS.VAULT_CHECK(userId),
+      exists,
+      CACHE_TTL.SESSION
+    );
   }
 
   /**

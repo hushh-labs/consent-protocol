@@ -13,11 +13,9 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from api.models import ConsentRequest, ConsentResponse, DataAccessRequest, DataAccessResponse
+from api.models import ConsentRequest, ConsentResponse, DataAccessRequest
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
-from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.consent_db import ConsentDBService
 from shared import REGISTERED_DEVELOPERS
 
@@ -144,98 +142,16 @@ async def request_consent(request: ConsentRequest):
     )
 
 
-@router.post("/food-data", response_model=DataAccessResponse)
-async def get_food_data(request: DataAccessRequest):
-    """
-    Get user's food preferences data.
-    
-    Requires valid consent token with WORLD_MODEL_READ scope.
-    
-    Follows Hushh Core Principle: "Scoped Access"
-    """
-    logger.info(f"🍽️ Food Data Request: user={request.user_id}")
-    
-    # Validate consent token
-    valid, reason, token = validate_token(
-        request.consent_token,
-        expected_scope=ConsentScope.WORLD_MODEL_READ
-    )
-    
-    if not valid:
-        logger.warning(f"❌ Token validation failed: {reason}")
-        return DataAccessResponse(
-            status_code=403,
-            error=f"Forbidden: {reason}"
-        )
-
-    if token is None:
-        logger.error("Token validation succeeded but token payload was missing")
-        return DataAccessResponse(
-            status_code=500,
-            error="Token validation failed unexpectedly"
-        )
-    
-    # Verify token is for this user
-    if token.user_id != request.user_id:
-        return DataAccessResponse(
-            status_code=403,
-            error="Forbidden: Token user mismatch"
-        )
-    
-    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
-    # The MCP flow uses /api/consent/data with zero-knowledge exports
-    logger.warning("⚠️ Deprecated endpoint called: /api/v1/food-data - use MCP tools instead")
-    return DataAccessResponse(
-        status_code=501,
-        error="This endpoint is deprecated. Use MCP tools (get_food_preferences) for data access with zero-knowledge exports."
-    )
+@router.post("/food-data")
+async def get_food_data(_request: DataAccessRequest):
+    """Removed: use world-model for domain data."""
+    raise HTTPException(status_code=410, detail="Gone. Use world-model API for domain data.")
 
 
-@router.post("/professional-data", response_model=DataAccessResponse)
-async def get_professional_data(request: DataAccessRequest):
-    """
-    Get user's professional profile data.
-    
-    Requires valid consent token with WORLD_MODEL_READ scope.
-    
-    Follows Hushh Core Principle: "Scoped Access"
-    """
-    logger.info(f"💼 Professional Data Request: user={request.user_id}")
-    
-    # Validate consent token
-    valid, reason, token = validate_token(
-        request.consent_token,
-        expected_scope=ConsentScope.WORLD_MODEL_READ
-    )
-    
-    if not valid:
-        logger.warning(f"❌ Token validation failed: {reason}")
-        return DataAccessResponse(
-            status_code=403,
-            error=f"Forbidden: {reason}"
-        )
-
-    if token is None:
-        logger.error("Token validation succeeded but token payload was missing")
-        return DataAccessResponse(
-            status_code=500,
-            error="Token validation failed unexpectedly"
-        )
-    
-    # Verify token is for this user
-    if token.user_id != request.user_id:
-        return DataAccessResponse(
-            status_code=403,
-            error="Forbidden: Token user mismatch"
-        )
-    
-    # PRODUCTION: These endpoints are deprecated - use MCP tools instead
-    # The MCP flow uses /api/consent/data with zero-knowledge exports
-    logger.warning("⚠️ Deprecated endpoint called: /api/v1/professional-data - use MCP tools instead")
-    return DataAccessResponse(
-        status_code=501,
-        error="This endpoint is deprecated. Use MCP tools (get_professional_profile) for data access with zero-knowledge exports."
-    )
+@router.post("/professional-data")
+async def get_professional_data(_request: DataAccessRequest):
+    """Removed: use world-model for domain data."""
+    raise HTTPException(status_code=410, detail="Gone. Use world-model API for domain data.")
 
 
 @router.get("/list-scopes")

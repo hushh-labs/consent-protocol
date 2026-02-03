@@ -309,34 +309,6 @@ export interface HushhVaultPlugin {
     authToken?: string;
   }): Promise<{ success: boolean }>;
 
-  /**
-   * Get Food Preferences from Cloud DB
-   * Replaces: /api/vault/food on iOS
-   * Requires: VAULT_OWNER token for consent-first architecture
-   */
-  getFoodPreferences(options: {
-    userId: string;
-    vaultOwnerToken: string;
-    authToken?: string;
-  }): Promise<{
-    domain: string;
-    preferences: Record<string, EncryptedPayload> | null;
-  }>;
-
-  /**
-   * Get Professional Data from Cloud DB
-   * Replaces: /api/vault/professional on iOS
-   * Requires: VAULT_OWNER token for consent-first architecture
-   */
-  getProfessionalData(options: {
-    userId: string;
-    vaultOwnerToken: string;
-    authToken?: string;
-  }): Promise<{
-    domain: string;
-    preferences: Record<string, EncryptedPayload> | null;
-  }>;
-
   // Consents (New)
   /**
    * Store a single encrypted preference field to the Cloud DB.
@@ -482,15 +454,6 @@ export interface HushhDatabasePlugin {
     recoveryEncryptedVaultKey: string;
     recoverySalt: string;
     recoveryIv: string;
-  }>;
-  storeFoodPreferences(options: {
-    userId: string;
-    dietaryRestrictions?: EncryptedPayload;
-    cuisinePreferences?: EncryptedPayload;
-    monthlyBudget?: EncryptedPayload;
-  }): Promise<{ success: boolean }>;
-  getFoodPreferences(options: { userId: string }): Promise<{
-    data: Record<string, EncryptedPayload> | null;
   }>;
   close(): Promise<{ success: boolean }>;
 }

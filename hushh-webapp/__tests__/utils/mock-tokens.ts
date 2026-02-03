@@ -12,18 +12,6 @@ export const VALID_TOKENS = {
   // Session token with vault.read.all scope
   session:
     "HCT:dGVzdF91c2VyfHRlc3RfYWdlbnR8dmF1bHQucmVhZC5hbGx8MTcwMzAwMDAwMDAwMHwxNzAzMDg2NDAwMDAw.valid_signature",
-
-  // Food write consent token
-  foodWrite:
-    "HCT:dGVzdF91c2VyfGFnZW50X2Zvb2RfZGluaW5nfHZhdWx0LndyaXRlLmZvb2R8MTcwMzAwMDAwMDAwMHwxNzAzMDg2NDAwMDAw.valid_signature",
-
-  // Food read consent token
-  foodRead:
-    "HCT:dGVzdF91c2VyfGFnZW50X2Zvb2RfZGluaW5nfHZhdWx0LnJlYWQuZm9vZHwxNzAzMDAwMDAwMDAwfDE3MDMwODY0MDAwMDA.valid_signature",
-
-  // Professional write consent token
-  professionalWrite:
-    "HCT:dGVzdF91c2VyfGFnZW50X3Byb2Zlc3Npb25hbHx2YXVsdC53cml0ZS5wcm9mZXNzaW9uYWx8MTcwMzAwMDAwMDAwMHwxNzAzMDg2NDAwMDAw.valid_signature",
 };
 
 // Invalid test tokens

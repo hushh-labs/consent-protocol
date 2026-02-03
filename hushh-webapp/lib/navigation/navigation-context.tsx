@@ -4,8 +4,8 @@
  * Navigation Context & Smart Back Navigation
  *
  * Provides layered navigation for mobile:
- * - Level 1: Root pages (/, /dashboard, /consents, /profile)
- * - Level 2+: Sub-pages (dashboard/professional, dashboard/kai, etc.)
+ * - Level 1: Root pages (/, /kai, /consents, /profile, /agent-nav)
+ * - Level 2+: Sub-pages (e.g. /kai/dashboard, /kai/dashboard/analysis)
  *
  * Back button behavior:
  * - Level 2+ → navigates to parent level
@@ -29,7 +29,7 @@ import { ExitDialog } from "@/components/exit-dialog";
 // Level 1 root paths (exit prompt on back button)
 const LEVEL_1_PATHS = [
   "/",
-  "/dashboard",
+  "/kai",
   "/consents",
   "/profile",
   "/agent-nav",
@@ -78,7 +78,7 @@ export function NavigationProvider({
 
     // Find parent path (go up one level)
     const parent =
-      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/dashboard";
+      depth > 1 ? "/" + segments.slice(0, -1).join("/") : "/kai";
 
     return {
       level: depth,
