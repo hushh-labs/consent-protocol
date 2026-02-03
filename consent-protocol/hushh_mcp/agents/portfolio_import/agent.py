@@ -9,15 +9,13 @@ Supports:
 Uses Gemini 3 Flash for intelligent extraction when structured parsing fails.
 """
 
-import io
 import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from hushh_mcp.agents.base_agent import HushhAgent
-from hushh_mcp.constants import ConsentScope, GEMINI_MODEL
-from hushh_mcp.hushh_adk.context import HushhContext
+from hushh_mcp.constants import GEMINI_MODEL, ConsentScope
 from hushh_mcp.hushh_adk.manifest import ManifestLoader
 
 logger = logging.getLogger(__name__)

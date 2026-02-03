@@ -731,7 +731,7 @@ class WorldModelService:
             
             # Update total_attributes (recalculate from remaining domains)
             total_attrs = 0
-            for d, summary in index.domain_summaries.items():
+            for _d, summary in index.domain_summaries.items():
                 total_attrs += (
                     summary.get("holdings_count") or 
                     summary.get("attribute_count") or 

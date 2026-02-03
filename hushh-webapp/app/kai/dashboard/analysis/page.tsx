@@ -1,4 +1,4 @@
-// app/dashboard/kai/analysis/page.tsx
+// app/kai/dashboard/analysis/page.tsx
 
 /**
  * Kai Analysis Page - Redirects to main Kai page
@@ -26,7 +26,7 @@ export default function KaiAnalysisPage() {
     // Step 1: Redirect complete
     completeStep();
     // Redirect to the main Kai page which now handles all flows
-    router.replace("/dashboard/kai");
+    router.replace("/kai/dashboard");
   }, [router, completeStep]);
 
   // Return null - progress bar shows at top

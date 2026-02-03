@@ -536,7 +536,7 @@ class ConsentDBService:
         
         try:
             # Upsert to handle re-approvals
-            response = supabase.table("consent_exports").upsert({
+            supabase.table("consent_exports").upsert({
                 "consent_token": consent_token,
                 "user_id": user_id,
                 "encrypted_data": encrypted_data,
@@ -601,7 +601,7 @@ class ConsentDBService:
         supabase = self._get_supabase()
         
         try:
-            response = supabase.table("consent_exports")\
+            supabase.table("consent_exports")\
                 .delete()\
                 .eq("consent_token", consent_token)\
                 .execute()

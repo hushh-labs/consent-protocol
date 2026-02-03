@@ -27,7 +27,7 @@ import { DashboardView, PortfolioData } from "./views/dashboard-view";
 import { AnalysisView } from "./views/analysis-view";
 import { useVault } from "@/lib/vault/vault-context";
 import { toast } from "sonner";
-import { getDirectBackendUrl } from "@/lib/services/api-service";
+import { ApiService } from "@/lib/services/api-service";
 
 // =============================================================================
 // TYPES
@@ -404,17 +404,11 @@ export function KaiFlow({
         formData.append("file", file);
         formData.append("user_id", userId);
 
-        // Use SSE streaming endpoint with tri-flow compliant URL
-        const baseUrl = getDirectBackendUrl();
-        
         let response: Response;
         try {
-          response = await fetch(`${baseUrl}/api/kai/portfolio/import/stream`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${vaultOwnerToken}`,
-            },
-            body: formData,
+          response = await ApiService.importPortfolioStream({
+            formData,
+            vaultOwnerToken,
             signal: abortControllerRef.current.signal,
           });
         } catch (fetchError) {
@@ -716,7 +710,7 @@ export function KaiFlow({
 
   // Handle manage portfolio navigation
   const handleManagePortfolio = useCallback(() => {
-    router.push("/dashboard/kai/manage");
+    router.push("/kai/dashboard/manage");
   }, [router]);
 
   // Handle analyze stock

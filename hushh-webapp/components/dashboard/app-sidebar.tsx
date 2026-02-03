@@ -25,8 +25,8 @@ import { usePendingConsentCount } from "@/components/consent/notification-provid
 
 const domains = [
   {
-    name: "Agent Kai",
-    href: "/dashboard/kai",
+    name: "Kai",
+    href: "/kai/dashboard",
     icon: TrendingUp,
     status: "active",
   },
@@ -55,15 +55,15 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  href="/dashboard"
-                  isActive={pathname === "/dashboard"}
+                  href="/kai"
+                  isActive={pathname === "/kai"}
                   size="lg"
                   className="md:h-12 md:text-base font-semibold"
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                     <Home className="h-4 w-4" />
                   </div>
-                  <span className="ml-2">Dashboard</span>
+                  <span className="ml-2">Kai</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -104,8 +104,8 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  href="/dashboard/consents"
-                  isActive={pathname === "/dashboard/consents"}
+                  href="/consents"
+                  isActive={pathname === "/consents"}
                 >
                   <Shield className="h-4 w-4" />
                   <span>Consents</span>

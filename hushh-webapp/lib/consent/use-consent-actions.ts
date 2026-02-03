@@ -42,16 +42,10 @@ interface UseConsentActionsOptions {
 function getScopeDataEndpoint(scope: string): string | null {
   const scopeMap: Record<string, string> = {
     // Dynamic attr.* scopes (canonical - preferred)
-    "attr.food.*": "/api/vault/food",
-    "attr.professional.*": "/api/vault/professional",
     "attr.financial.*": "/api/vault/finance",
     // Legacy underscore format (deprecated)
-    vault_read_food: "/api/vault/food",
-    vault_read_professional: "/api/vault/professional",
     vault_read_finance: "/api/vault/finance",
     // Legacy dot format (deprecated)
-    "vault.read.food": "/api/vault/food",
-    "vault.read.professional": "/api/vault/professional",
     "vault.read.finance": "/api/vault/finance",
   };
   return scopeMap[scope] || null;
@@ -167,14 +161,9 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
               throw new Error("Vault owner token required");
             }
             
-            // Scope mapping to ApiService methods
-            if (consent.scope.includes("food")) {
-              dataResponse = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
-            } else if (consent.scope.includes("professional")) {
-              dataResponse = await ApiService.getProfessionalProfile(userId, vaultOwnerToken);
-            } else if (consent.scope.includes("finance")) {
-              // TODO: Implement getFinanceProfile in ApiService
-              // For now, fall back to null or handle error
+            // Scope mapping to ApiService methods (food/professional removed; use world-model)
+            if (consent.scope.includes("finance")) {
+              // TODO: Implement getFinanceProfile in ApiService or use world-model
               console.warn("Finance scope not yet supported in native toggle");
             }
           } catch (e: any) {
@@ -183,9 +172,10 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
             // Are we throwing here? No, caught.
           }
 
-          if (dataResponse && dataResponse.ok) {
+          const response = dataResponse as Response | null;
+          if (response?.ok) {
             console.log("[NativeDebug] Scope data fetched successfully");
-            const data = await dataResponse.json();
+            const data = await response.json();
 
             // Decrypt the data with vault key
             const { decryptData } = await import("@/lib/vault/encrypt");

@@ -78,12 +78,11 @@ FastApi-->>KaiPage: {preferences:[...]}
 
 | Web Route | Backend Route | Method | Token Required | Validation Function | Platform Support |
 |-----------|---------------|--------|---------------|---------------------|------------------|
-| `/api/vault/food/preferences` | `/api/food/preferences` | GET (web) / POST (backend) | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/food` | `/api/food/preferences/store` | POST | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/professional/preferences` | `/api/professional/preferences` | GET (web) / POST (backend) | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
-| `/api/vault/professional` | `/api/professional/preferences/store` | POST | ✅ Yes | `validate_vault_owner_token()` | Web, iOS, Android |
 | `/api/vault/status` | `/db/vault/status` | GET (web) / POST (backend) | ✅ Yes | Session token | Web, iOS, Android |
 | `/api/kai/preferences/:userId` | `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase verify | Web, iOS, Android |
+| `/api/world-model/[...path]` | `/api/world-model/*` | Various | ✅ Yes | `require_vault_owner_token` | Web, iOS, Android |
+
+> Vault domain data (e.g. financial, health) is served via **world-model** API; legacy food/professional routes were removed.
 
 > Note: Web routes use GET with query params; backend routes use POST with JSON body.
 > Native plugins call backend routes directly.
@@ -98,105 +97,15 @@ FastApi-->>KaiPage: {preferences:[...]}
 ### Testing Token Enforcement
 
 ```bash
-# Test food preferences without token - should fail with 401
-curl -X POST http://localhost:8000/api/vault/food/preferences \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "test123"}'
-# Expected: {"detail": "Missing consent token..."}
+# Test vault status without token - should fail with 401
+curl -X GET "http://localhost:3000/api/vault/status?userId=test123"
+# Expected: 400 (missing consentToken) or 401 from backend
 
-# Test with valid VAULT_OWNER token - should succeed
-curl -X POST http://localhost:8000/api/vault/food/preferences \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "test123", "consentToken": "HCT:eyJ0eXAiOiJKV1QiLCJhbGc..."}'
-# Expected: {"domain": "food", "preferences": {...}}
-
-# Test with wrong scope token - should fail with 403
-curl -X POST http://localhost:8000/api/vault/food/preferences \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "test123", "consentToken": "HCT:...agent.kai.analyze..."}'
-# Expected: {"detail": "Insufficient scope..."}
-
-# Test with expired token - should fail with 401
-curl -X POST http://localhost:8000/api/vault/food/preferences \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "test123", "consentToken": "HCT:expired_token"}'
-# Expected: {"detail": "Invalid consent token: Token expired"}
+# Test with valid VAULT_OWNER token
+curl -X GET "http://localhost:3000/api/vault/status?userId=test123&consentToken=HCT:..."
+# Expected: {"domains": {"kai": {...}}, "totalActive": 1, "total": 1}
 ```
 
 ### Platform-Specific Token Routing
 
-#### Web Platform
-
-```typescript
-// Frontend: app/dashboard/food/page.tsx
-const vaultOwnerToken = getVaultOwnerToken();
-const response = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
-
-// ApiService: lib/services/api-service.ts
-static async getFoodPreferences(userId: string, vaultOwnerToken: string) {
-  // Web: Use Next.js proxy
-  const url = `/api/vault/food/preferences?userId=${userId}&consentToken=${vaultOwnerToken}`;
-  return fetch(url, { method: "GET" });
-}
-
-// Next.js Proxy: app/api/vault/food/route.ts
-export async function GET(request: NextRequest) {
-  const userId = searchParams.get("userId");
-  const consentToken = searchParams.get("consentToken");
-  
-  // Forward to backend as POST with token in body
-  const response = await fetch(`${PYTHON_API_URL}/api/vault/food/preferences`, {
-    method: "POST",
-    body: JSON.stringify({ userId, consentToken })
-  });
-}
-```
-
-#### Native Platform (iOS/Android)
-
-```typescript
-// Frontend: app/dashboard/food/page.tsx (SAME CODE)
-const vaultOwnerToken = getVaultOwnerToken();
-const response = await ApiService.getFoodPreferences(userId, vaultOwnerToken);
-
-// ApiService: lib/services/api-service.ts (DETECTS PLATFORM)
-static async getFoodPreferences(userId: string, vaultOwnerToken: string) {
-  if (Capacitor.isNativePlatform()) {
-    // Native: Use plugin (bypasses Next.js)
-    const { preferences } = await HushhVault.getFoodPreferences({
-      userId,
-      vaultOwnerToken,  // Passed to native plugin
-      authToken,
-    });
-    return new Response(JSON.stringify({ preferences }));
-  }
-  // ... web implementation ...
-}
-```
-
-```swift
-// iOS Plugin: HushhVaultPlugin.swift
-@objc func getFoodPreferences(_ call: CAPPluginCall) {
-    guard let userId = call.getString("userId"),
-          let vaultOwnerToken = call.getString("vaultOwnerToken")
-    else {
-        call.reject("Missing required parameters")
-        return
-    }
-    
-    // Direct backend call with token
-    let body: [String: Any] = [
-        "userId": userId,
-        "consentToken": vaultOwnerToken
-    ]
-    
-    performRequest(
-        urlStr: "\(backendUrl)/api/vault/food/preferences",
-        method: "POST",
-        body: body,
-        call: call
-    )
-}
-```
-
-**Result:** Both web and native send `consentToken` to backend; validation is identical.
+Domain data is served via **world-model** API (`/api/world-model/[...path]`). Use `WorldModelService` in the frontend; web uses Next.js proxy, native uses WorldModelPlugin. Token validation is identical across platforms.

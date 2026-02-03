@@ -193,30 +193,10 @@ const formatScopeLocal = (
     { icon: string; label: string; description: string }
   > = {
     // API format (underscores)
-    vault_read_food: {
-      icon: "utensils",
-      label: "Food Preferences",
-      description: "Dietary restrictions, cuisines, and dining budget",
-    },
-    vault_read_professional: {
-      icon: "briefcase",
-      label: "Professional Profile",
-      description: "Job title, skills, and career preferences",
-    },
     vault_read_finance: {
       icon: "wallet",
       label: "Financial Data",
       description: "Budget and spending preferences",
-    },
-    vault_write_food: {
-      icon: "utensils",
-      label: "Save Food Preferences",
-      description: "Store your dietary and cuisine preferences",
-    },
-    vault_write_professional: {
-      icon: "briefcase",
-      label: "Save Professional Profile",
-      description: "Store your career data",
     },
     "vault.owner": {
       icon: "crown",
@@ -224,16 +204,6 @@ const formatScopeLocal = (
       description: "Full control (You)",
     },
     // Dot format (from MCP)
-    "vault.read.food": {
-      icon: "utensils",
-      label: "Food Preferences",
-      description: "Dietary restrictions, cuisines, and dining budget",
-    },
-    "vault.read.professional": {
-      icon: "briefcase",
-      label: "Professional Profile",
-      description: "Job title, skills, and career preferences",
-    },
     "vault.read.finance": {
       icon: "wallet",
       label: "Financial Data",
@@ -576,7 +546,7 @@ export default function ConsentsPage() {
 
   const { user, isAuthenticated, loading: authLoading } = useAuth();
 
-  // Consolidated init effect - handles auth check and data loading
+  // Consolidated init effect - cache-first then background refresh
   useEffect(() => {
     let cancelled = false;
 
@@ -602,24 +572,43 @@ export default function ConsentsPage() {
 
       if (uid) {
         setUserId(uid);
-
-        // Initial fetch - use token from storage or context
         const effectiveToken = token || vaultOwnerToken || "";
-        
-        try {
-          // Step 2: Fetch pending consents
-          await fetchPendingConsents(uid);
-          if (!cancelled) completeStep();
 
-          // Step 3: Fetch active consents + audit log
+        // Cache-first: show cached data immediately so UI renders without waiting
+        const cache = CacheService.getInstance();
+        const cachedPending = cache.get<PendingConsent[]>(CACHE_KEYS.PENDING_CONSENTS(uid));
+        const cachedAudit = cache.get<ConsentAuditEntry[]>(CACHE_KEYS.CONSENT_AUDIT_LOG(uid));
+        const cachedActive = effectiveToken
+          ? cache.get<ActiveConsent[]>(CACHE_KEYS.ACTIVE_CONSENTS(uid))
+          : null;
+        if (cachedPending) setPending(cachedPending);
+        if (cachedAudit) setAuditLog(cachedAudit);
+        if (cachedActive) setActiveConsents(cachedActive);
+        const hasAnyCache = !!(cachedPending || cachedAudit || cachedActive);
+        if (hasAnyCache && !cancelled) setLoading(false);
+
+        // Session state from storage
+        if (token && expiresAt) {
+          const expiryTime = parseInt(expiresAt, 10);
+          setSession({
+            isActive: Date.now() < expiryTime,
+            expiresAt: expiryTime,
+            token,
+            scope: "vault.owner",
+          });
+        }
+
+        // Background refresh (forceRefresh) to get latest data
+        try {
+          await fetchPendingConsents(uid, true);
+          if (!cancelled) completeStep();
           await Promise.all([
-            fetchAuditLog(uid),
-            ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken)] : []),
+            fetchAuditLog(uid, true),
+            ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken, true)] : []),
           ]);
           if (!cancelled) completeStep();
         } catch (error) {
           console.error("Error loading consents:", error);
-          // Complete remaining steps on error
           if (!cancelled) {
             completeStep();
             completeStep();
@@ -628,20 +617,9 @@ export default function ConsentsPage() {
           if (!cancelled) setLoading(false);
         }
       } else {
-        // No user - complete remaining steps
         completeStep();
         completeStep();
         setLoading(false);
-      }
-
-      if (token && expiresAt) {
-        const expiryTime = parseInt(expiresAt, 10);
-        setSession({
-          isActive: Date.now() < expiryTime,
-          expiresAt: expiryTime,
-          token,
-          scope: "vault.owner",
-        });
       }
     }
 
@@ -835,10 +813,6 @@ export default function ConsentsPage() {
   };
 
   const getScopeColor = (scope: string): string => {
-    if (scope.includes("food"))
-      return "bg-orange-500/10 text-orange-600 border-orange-500/20";
-    if (scope.includes("professional"))
-      return "bg-blue-500/10 text-blue-600 border-blue-500/20";
     if (scope.includes("finance"))
       return "bg-green-500/10 text-green-600 border-green-500/20";
     if (scope.includes("all"))

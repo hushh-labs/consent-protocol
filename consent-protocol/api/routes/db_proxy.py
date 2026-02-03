@@ -6,14 +6,6 @@
 As of this update, all routes now require Firebase authentication.
 This addresses the previous security vulnerabilities.
 
-🚀 MIGRATION PATH:
-Please use the new modular agents instead:
-- Food: /api/food/preferences (requires VAULT_OWNER token)
-- Professional: /api/professional/preferences (requires VAULT_OWNER token)
-
-These routes are maintained for backward compatibility ONLY.
-They will be removed in a future version.
-
 Legacy Description:
 This module provides a thin database access layer for the iOS native app.
 All consent protocol logic runs locally on iOS - this only executes SQL operations.
@@ -25,7 +17,6 @@ Security:
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -33,7 +24,6 @@ from pydantic import BaseModel
 from api.middleware import require_firebase_auth, verify_user_id_match
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.services.vault_db import VaultDBService
 from hushh_mcp.services.vault_keys_service import VaultKeysService
 
 logger = logging.getLogger(__name__)
@@ -85,6 +75,8 @@ class SuccessResponse(BaseModel):
 # ============================================================================
 # Vault Endpoints (Minimal SQL Operations)
 # ============================================================================
+
+# NOTE: /food/get and /professional/get removed; domain data is via world-model.
 
 @router.post("/vault/check", response_model=VaultCheckResponse)
 async def vault_check(
@@ -181,69 +173,6 @@ async def vault_setup(
     
     except Exception as e:
         logger.error(f"vault/setup error: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
-
-
-# ============================================================================
-# Domain Data Endpoints (Food & Professional)
-# ============================================================================
-
-class DomainGetRequest(BaseModel):
-    userId: str
-
-
-class DomainPreferencesResponse(BaseModel):
-    domain: str
-    preferences: dict | None
-
-
-@router.post("/food/get", response_model=DomainPreferencesResponse)
-async def food_get(
-    request: DomainGetRequest,
-    firebase_uid: str = Depends(require_firebase_auth),
-):
-    """
-    Get all food preferences for the user.
-    
-    ⚠️ DEPRECATED: Use /api/food/preferences instead which requires VAULT_OWNER token.
-    
-    SECURITY: Requires Firebase authentication. User can only get their own data.
-    """
-    # Verify user is getting their own data
-    verify_user_id_match(firebase_uid, request.userId)
-    
-    try:
-        service = VaultDBService()
-        preferences = await service._get_domain_preferences_deprecated(request.userId, "food")
-        return DomainPreferencesResponse(domain="food", preferences=preferences if preferences else None)
-    
-    except Exception as e:
-        logger.error(f"food/get error: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
-
-
-@router.post("/professional/get", response_model=DomainPreferencesResponse)
-async def professional_get(
-    request: DomainGetRequest,
-    firebase_uid: str = Depends(require_firebase_auth),
-):
-    """
-    Get all professional data for the user.
-    
-    ⚠️ DEPRECATED: Use /api/professional/preferences instead which requires VAULT_OWNER token.
-    
-    SECURITY: Requires Firebase authentication. User can only get their own data.
-    """
-    # Verify user is getting their own data
-    verify_user_id_match(firebase_uid, request.userId)
-    
-    try:
-        service = VaultDBService()
-        preferences = await service._get_domain_preferences_deprecated(request.userId, "professional")
-        return DomainPreferencesResponse(domain="professional", preferences=preferences if preferences else None)
-    
-    except Exception as e:
-        logger.error(f"professional/get error: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 
 
