@@ -56,6 +56,7 @@ Before you start, ensure you have:
 5. **Configure environment**:
    - Copy `consent-protocol/.env.example` to `consent-protocol/.env` and fill in values
    - Copy `hushh-webapp/.env.local.example` to `hushh-webapp/.env.local` and fill in values
+   - **Important**: Ensure `GOOGLE_GENAI_USE_VERTEXAI=True` is set for Gemini 3 models
    - See [Getting Started Guide](../../getting_started.md) for details
 
 6. **Verify setup**:

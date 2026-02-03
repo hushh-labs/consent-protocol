@@ -1,12 +1,35 @@
 # Kai Financial Agent (v2.0)
 
 > **Role**: Coordinator / Orchestrator
-> **Model**: `gemini-3-flash-preview`
+> **Model**: `gemini-3-flash-preview` (via Vertex AI)
 > **Scopes**: `vault.read.finance`
 
 ## Overview
 
 Kai is an advanced financial analyst agent. Unlike simple chatbots, Kai acts as a **Coordinator** that manages a team of specialized "Analysis Engines" to produce extensive investment reports.
+
+## LLM Configuration
+
+Kai uses **Gemini 3 Flash Preview** via Vertex AI. The SDK auto-configures from environment variables:
+
+```bash
+# Required in consent-protocol/.env
+GOOGLE_API_KEY=your-service-account-bound-api-key
+GOOGLE_GENAI_USE_VERTEXAI=True
+```
+
+### Thinking Mode
+
+Gemini 3 supports configurable thinking levels for reasoning tasks:
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| `MINIMAL` | Near-zero thinking budget | High-throughput, simple tasks |
+| `LOW` | Fewer tokens for thinking | Speed-critical operations |
+| `MEDIUM` | Balanced approach | Moderate complexity |
+| `HIGH` | Full reasoning (default) | Complex analysis, document parsing |
+
+Kai uses `HIGH` thinking level by default for portfolio analysis and document parsing to ensure thorough reasoning.
 
 ## Architecture
 
