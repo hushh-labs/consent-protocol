@@ -142,53 +142,6 @@ export class HushhDatabaseWeb implements HushhDatabasePlugin {
     });
   }
 
-  async storeFoodPreferences(options: {
-    userId: string;
-    dietaryRestrictions?: EncryptedPayload;
-    cuisinePreferences?: EncryptedPayload;
-    monthlyBudget?: EncryptedPayload;
-  }): Promise<{ success: boolean }> {
-    const db = await this.getDB();
-    const now = Date.now();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction([STORES.vaultFood, STORES.syncQueue], 'readwrite');
-      const foodStore = tx.objectStore(STORES.vaultFood);
-      const syncStore = tx.objectStore(STORES.syncQueue);
-      const record = { ...options, createdAt: now, updatedAt: now };
-      foodStore.put(record);
-      syncStore.add({
-        tableName: STORES.vaultFood,
-        operation: 'UPSERT',
-        userId: options.userId,
-        data: JSON.stringify(record),
-        createdAt: now,
-        synced: false,
-      });
-      tx.oncomplete = () => resolve({ success: true });
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  async getFoodPreferences(options: { userId: string }): Promise<{
-    data: Record<string, EncryptedPayload> | null;
-  }> {
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORES.vaultFood, 'readonly');
-      const store = tx.objectStore(STORES.vaultFood);
-      const request = store.get(options.userId);
-      request.onsuccess = () => {
-        if (!request.result) { resolve({ data: null }); return; }
-        const result: Record<string, EncryptedPayload> = {};
-        if (request.result.dietaryRestrictions) result.dietary_restrictions = request.result.dietaryRestrictions;
-        if (request.result.cuisinePreferences) result.cuisine_preferences = request.result.cuisinePreferences;
-        if (request.result.monthlyBudget) result.monthly_food_budget = request.result.monthlyBudget;
-        resolve({ data: Object.keys(result).length > 0 ? result : null });
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
-
   async close(): Promise<{ success: boolean }> {
     if (this.db) { this.db.close(); this.db = null; this.initPromise = null; }
     return { success: true };

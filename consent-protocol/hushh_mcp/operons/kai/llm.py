@@ -23,7 +23,7 @@ except ImportError:
 
 from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope, GEMINI_MODEL, GEMINI_MODEL_FULL
+from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_FULL, ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)

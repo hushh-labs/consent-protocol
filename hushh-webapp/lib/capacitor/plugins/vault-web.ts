@@ -316,36 +316,6 @@ export class HushhVaultWeb extends WebPlugin {
 
   // ==================== Domain Data Methods (Web Fallback) ====================
 
-  async getFoodPreferences(options: {
-    userId: string;
-    authToken?: string;
-    sessionToken?: string;
-  }): Promise<{
-    domain: string;
-    preferences: Record<string, EncryptedPayload> | null;
-  }> {
-    const response = await fetch(`/api/vault/food?userId=${options.userId}`);
-    if (!response.ok) return { domain: "food", preferences: null };
-    const data = await response.json();
-    return { domain: "food", preferences: data.preferences || null };
-  }
-
-  async getProfessionalData(options: {
-    userId: string;
-    authToken?: string;
-    sessionToken?: string;
-  }): Promise<{
-    domain: string;
-    preferences: Record<string, EncryptedPayload> | null;
-  }> {
-    const response = await fetch(
-      `/api/vault/professional?userId=${options.userId}`
-    );
-    if (!response.ok) return { domain: "professional", preferences: null };
-    const data = await response.json();
-    return { domain: "professional", preferences: data.preferences || null };
-  }
-
   // ==================== Consent Methods (Web Fallback) ====================
 
   async storePreferencesToCloud(options: {

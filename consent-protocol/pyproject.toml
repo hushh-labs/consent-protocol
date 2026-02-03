@@ -24,10 +24,15 @@ ignore = [
     "B904",  # Prefer explicit exception chaining, but avoid noisy diffs
     "S110",  # Allow try-except-pass for optional fallbacks
     "S608",  # Allow string-based SQL construction (params are properly escaped via SQLAlchemy)
+    "B008",  # FastAPI Depends() in argument defaults is intentional
+    "S607",  # gcloud/subprocess partial path acceptable for CLI discovery
+    "S112",  # try/except/continue without logging acceptable in parsing loops
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]  # Allow assert in tests
+"api/routes/*" = ["B008"]  # Redundant with global; FastAPI Depends() pattern
+"scripts/*" = ["S106"]  # Test/script fixtures may use placeholder tokens
 
 [tool.mypy]
 # Python 3.13 - aligned with CI and Dockerfile

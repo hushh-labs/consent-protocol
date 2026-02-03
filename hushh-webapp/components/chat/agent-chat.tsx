@@ -47,59 +47,13 @@ async function saveToVault(
       console.log("🔒 Encrypting preferences for vault...", collectedData);
     }
 
-    // Detect which domain based on collected data keys
-    const isFood =
-      collectedData.dietary_restrictions ||
-      collectedData.cuisine_preferences ||
-      collectedData.monthly_budget;
-    const isProfessional =
-      collectedData.professional_title ||
-      collectedData.skills ||
-      collectedData.experience_level;
-
+    // Build preferences from collected data (world-model / generic domain flow)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const preferences: Record<string, any> = {};
-
-    if (isFood) {
-      // Encrypt food fields
-      const dietary = collectedData.dietary_restrictions || [];
-      const cuisines = collectedData.cuisine_preferences || [];
-      const budget = collectedData.monthly_budget || 0;
-
-      preferences.dietary_restrictions = await encryptData(
-        JSON.stringify(dietary),
-        vaultKey
-      );
-      preferences.cuisine_preferences = await encryptData(
-        JSON.stringify(cuisines),
-        vaultKey
-      );
-      preferences.monthly_food_budget = await encryptData(
-        JSON.stringify(budget),
-        vaultKey
-      );
-    }
-
-    if (isProfessional) {
-      // Encrypt professional profile fields
-      const title = collectedData.professional_title || "";
-      const skills = collectedData.skills || [];
-      const experience = collectedData.experience_level || "";
-      const jobPrefs = collectedData.job_preferences || [];
-
-      preferences.professional_title = await encryptData(
-        JSON.stringify(title),
-        vaultKey
-      );
-      preferences.skills = await encryptData(JSON.stringify(skills), vaultKey);
-      preferences.experience_level = await encryptData(
-        JSON.stringify(experience),
-        vaultKey
-      );
-      preferences.job_preferences = await encryptData(
-        JSON.stringify(jobPrefs),
-        vaultKey
-      );
+    for (const [key, value] of Object.entries(collectedData)) {
+      if (value !== undefined && value !== null) {
+        preferences[key] = await encryptData(JSON.stringify(value), vaultKey);
+      }
     }
 
     if (process.env.NODE_ENV === "development") {
@@ -666,11 +620,7 @@ export function AgentChat({
         <div className="w-72 shrink-0">
           <CollectedDataCard
             data={collectedData}
-            domain={
-              activeAgent === "agent_food_dining"
-                ? "Food & Dining"
-                : "Preferences"
-            }
+            domain="Preferences"
           />
         </div>
       )}

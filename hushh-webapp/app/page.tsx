@@ -104,7 +104,7 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
 function LoginScreenContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectPath = searchParams.get("redirect") || "/dashboard";
+  const redirectPath = searchParams.get("redirect") || "/kai";
 
   // State
   const [error, setError] = useState<string | null>(null);

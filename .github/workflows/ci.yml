@@ -5,6 +5,17 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Run frontend only, backend only, or all"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - frontend
+          - backend
+          - all
 
 env:
   NODE_VERSION: "20"
@@ -12,28 +23,71 @@ env:
 
 jobs:
   # ============================================================================
+  # Path filters: run frontend/backend jobs only when their paths change (or manual scope)
+  # ============================================================================
+  paths:
+    name: "Path filters"
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.outputs.frontend }}
+      backend: ${{ steps.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          filters: |
+            frontend: hushh-webapp/**
+            backend: consent-protocol/**
+
+      - id: manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          scope="${{ github.event.inputs.scope }}"
+          case "$scope" in
+            frontend) echo "frontend=true" >> $GITHUB_OUTPUT; echo "backend=false" >> $GITHUB_OUTPUT ;;
+            backend) echo "frontend=false" >> $GITHUB_OUTPUT; echo "backend=true" >> $GITHUB_OUTPUT ;;
+            *) echo "frontend=true" >> $GITHUB_OUTPUT; echo "backend=true" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - id: outputs
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "frontend=${{ steps.manual.outputs.frontend }}" >> $GITHUB_OUTPUT
+            echo "backend=${{ steps.manual.outputs.backend }}" >> $GITHUB_OUTPUT
+          else
+            echo "frontend=${{ steps.filter.outputs.frontend }}" >> $GITHUB_OUTPUT
+            echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
+          fi
+        if: always() && (github.event_name == 'workflow_dispatch' && steps.manual.outcome == 'success') || (github.event_name != 'workflow_dispatch' && steps.filter.outcome == 'success')
+
+  # ============================================================================
   # Frontend (Next.js + Capacitor)
   # ============================================================================
   web-check:
     name: "Web (Next.js)"
+    needs: [paths]
+    if: needs.paths.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./hushh-webapp
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
-      
+
       - name: Validate Node version
         run: |
           node --version
           node -e "const v = process.version.match(/^v(\d+)\./); if (!v || parseInt(v[1]) < 20) throw new Error('Node.js 20+ required')"
-      
+
       - name: Validate required files
         run: |
           test -f package-lock.json || (echo "❌ ERROR: package-lock.json not found. Run 'npm install' to generate it." && exit 1)
@@ -41,22 +95,22 @@ jobs:
           test -f next.config.ts || (echo "❌ ERROR: next.config.ts not found" && exit 1)
           echo "✓ package-lock.json exists and is valid"
           echo "✓ next.config.ts exists"
-      
+
       - name: Use latest npm
         run: npm install -g npm@latest && npm --version
-      
+
       - name: Install dependencies
         timeout-minutes: 5
         run: npm ci
-      
+
       - name: Validate Next.js config
         run: |
           npx tsc --noEmit
           node -e "const fs=require('fs'); const p=require('path'); const f=p.join(process.cwd(),'next.config.ts'); if (!fs.existsSync(f)) process.exit(1); console.log('next.config.ts present and will be validated by build');"
-      
+
       - name: Lint
         run: npm run check-lint
-      
+
       - name: Build (web standalone)
         run: npm run build
         env:
@@ -79,11 +133,11 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
           NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
-      
+
       - name: Security audit
         run: npm audit --audit-level=high
         continue-on-error: true  # Don't fail on advisories, just warn
-      
+
       - name: Run frontend tests
         run: npm test
         continue-on-error: true  # Don't fail until tests are stable
@@ -93,24 +147,26 @@ jobs:
   # ============================================================================
   protocol-check:
     name: "Protocol (Python)"
+    needs: [paths]
+    if: needs.paths.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./consent-protocol
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
           cache-dependency-path: consent-protocol/requirements.txt
-      
+
       - name: Validate Python version
         run: |
           python --version
           python -c "import sys; assert sys.version_info >= (3, 13), 'Python 3.13 required for CI, got {}'.format(sys.version)"
-      
+
       - name: Validate required files
         run: |
           test -f requirements.txt || (echo "❌ ERROR: requirements.txt not found" && exit 1)
@@ -125,10 +181,10 @@ jobs:
           else
             echo "✓ Test files found"
           fi
-      
+
       - name: Use latest pip
         run: python -m pip install --upgrade pip && python -m pip --version
-      
+
       - name: Install dependencies
         timeout-minutes: 10
         run: |
@@ -138,15 +194,15 @@ jobs:
           else
             python -m pip install pytest pytest-cov pytest-asyncio mypy ruff
           fi
-      
+
       - name: Lint with ruff
         run: python -m ruff check .
         continue-on-error: false
-      
+
       - name: Type check with mypy
         run: python -m mypy --config-file pyproject.toml --ignore-missing-imports
         continue-on-error: false
-      
+
       - name: Run tests with coverage
         timeout-minutes: 10
         run: |
@@ -162,25 +218,26 @@ jobs:
           VAULT_ENCRYPTION_KEY: "TEST_VAULT_KEY_PLACEHOLDER"
 
   # ============================================================================
-  # Integration Check
+  # Integration Check (route contracts; runs when frontend or backend paths changed)
   # ============================================================================
   integration-check:
     name: "Integration"
-    needs: [web-check, protocol-check]
+    needs: [paths]
+    if: needs.paths.outputs.frontend == 'true' || needs.paths.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: hushh-webapp/package-lock.json
-      
+
       - name: Use latest npm
         working-directory: ./hushh-webapp
         run: npm install -g npm@latest && npm --version
-      
+
       - name: Verify route contracts
         working-directory: ./hushh-webapp
         run: |
@@ -190,4 +247,4 @@ jobs:
           else
             echo "⚠ WARNING: verify-route-contracts.cjs not found, skipping"
           fi
-        continue-on-error: true  # Don't fail until contracts are fully defined
+        continue-on-error: false  # Route contracts must pass; fail CI if missing/out of sync

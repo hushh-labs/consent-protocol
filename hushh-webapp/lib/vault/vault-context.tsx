@@ -128,6 +128,64 @@ export function VaultProvider({ children }: VaultProviderProps) {
       window.removeEventListener("vault-lock-requested", handleLockRequest);
   }, [lockVault]);
 
+  /**
+   * Prefetch common data after vault unlock to speed up page loads.
+   * Runs in background - errors are logged but don't block UI.
+   * Declared before unlockVault so it can be called from it (react-hooks/immutability).
+   */
+  const prefetchDashboardData = useCallback(
+    async (userId: string, token: string) => {
+      console.log("[VaultContext] Prefetching dashboard data...");
+      const cache = CacheService.getInstance();
+
+      try {
+        const [
+          ,
+          vaultStatusResult,
+          consentsResult,
+          pendingResult,
+          auditResult,
+        ] = await Promise.allSettled([
+          WorldModelService.getMetadata(userId),
+          ApiService.getVaultStatus(userId, token),
+          ApiService.getActiveConsents(userId, token),
+          ApiService.getPendingConsents(userId),
+          ApiService.getConsentHistory(userId, 1, 50),
+        ]);
+
+        if (vaultStatusResult.status === "fulfilled" && vaultStatusResult.value.ok) {
+          const statusData = await vaultStatusResult.value.json();
+          cache.set(CACHE_KEYS.VAULT_STATUS(userId), statusData, CACHE_TTL.SHORT);
+          console.log("[VaultContext] Cached vault status");
+        }
+
+        if (consentsResult.status === "fulfilled" && consentsResult.value.ok) {
+          const consentsData = await consentsResult.value.json();
+          cache.set(CACHE_KEYS.ACTIVE_CONSENTS(userId), consentsData.active || [], CACHE_TTL.SHORT);
+          console.log("[VaultContext] Cached active consents");
+        }
+
+        if (pendingResult.status === "fulfilled" && pendingResult.value.ok) {
+          const pendingData = (await pendingResult.value.json()).pending || [];
+          cache.set(CACHE_KEYS.PENDING_CONSENTS(userId), pendingData, CACHE_TTL.SHORT);
+          console.log("[VaultContext] Cached pending consents");
+        }
+
+        if (auditResult.status === "fulfilled" && auditResult.value.ok) {
+          const data = await auditResult.value.json();
+          const auditData = Array.isArray(data) ? data : data?.items ?? data?.history ?? [];
+          cache.set(CACHE_KEYS.CONSENT_AUDIT_LOG(userId), auditData, CACHE_TTL.SHORT);
+          console.log("[VaultContext] Cached consent audit log");
+        }
+
+        console.log("[VaultContext] Prefetch complete");
+      } catch (err) {
+        console.warn("[VaultContext] Prefetch error (non-blocking):", err);
+      }
+    },
+    []
+  );
+
   const unlockVault = useCallback(
     (key: string, token: string, expiresAt: number) => {
       console.log(
@@ -137,62 +195,16 @@ export function VaultProvider({ children }: VaultProviderProps) {
       setVaultOwnerToken(token);
       setTokenExpiresAt(expiresAt);
 
-      // Store a flag to indicate vault is unlocked
-      // (But NOT the actual key - just the state)
-      // Uses localStorage on iOS, sessionStorage on web
       setSessionItem("vault_unlocked", "true");
-      
-      // Sync VAULT_OWNER token to sessionStorage for service layer access
-      // This allows ApiService and WorldModelService to include auth headers
-      // Note: The vault key is NEVER stored in sessionStorage (XSS protection)
-      // The consent token is less sensitive as it's time-limited and scope-restricted
       setSessionItem("vault_owner_token", token);
       setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
 
-      // Prefetch common data in background (don't await - fire and forget)
       if (user?.uid) {
         prefetchDashboardData(user.uid, token);
       }
     },
-    [user?.uid]
+    [user, prefetchDashboardData]
   );
-
-  /**
-   * Prefetch common data after vault unlock to speed up page loads.
-   * Runs in background - errors are logged but don't block UI.
-   */
-  const prefetchDashboardData = async (userId: string, token: string) => {
-    console.log("[VaultContext] Prefetching dashboard data...");
-    const cache = CacheService.getInstance();
-
-    try {
-      // Fetch in parallel for speed
-      const [metadataResult, vaultStatusResult, consentsResult] = await Promise.allSettled([
-        WorldModelService.getMetadata(userId), // Already caches internally
-        ApiService.getVaultStatus(userId, token),
-        ApiService.getActiveConsents(userId, token),
-      ]);
-
-      // Cache vault status if successful
-      if (vaultStatusResult.status === "fulfilled" && vaultStatusResult.value.ok) {
-        const statusData = await vaultStatusResult.value.json();
-        cache.set(CACHE_KEYS.VAULT_STATUS(userId), statusData, CACHE_TTL.SHORT);
-        console.log("[VaultContext] Cached vault status");
-      }
-
-      // Cache active consents if successful
-      if (consentsResult.status === "fulfilled" && consentsResult.value.ok) {
-        const consentsData = await consentsResult.value.json();
-        cache.set(CACHE_KEYS.ACTIVE_CONSENTS(userId), consentsData.active || [], CACHE_TTL.SHORT);
-        console.log("[VaultContext] Cached active consents");
-      }
-
-      console.log("[VaultContext] Prefetch complete");
-    } catch (error) {
-      // Don't throw - prefetch is best-effort
-      console.warn("[VaultContext] Prefetch error (non-blocking):", error);
-    }
-  };
 
   const getVaultKey = useCallback(() => {
     return vaultKey;

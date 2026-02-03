@@ -119,6 +119,7 @@ class CacheService {
 export const CACHE_KEYS = {
   WORLD_MODEL_METADATA: (userId: string) => `world_model_metadata_${userId}`,
   VAULT_STATUS: (userId: string) => `vault_status_${userId}`,
+  VAULT_CHECK: (userId: string) => `vault_check_${userId}`,
   ACTIVE_CONSENTS: (userId: string) => `active_consents_${userId}`,
   PORTFOLIO_DATA: (userId: string) => `portfolio_data_${userId}`,
   DOMAIN_DATA: (userId: string, domain: string) => `domain_data_${userId}_${domain}`,

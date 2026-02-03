@@ -197,20 +197,20 @@ export function ProjectionsCard({
     projections.estimated_cash_flow.length > 0;
   const hasMRD = projections?.mrd_estimate;
 
-  // Calculate total projected income
+  // Calculate total projected income (deps aligned with React Compiler inference)
   const totalProjectedIncome = useMemo(() => {
     if (!projections?.estimated_cash_flow) return 0;
     return projections.estimated_cash_flow.reduce(
       (sum, p) => sum + (p.projected_income || 0),
       0
     );
-  }, [projections?.estimated_cash_flow]);
+  }, [projections]);
 
-  // Calculate average monthly income
+  // Calculate average monthly income (deps aligned with React Compiler inference)
   const avgMonthlyIncome = useMemo(() => {
     if (!projections?.estimated_cash_flow?.length) return 0;
     return totalProjectedIncome / projections.estimated_cash_flow.length;
-  }, [projections?.estimated_cash_flow, totalProjectedIncome]);
+  }, [projections, totalProjectedIncome]);
 
   if (!hasProjections && !hasMRD) {
     return null;

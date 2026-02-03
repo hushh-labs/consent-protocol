@@ -648,7 +648,7 @@ class PortfolioParser:
                     change_value = self._parse_number(change_match.group(1))
                     # Calculate percentage
                     if portfolio.beginning_value > 0:
-                        change_pct = (change_value / portfolio.beginning_value) * 100
+                        (change_value / portfolio.beginning_value) * 100
                 
                 # ========== ASSET ALLOCATION ==========
                 allocation_patterns = [
@@ -701,22 +701,22 @@ class PortfolioParser:
                 
                 # ========== FEES ==========
                 # Extract fees from statement
-                advisor_fee_match = re.search(r'Advisor Fee.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                margin_int_match = re.search(r'Margin Interest.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                trans_cost_match = re.search(r'Transaction Costs.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Advisor Fee.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Margin Interest.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Transaction Costs.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 
                 # ========== TAXES WITHHELD ==========
-                fed_tax_match = re.search(r'Federal tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                state_tax_match = re.search(r'State tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                foreign_tax_match = re.search(r'Foreign tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Federal tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'State tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Foreign tax.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 
                 # ========== RETIREMENT (IRA) SPECIFIC ==========
-                mrd_match = re.search(r'MRD.*?(\d{4}).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                ira_contrib_match = re.search(r'Contributions.*?IRA.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'MRD.*?(\d{4}).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Contributions.*?IRA.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 
                 # ========== 529 EDUCATION SPECIFIC ==========
-                contrib_cap_match = re.search(r'Contribution Cap.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
-                lifetime_contrib_match = re.search(r'Total Contributions.*?Life.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Contribution Cap.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
+                re.search(r'Total Contributions.*?Life.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE)
                 
                 # ========== PARSE HOLDINGS TABLE ==========
                 for table in tables:
@@ -850,13 +850,13 @@ class PortfolioParser:
                     portfolio.ending_value = self._parse_number(end_match.group(1))
                 
                 # YTD Beginning Value
-                ytd_begin_match = re.search(r'Beginning.*?Value.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                re.search(r'Beginning.*?Value.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 
                 # YTD Net Deposits
-                ytd_deposits_match = re.search(r'Net Deposits.*?Withdrawals.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                re.search(r'Net Deposits.*?Withdrawals.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 
                 # Change in value
-                change_match = re.search(r'TOTAL ACCOUNT VALUE.*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                re.search(r'TOTAL ACCOUNT VALUE.*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*).*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 
                 # ========== ASSET ALLOCATION ==========
                 # JPMorgan shows Equities % and Cash & Sweep Funds %
@@ -870,7 +870,7 @@ class PortfolioParser:
                 
                 # ========== INCOME SUMMARY ==========
                 # Total Income from Taxable Investments (Year-to-Date)
-                income_ytd_match = re.search(r'Total Income from Taxable Investments.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
+                re.search(r'Total Income from Taxable Investments.*?Year-to-Date.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
                 
                 # Dividends
                 div_match = re.search(r'Dividends.*?This Period.*?\$?([\d,]+\.?\d*)', text, re.IGNORECASE | re.DOTALL)
@@ -895,7 +895,7 @@ class PortfolioParser:
                     portfolio.realized_short_term_gain = max(portfolio.realized_short_term_gain, self._parse_number(st_gain_only.group(1)))
                 
                 # Short-Term Loss
-                st_loss_match = re.search(r'Short[\s-]?Term Loss.*?\(([\d,]+\.?\d*)\)', text, re.IGNORECASE)
+                re.search(r'Short[\s-]?Term Loss.*?\(([\d,]+\.?\d*)\)', text, re.IGNORECASE)
                 
                 # ========== UNREALIZED GAINS/LOSSES ==========
                 # Total unrealized
@@ -950,7 +950,7 @@ class PortfolioParser:
                                 quantity = self._parse_number(str(row[2] or '0'))
                                 price = self._parse_number(str(row[3] or '0'))
                                 market_value = self._parse_number(str(row[4] or '0'))
-                                unit_cost = self._parse_number(str(row[5] or '0'))
+                                self._parse_number(str(row[5] or '0'))
                                 cost_basis = self._parse_number(str(row[6] or '0'))
                                 gain_loss = self._parse_number(str(row[7] or '0'))
                                 est_income = self._parse_number(str(row[8] or '0')) if len(row) > 8 else None
@@ -1666,9 +1666,11 @@ class RichPDFParser:
         holdings = []
         
         try:
+            import os
+
             from google import genai
             from google.genai import types
-            import os
+
             from hushh_mcp.constants import GEMINI_MODEL
             
             api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -1847,17 +1849,18 @@ Statement text (first 12000 chars):
         - Google AI Studio API keys (start with 'AIza')
         - Vertex AI / Google Cloud credentials
         """
-        import os
-        import json
         import base64
+        import json
+        import os
+
         from google import genai
         from google.genai import types
+
         from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_VERTEX
         
         portfolio = ComprehensivePortfolio()
         
         api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        use_vertex = False
         model_to_use = GEMINI_MODEL
         
         # Determine which client to use based on API key format
@@ -1896,7 +1899,6 @@ Statement text (first 12000 chars):
                     project=project_id,
                     location=location,
                 )
-                use_vertex = True
                 model_to_use = GEMINI_MODEL_VERTEX
                 logger.info(f"Using Vertex AI with project: {project_id}, model: {model_to_use}")
                 
@@ -2447,9 +2449,9 @@ class PortfolioImportService:
                 
             elif filename.lower().endswith('.pdf'):
                 # Use LLM-first comprehensive parser for PDFs
-                logger.info(f"=" * 60)
+                logger.info("=" * 60)
                 logger.info(f"Parsing PDF with LLM-First Comprehensive Parser: {filename}")
-                logger.info(f"=" * 60)
+                logger.info("=" * 60)
                 
                 comprehensive_portfolio = self.rich_parser.parse_comprehensive(file_content, filename)
                 
