@@ -470,10 +470,13 @@ When users exit from root-level pages:
 
 ### Layout & Safe Area
 
-Use `<TopAppBarSpacer />` component for consistent spacing:
+**Top bar (native and web):**
 
-- **Root Pages**: `h-[max(env(safe-area-inset-top), 32px)]` (Status Bar only)
-- **Sub Pages**: `h-[calc(max(env(safe-area-inset-top), 32px) + 48px)]` (Status Bar + Header)
+- **StatusBarBlur** (native only): Fixed strip under the system status bar with height `env(safe-area-inset-top)`; uses the same glass style as the breadcrumb bar so both bands match.
+- **TopAppBar**: Fixed breadcrumb bar; height **64px**; on native sits below StatusBarBlur at `top: env(safe-area-inset-top)`.
+- Both use the **masked blur** style (`.top-bar-glass`): theme-aware semi-transparent background, `backdrop-filter: blur(3px) saturate(180%)`, and a faded bottom edge via `mask-image` so the bar blends into the content.
+- **No spacer in layout**: The main scroll container in `Providers` has `pt-[64px]` and extends under the fixed bar so content can scroll behind it; body already has `padding-top: env(safe-area-inset-top)` for the notch/safe area.
+- **TopAppBarSpacer** is no longer used in the root layout; the scroll container’s padding provides clearance. The component remains available if a page needs to reserve space for the bar outside the main providers layout.
 
 ---
 
