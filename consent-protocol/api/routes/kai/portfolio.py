@@ -291,15 +291,15 @@ async def import_portfolio_stream(
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
-    
-    filename = file.filename
-    
+
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
-        import os
         import base64
+        import os
+
         from google import genai
         from google.genai import types
+
         from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_VERTEX
         
         thinking_enabled = True  # Flag to track if thinking is available

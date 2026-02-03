@@ -12,7 +12,6 @@ import csv
 import io
 import logging
 import re
-from typing import Optional
 
 from ..agent import EnhancedHolding, EnhancedPortfolio
 

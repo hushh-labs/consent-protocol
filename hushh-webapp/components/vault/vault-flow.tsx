@@ -91,6 +91,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
         authMethod: "passphrase",
       });
 
+      VaultService.setVaultCheckCache(user.uid, true);
       setRecoveryKey(vaultData.recoveryKey);
       setStep("recovery"); // Show recovery key dialog
     } catch (err: any) {
@@ -116,6 +117,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           const { token, expiresAt } =
             await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
+          VaultService.setVaultCheckCache(user.uid, true);
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
 
@@ -156,6 +158,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           const { token, expiresAt } =
             await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
+          VaultService.setVaultCheckCache(user.uid, true);
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
 
@@ -203,6 +206,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           const { token, expiresAt } =
             await VaultService.getOrIssueVaultOwnerToken(user.uid);
 
+          VaultService.setVaultCheckCache(user.uid, true);
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
 

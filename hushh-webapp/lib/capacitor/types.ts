@@ -15,8 +15,6 @@
 
 export enum ConsentScope {
   // Dynamic attr.* scopes (canonical - preferred)
-  ATTR_FOOD = "attr.food.*",
-  ATTR_PROFESSIONAL = "attr.professional.*",
   ATTR_FINANCIAL = "attr.financial.*",
   ATTR_FINANCIAL_RISK_PROFILE = "attr.financial.risk_profile",
   ATTR_KAI_DECISIONS = "attr.kai_decisions.*",
@@ -34,7 +32,6 @@ export enum ConsentScope {
   AGENT_FINANCE_ANALYZE = "agent.finance.analyze",
   AGENT_IDENTITY_VERIFY = "agent.identity.verify",
   AGENT_SALES_OPTIMIZE = "agent.sales.optimize",
-  AGENT_FOOD_COLLECT = "agent.food.collect",
   AGENT_KAI_ANALYZE = "agent.kai.analyze",
 
   // Custom scopes
@@ -42,26 +39,18 @@ export enum ConsentScope {
   CUSTOM_SESSION_WRITE = "custom.session.write",
 
   // Legacy scopes (deprecated - for backward compatibility only)
-  /** @deprecated Use ATTR_FOOD instead */
+  /** @deprecated */
   VAULT_READ_EMAIL = "vault.read.email",
-  /** @deprecated Use ATTR_FOOD instead */
+  /** @deprecated */
   VAULT_READ_PHONE = "vault.read.phone",
   /** @deprecated Use ATTR_FINANCIAL instead */
   VAULT_READ_FINANCE = "vault.read.finance",
-  /** @deprecated Use ATTR_FOOD instead */
+  /** @deprecated */
   VAULT_READ_CONTACTS = "vault.read.contacts",
-  /** @deprecated Use ATTR_FOOD instead */
-  VAULT_READ_FOOD = "vault.read.food",
-  /** @deprecated Use ATTR_PROFESSIONAL instead */
-  VAULT_READ_PROFESSIONAL = "vault.read.professional",
   /** @deprecated Use VAULT_OWNER instead */
   VAULT_READ_ALL = "vault.read.all",
-  /** @deprecated Use ATTR_FOOD instead */
-  VAULT_WRITE_FOOD = "vault.write.food",
   /** @deprecated Use ATTR_FINANCIAL instead */
   VAULT_WRITE_FINANCE = "vault.write.finance",
-  /** @deprecated Use ATTR_PROFESSIONAL instead */
-  VAULT_WRITE_PROFESSIONAL = "vault.write.professional",
 }
 
 // ==================== Token Types ====================

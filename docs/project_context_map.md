@@ -114,6 +114,10 @@ When creating `app/api/{feature}/route.ts`, ALL must exist:
 
 **If any is missing, the feature is INCOMPLETE.**
 
+**Tri-flow plugin mapping:** Every contract that has native support is declared in `hushh-webapp/route-contracts.json` with a `native` block (tsPluginFile, iosPluginFile, androidPluginFile, requiredMethodNames). Contracts with native blocks: kaiProxy (Kai), vaultWebProxy (HushhVault), vaultOwnerToken (HushhConsent), worldModelProxy (WorldModel), identityProxy (HushhIdentity), consentPendingMgmt (HushhConsent). Run `npm run verify:routes` in `hushh-webapp/` to validate.
+
+**Optional CI:** The Tri-Flow CI workflow (`.github/workflows/ci.yml`) can run frontend-only or backend-only. On push/PR, path filters run `web-check` only when `hushh-webapp/**` changes and `protocol-check` only when `consent-protocol/**` changes. Manual run: use **Actions → Tri-Flow CI → Run workflow** and choose scope: `frontend`, `backend`, or `all`.
+
 ---
 
 ## Where to Implement

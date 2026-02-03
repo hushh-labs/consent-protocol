@@ -20,8 +20,6 @@ import {
   CreditCard,
   Heart,
   Plane,
-  Utensils,
-  Briefcase,
   Tv,
   ShoppingBag,
   Folder,
@@ -53,8 +51,6 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   subscriptions: CreditCard,
   health: Heart,
   travel: Plane,
-  food: Utensils,
-  professional: Briefcase,
   entertainment: Tv,
   shopping: ShoppingBag,
   social: Users,
@@ -65,8 +61,6 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   "credit-card": CreditCard,
   heart: Heart,
   plane: Plane,
-  utensils: Utensils,
-  briefcase: Briefcase,
   tv: Tv,
   "shopping-bag": ShoppingBag,
   users: Users,
@@ -213,8 +207,8 @@ export function UserProfile() {
     });
   };
 
-  const handleDomainClick = (domainKey: string) => {
-    router.push(`/dashboard/domain/${domainKey}`);
+  const handleDomainClick = (_domainKey: string) => {
+    router.push("/kai/dashboard");
   };
 
   if (!userData) return null;

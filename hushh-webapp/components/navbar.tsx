@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Bell, User, Mic } from "lucide-react";
+import { TrendingUp, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiService } from "@/lib/services/api-service";
 
@@ -61,22 +61,20 @@ export const Navbar = () => {
   const { isAuthenticated } = useAuth();
   const pendingConsents = usePendingConsents();
 
-  // Sticky Dashboard Logic
-  const [dashboardHref, setDashboardHref] = useState("/dashboard");
+  // Sticky Kai path (last visited /kai or /kai/dashboard/*)
+  const [kaiHref, setKaiHref] = useState("/kai");
 
   useEffect(() => {
-    // 1. Recover last path on mount
-    const saved = localStorage.getItem("lastDashboardPath");
+    const saved = localStorage.getItem("lastKaiPath");
     if (saved) {
-      setDashboardHref(saved);
+      setKaiHref(saved);
     }
   }, []);
 
   useEffect(() => {
-    // 2. Save path whenever we are inside /dashboard
-    if (pathname && pathname.startsWith("/dashboard")) {
-      localStorage.setItem("lastDashboardPath", pathname);
-      setDashboardHref(pathname);
+    if (pathname && pathname.startsWith("/kai")) {
+      localStorage.setItem("lastKaiPath", pathname);
+      setKaiHref(pathname);
     }
   }, [pathname]);
 
@@ -94,9 +92,9 @@ export const Navbar = () => {
   // Navigation items with consistent sizing
   const navigationItems: NavItem[] = [
     {
-      label: "Dashboard",
-      href: dashboardHref, // Use sticky href here
-      icon: LayoutDashboard,
+      label: "Kai",
+      href: kaiHref,
+      icon: TrendingUp,
     },
     {
       label: "Consents",

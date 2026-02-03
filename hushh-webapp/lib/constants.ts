@@ -11,8 +11,6 @@
  */
 export const CONSENT_SCOPES = {
   // Dynamic attr.* scopes (canonical - preferred)
-  ATTR_FOOD: "attr.food.*",
-  ATTR_PROFESSIONAL: "attr.professional.*",
   ATTR_FINANCIAL: "attr.financial.*",
   ATTR_FINANCIAL_RISK_PROFILE: "attr.financial.risk_profile",
   ATTR_KAI_DECISIONS: "attr.kai_decisions.*",
@@ -28,31 +26,22 @@ export const CONSENT_SCOPES = {
   // Agent permissioning
   AGENT_IDENTITY_VERIFY: "agent.identity.verify",
   AGENT_SHOPPING_PURCHASE: "agent.shopping.purchase",
-  AGENT_FOOD_COLLECT: "agent.food.collect",
   AGENT_KAI_ANALYZE: "agent.kai.analyze",
 
   // Custom scopes
   CUSTOM_TEMPORARY: "custom.temporary",
 
   // Legacy scopes (deprecated - for backward compatibility only)
-  /** @deprecated Use ATTR_FOOD instead */
+  /** @deprecated */
   VAULT_READ_EMAIL: "vault.read.email",
-  /** @deprecated Use ATTR_FOOD instead */
+  /** @deprecated */
   VAULT_READ_PHONE: "vault.read.phone",
-  /** @deprecated Use ATTR_FOOD instead */
-  VAULT_READ_FOOD: "vault.read.food",
-  /** @deprecated Use ATTR_PROFESSIONAL instead */
-  VAULT_READ_PROFESSIONAL: "vault.read.professional",
   /** @deprecated Use ATTR_FINANCIAL instead */
   VAULT_READ_FINANCE: "vault.read.finance",
   /** @deprecated Use VAULT_OWNER instead */
   VAULT_READ_ALL: "vault.read.all",
-  /** @deprecated Use ATTR_FOOD instead */
-  VAULT_WRITE_FOOD: "vault.write.food",
   /** @deprecated Use ATTR_FINANCIAL instead */
   VAULT_WRITE_FINANCE: "vault.write.finance",
-  /** @deprecated Use ATTR_PROFESSIONAL instead */
-  VAULT_WRITE_PROFESSIONAL: "vault.write.professional",
 } as const;
 
 export type ConsentScope = (typeof CONSENT_SCOPES)[keyof typeof CONSENT_SCOPES];
@@ -109,8 +98,6 @@ export const RATE_LIMITS = {
  */
 export const AGENTS = {
   ORCHESTRATOR: "agent_orchestrator",
-  FOOD_DINING: "agent_food_dining",
-  PROFESSIONAL: "agent_professional_profile",
   IDENTITY: "agent_identity",
   SHOPPING: "agent_shopping",
 } as const;

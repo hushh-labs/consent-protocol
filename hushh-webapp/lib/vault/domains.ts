@@ -14,11 +14,10 @@
  * NOTE: Uses dynamic attr.{domain}.* scopes.
  */
 
-import { ApiService } from "@/lib/services/api-service";
-import { 
+import {
   WorldModelService,
   DomainInfo,
-  ScopeDisplayInfo 
+  ScopeDisplayInfo
 } from "@/lib/services/world-model-service";
 
 // ============================================================================
@@ -39,7 +38,7 @@ export type { DomainInfo, ScopeDisplayInfo } from "@/lib/services/world-model-se
  * @deprecated Use DomainInfo from WorldModelService.listDomains() instead.
  * Legacy type kept for backward compatibility.
  */
-export type VaultDomain = "food" | "professional" | "finance" | "health";
+export type VaultDomain = "finance" | "health";
 
 /**
  * Domain configuration.
@@ -67,51 +66,6 @@ export interface DomainConfig {
  * Kept for backward compatibility only. DO NOT add new domains here.
  */
 export const VAULT_DOMAINS: Record<VaultDomain, DomainConfig> = {
-  food: {
-    displayName: "Food & Dining",
-    icon: "🍽️",
-    description: "Dietary restrictions, cuisine preferences, and budget",
-    scope: "attr.food.*",
-    getData: async (userId, token) => {
-      if (!token) {
-        console.error("[domains] No consent token provided for food data");
-        return null;
-      }
-      const res = await ApiService.getFoodPreferences(userId, token);
-      if (!res.ok) return null;
-      const json = await res.json();
-      return json.preferences;
-    },
-    fields: [
-      "dietary_restrictions",
-      "cuisine_preferences",
-      "monthly_food_budget",
-    ],
-  },
-  professional: {
-    displayName: "Professional Profile",
-    icon: "💼",
-    description: "Job title, skills, experience, and preferences",
-    scope: "attr.professional.*",
-    getData: async (userId, token) => {
-      if (!token) {
-        console.error(
-          "[domains] No consent token provided for professional data"
-        );
-        return null;
-      }
-      const res = await ApiService.getProfessionalProfile(userId, token);
-      if (!res.ok) return null;
-      const json = await res.json();
-      return json.preferences;
-    },
-    fields: [
-      "professional_title",
-      "skills",
-      "experience_level",
-      "job_preferences",
-    ],
-  },
   finance: {
     displayName: "Finance",
     icon: "💰",

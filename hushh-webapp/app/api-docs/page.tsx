@@ -202,7 +202,7 @@ export default function ApiDocsPage() {
                 code={`{
   "user_id": "string (required)",
   "developer_token": "string (required)",
-  "scope": "vault_read_food | vault_read_professional",
+  "scope": "vault_read_finance | vault.owner",
   "expiry_hours": 24
 }`}
               />
@@ -223,72 +223,6 @@ export default function ApiDocsPage() {
           </Card>
         </section>
 
-        {/* Food Data Endpoint */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 rounded text-xs font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20">
-              POST
-            </span>
-            <code className="text-lg font-mono">/api/v1/food-data</code>
-            <Lock className="h-4 w-4 text-yellow-500 ml-auto" />
-          </div>
-
-          <Card variant="none" effect="glass" className="p-6 space-y-6">
-            <div>
-              <h4 className="font-semibold mb-3">Request</h4>
-              <CodeBlock
-                language="json"
-                code={`{
-  "user_id": "string (required)",
-  "consent_token": "HCT:... (required)"
-}`}
-              />
-            </div>
-
-            <div>
-              <h4 className="font-semibold mb-3">Response</h4>
-              <CodeBlock
-                language="json"
-                code={`{
-  "status_code": 200,
-  "data": {
-    "dietary_preferences": ["Vegetarian", "Gluten-Free"],
-    "favorite_cuisines": ["Italian", "Mexican"],
-    "monthly_budget": 500
-  }
-}`}
-              />
-            </div>
-          </Card>
-        </section>
-
-        {/* Professional Data Endpoint */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 rounded text-xs font-bold bg-blue-500/10 text-blue-600 border border-blue-500/20">
-              POST
-            </span>
-            <code className="text-lg font-mono">/api/v1/professional-data</code>
-            <Lock className="h-4 w-4 text-yellow-500 ml-auto" />
-          </div>
-
-          <Card variant="none" effect="glass" className="p-6">
-            <h4 className="font-semibold mb-3">Response</h4>
-            <CodeBlock
-              language="json"
-              code={`{
-  "status_code": 200,
-  "data": {
-    "title": "Senior Software Engineer",
-    "skills": ["Python", "React", "AWS"],
-    "experience_level": "Senior (5-8 years)",
-    "job_preferences": ["Full-time", "Remote"]
-  }
-}`}
-            />
-          </Card>
-        </section>
-
         {/* Available Scopes */}
         <section className="space-y-4">
           <h2 className="text-2xl font-bold">Available Scopes</h2>
@@ -302,16 +236,9 @@ export default function ApiDocsPage() {
               </thead>
               <tbody>
                 {[
-                  { scope: "vault_read_food", desc: "Read food preferences" },
-                  {
-                    scope: "vault_read_professional",
-                    desc: "Read professional profile",
-                  },
-                  { scope: "vault_write_food", desc: "Write food preferences" },
-                  {
-                    scope: "vault_write_professional",
-                    desc: "Write professional profile",
-                  },
+                  { scope: "vault_read_finance", desc: "Read financial data" },
+                  { scope: "vault_write_finance", desc: "Write financial data" },
+                  { scope: "vault.owner", desc: "Vault owner (full access)" },
                 ].map((item) => (
                   <tr key={item.scope} className="border-b last:border-0">
                     <td className="py-3">

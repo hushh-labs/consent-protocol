@@ -18,7 +18,7 @@ import { Mic } from "lucide-react";
 const navItems = [
   { href: "/", label: "Home", public: true },
   { href: "/docs", label: "Docs", public: true },
-  { href: "/dashboard", label: "Dashboard", public: false },
+  { href: "/kai", label: "Kai", public: false },
 ];
 
 export function Navigation() {
@@ -69,13 +69,13 @@ export function Navigation() {
 
           {/* Agent Nav - Only visible when vault unlocked */}
           {user && isVaultUnlocked && (
-            <Link href="/dashboard/agent-nav">
+            <Link href="/agent-nav">
               <Button
                 variant="none"
                 effect="glass"
                 showRipple
                 className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
-                  pathname.startsWith("/dashboard/agent-nav")
+                  pathname.startsWith("/agent-nav")
                     ? "bg-white/10 text-white"
                     : "text-secondary hover:text-white hover:bg-white/5"
                 }`}

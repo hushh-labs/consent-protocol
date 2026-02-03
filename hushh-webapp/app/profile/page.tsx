@@ -37,8 +37,6 @@ import {
   CreditCard, 
   Heart, 
   Plane, 
-  Utensils, 
-  Briefcase, 
   Tv, 
   ShoppingBag, 
   Folder,
@@ -56,8 +54,6 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   subscriptions: CreditCard,
   health: Heart,
   travel: Plane,
-  food: Utensils,
-  professional: Briefcase,
   entertainment: Tv,
   shopping: ShoppingBag,
   general: Folder,
@@ -65,8 +61,6 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   "credit-card": CreditCard,
   heart: Heart,
   plane: Plane,
-  utensils: Utensils,
-  briefcase: Briefcase,
   tv: Tv,
   "shopping-bag": ShoppingBag,
   folder: Folder,
@@ -216,7 +210,7 @@ export default function ProfilePage() {
                 return (
                   <button
                     key={domain.key}
-                    onClick={() => router.push(`/dashboard/domain/${domain.key}`)}
+                    onClick={() => router.push("/kai/dashboard")}
                     className="p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-left group"
                   >
                     <div className="flex items-center gap-3">
