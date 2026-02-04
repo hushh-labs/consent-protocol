@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
     // 1. Parse body (expect consentToken)
     const body = await request.json();
     const { consent_token } = body;
+    const authHeader =
+      request.headers.get("authorization") || request.headers.get("Authorization");
 
     if (!consent_token) {
       return NextResponse.json(
@@ -27,6 +29,7 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
       },
       body: JSON.stringify({ consent_token }),
       cache: "no-store",

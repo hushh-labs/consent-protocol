@@ -197,6 +197,8 @@ lib/
 
 ## Plugin Registration
 
+Every plugin must be registered in **both** iOS and Android registration files. Missing registration causes silent runtime failures when TypeScript calls the plugin on native platforms.
+
 ### iOS (Capacitor 8)
 
 ```swift
@@ -212,9 +214,19 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HushhSyncPlugin())
         bridge?.registerPluginInstance(HushhSettingsPlugin())
         bridge?.registerPluginInstance(HushhKeystorePlugin())
+        bridge?.registerPluginInstance(WorldModelPlugin())
     }
 }
 ```
+
+### Adding new iOS source files (project.pbxproj)
+
+When adding a new Swift file to the app (e.g. a new plugin), you must add it to the Xcode project. If you edit `ios/App/App.xcodeproj/project.pbxproj` manually:
+
+- **Every file reference and build file ID must be exactly 24 hexadecimal characters** (`0-9`, `A-F` only). No other characters are valid.
+- Invalid IDs (e.g. containing `W`, `M`, `P`, `L`, `U`, `G`) cause Xcode errors like **"invalid hex digit"** and prevent the project from loading or building.
+- Each new source file needs: (1) a `PBXFileReference` with a 24-hex ID, and (2) a `PBXBuildFile` entry in the app target’s Sources phase with a different 24-hex ID. Add the file reference to the Plugins group and the build file to the Sources build phase.
+- Prefer adding the file in Xcode (File → Add Files) so it generates valid IDs; if editing `project.pbxproj` by hand, copy the ID format from existing entries (e.g. `A1B2C3D42F0E966A009FC3FD`).
 
 ### Android
 
@@ -230,6 +242,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(HushhSyncPlugin::class.java)
         registerPlugin(HushhSettingsPlugin::class.java)
         registerPlugin(HushhKeystorePlugin::class.java)
+        registerPlugin(WorldModelPlugin::class.java)
         super.onCreate(savedInstanceState)
     }
 }

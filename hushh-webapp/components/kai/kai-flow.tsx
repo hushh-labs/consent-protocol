@@ -405,7 +405,11 @@ export function KaiFlow({
         setState("checking");
 
         // Fetch user's World Model metadata
-        const metadata = await WorldModelService.getMetadata(userId);
+        const metadata = await WorldModelService.getMetadata(
+          userId,
+          false,
+          vaultOwnerToken
+        );
 
         // Check if financial domain exists and has data
         const financialDomain = metadata.domains.find(
@@ -436,7 +440,11 @@ export function KaiFlow({
             // No cache - try to decrypt from World Model
             console.log("[KaiFlow] No cache, attempting to decrypt from World Model...");
             try {
-              const encryptedData = await WorldModelService.getDomainData(userId, "financial");
+              const encryptedData = await WorldModelService.getDomainData(
+                userId,
+                "financial",
+                vaultOwnerToken
+              );
               
               if (encryptedData) {
                 const { HushhVault } = await import("@/lib/capacitor");
@@ -476,6 +484,9 @@ export function KaiFlow({
               
               // For other errors, continue without portfolio data - user can re-import
             }
+          }
+          if (!portfolioData && !vaultKey) {
+            // Financial metadata exists, but we cannot decrypt without a vault key.
           }
 
           // Ensure holdings have unrealized_gain_loss_pct computed
@@ -517,7 +528,14 @@ export function KaiFlow({
     }
 
     checkFinancialData();
-  }, [userId, vaultKey]);
+  }, [
+    userId,
+    vaultKey,
+    vaultOwnerToken,
+    getPortfolioData,
+    setPortfolioData,
+    invalidateDomain,
+  ]);
 
   // Notify parent of state changes
   useEffect(() => {
@@ -889,7 +907,7 @@ export function KaiFlow({
       sessionStorage.removeItem("kai_portfolio_data");
       
       // Clear World Model financial domain
-      await WorldModelService.clearDomain(userId, "financial");
+      await WorldModelService.clearDomain(userId, "financial", vaultOwnerToken);
       
       // Invalidate cache to ensure fresh data on next load
       CacheService.getInstance().invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));

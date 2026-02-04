@@ -16,6 +16,7 @@ import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
 import { HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
 import { getDirectBackendUrl } from "@/lib/services/api-service";
+import { AuthService } from "@/lib/services/auth-service";
 
 // ============================================================================
 // TYPES
@@ -78,9 +79,11 @@ export async function grantKaiConsent(
   userId: string,
   scopes?: string[]
 ): Promise<GrantConsentResponse> {
-  // grantConsent is a bootstrap operation - it issues consent tokens
-  // It may need Firebase auth on native platforms
-  const vaultOwnerToken = getVaultOwnerToken();
+  // grantConsent is a bootstrap operation - backend requires Firebase ID token.
+  const authToken = await AuthService.getIdToken();
+  if (!authToken) {
+    throw new Error("Missing Firebase ID token for Kai consent grant");
+  }
 
   return Kai.grantConsent({
     userId,
@@ -90,7 +93,7 @@ export async function grantKaiConsent(
       "attr.kai_decisions.*", // Replaces vault.write.decision
       "agent.kai.analyze",
     ],
-    vaultOwnerToken,
+    authToken,
   });
 }
 
@@ -101,7 +104,7 @@ export async function grantKaiConsent(
 export async function analyzeTicker(params: {
   user_id: string;
   ticker: string;
-  consent_token?: string;
+  consent_token: string;
   risk_profile: "conservative" | "balanced" | "aggressive";
   processing_mode: "on_device" | "hybrid";
 }): Promise<AnalyzeResponse> {
@@ -265,6 +268,11 @@ export async function streamKaiAnalysis(params: {
   userContext?: string;
   vaultOwnerToken: string;
 }): Promise<Response> {
+  if (Capacitor.isNativePlatform()) {
+    // Capacitor WebViews are not a reliable SSE client across iOS/Android.
+    // Prefer non-streaming endpoints / native plugin calls on mobile.
+    throw new Error("Streaming (SSE) Kai analysis is only supported on web.");
+  }
   const baseUrl = getDirectBackendUrl();
   const url = `${baseUrl}/api/kai/analyze/stream`;
 

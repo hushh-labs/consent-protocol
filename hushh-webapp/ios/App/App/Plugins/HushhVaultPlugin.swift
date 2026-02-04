@@ -30,12 +30,23 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
         // Consent methods called by ApiService
         CAPPluginMethod(name: "getPendingConsents", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getActiveConsents", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getConsentHistory", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getConsentHistory", returnType: CAPPluginReturnPromise),
+        // Vault status (domain counts) - parity with web proxy /api/vault/status
+        CAPPluginMethod(name: "getVaultStatus", returnType: CAPPluginReturnPromise)
     ]
     
     private let TAG = "HushhVault"
     private var defaultBackendUrl: String {
         return (bridge?.config.getPluginConfig(jsName).getString("backendUrl")) ?? "https://consent-protocol-1006304528804.us-central1.run.app"
+    }
+
+    private func resolvedBackendUrl(_ call: CAPPluginCall) -> String {
+        return HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName,
+            defaultBackendUrl: defaultBackendUrl
+        )
     }
     
     // URLSession with 30s timeout (matching Android)
@@ -48,9 +59,10 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
     
     // MARK: - Key Derivation (PBKDF2)
     @objc func deriveKey(_ call: CAPPluginCall) {
-        guard let password = call.getString("password"),
-              let salt = call.getString("salt") else {
-            call.reject("Missing password or salt")
+        let password = call.getString("passphrase") ?? call.getString("password")
+        let salt = call.getString("salt")
+        if password == nil {
+            call.reject("Missing passphrase")
             return
         }
         
@@ -58,8 +70,17 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
         let keyLength = call.getInt("keyLength") ?? 32
         
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let saltData = salt.data(using: .utf8),
-                  let passwordData = password.data(using: .utf8) else {
+            let saltValue: String
+            if let salt = salt, !salt.isEmpty {
+                saltValue = salt
+            } else {
+                var randomBytes = [UInt8](repeating: 0, count: 32)
+                _ = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
+                saltValue = randomBytes.map { String(format: "%02x", $0) }.joined()
+            }
+
+            guard let saltData = saltValue.data(using: .utf8),
+                  let passwordData = password?.data(using: .utf8) else {
                 call.reject("Invalid input encoding")
                 return
             }
@@ -83,7 +104,11 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             
             if status == kCCSuccess {
                 let hexKey = derivedKey.map { String(format: "%02x", $0) }.joined()
-                call.resolve(["key": hexKey])
+                call.resolve([
+                    "keyHex": hexKey,
+                    "key": hexKey,
+                    "salt": saltValue
+                ])
             } else {
                 call.reject("Key derivation failed")
             }
@@ -369,11 +394,18 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing userId")
             return
         }
-        
-        let authToken = call.getString("authToken")
-        let urlStr = "\(defaultBackendUrl)/api/consent/pending?userId=\(userId)"
-        
-        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+
+        // Consent-gated: must use VAULT_OWNER token
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let urlStr = "\(backendUrl)/api/consent/pending?userId=\(encodedUserId)"
+
+        performGetRequest(urlStr: urlStr, bearerToken: vaultOwnerToken) { result, error in
             if let dict = result as? [String: Any], let pending = dict["pending"] as? [[String: Any]] {
                 call.resolve(["pending": pending])
             } else if let array = result as? [[String: Any]] {
@@ -389,11 +421,17 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing userId")
             return
         }
-        
-        let authToken = call.getString("authToken")
-        let urlStr = "\(defaultBackendUrl)/api/consent/active?userId=\(userId)"
-        
-        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let urlStr = "\(backendUrl)/api/consent/active?userId=\(encodedUserId)"
+
+        performGetRequest(urlStr: urlStr, bearerToken: vaultOwnerToken) { result, error in
             if let dict = result as? [String: Any], let active = dict["active"] as? [[String: Any]] {
                 call.resolve(["active": active])
             } else if let array = result as? [[String: Any]] {
@@ -409,13 +447,20 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing userId")
             return
         }
-        
+
         let page = call.getInt("page") ?? 1
         let limit = call.getInt("limit") ?? 50
-        let authToken = call.getString("authToken")
-        let urlStr = "\(defaultBackendUrl)/api/consent/history?userId=\(userId)&page=\(page)&limit=\(limit)"
-        
-        performGetRequest(urlStr: urlStr, authToken: authToken) { result, error in
+
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let urlStr = "\(backendUrl)/api/consent/history?userId=\(encodedUserId)&page=\(page)&limit=\(limit)"
+
+        performGetRequest(urlStr: urlStr, bearerToken: vaultOwnerToken) { result, error in
             if let dict = result as? [String: Any], let items = dict["items"] as? [[String: Any]] {
                 call.resolve(["items": items])
             } else if let array = result as? [[String: Any]] {
@@ -425,9 +470,52 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
     }
+
+    /**
+     * Vault status (domain counts without decrypted data).
+     *
+     * Backend contract:
+     * - Requires Firebase ID token in Authorization header
+     * - Requires VAULT_OWNER token in JSON body as `consentToken`
+     */
+    @objc func getVaultStatus(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing userId")
+            return
+        }
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        let authToken = call.getString("authToken")
+        if authToken == nil || authToken!.isEmpty {
+            call.reject("Missing authToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let urlStr = "\(backendUrl)/db/vault/status"
+        let body: [String: Any] = [
+            "userId": userId,
+            "consentToken": vaultOwnerToken
+        ]
+
+        performRequestAny(urlStr: urlStr, body: body, authToken: authToken) { json, error in
+            if let error = error {
+                call.reject(error)
+                return
+            }
+            if let dict = json as? [String: Any] {
+                call.resolve(dict)
+                return
+            }
+            // Fallback: wrap non-dict responses
+            call.resolve(["data": json ?? NSNull()])
+        }
+    }
     
     // GET request helper (for consent endpoints)
-    private func performGetRequest(urlStr: String, authToken: String?, completion: @escaping (Any?, String?) -> Void) {
+    private func performGetRequest(urlStr: String, bearerToken: String?, completion: @escaping (Any?, String?) -> Void) {
         guard let url = URL(string: urlStr) else {
             completion(nil, "Invalid URL")
             return
@@ -436,7 +524,7 @@ public class HushhVaultPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let token = authToken {
+        if let token = bearerToken {
             request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         

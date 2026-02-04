@@ -15,11 +15,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { userId, scope } = body;
+    const authHeader = request.headers.get("authorization") || request.headers.get("Authorization");
 
     if (!userId || !scope) {
       return NextResponse.json(
         { error: "userId and scope are required" },
         { status: 400 }
+      );
+    }
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Missing Authorization header" },
+        { status: 401 }
       );
     }
 
@@ -30,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     const response = await fetch(backendUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: authHeader },
       body: JSON.stringify({ userId, scope }),
     });
 
