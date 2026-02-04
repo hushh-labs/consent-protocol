@@ -270,32 +270,29 @@ class DomainRegistryService:
             return []
     
     async def get_user_domains(self, user_id: str) -> list[DomainInfo]:
-        """Get domains that have data for a specific user."""
+        """Get domains that have data for a specific user from world_model_index_v2."""
         try:
-            # Get distinct domains for user
-            result = self.supabase.table("world_model_attributes").select(
-                "domain"
-            ).eq("user_id", user_id).execute()
-            
+            result = self.supabase.table("world_model_index_v2").select(
+                "available_domains", "domain_summaries"
+            ).eq("user_id", user_id).limit(1).execute()
             if not result.data:
                 return []
-            
-            # Get unique domains
-            domain_keys = list(set(row["domain"] for row in result.data))
-            
-            # Fetch domain info for each
+            row = result.data[0]
+            available_domains = row.get("available_domains") or []
+            domain_summaries = row.get("domain_summaries") or {}
             domains = []
-            for key in domain_keys:
+            for key in available_domains:
                 domain_info = await self.get_domain(key)
                 if domain_info:
-                    # Get user-specific attribute count
-                    count_result = self.supabase.table("world_model_attributes").select(
-                        "id", count="exact"
-                    ).eq("user_id", user_id).eq("domain", key).execute()
-                    
-                    domain_info.attribute_count = count_result.count or 0
+                    summary = domain_summaries.get(key) or {}
+                    raw = (
+                        summary.get("holdings_count")
+                        or summary.get("attribute_count")
+                        or summary.get("item_count")
+                        or 0
+                    )
+                    domain_info.attribute_count = int(raw) if raw is not None else 0
                     domains.append(domain_info)
-            
             return sorted(domains, key=lambda d: d.display_name)
         except Exception as e:
             logger.error(f"Error getting user domains for {user_id}: {e}")

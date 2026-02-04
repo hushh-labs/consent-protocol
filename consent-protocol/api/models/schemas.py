@@ -55,7 +55,7 @@ class ConsentRequest(BaseModel):
     """Request consent from a user for data access."""
     user_id: str
     developer_token: str  # Developer's API key
-    scope: str  # e.g., "vault_read_food", "vault_read_professional"
+    scope: str  # e.g. "attr.food.*", "world_model.read"
     expiry_hours: int = 24  # How long consent lasts
 
 

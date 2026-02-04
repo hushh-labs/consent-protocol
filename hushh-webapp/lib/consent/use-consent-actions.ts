@@ -14,6 +14,7 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
+import { WorldModelService } from "@/lib/services/world-model-service";
 
 // ============================================================================
 // Types
@@ -36,8 +37,22 @@ interface UseConsentActionsOptions {
 }
 
 // ============================================================================
-// Helper: Map scope to vault data endpoint
+// Helpers: Scope detection and vault data endpoint
 // ============================================================================
+
+/** world_model.read or attr.{domain}.* (domain: alphanumeric + underscore only) */
+const WORLD_MODEL_READ = "world_model.read";
+const ATTR_SCOPE_REGEX = /^attr\.([a-zA-Z0-9_]+)\.\*$/;
+
+function isWorldModelScope(scope: string): boolean {
+  return scope === WORLD_MODEL_READ || ATTR_SCOPE_REGEX.test(scope);
+}
+
+/** Parse attr.{domain}.* to domain, or null if not matching. */
+function parseAttrScopeDomain(scope: string): string | null {
+  const m = scope.match(ATTR_SCOPE_REGEX);
+  return m?.[1] ?? null;
+}
 
 function getScopeDataEndpoint(scope: string): string | null {
   const scopeMap: Record<string, string> = {
@@ -142,31 +157,102 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
       }
 
       const promise = (async () => {
-        // Fetch the scope data from vault
-        const scopeDataEndpoint = getScopeDataEndpoint(consent.scope);
+        const vaultOwnerToken = getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          throw new Error("Vault owner token required");
+        }
+
         let scopeData: Record<string, unknown> = {};
 
-        if (scopeDataEndpoint) {
+        // World model scopes: build export from world model blob (BYOK)
+        if (isWorldModelScope(consent.scope)) {
+          try {
+            const metadata = await WorldModelService.getMetadata(userId, false, vaultOwnerToken);
+            const availableDomains = metadata.domains.map((d) => d.key);
+
+            if (consent.scope === WORLD_MODEL_READ) {
+              if (availableDomains.length === 0) {
+                scopeData = {};
+                console.info("[Consent] Consent approved with empty world model export (no domains)");
+              } else {
+                const firstDomain = availableDomains[0];
+                const blob = firstDomain
+                  ? await WorldModelService.getDomainData(userId, firstDomain, vaultOwnerToken)
+                  : null;
+                if (!blob) {
+                  scopeData = {};
+                  console.info("[Consent] Consent approved with empty world model export (no data)");
+                } else {
+                  const { decryptData } = await import("@/lib/vault/encrypt");
+                  const decrypted = await decryptData(
+                    {
+                      ciphertext: blob.ciphertext,
+                      iv: blob.iv,
+                      tag: blob.tag,
+                      encoding: "base64",
+                      algorithm: (blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
+                    },
+                    vaultKey
+                  );
+                  const full = JSON.parse(decrypted) as Record<string, unknown>;
+                  scopeData = {};
+                  for (const key of availableDomains) {
+                    if (Object.prototype.hasOwnProperty.call(full, key)) {
+                      scopeData[key] = full[key];
+                    }
+                  }
+                }
+              }
+            } else {
+              const domain = parseAttrScopeDomain(consent.scope);
+              if (!domain) {
+                scopeData = {};
+              } else {
+                const blob = await WorldModelService.getDomainData(userId, domain, vaultOwnerToken);
+                if (!blob) {
+                  scopeData = { [domain]: {} };
+                } else {
+                  const { decryptData } = await import("@/lib/vault/encrypt");
+                  const decrypted = await decryptData(
+                    {
+                      ciphertext: blob.ciphertext,
+                      iv: blob.iv,
+                      tag: blob.tag,
+                      encoding: "base64",
+                      algorithm: (blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
+                    },
+                    vaultKey
+                  );
+                  const full = JSON.parse(decrypted) as Record<string, unknown>;
+                  scopeData = { [domain]: full[domain] ?? {} };
+                }
+              }
+            }
+          } catch (err) {
+            if (err instanceof SyntaxError) {
+              console.error("[Consent] Failed to parse world model blob after decrypt");
+              throw new Error("Could not prepare export; check vault.");
+            }
+            console.error("[Consent] World model export build failed:", err);
+            throw new Error("Could not load your data; try again.");
+          }
+        }
+
+        // Legacy vault/finance endpoint mapping
+        const scopeDataEndpoint = getScopeDataEndpoint(consent.scope);
+        if (scopeDataEndpoint && Object.keys(scopeData).length === 0) {
           // Identify which API method to call based on scope
           let dataResponse: Response | null = null;
 
           console.log("[NativeDebug] Fetching scope data for:", consent.scope);
 
           try {
-            // Get vault owner token for authenticated requests
-            const vaultOwnerToken = getVaultOwnerToken();
-            
-            if (!vaultOwnerToken) {
-              console.error("[NativeDebug] No vault owner token available");
-              throw new Error("Vault owner token required");
-            }
-            
             // Scope mapping to ApiService methods (food/professional removed; use world-model)
             if (consent.scope.includes("finance")) {
-              // TODO: Implement getFinanceProfile in ApiService or use world-model
-              console.warn("Finance scope not yet supported in native toggle");
+              // Legacy finance endpoint if needed
+              console.warn("Finance scope: legacy endpoint not yet populated");
             }
-          } catch (e: any) {
+          } catch (e: unknown) {
             console.error("[NativeDebug] ApiService.getData error:", e);
             // Proceed without data if fetch fails, but log it.
             // Are we throwing here? No, caught.
@@ -246,6 +332,10 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
               consent.scope
             );
           }
+        }
+
+        if (Object.keys(scopeData).length === 0 && !isWorldModelScope(consent.scope) && !getScopeDataEndpoint(consent.scope)) {
+          console.info("[Consent] Unknown scope, approving with empty export:", consent.scope);
         }
 
         console.log("[NativeDebug] Generating export key...");

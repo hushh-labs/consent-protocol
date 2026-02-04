@@ -15,7 +15,10 @@ cd "$REPO_ROOT"
 # 1. Backend Tests
 echo "▶ [1/5] Backend Tests..."
 cd consent-protocol
-if [ -d "venv" ]; then
+# Project standard: .venv (see getting_started.md). Use only one; remove venv if you have both.
+if [ -d ".venv" ]; then
+  source .venv/bin/activate
+elif [ -d "venv" ]; then
   source venv/bin/activate
 fi
 SECRET_KEY="test_key_32chars_minimum_length!" \

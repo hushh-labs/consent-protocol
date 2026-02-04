@@ -13,11 +13,11 @@ MANIFEST = {
     "version": "1.0.0",
     "description": "Explainable investing copilot with 3-agent debate framework",
     
-    # Required consent scopes
+    # Required consent scopes (world-model only; enum members)
     "required_scopes": [
-        ConsentScope("vault.read.risk_profile"),
-        ConsentScope("vault.write.decision"),
-        ConsentScope("agent.kai.analyze"),
+        ConsentScope.WORLD_MODEL_READ,
+        ConsentScope.WORLD_MODEL_WRITE,
+        ConsentScope.AGENT_KAI_ANALYZE,
     ],
     
     # Optional scopes (for hybrid mode)

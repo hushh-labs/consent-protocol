@@ -114,7 +114,7 @@ hushh_mcp/agents/finance_assistant/manifest.py
 
 ### 🛍️ `agent_shopper`
 
-* Requires: `vault.read.email`
+* Requires: `attr.food.*` or `world_model.read`
 * Returns personalized product recommendations
 
 ### 🪪 `agent_identity`

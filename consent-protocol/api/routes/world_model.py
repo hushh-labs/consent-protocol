@@ -192,6 +192,27 @@ async def delete_domain_data(
     )
 
 
+# ==================== LEGACY ATTRIBUTE ROUTES (410 GONE) ====================
+# Attribute-level delete is done client-side: get domain blob → decrypt → remove key → store domain.
+# These routes return 410 so clients migrate to the blob flow.
+
+
+@router.delete("/attributes/{user_id}/{domain}/{attribute_key}", status_code=410)
+async def delete_attribute_legacy(
+    user_id: str,
+    domain: str,
+    attribute_key: str,
+):
+    """
+    Deprecated. Attribute-level delete is client-side only (BYOK).
+    Use: get domain data → decrypt → remove key → re-encrypt → store domain.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Gone. Use client-side blob update: get domain data, remove key, re-encrypt, store domain.",
+    )
+
+
 # ==================== METADATA ENDPOINT ====================
 
 class DomainMetadata(BaseModel):
@@ -320,3 +341,26 @@ async def get_metadata(user_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve world model metadata"
         )
+
+
+class UserScopesResponse(BaseModel):
+    """Lightweight response with scope strings for a user (agent discovery)."""
+    user_id: str
+    scopes: List[str] = Field(default_factory=list, description="Available scope strings, e.g. attr.financial.*, attr.food.*")
+
+
+@router.get("/scopes/{user_id}", response_model=UserScopesResponse)
+async def get_user_scopes(user_id: str):
+    """
+    Get available scope strings for a user (lightweight agent discovery).
+    
+    Returns only scope strings derived from world_model_index_v2.available_domains.
+    No authentication required (non-sensitive). For full metadata (display names, counts),
+    use GET /api/world-model/metadata/{user_id}.
+    """
+    world_model = get_world_model_service()
+    index = await world_model.get_index_v2(user_id)
+    if index is None:
+        return UserScopesResponse(user_id=user_id, scopes=[])
+    scopes = [f"attr.{d}.*" for d in index.available_domains]
+    return UserScopesResponse(user_id=user_id, scopes=sorted(scopes))
