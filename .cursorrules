@@ -104,22 +104,27 @@ Examples:
 3. Flag assumptions with `<!-- ASSUMPTION: [description] -->` comments when uncertain
 4. Prefer local documentation references over external URLs
 
-## AI Sign-Off (Required)
+## AI Sign-Off and Token Usage (Required from now on)
 
-**CRITICAL:** Always sign off with the AI model provider used.
+**CRITICAL:** All AI-assisted work must include sign-off and, when available, token usage for transparency and cost awareness.
 
 ### Git commits
-When creating or suggesting a commit, **always** append a sign-off line to the commit message body:
-```
-Signed-off-by: [AI Provider Name] <[identifier]>
-```
-Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
-
-Use the actual provider name (e.g. Cursor AI, Claude, GPT, etc.) so the project has a clear record of which model produced or assisted the change.
+When creating or suggesting a commit, **always** append to the commit message body:
+1. **Sign-off line:**
+   ```
+   Signed-off-by: [AI Provider Name] <[identifier]>
+   ```
+   Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
+2. **Token usage** (when the environment provides it, e.g. Cursor/IDE):
+   ```
+   Tokens used: [input/output or total as provided]
+   ```
+   Use the actual provider name (e.g. Cursor AI, Claude, GPT, etc.). If token counts are not available, omit the Tokens used line but always include Signed-off-by.
 
 ### Responses
-When completing a task or finishing a substantive response, **always** include a one-line signature at the end with the AI model provider used, e.g.:
-`Signed-off-by: Cursor AI (Claude)`
+When completing a task or finishing a substantive response, **always** include at the end:
+1. A one-line sign-off: `Signed-off-by: [AI model provider name]` (e.g. `Signed-off-by: Cursor AI (Claude)`).
+2. Token usage when available: `Tokens used: [as provided by environment]`.
 
 ## Subagent Delegation
 

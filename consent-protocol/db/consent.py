@@ -18,7 +18,7 @@ async def insert_event(
     agent_id: str,
     scope: str,
     action: str,
-    token_id: str = None,
+    token_id: Optional[str] = None,
     request_id: Optional[str] = None,
     scope_description: Optional[str] = None,
     expires_at: Optional[int] = None,
@@ -53,9 +53,9 @@ async def insert_event(
             query, token_id, user_id, agent_id, scope, action,
             request_id, scope_description, issued_at, expires_at, poll_timeout_at, metadata_json
         )
-        event_id = row['id']
+        event_id = row["id"]
         logger.info(f"Inserted {action} event: {event_id}")
-        return event_id
+        return int(event_id)
 
 
 async def log_operation(

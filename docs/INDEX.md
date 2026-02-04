@@ -12,6 +12,7 @@
 | **Set up environment** | [Getting Started](../getting_started.md) |
 | **Understand the system** | [Project Context Map](project_context_map.md) |
 | **Make first contribution** | [Contributor Onboarding](guides/contributor_onboarding.md) |
+| **AI sign-off & token usage** | [Contributing](../contributing.md#ai-assisted-contributions-sign-off-and-token-usage), [Prompt Context](prompt_context.md) |
 
 ---
 
@@ -66,6 +67,8 @@ All consent management endpoints use VAULT_OWNER token (not Firebase auth):
 
 | Topic | Document |
 |-------|----------|
+| **CI configuration** | [ci.md](reference/ci.md) |
+| Env vars and secrets | [env_and_secrets.md](reference/env_and_secrets.md) |
 | Database Schema | [database_schema.md](reference/database_schema.md) |
 | Service Layer | [database_service_layer.md](reference/database_service_layer.md) |
 | Developer API | [developer_api.md](reference/developer_api.md) |
