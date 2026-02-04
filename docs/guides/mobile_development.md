@@ -272,6 +272,46 @@ export class VaultService {
 
 ---
 
+## snake_case to camelCase Transformation (CRITICAL)
+
+Native plugins (iOS/Android) call the Python backend directly and receive raw JSON responses with **snake_case** keys. The service layer MUST transform these to **camelCase** before returning to React components.
+
+### Why This Is Required
+
+- Python backend uses snake_case (PEP 8 convention)
+- TypeScript/React uses camelCase (JavaScript convention)
+- Native plugins pass through raw JSON without transformation
+- Web proxy routes (Next.js) also return snake_case from backend
+
+### Required Pattern
+
+```typescript
+// lib/services/example-service.ts
+if (Capacitor.isNativePlatform()) {
+  const nativeResult = await Plugin.method({ userId });
+  // Transform snake_case to camelCase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = nativeResult as any;
+  return {
+    userId: raw.user_id || raw.userId,
+    displayName: raw.display_name || raw.displayName,
+    totalCount: raw.total_count || raw.totalCount || 0,
+  };
+}
+```
+
+### Plugins Requiring Transformation
+
+| Plugin | Methods | Status |
+|--------|---------|--------|
+| WorldModel | getMetadata, getAttributes, getUserDomains, listDomains, getAvailableScopes | Required |
+| Kai | getInitialChatState, chat | Required |
+| Identity | autoDetect, getIdentityStatus, getEncryptedProfile | Required |
+| Vault | All crypto methods | Not needed (simple types) |
+| Consent | Token methods | Not needed (simple types) |
+
+---
+
 ## API Routes Require Native Plugins
 
 > **IMPORTANT:** Every Next.js `/api` route that needs to work on iOS/Android MUST have a corresponding native Capacitor plugin implementation.

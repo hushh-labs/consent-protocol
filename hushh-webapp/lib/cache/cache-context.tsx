@@ -162,16 +162,16 @@ export function CacheProvider({ children }: CacheProviderProps) {
 
   const getPortfolioData = useCallback(
     (userId: string): PortfolioData | null => {
-      // Check in-memory cache first
+      // Always check CacheService first (synchronous, always up-to-date)
       let cached = cache.get<PortfolioData>(CACHE_KEYS.PORTFOLIO_DATA(userId));
 
-      // Fall back to sessionStorage
+      // Fall back to sessionStorage if not in CacheService
       if (!cached && typeof window !== "undefined") {
         const stored = sessionStorage.getItem("kai_portfolio_data");
         if (stored) {
           try {
             cached = JSON.parse(stored);
-            // Re-populate in-memory cache
+            // Re-populate in-memory cache for future lookups
             if (cached) {
               cache.set(
                 CACHE_KEYS.PORTFOLIO_DATA(userId),
@@ -185,12 +185,14 @@ export function CacheProvider({ children }: CacheProviderProps) {
         }
       }
 
-      if (cached && !portfolioData) {
+      // Update React state if we found data (for reactivity in consuming components)
+      // Always update state to ensure it's in sync with the cache
+      if (cached) {
         setPortfolioDataState(cached);
       }
       return cached;
     },
-    [cache, portfolioData]
+    [cache] // Remove portfolioData dependency to avoid stale closures
   );
 
   // Vault Status

@@ -23,12 +23,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { 
-  Settings, 
-  TrendingUp, 
-  TrendingDown, 
-  Link2, 
-  Wallet, 
+import {
+  Settings,
+  TrendingUp,
+  TrendingDown,
+  Link2,
+  Wallet,
   PieChart as PieChartIcon,
   Shield,
   ChevronRight,
@@ -38,9 +38,11 @@ import {
   AlertTriangle,
   DollarSign,
   BarChart3,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import { Button } from "@/lib/morphy-ux/button";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -165,6 +167,7 @@ interface DashboardViewProps {
   portfolioData: PortfolioData;
   onManagePortfolio: () => void;
   onAnalyzeStock?: (symbol: string) => void;
+  onAnalyzeLosers?: () => void;
   onReupload?: () => void;
   onClearData?: () => void;
 }
@@ -202,6 +205,7 @@ export function DashboardView({
   portfolioData,
   onManagePortfolio,
   onAnalyzeStock,
+  onAnalyzeLosers,
   onReupload,
   onClearData,
 }: DashboardViewProps) {
@@ -418,6 +422,17 @@ export function DashboardView({
   const brokerageName = portfolioData.account_info?.brokerage_name || 
     portfolioData.account_info?.institution_name;
 
+  // Per-holding portfolio weights for later use (e.g. charts, badges)
+  const weightedHoldings = useMemo(
+    () =>
+      holdings.map((h) => ({
+        ...h,
+        weight_pct:
+          totalValue > 0 ? ((h.market_value || 0) / totalValue) * 100 : 0,
+      })),
+    [holdings, totalValue]
+  );
+
   return (
     <div className="w-full space-y-3">
       {/* Header with Actions */}
@@ -431,41 +446,54 @@ export function DashboardView({
             </p>
           )}
         </div>
-        
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button 
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-              aria-label="Portfolio options"
+
+        <div className="flex items-center gap-2">
+          {onAnalyzeLosers && (
+            <Button
+              variant="muted"
+              onClick={onAnalyzeLosers}
+              className="h-9 cursor-pointer"
             >
-              <MoreVertical className="w-5 h-5 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {onReupload && (
-              <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
-                <Upload className="w-4 h-4 mr-2" />
-                Upload New Statement
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onClick={onManagePortfolio} className="cursor-pointer">
-              <Settings className="w-4 h-4 mr-2" />
-              Manage Portfolio
-            </DropdownMenuItem>
-            {onClearData && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={onClearData} 
-                  className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Clear All Data
+              <Activity className="w-4 h-4 mr-2" />
+              Optimize Portfolio
+            </Button>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer"
+                aria-label="Portfolio options"
+              >
+                <MoreVertical className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {onReupload && (
+                <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload New Statement
                 </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              )}
+              <DropdownMenuItem onClick={onManagePortfolio} className="cursor-pointer">
+                <Settings className="w-4 h-4 mr-2" />
+                Manage Portfolio
+              </DropdownMenuItem>
+              {onClearData && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={onClearData} 
+                    className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear All Data
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Unified Portfolio Hero */}
@@ -618,7 +646,7 @@ export function DashboardView({
               </CardContent>
             </Card>
           )}
-          <PortfolioMetricsCard holdings={holdings} totalValue={totalValue} />
+          <PortfolioMetricsCard holdings={weightedHoldings} totalValue={totalValue} />
         </div>
       )}
 
