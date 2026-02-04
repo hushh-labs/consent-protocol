@@ -316,7 +316,8 @@ html body[data-scroll-locked] {
 
     /* CRITICAL: Prevent body from scrolling - only content containers should scroll */
     overflow: hidden;
-    height: 100vh;
+    height: 100dvh;
+    min-height: 100vh;
     
     scrollbar-gutter: stable;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
@@ -511,6 +512,9 @@ html body[data-scroll-locked] {
 
   .pt-safe {
     padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

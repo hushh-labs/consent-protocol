@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { useVault } from "@/lib/vault/vault-context";
 import {
   Tooltip,
   TooltipTrigger,
@@ -70,6 +71,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { vaultOwnerToken } = useVault();
   const { registerSteps, completeStep, reset } = useStepProgress();
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [totalAttributes, setTotalAttributes] = useState(0);
@@ -95,7 +97,11 @@ export default function ProfilePage() {
 
       try {
         setLoadingDomains(true);
-        const metadata = await WorldModelService.getMetadata(user.uid);
+        const metadata = await WorldModelService.getMetadata(
+          user.uid,
+          false,
+          vaultOwnerToken || undefined
+        );
         if (!cancelled) {
           setDomains(metadata.domains);
           setTotalAttributes(metadata.totalAttributes);
@@ -115,7 +121,15 @@ export default function ProfilePage() {
       cancelled = true;
       reset();
     };
-  }, [authLoading, user?.uid]);
+  }, [
+    authLoading,
+    completeStep,
+    initialized,
+    registerSteps,
+    reset,
+    user?.uid,
+    vaultOwnerToken,
+  ]);
 
   const handleSignOut = async () => {
     try {
@@ -154,7 +168,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-2xl space-y-6 pb-28">
+    <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6 pb-28">
       {/* Profile Header */}
       <div className="text-center space-y-4">
         {user?.photoURL ? (

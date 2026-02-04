@@ -21,8 +21,9 @@
  */
 
 import { Capacitor } from "@capacitor/core";
-import { HushhVault, HushhAuth } from "@/lib/capacitor";
+import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
 import { Kai } from "@/lib/capacitor/kai";
+import { AuthService } from "@/lib/services/auth-service";
 
 // API Base URL configuration
 const getApiBaseUrl = (): string => {
@@ -217,8 +218,18 @@ export class ApiService {
     scope: string;
     agentId?: string;
   }): Promise<Response> {
+    const firebaseIdToken = await this.getFirebaseToken();
+    if (!firebaseIdToken) {
+      return new Response(
+        JSON.stringify({ error: "Missing Firebase ID token" }),
+        { status: 401 }
+      );
+    }
     return apiFetch("/api/consent/session-token", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${firebaseIdToken}`,
+      },
       body: JSON.stringify(data),
     });
   }
@@ -351,16 +362,21 @@ export class ApiService {
     userId: string;
     scope?: string;
   }): Promise<Response> {
+    const vaultOwnerToken = data.token || this.getVaultOwnerToken();
+    if (!vaultOwnerToken) {
+      return new Response(
+        JSON.stringify({ error: "Vault must be unlocked" }),
+        { status: 401 }
+      );
+    }
+
     if (Capacitor.isNativePlatform()) {
       try {
-        const { HushhConsent } = await import("@/lib/capacitor");
-        const authToken = await this.getFirebaseToken();
-
         // Use revokeConsent that calls the backend and returns lockVault flag
         const result = await HushhConsent.revokeConsent({
           userId: data.userId,
           scope: data.scope || "",
-          vaultOwnerToken: authToken,
+          vaultOwnerToken,
         });
 
         // Pass through the lockVault flag from native plugin response
@@ -379,6 +395,9 @@ export class ApiService {
 
     return apiFetch("/api/consent/revoke", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
       body: JSON.stringify(data),
     });
   }
@@ -400,11 +419,11 @@ export class ApiService {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        const { pending } = await HushhVault.getPendingConsents({
+        const { consents } = await HushhConsent.getPending({
           userId,
           vaultOwnerToken,
         });
-        return new Response(JSON.stringify({ pending: pending || [] }), {
+        return new Response(JSON.stringify({ pending: consents || [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -432,12 +451,19 @@ export class ApiService {
   static async getActiveConsents(userId: string, token?: string): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        const { active } = await HushhVault.getActiveConsents({
+        const vaultOwnerToken = this.getVaultOwnerToken() || token;
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
+        const { consents } = await HushhConsent.getActive({
           userId,
-          vaultOwnerToken: authToken,
+          vaultOwnerToken,
         });
-        return new Response(JSON.stringify({ active: active || [] }), {
+        return new Response(JSON.stringify({ active: consents || [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -450,10 +476,11 @@ export class ApiService {
     }
     
     // Web: Pass token in Authorization header if available
+    const vaultOwnerToken = token || this.getVaultOwnerToken();
     const options: RequestInit = {};
-    if (token) {
+    if (vaultOwnerToken) {
       options.headers = {
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${vaultOwnerToken}`
       };
     }
     
@@ -471,10 +498,17 @@ export class ApiService {
   ): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        const { items } = await HushhVault.getConsentHistory({
+        const vaultOwnerToken = this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
+        const { items } = await HushhConsent.getHistory({
           userId,
-          authToken,
+          vaultOwnerToken,
           page,
           limit,
         });
@@ -489,10 +523,17 @@ export class ApiService {
         });
       }
     }
+    const headers: HeadersInit = {};
+    const vaultOwnerToken = this.getVaultOwnerToken();
+    if (vaultOwnerToken) {
+      headers.Authorization = `Bearer ${vaultOwnerToken}`;
+    }
+
     return apiFetch(
       `/api/consent/history?userId=${encodeURIComponent(
         userId
-      )}&page=${page}&limit=${limit}`
+      )}&page=${page}&limit=${limit}`,
+      { headers }
     );
   }
 
@@ -563,32 +604,51 @@ export class ApiService {
     userId: string,
     vaultOwnerToken: string
   ): Promise<Response> {
-    // Native: Call backend directly
     if (Capacitor.isNativePlatform()) {
       try {
+        // Native: Prefer plugin proxy to avoid fetch/env/cert inconsistencies
         const authToken = await this.getFirebaseToken();
+        if (!authToken) {
+          return new Response(
+            JSON.stringify({ error: "Missing Firebase auth token" }),
+            { status: 401 }
+          );
+        }
 
-        const response = await fetch(`${API_BASE}/db/vault/status`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-          },
-          body: JSON.stringify({ userId, consentToken: vaultOwnerToken }),
+        const result = await HushhVault.getVaultStatus({
+          userId,
+          vaultOwnerToken,
+          authToken,
         });
 
-        return response;
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (error) {
         console.error("[ApiService] Native getVaultStatus error:", error);
-        return new Response(null, { status: 500 });
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
       }
     }
 
     // Web: Use Next.js proxy
-    const url = `/api/vault/status?userId=${encodeURIComponent(
-      userId
-    )}&consentToken=${encodeURIComponent(vaultOwnerToken)}`;
-    return apiFetch(url, { method: "GET" });
+    const firebaseIdToken = await this.getFirebaseToken();
+    if (!firebaseIdToken) {
+      return new Response(
+        JSON.stringify({ error: "Missing Firebase ID token" }),
+        { status: 401 }
+      );
+    }
+    return apiFetch("/api/vault/status", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${firebaseIdToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId, consentToken: vaultOwnerToken }),
+    });
   }
 
   /**
@@ -679,6 +739,9 @@ export class ApiService {
       } catch (e) {
         console.warn("[ApiService] Failed to get native ID token:", e);
       }
+    } else {
+      const token = await AuthService.getIdToken().catch(() => null);
+      return token || undefined;
     }
     return undefined;
   }
@@ -699,13 +762,19 @@ export class ApiService {
       "agent.kai.analyze",
     ];
 
+    const authToken = await this.getFirebaseToken();
+    if (!authToken) {
+      return new Response(JSON.stringify({ error: "Missing Firebase ID token" }), {
+        status: 401,
+      });
+    }
+
     if (Capacitor.isNativePlatform()) {
       try {
-        const vaultOwnerToken = this.getVaultOwnerToken() || undefined;
         const result = await Kai.grantConsent({
           userId: data.userId,
           scopes,
-          vaultOwnerToken,
+          authToken,
         });
 
         return new Response(JSON.stringify(result), {
@@ -722,6 +791,9 @@ export class ApiService {
 
     return apiFetch("/api/kai/consent/grant", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
       body: JSON.stringify({ user_id: data.userId, scopes }),
     });
   }
@@ -760,8 +832,18 @@ export class ApiService {
       }
     }
 
+    const vaultOwnerToken = this.getVaultOwnerToken();
+    if (!vaultOwnerToken) {
+      return new Response(JSON.stringify({ error: "Vault must be unlocked" }), {
+        status: 401,
+      });
+    }
+
     return apiFetch("/api/kai/analyze", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
       body: JSON.stringify({
         user_id: data.userId,
         ticker: data.ticker,
@@ -800,8 +882,18 @@ export class ApiService {
       }
     }
 
+    const vaultOwnerToken = this.getVaultOwnerToken();
+    if (!vaultOwnerToken) {
+      return new Response(JSON.stringify({ error: "Vault must be unlocked" }), {
+        status: 401,
+      });
+    }
+
     return apiFetch("/api/kai/preferences/store", {
       method: "POST",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
       body: JSON.stringify({
         user_id: data.userId,
         preferences: data.preferences,
@@ -833,8 +925,18 @@ export class ApiService {
       }
     }
 
+    const vaultOwnerToken = this.getVaultOwnerToken();
+    if (!vaultOwnerToken) {
+      return new Response(JSON.stringify({ error: "Vault must be unlocked" }), {
+        status: 401,
+      });
+    }
+
     return apiFetch(`/api/kai/preferences/${data.userId}`, {
       method: "GET",
+      headers: {
+        Authorization: `Bearer ${vaultOwnerToken}`,
+      },
     });
   }
 
@@ -1005,12 +1107,18 @@ export class ApiService {
   }): Promise<Response> {
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        
+        const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
         const response = await fetch(`${API_BASE}/api/kai/portfolio/summary/${data.userId}`, {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${vaultOwnerToken}`,
           },
         });
 
@@ -1048,13 +1156,19 @@ export class ApiService {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        
+        const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
         const response = await fetch(`${API_BASE}/api/kai/chat/analyze-loser`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${vaultOwnerToken}`,
           },
           body: JSON.stringify(body),
         });
@@ -1201,13 +1315,19 @@ export class ApiService {
     // For native platforms, use direct API call
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        
+        const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
         const response = await fetch(`${API_BASE}/api/kai/portfolio/analyze-losers/stream`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${vaultOwnerToken}`,
           },
           body: JSON.stringify(body),
         });
@@ -1253,13 +1373,19 @@ export class ApiService {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        const authToken = await this.getFirebaseToken();
-        
+        const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
         const response = await fetch(`${API_BASE}/api/kai/analyze`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${authToken}`,
+            Authorization: `Bearer ${vaultOwnerToken}`,
           },
           body: JSON.stringify(body),
         });

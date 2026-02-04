@@ -20,18 +20,12 @@
  * - Module-level flag tracks unlock across route changes within same session.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useVault } from "@/lib/vault/vault-context";
 import { VaultFlow } from "./vault-flow";
 import { HushhLoader } from "@/components/ui/hushh-loader";
-
-// ============================================================================
-// Module-level state for cross-route persistence
-// This survives route changes but resets on page refresh (memory cleared)
-// ============================================================================
-let moduleWasUnlocked = false;
 
 // ============================================================================
 // Types
@@ -50,16 +44,22 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const { isVaultUnlocked } = useVault();
   const { user, loading: authLoading, signOut } = useAuth();
 
-  // Track when vault becomes unlocked at module level
-  if (isVaultUnlocked && !moduleWasUnlocked) {
-    moduleWasUnlocked = true;
-  }
+  // Redirect unauthenticated users (side-effect outside render)
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) return;
+
+    if (typeof window !== "undefined") {
+      const currentPath = window.location.pathname;
+      router.push(`/?redirect=${encodeURIComponent(currentPath)}`);
+    }
+  }, [authLoading, router, user]);
 
   // ============================================================================
   // FAST PATH: If vault is unlocked (in memory), render children immediately
   // This eliminates flicker on route changes - no state, no effects, just render
   // ============================================================================
-  if (isVaultUnlocked || moduleWasUnlocked) {
+  if (isVaultUnlocked) {
     return <>{children}</>;
   }
 
@@ -74,13 +74,6 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // No user - redirect to login
   if (!user) {
-    // Reset module state on logout
-    moduleWasUnlocked = false;
-    
-    if (typeof window !== "undefined") {
-      const currentPath = window.location.pathname;
-      router.push(`/?redirect=${encodeURIComponent(currentPath)}`);
-    }
     return <HushhLoader label="Redirecting to login..." />;
   }
 
@@ -90,10 +83,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
       <div className="w-full max-w-md">
         <VaultFlow
           user={user}
-          onSuccess={() => {
-            moduleWasUnlocked = true;
-            // Force re-render by using router refresh or just let context update
-          }}
+          onSuccess={() => {}}
         />
       </div>
     </div>

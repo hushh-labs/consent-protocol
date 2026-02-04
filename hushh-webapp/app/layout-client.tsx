@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useStatusBar } from "@/lib/hooks/use-status-bar";
 import { getGsap, prefersReducedMotion } from "@/lib/morphy-ux/gsap";
 import { motionDurations } from "@/lib/morphy-ux/motion";
+import { Providers } from "./providers";
 
 interface RootLayoutClientProps {
   children: ReactNode;
@@ -77,7 +78,7 @@ export function RootLayoutClient({
     }
 
     // Pathname changed - start transition
-    const oldPathname = previousPathnameRef.current;
+
     previousPathnameRef.current = pathname;
     setIsTransitioning(true);
 
@@ -164,7 +165,7 @@ export function RootLayoutClient({
   return (
     <body
       suppressHydrationWarning
-      className={`${fontClasses} font-sans antialiased h-screen flex flex-col overflow-hidden`}
+      className={`${fontClasses} font-sans antialiased min-h-[100dvh] flex flex-col overflow-hidden`}
       style={{
         fontFamily: "var(--font-figtree), var(--font-quicksand), sans-serif",
       }}
@@ -174,30 +175,32 @@ export function RootLayoutClient({
       {/* Subtle radial glow overlay */}
       <div className="fixed inset-0 pointer-events-none morphy-app-bg-radial z-1" />
 
-      {/* Two-page overlay system for seamless transitions */}
-      <div ref={containerRef} className="flex-1 flex flex-col min-h-0 relative">
-        {/* Old page (fading out) */}
-        {isTransitioning && previousChildrenForTransition != null && (
-          <div
-            ref={oldPageRef}
-            className="absolute inset-0 flex-1 flex flex-col"
-            style={{ opacity: 1, pointerEvents: "none" }}
-          >
-            {previousChildrenForTransition}
-          </div>
-        )}
+      <Providers>
+        {/* Two-page overlay system for seamless transitions */}
+        <div ref={containerRef} className="flex-1 flex flex-col min-h-0 relative">
+          {/* Old page (fading out) */}
+          {isTransitioning && previousChildrenForTransition != null && (
+            <div
+              ref={oldPageRef}
+              className="absolute inset-0 flex-1 flex flex-col"
+              style={{ opacity: 1, pointerEvents: "none" }}
+            >
+              {previousChildrenForTransition}
+            </div>
+          )}
 
-        {/* New page (fading in) */}
-        <div
-          ref={newPageRef}
-          className="flex-1 flex flex-col min-h-0"
-          style={{
-            opacity: isTransitioning ? 0 : 1,
-          }}
-        >
-          {displayChildren}
+          {/* New page (fading in) */}
+          <div
+            ref={newPageRef}
+            className="flex-1 flex flex-col min-h-0"
+            style={{
+              opacity: isTransitioning ? 0 : 1,
+            }}
+          >
+            {displayChildren}
+          </div>
         </div>
-      </div>
+      </Providers>
     </body>
   );
 }

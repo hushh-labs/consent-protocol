@@ -255,7 +255,7 @@ export default function PortfolioHealthPage() {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-4 p-6 pb-40">
+    <div className="w-full mx-auto space-y-4 px-4 py-4 pb-40 sm:px-6 sm:py-6 md:max-w-5xl">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-emerald-500" />

@@ -29,6 +29,15 @@ Use this checklist for EVERY new feature that involves data operations.
 - [ ] Use same endpoint as web proxy calls
 - [ ] Handle errors and return proper response format
 
+### Adding new Swift files to the Xcode project
+
+If you add a new `.swift` file (e.g. a new plugin or helper) and need to edit `ios/App/App.xcodeproj/project.pbxproj` manually:
+
+- **Xcode project IDs must be exactly 24 hexadecimal characters** (digits `0-9` and letters `A-F` only).
+- Each new file needs two IDs: one for the file reference (`PBXFileReference`) and one for the build file (`PBXBuildFile` in the Sources phase).
+- Using any other character (e.g. `G`, `W`, `M`, `P`, `L`, `U`) causes Xcode errors such as **"invalid hex digit"** and will break the build.
+- Generate or copy 24-char hex IDs from existing entries in `project.pbxproj` when adding new entries.
+
 ## Android Native Plugin
 
 - [ ] Create/update Kotlin plugin: `android/.../plugins/Hushh{Feature}/Hushh{Feature}Plugin.kt`
@@ -42,6 +51,21 @@ Use this checklist for EVERY new feature that involves data operations.
 - [ ] Add method signature to `lib/capacitor/index.ts`
 - [ ] Match plugin method names exactly (case-sensitive!)
 - [ ] Document parameters and return types
+
+## Native Plugin Registration
+
+**Required:** Every native plugin must be registered with the Capacitor bridge. If a plugin is not registered, TypeScript calls will fail at runtime on native platforms.
+
+### iOS
+
+- [ ] Register plugin in `hushh-webapp/ios/App/App/MyViewController.swift`
+- [ ] In `capacitorDidLoad()`, add: `bridge?.registerPluginInstance(YourPlugin())`
+- [ ] Add the plugin's `jsName` to the `verifyPluginRegistration()` array (for debugging)
+
+### Android
+
+- [ ] Register plugin in `hushh-webapp/android/app/src/main/java/com/hushh/app/MainActivity.kt`
+- [ ] In `onCreate()` (before `super.onCreate()`), add: `registerPlugin(YourPlugin::class.java)`
 
 ## Service Layer
 

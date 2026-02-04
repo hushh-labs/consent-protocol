@@ -183,7 +183,10 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/revoke"
 
@@ -201,10 +204,7 @@ class HushhConsentPlugin : Plugin() {
                     .url(url)
                     .post(requestBody)
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
@@ -433,34 +433,37 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val authToken = call.getString("authToken")
+        // Consent-gated: requires VAULT_OWNER token only
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
-        // Use /api/consent/* for consistency with Next.js API routes
-        val url = "$backendUrl/api/consent/pending"
+        val url = "$backendUrl/api/consent/pending?userId=$userId"
 
         Log.d(TAG, "📋 [getPending] Fetching pending consents for userId: $userId")
 
         Thread {
             try {
-                val jsonBody = JSONObject().apply { put("userId", userId) }
-                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
                 val requestBuilder = Request.Builder()
                     .url(url)
-                    .post(requestBody)
+                    .get()
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
-                val body = response.body?.string() ?: "[]"
+                val body = response.body?.string() ?: "{}"
                 
                 Log.d(TAG, "📋 [getPending] Response code: ${response.code}")
 
                 activity.runOnUiThread {
-                    call.resolve(JSObject().put("consents", org.json.JSONArray(body)))
+                    if (!response.isSuccessful) {
+                        call.reject("Failed to get pending consents: HTTP ${response.code}")
+                        return@runOnUiThread
+                    }
+                    val json = JSONObject(body)
+                    val pending = json.optJSONArray("pending") ?: org.json.JSONArray()
+                    call.resolve(JSObject().put("consents", pending))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [getPending] Error: ${e.message}")
@@ -479,32 +482,34 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
-        // Use /api/consent/* for consistency with Next.js API routes
-        val url = "$backendUrl/api/consent/active"
+        val url = "$backendUrl/api/consent/active?userId=$userId"
 
         Log.d(TAG, "✅ [getActive] Fetching active consents for userId: $userId")
 
         Thread {
             try {
-                val jsonBody = JSONObject().apply { put("userId", userId) }
-                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
                 val requestBuilder = Request.Builder()
                     .url(url)
-                    .post(requestBody)
+                    .get()
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
-                val body = response.body?.string() ?: "[]"
+                val body = response.body?.string() ?: "{}"
                 
                 activity.runOnUiThread {
-                    call.resolve(JSObject().put("consents", org.json.JSONArray(body)))
+                    if (!response.isSuccessful) {
+                        call.reject("Failed to get active consents: HTTP ${response.code}")
+                        return@runOnUiThread
+                    }
+                    val json = JSONObject(body)
+                    val active = json.optJSONArray("active") ?: org.json.JSONArray()
+                    call.resolve(JSObject().put("consents", active))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ [getActive] Error: ${e.message}")
@@ -525,35 +530,31 @@ class HushhConsentPlugin : Plugin() {
 
         val page = call.getInt("page") ?: 1
         val limit = call.getInt("limit") ?: 20
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
-        // Use /api/consent/* for consistency with Next.js API routes
-        val url = "$backendUrl/api/consent/history"
+        val url = "$backendUrl/api/consent/history?userId=$userId&page=$page&limit=$limit"
 
         Log.d(TAG, "📜 [getHistory] Fetching consent history for userId: $userId")
 
         Thread {
             try {
-                val jsonBody = JSONObject().apply { 
-                    put("userId", userId)
-                    put("page", page)
-                    put("limit", limit)
-                }
-                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
-                
                 val requestBuilder = Request.Builder()
                     .url(url)
-                    .post(requestBody)
+                    .get()
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val body = response.body?.string() ?: "{}"
                 
                 activity.runOnUiThread {
+                    if (!response.isSuccessful) {
+                        call.reject("Failed to get consent history: HTTP ${response.code}")
+                        return@runOnUiThread
+                    }
                     call.resolve(JSObject(body))
                 }
             } catch (e: Exception) {
@@ -580,7 +581,10 @@ class HushhConsentPlugin : Plugin() {
         val exportKey = call.getString("exportKey")
         val userId = call.getString("userId") // Optional, but good context
 
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/pending/approve"
 
@@ -603,10 +607,7 @@ class HushhConsentPlugin : Plugin() {
                     .url(url)
                     .post(requestBody)
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
@@ -642,7 +643,10 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         // Python backend expects userId and requestId as query parameters
         val url = "$backendUrl/api/consent/pending/deny?userId=$userId&requestId=$requestId"
@@ -658,10 +662,7 @@ class HushhConsentPlugin : Plugin() {
                     .url(url)
                     .post(requestBody)
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
@@ -695,7 +696,10 @@ class HushhConsentPlugin : Plugin() {
             return
         }
 
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/cancel"
 
@@ -710,10 +714,7 @@ class HushhConsentPlugin : Plugin() {
                     .url(url)
                     .post(requestBody)
                     .addHeader("Content-Type", "application/json")
-
-                if (authToken != null) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
-                }
+                    .addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val success = response.isSuccessful
