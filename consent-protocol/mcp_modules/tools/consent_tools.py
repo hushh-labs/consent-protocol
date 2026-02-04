@@ -157,12 +157,12 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                 
                 # Pending - wait for approval via SSE (efficient server-push)
                 if status == "pending":
-                    # Extract request_id from response message if available
-                    message = data.get("message", "")
-                    request_id = None
-                    if "Request ID:" in message:
-                        request_id = message.split("Request ID:")[-1].strip()
-                    
+                    # Prefer request_id from response JSON (backend now returns it)
+                    request_id = data.get("request_id")
+                    if not request_id:
+                        message = data.get("message", "")
+                        if "Request ID:" in message:
+                            request_id = message.split("Request ID:")[-1].strip()
                     if not request_id:
                         # Fetch pending to get request_id
                         pending_response = await client.get(
@@ -187,7 +187,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         }))]
                     
                     logger.info(f"📋 Consent request created (ID: {request_id})")
-                    logger.info("🔌 Using SSE to wait for user approval...")
+                    logger.info("🔌 Using SSE to wait for user approval (user must have Hushh app consent page open to see the request)...")
                     
                     # Use SSE client for efficient server-push notifications
                     from mcp_modules.sse_client import wait_for_consent_via_sse
