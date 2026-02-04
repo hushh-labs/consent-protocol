@@ -16,6 +16,9 @@ steps:
           --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyAJ0RDWrBYF6yIDvwdyoAVO4K5QkL218Yc \
           --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=hushh-pda.firebaseapp.com \
           --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=hushh-pda \
+          --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=hushh-pda.appspot.com \
+          --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=1006304528804 \
+          --build-arg NEXT_PUBLIC_FIREBASE_APP_ID=1:1006304528804:web:default \
           --build-arg NEXT_PUBLIC_BACKEND_URL=$$BACKEND_URL_VAL \
           --build-arg NEXT_PUBLIC_APP_REVIEW_MODE=$$APP_REVIEW_MODE_VAL \
           --build-arg NEXT_PUBLIC_REVIEWER_EMAIL=$$REVIEWER_EMAIL_VAL \

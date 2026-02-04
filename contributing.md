@@ -58,11 +58,30 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
     ```bash
     ./scripts/test-ci-local.sh
     ```
-    This ensures your changes will pass GitHub Actions CI. See [Contributor Onboarding Guide](docs/guides/contributor_onboarding.md#step-3-test-ci-locally-critical) for details.
+    This ensures your changes will pass GitHub Actions CI. See [CI Configuration Reference](docs/reference/ci.md) and [Contributor Onboarding — Step 3](docs/guides/contributor_onboarding.md#step-3-test-ci-locally-critical) for details.
 6.  **Test Locally**: Verify the change on all supported platforms (simulators/emulators).
 7.  **Submit a Pull Request**: targeted at the `main` branch.
     - `main` is protected: PRs require approval and CI checks.
-    - `deploy-production` is protected: Only deployed via authorized workflows.
+    - `deploy-production` is protected: Only deployed via authorized workflows. Deployment runs from the **`deploy`** branch (not `main`) and requires the **`GCP_SA_KEY`** GitHub secret; see [deploy/README.md](deploy/README.md).
+
+---
+
+## AI-Assisted Contributions: Sign-Off and Token Usage
+
+**From now on**, any commit or PR that was produced or assisted by AI must:
+
+1. **Sign-off:** Include in the **commit message body** (not just the subject):
+   ```
+   Signed-off-by: [AI Provider Name] <[identifier]>
+   ```
+   Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
+
+2. **Token usage (when available):** If your IDE or tool reports token usage (input/output or total), add a line in the commit body or PR description:
+   ```
+   Tokens used: [as provided]
+   ```
+
+This keeps a clear record of which model assisted the change and supports transparency on token usage. See `.cursorrules` (AI Sign-Off and Token Usage) and `docs/prompt_context.md` for the full convention.
 
 ---
 

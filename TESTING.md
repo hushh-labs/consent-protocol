@@ -247,6 +247,8 @@ def test_example(test_vault_key, mock_consent_token, test_user_id):
 
 ## CI/CD Integration
 
+**Full reference:** [CI Configuration Reference](docs/reference/ci.md) — workflow, path filters, exact commands, and how to run CI locally.
+
 ### GitHub Actions
 
 Tests run automatically on:
@@ -254,19 +256,24 @@ Tests run automatically on:
 - Pushes to `main`
 
 The CI workflow:
-1. Sets up Python 3.13 / Node.js 20
-2. Installs dependencies
-3. Runs linting (ruff, ESLint)
-4. Runs type checking (mypy, TypeScript)
-5. Runs tests with coverage
+1. **Path filters**: Frontend job runs when `hushh-webapp/**` changes; backend when `consent-protocol/**` changes.
+2. Sets up Python 3.13 / Node.js 20.
+3. Frontend: install, TypeScript, ESLint, Next build, Capacitor build; backend: Ruff, mypy, pytest.
+4. Integration: route contract verification (`npm run verify:routes`).
+
+**Before every commit**, run local CI so your changes don’t break the pipeline:
+
+```bash
+./scripts/test-ci-local.sh
+```
 
 ### Environment Variables in CI
 
 ```yaml
 env:
   TESTING: "true"
-  SECRET_KEY: "test_secret_key_for_ci_only"
-  # Note: VAULT_ENCRYPTION_KEY is NOT set - tests use fixtures
+  SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
+  VAULT_ENCRYPTION_KEY: "635ce8d8018dee8b98ec987dc2dbfb79f3658ac7a54d4cb4c6150a21cd60098f"
 ```
 
 ## Test Categories

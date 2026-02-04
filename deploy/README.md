@@ -46,13 +46,17 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
    .\verify-secrets.ps1
    ```
 
-   Required secrets:
+   Required backend secrets (7):
 
    - `SECRET_KEY`
    - `VAULT_ENCRYPTION_KEY`
    - `GOOGLE_API_KEY`
    - `FIREBASE_SERVICE_ACCOUNT_JSON`
-   - `DATABASE_URL`
+   - `FRONTEND_URL`
+   - `DB_USER`
+   - `DB_PASSWORD`
+
+   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). `DATABASE_URL` may exist in Secret Manager for migration scripts but is not used by runtime code.
 
 ---
 
@@ -67,6 +71,7 @@ Deploys Python FastAPI backend to Cloud Run:
 - Deploys to `consent-protocol` service
 - Connects to Cloud SQL via Unix socket
 - Injects secrets from Secret Manager
+- Sets `ENVIRONMENT=production` and `GOOGLE_GENAI_USE_VERTEXAI=True` (Vertex AI for Gemini)
 
 ### Frontend (`frontend.cloudbuild.yaml`)
 
@@ -81,6 +86,15 @@ Deploys Next.js frontend to Cloud Run:
 ---
 
 ## 🔄 CI/CD Setup (GitHub/GitLab)
+
+### GitHub Actions: Deploy workflow (deploy branch)
+
+The repo includes [.github/workflows/deploy-production.yml](../.github/workflows/deploy-production.yml), which runs on **push to the `deploy` branch** (and on manual dispatch). It does not run on `main`.
+
+**For seamless deployment:**
+
+1. **GitHub secret:** In the repo settings, add a secret **`GCP_SA_KEY`** containing the JSON key of a Google Cloud service account that has permissions for Cloud Build, Secret Manager, and Cloud Run.
+2. **Branch flow:** After merging to `main`, update the `deploy` branch (e.g. merge `main` into `deploy` or push to `deploy`) so the workflow builds from an up-to-date state. Then push to `deploy` to trigger the workflow, or run it manually from the Actions tab.
 
 ### Option 1: Cloud Build Triggers (Recommended)
 
@@ -120,6 +134,23 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
 ---
 
 ## 🔐 Secrets Management
+
+All required secrets must exist in Google Cloud Secret Manager before deployment. Run `verify-secrets.ps1` if available, or create any missing secrets manually.
+
+**Backend (7 secrets):** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`
+
+**Note:** 
+- `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
+- `DATABASE_URL` exists in Secret Manager but is only used by migration scripts (`db/migrate.py`), not runtime code
+- **Action required:** Create `DB_USER` and `DB_PASSWORD` secrets in Secret Manager if they don't exist:
+  ```bash
+  echo "your-db-username" | gcloud secrets create DB_USER --data-file=-
+  echo "your-db-password" | gcloud secrets create DB_PASSWORD --data-file=-
+  ```
+
+**Frontend build-time (4 secrets):** `BACKEND_URL`, `APP_REVIEW_MODE`, `REVIEWER_EMAIL`, `REVIEWER_PASSWORD`
+
+See [docs/reference/env_and_secrets.md](../docs/reference/env_and_secrets.md) for full reference.
 
 ### Verify Secrets
 
