@@ -480,18 +480,18 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 )
             ]
             
-            # Configure with thinking enabled for Gemini 2.5 Flash
-            # This allows us to stream thought summaries to the user
+            # Configure with thinking enabled for Gemini 3 Flash
+            # Using LOW thinking level for better reasoning during document parsing
             try:
                 config = types.GenerateContentConfig(
                     temperature=0.1,
                     max_output_tokens=32768,
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_budget=8192,  # Allow substantial reasoning for complex documents
+                        thinking_level=types.ThinkingLevel.LOW,  # Better reasoning for document parsing
                     )
                 )
-                logger.info("SSE: Thinking mode enabled with budget=8192")
+                logger.info("SSE: Thinking mode enabled with level=LOW")
             except Exception as thinking_error:
                 # Fallback if thinking config not supported
                 logger.warning(f"SSE: Thinking config not supported, falling back: {thinking_error}")

@@ -13,7 +13,7 @@ Tiers:
 - JACK: Speculative (weight 0.4) - Smaller but promising
 """
 
-import json
+import csv
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,26 +78,56 @@ class RenaissanceAgent:
     
     def __init__(self):
         self._universe: dict[str, dict] = {}
-        self._metadata: dict = {}
         self._loaded = False
     
     def _load_universe(self) -> None:
-        """Load Renaissance universe data from JSON file."""
+        """
+        Load Renaissance universe data from canonical CSV.
+        
+        NOTE: This agent is kept lightweight for local/offline usage (tests/dev),
+        while production runtime should use `RenaissanceService` (DB-backed).
+        """
         if self._loaded:
             return
-            
-        data_path = Path(__file__).parent.parent.parent.parent / "data" / "renaissance_universe.json"
+
+        data_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "data"
+            / "renaissance"
+            / "Renaissance Investable vs Avoid(INVESTABLE).csv"
+        )
         
         try:
-            with open(data_path) as f:
-                data = json.load(f)
-            
-            self._metadata = data.get("metadata", {})
-            
-            # Index by ticker for fast lookup
-            for stock in data.get("stocks", []):
-                ticker = stock["ticker"].upper()
-                self._universe[ticker] = stock
+            rows: list[list[str]] = []
+            with open(data_path, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    rows.append([c.strip() for c in row])
+
+            # Skip preamble until header row
+            header_idx = None
+            for i, row in enumerate(rows):
+                if row and row[0] == "Tier":
+                    header_idx = i
+                    break
+            if header_idx is None:
+                raise ValueError("Investable CSV header row not found (expected first cell 'Tier').")
+
+            for row in rows[header_idx + 1 :]:
+                if not row or len(row) < 6:
+                    continue
+                tier = (row[0] or "").strip().upper()
+                ticker = (row[1] or "").strip().upper()
+                if not tier or not ticker:
+                    continue
+                self._universe[ticker] = {
+                    "tier": tier,
+                    "ticker": ticker,
+                    "company": (row[2] or "").strip(),
+                    "sector": (row[3] or "").strip(),
+                    "fcf_2024_b": float(row[4]) if (row[4] or "").strip() else 0.0,
+                    "why": (row[5] or "").strip(),
+                }
             
             self._loaded = True
             logger.info(f"Loaded Renaissance universe: {len(self._universe)} stocks")
@@ -105,8 +135,8 @@ class RenaissanceAgent:
         except FileNotFoundError:
             logger.warning(f"Renaissance universe file not found: {data_path}")
             self._loaded = True  # Mark as loaded to avoid repeated attempts
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing Renaissance universe: {e}")
+        except Exception as e:
+            logger.error(f"Error loading Renaissance universe from CSV: {e}")
             self._loaded = True
     
     def get_renaissance_rating(self, ticker: str) -> Optional[RenaissanceRating]:
