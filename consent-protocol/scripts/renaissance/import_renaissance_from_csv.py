@@ -28,13 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-
 # Ensure consent-protocol/ is on sys.path (script lives in scripts/renaissance/)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from db.db_client import get_db  # noqa: E402
-
 
 DATA_DIR = PROJECT_ROOT / "data" / "renaissance"
 

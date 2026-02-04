@@ -5,7 +5,7 @@
  * Client for interacting with the Hushh Consent API.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_CONSENT_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 // ============================================================================
 // Types
