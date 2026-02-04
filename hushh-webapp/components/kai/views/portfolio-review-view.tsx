@@ -364,7 +364,7 @@ export function PortfolioReviewView({
       </div>
 
       {/* Summary Card */}
-      <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+      <Card className="bg-linear-to-br from-primary/5 to-primary/10 border-primary/20">
         <CardContent className="pt-6">
           <div className="text-center mb-4">
             <p className="text-sm text-muted-foreground">Total Portfolio Value</p>
@@ -716,7 +716,7 @@ export function PortfolioReviewView({
                         </span>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right space-y-0.5">
                       <p className="font-semibold">
                         {formatCurrency(holding.market_value)}
                       </p>
@@ -730,6 +730,9 @@ export function PortfolioReviewView({
                           )}
                         >
                           {formatCurrency(holding.unrealized_gain_loss)}
+                          {holding.unrealized_gain_loss_pct !== undefined && (
+                            <> ({formatPercent(holding.unrealized_gain_loss_pct)})</>
+                          )}
                         </p>
                       )}
                     </div>

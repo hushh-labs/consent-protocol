@@ -37,20 +37,6 @@ export enum ConsentScope {
   // Custom scopes
   CUSTOM_TEMPORARY = "custom.temporary",
   CUSTOM_SESSION_WRITE = "custom.session.write",
-
-  // Legacy scopes (deprecated - for backward compatibility only)
-  /** @deprecated */
-  VAULT_READ_EMAIL = "vault.read.email",
-  /** @deprecated */
-  VAULT_READ_PHONE = "vault.read.phone",
-  /** @deprecated Use ATTR_FINANCIAL instead */
-  VAULT_READ_FINANCE = "vault.read.finance",
-  /** @deprecated */
-  VAULT_READ_CONTACTS = "vault.read.contacts",
-  /** @deprecated Use VAULT_OWNER instead */
-  VAULT_READ_ALL = "vault.read.all",
-  /** @deprecated Use ATTR_FINANCIAL instead */
-  VAULT_WRITE_FINANCE = "vault.write.finance",
 }
 
 // ==================== Token Types ====================

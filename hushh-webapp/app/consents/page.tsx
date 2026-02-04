@@ -585,7 +585,13 @@ export default function ConsentsPage() {
         if (cachedAudit) setAuditLog(cachedAudit);
         if (cachedActive) setActiveConsents(cachedActive);
         const hasAnyCache = !!(cachedPending || cachedAudit || cachedActive);
-        if (hasAnyCache && !cancelled) setLoading(false);
+        
+        if (hasAnyCache && !cancelled) {
+          // Cache hit: complete all remaining steps immediately so progress bar hides
+          setLoading(false);
+          completeStep(); // Step 2
+          completeStep(); // Step 3
+        }
 
         // Session state from storage
         if (token && expiresAt) {
@@ -598,18 +604,18 @@ export default function ConsentsPage() {
           });
         }
 
-        // Background refresh (forceRefresh) to get latest data
+        // Background refresh (forceRefresh) to get latest data - silent when cache was used
         try {
           await fetchPendingConsents(uid, true);
-          if (!cancelled) completeStep();
+          if (!cancelled && !hasAnyCache) completeStep();
           await Promise.all([
             fetchAuditLog(uid, true),
             ...(effectiveToken ? [fetchActiveConsents(uid, effectiveToken, true)] : []),
           ]);
-          if (!cancelled) completeStep();
+          if (!cancelled && !hasAnyCache) completeStep();
         } catch (error) {
           console.error("Error loading consents:", error);
-          if (!cancelled) {
+          if (!cancelled && !hasAnyCache) {
             completeStep();
             completeStep();
           }

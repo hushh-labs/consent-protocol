@@ -138,23 +138,26 @@ export class WorldModelService {
 
     if (Capacitor.isNativePlatform()) {
       // Use Capacitor plugin for native platforms
+      // Native plugins return snake_case from backend - transform to camelCase
       const nativeResult = await HushhWorldModel.getMetadata({ userId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
       result = {
-        userId: nativeResult.userId,
-        domains: nativeResult.domains.map((d) => ({
-          key: d.key,
-          displayName: d.displayName,
-          icon: d.icon,
-          color: d.color,
-          attributeCount: d.attributeCount,
-          summary: d.summary,
-          availableScopes: d.availableScopes,
-          lastUpdated: d.lastUpdated,
+        userId: raw.user_id || raw.userId || userId,
+        domains: (raw.domains || []).map((d: Record<string, unknown>) => ({
+          key: (d.domain_key || d.key) as string,
+          displayName: (d.display_name || d.displayName) as string,
+          icon: (d.icon_name || d.icon) as string,
+          color: (d.color_hex || d.color) as string,
+          attributeCount: (d.attribute_count || d.attributeCount || 0) as number,
+          summary: (d.summary || {}) as Record<string, string | number>,
+          availableScopes: (d.available_scopes || d.availableScopes || []) as string[],
+          lastUpdated: (d.last_updated || d.lastUpdated || null) as string | null,
         })),
-        totalAttributes: nativeResult.totalAttributes,
-        modelCompleteness: nativeResult.modelCompleteness,
-        suggestedDomains: nativeResult.suggestedDomains,
-        lastUpdated: nativeResult.lastUpdated,
+        totalAttributes: raw.total_attributes || raw.totalAttributes || 0,
+        modelCompleteness: raw.model_completeness || raw.modelCompleteness || 0,
+        suggestedDomains: raw.suggested_domains || raw.suggestedDomains || [],
+        lastUpdated: raw.last_updated || raw.lastUpdated || null,
       };
     } else {
       // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -210,16 +213,18 @@ export class WorldModelService {
    */
   static async getIndex(userId: string): Promise<WorldModelIndex> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.getIndex({ userId });
+      const nativeResult = await HushhWorldModel.getIndex({ userId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
       return {
-        userId: result.userId,
-        domainSummaries: result.domainSummaries,
-        availableDomains: result.availableDomains,
-        computedTags: result.computedTags,
-        activityScore: result.activityScore,
-        lastActiveAt: result.lastActiveAt,
-        totalAttributes: result.totalAttributes,
-        modelVersion: result.modelVersion,
+        userId: raw.user_id || raw.userId || userId,
+        domainSummaries: raw.domain_summaries || raw.domainSummaries || {},
+        availableDomains: raw.available_domains || raw.availableDomains || [],
+        computedTags: raw.computed_tags || raw.computedTags || [],
+        activityScore: raw.activity_score ?? raw.activityScore ?? null,
+        lastActiveAt: raw.last_active_at || raw.lastActiveAt || null,
+        totalAttributes: raw.total_attributes || raw.totalAttributes || 0,
+        modelVersion: raw.model_version || raw.modelVersion || 2,
       };
     }
 
@@ -254,18 +259,20 @@ export class WorldModelService {
     domain?: string
   ): Promise<EncryptedAttribute[]> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.getAttributes({ userId, domain });
-      return result.attributes.map((a) => ({
-        domain: a.domain,
-        attributeKey: a.attributeKey,
-        ciphertext: a.ciphertext,
-        iv: a.iv,
-        tag: a.tag,
-        algorithm: a.algorithm,
-        source: a.source,
-        confidence: a.confidence,
-        displayName: a.displayName,
-        dataType: a.dataType,
+      const nativeResult = await HushhWorldModel.getAttributes({ userId, domain });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
+      return (raw.attributes || []).map((a: Record<string, unknown>) => ({
+        domain: a.domain as string,
+        attributeKey: (a.attribute_key || a.attributeKey) as string,
+        ciphertext: a.ciphertext as string,
+        iv: a.iv as string,
+        tag: a.tag as string,
+        algorithm: (a.algorithm || "aes-256-gcm") as string,
+        source: a.source as string,
+        confidence: (a.confidence ?? null) as number | null,
+        displayName: (a.display_name || a.displayName || null) as string | null,
+        dataType: (a.data_type || a.dataType || "string") as string,
       }));
     }
 
@@ -451,13 +458,15 @@ export class WorldModelService {
    */
   static async getUserDomains(userId: string): Promise<DomainSummary[]> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.getUserDomains({ userId });
-      return result.domains.map((d) => ({
-        key: d.key,
-        displayName: d.displayName,
-        icon: d.icon,
-        color: d.color,
-        attributeCount: d.attributeCount,
+      const nativeResult = await HushhWorldModel.getUserDomains({ userId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
+      return (raw.domains || []).map((d: Record<string, unknown>) => ({
+        key: (d.domain_key || d.key) as string,
+        displayName: (d.display_name || d.displayName) as string,
+        icon: (d.icon_name || d.icon) as string,
+        color: (d.color_hex || d.color) as string,
+        attributeCount: (d.attribute_count || d.attributeCount || 0) as number,
         summary: {},
         availableScopes: [],
         lastUpdated: null,
@@ -492,15 +501,17 @@ export class WorldModelService {
    */
   static async listDomains(includeEmpty = false): Promise<DomainInfo[]> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.listDomains({ includeEmpty });
-      return result.domains.map((d) => ({
-        key: d.key,
-        displayName: d.displayName,
-        description: d.description,
-        icon: d.icon,
-        color: d.color,
-        attributeCount: d.attributeCount,
-        userCount: d.userCount,
+      const nativeResult = await HushhWorldModel.listDomains({ includeEmpty });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
+      return (raw.domains || []).map((d: Record<string, unknown>) => ({
+        key: (d.domain_key || d.key) as string,
+        displayName: (d.display_name || d.displayName) as string,
+        description: (d.description || null) as string | null,
+        icon: (d.icon_name || d.icon) as string,
+        color: (d.color_hex || d.color) as string,
+        attributeCount: (d.attribute_count || d.attributeCount || 0) as number,
+        userCount: (d.user_count || d.userCount || 0) as number,
       }));
     }
 
@@ -531,12 +542,20 @@ export class WorldModelService {
    */
   static async getAvailableScopes(userId: string): Promise<ScopeDiscovery> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.getAvailableScopes({ userId });
+      const nativeResult = await HushhWorldModel.getAvailableScopes({ userId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
       return {
-        userId: result.userId,
-        availableDomains: result.availableDomains,
-        allScopes: result.allScopes,
-        wildcardScopes: result.wildcardScopes,
+        userId: raw.user_id || raw.userId || userId,
+        availableDomains: (raw.available_domains || raw.availableDomains || []).map(
+          (d: Record<string, unknown>) => ({
+            domain: d.domain as string,
+            displayName: (d.display_name || d.displayName) as string,
+            scopes: (d.scopes || []) as string[],
+          })
+        ),
+        allScopes: raw.all_scopes || raw.allScopes || [],
+        wildcardScopes: raw.wildcard_scopes || raw.wildcardScopes || [],
       };
     }
 
@@ -567,11 +586,13 @@ export class WorldModelService {
     portfolioName = "Main Portfolio"
   ): Promise<Record<string, unknown> | null> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.getPortfolio({
+      const nativeResult = await HushhWorldModel.getPortfolio({
         userId,
         portfolioName,
       });
-      return result.portfolio;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
+      return raw.portfolio || null;
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -625,8 +646,10 @@ export class WorldModelService {
     userId: string
   ): Promise<Record<string, unknown>[]> {
     if (Capacitor.isNativePlatform()) {
-      const result = await HushhWorldModel.listPortfolios({ userId });
-      return result.portfolios;
+      const nativeResult = await HushhWorldModel.listPortfolios({ userId });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = nativeResult as any;
+      return raw.portfolios || [];
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance

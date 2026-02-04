@@ -196,8 +196,13 @@ export default function KaiPreferencesPage() {
       // Identity (encrypted DB record -> decrypt client-side)
       try {
         const encrypted = await getEncryptedProfile(vaultOwnerToken);
-        const plaintext = await decryptPayload(encrypted.profile_data);
-        setProfile(JSON.parse(plaintext) as InvestorProfile);
+        if (encrypted.profileData) {
+          const plaintext = await decryptPayload(encrypted.profileData);
+          setProfile(JSON.parse(plaintext) as InvestorProfile);
+        } else {
+          setProfile(null);
+          setProfileNotFound(true);
+        }
       } catch (e: any) {
         const status = e?.status;
         if (status === 404) {

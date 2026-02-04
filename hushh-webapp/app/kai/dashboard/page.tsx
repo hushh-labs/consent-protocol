@@ -24,7 +24,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 export default function KaiPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
+  const { vaultOwnerToken } = useVault();
   const [holdings, setHoldings] = useState<string[]>([]);
   const [flowState, setFlowState] = useState<FlowState>("checking");
   const [initialized, setInitialized] = useState(false);
@@ -66,11 +66,6 @@ export default function KaiPage() {
     return null;
   }
 
-  // Show nothing if vault owner token is not available
-  if (!vaultOwnerToken) {
-    return null;
-  }
-
   // NOTE: Vault check is handled by VaultLockGuard in the kai layout.
   // We trust the layout guard and don't duplicate the check here.
   // If we reach this point, the vault is guaranteed to be unlocked.
@@ -108,7 +103,9 @@ export default function KaiPage() {
       <div className="w-full p-6">
         <KaiFlow
           userId={user.uid}
-          vaultOwnerToken={vaultOwnerToken}
+          // Prefer in-memory token, but allow empty string as fallback.
+          // KaiFlow and downstream services will handle 401s gracefully.
+          vaultOwnerToken={vaultOwnerToken ?? ""}
           onStateChange={handleStateChange}
           onHoldingsLoaded={handleHoldingsUpdate}
         />

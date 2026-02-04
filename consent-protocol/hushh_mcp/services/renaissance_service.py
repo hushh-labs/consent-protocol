@@ -136,7 +136,7 @@ class RenaissanceService:
         try:
             response = self.db.table("renaissance_universe").select("*").ilike(
                 "sector", f"%{sector}%"
-            ).order("tier").order("tier_rank").execute()
+            ).order("tier_rank").execute()
             
             return [
                 RenaissanceStock(
@@ -154,6 +154,110 @@ class RenaissanceService:
         except Exception as e:
             logger.error(f"Error getting sector {sector}: {e}")
             return []
+
+    async def get_avoid_context(self, ticker: str) -> dict:
+        """
+        Get Renaissance avoid context for a ticker.
+        
+        Returns dict with:
+        - is_avoid: bool
+        - category: str | None
+        - why_avoid: str | None
+        - source: str | None
+        """
+        try:
+            response = (
+                self.db.table("renaissance_avoid")
+                .select("*")
+                .eq("ticker", ticker.upper())
+                .single()
+                .execute()
+            )
+            if response.data:
+                row = response.data[0] if isinstance(response.data, list) else response.data
+                return {
+                    "is_avoid": True,
+                    "ticker": row.get("ticker", ticker.upper()),
+                    "category": row.get("category"),
+                    "company_name": row.get("company_name"),
+                    "sector": row.get("sector"),
+                    "why_avoid": row.get("why_avoid"),
+                    "source": row.get("source"),
+                }
+        except Exception:
+            # Table may not exist yet (before migration 010), or query may fail.
+            pass
+
+        return {
+            "is_avoid": False,
+            "ticker": ticker.upper(),
+            "category": None,
+            "company_name": None,
+            "sector": None,
+            "why_avoid": None,
+            "source": None,
+        }
+
+    async def get_screening_criteria(self) -> list[dict]:
+        """Return all screening criteria rows (for UI and LLM prompting)."""
+        try:
+            result = self.db.execute_raw(
+                """
+                SELECT section, rule_index, title, detail, value_text
+                FROM renaissance_screening_criteria
+                ORDER BY
+                    section ASC,
+                    rule_index ASC NULLS LAST,
+                    id ASC
+                """
+            )
+            return result.data or []
+        except Exception:
+            return []
+
+    async def get_screening_context(self) -> str:
+        """
+        Build a compact Renaissance rubric string for prompts.
+        
+        This is intentionally short: it’s meant to ground the LLM in the
+        criteria-first approach, not to duplicate the entire rubric verbatim.
+        """
+        rows = await self.get_screening_criteria()
+        if not rows:
+            return ""
+
+        investable = [r for r in rows if r.get("section") == "investable_requirements"]
+        avoid = [r for r in rows if r.get("section") == "automatic_avoid_triggers"]
+        math = [r for r in rows if r.get("section") == "the_math"]
+
+        def fmt_rules(rs: list[dict], max_items: int) -> str:
+            parts: list[str] = []
+            for r in rs[:max_items]:
+                idx = r.get("rule_index")
+                title = (r.get("title") or "").strip()
+                detail = (r.get("detail") or "").strip()
+                if idx:
+                    parts.append(f"{idx}. {title} — {detail}")
+                else:
+                    parts.append(f"- {title} — {detail}")
+            return "\n".join(parts)
+
+        math_lines = []
+        for r in math[:6]:
+            title = (r.get("title") or "").strip()
+            value = (r.get("value_text") or r.get("detail") or "").strip()
+            if title and value:
+                math_lines.append(f"- {title}: {value}")
+
+        return (
+            "RENAISSANCE SCREENING RUBRIC\n"
+            "INVESTABLE REQUIREMENTS (all must be met):\n"
+            f"{fmt_rules(investable, 6)}\n\n"
+            "AUTOMATIC AVOID TRIGGERS (any one disqualifies):\n"
+            f"{fmt_rules(avoid, 10)}\n\n"
+            "THE MATH:\n"
+            f"{chr(10).join(math_lines)}\n"
+        ).strip()
     
     async def get_analysis_context(self, ticker: str) -> dict:
         """
@@ -169,6 +273,8 @@ class RenaissanceService:
         - sector_peers: list of tickers in same sector/tier
         """
         is_inv, stock = await self.is_investable(ticker)
+        avoid_ctx = await self.get_avoid_context(ticker)
+        screening_ctx = await self.get_screening_context()
         
         if not is_inv:
             return {
@@ -180,6 +286,11 @@ class RenaissanceService:
                 "fcf_billions": None,
                 "sector_peers": [],
                 "recommendation_bias": "CAUTION",
+                "is_avoid": avoid_ctx.get("is_avoid", False),
+                "avoid_category": avoid_ctx.get("category"),
+                "avoid_reason": avoid_ctx.get("why_avoid"),
+                "avoid_source": avoid_ctx.get("source"),
+                "screening_criteria": screening_ctx,
             }
         
         # Get sector peers in same or higher tier
@@ -213,6 +324,11 @@ class RenaissanceService:
             "sector": stock.sector,
             "sector_peers": sector_peers,
             "recommendation_bias": bias_map.get(stock.tier, "NEUTRAL"),
+            "is_avoid": avoid_ctx.get("is_avoid", False),
+            "avoid_category": avoid_ctx.get("category"),
+            "avoid_reason": avoid_ctx.get("why_avoid"),
+            "avoid_source": avoid_ctx.get("source"),
+            "screening_criteria": screening_ctx,
         }
 
 

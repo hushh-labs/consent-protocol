@@ -30,18 +30,6 @@ export const CONSENT_SCOPES = {
 
   // Custom scopes
   CUSTOM_TEMPORARY: "custom.temporary",
-
-  // Legacy scopes (deprecated - for backward compatibility only)
-  /** @deprecated */
-  VAULT_READ_EMAIL: "vault.read.email",
-  /** @deprecated */
-  VAULT_READ_PHONE: "vault.read.phone",
-  /** @deprecated Use ATTR_FINANCIAL instead */
-  VAULT_READ_FINANCE: "vault.read.finance",
-  /** @deprecated Use VAULT_OWNER instead */
-  VAULT_READ_ALL: "vault.read.all",
-  /** @deprecated Use ATTR_FINANCIAL instead */
-  VAULT_WRITE_FINANCE: "vault.write.finance",
 } as const;
 
 export type ConsentScope = (typeof CONSENT_SCOPES)[keyof typeof CONSENT_SCOPES];

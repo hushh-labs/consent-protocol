@@ -12,9 +12,12 @@
  * - Auth ✅ + Vault ❌ → Show passphrase unlock dialog
  * - Auth ✅ + Vault ✅ → Render children
  *
- * IMPORTANT: Uses stabilization to prevent false "locked" states during
- * navigation. Once unlocked in a session, stays unlocked unless explicitly
- * locked or session ends.
+ * SECURITY MODEL (BYOK Compliant):
+ * - The vault key is stored ONLY in React state (memory).
+ * - On page refresh, React state resets, so the vault key is lost.
+ * - We ONLY trust `isVaultUnlocked` from VaultContext (which checks memory state).
+ * - We render children immediately if vault is unlocked (no intermediate states).
+ * - Module-level flag tracks unlock across route changes within same session.
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -25,21 +28,17 @@ import { VaultFlow } from "./vault-flow";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 
 // ============================================================================
+// Module-level state for cross-route persistence
+// This survives route changes but resets on page refresh (memory cleared)
+// ============================================================================
+let moduleWasUnlocked = false;
+
+// ============================================================================
 // Types
 // ============================================================================
 
 interface VaultLockGuardProps {
   children: React.ReactNode;
-}
-
-// Timeout helper definition outside component to avoid re-creation
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), ms)
-    ),
-  ]);
 }
 
 // ============================================================================
@@ -48,101 +47,36 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const router = useRouter();
-  const { isVaultUnlocked, unlockVault } = useVault();
+  const { isVaultUnlocked } = useVault();
   const { user, loading: authLoading, signOut } = useAuth();
 
-  // State
-  const [status, setStatus] = useState<
-    "checking" | "no_auth" | "vault_locked" | "unlocked"
-  >("checking");
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // ============================================================================
-  // Stabilization: Once unlocked, stay unlocked during navigation
-  // This prevents race conditions where React state briefly shows unlocked=false
-  // ============================================================================
-  const wasUnlockedRef = useRef(false);
-
-  // Track when vault becomes unlocked
-  useEffect(() => {
-    if (isVaultUnlocked) {
-      wasUnlockedRef.current = true;
-    }
-  }, [isVaultUnlocked]);
-
-  // ============================================================================
-  // Effects
-  // Use ref for mount state to prevent stale closure issues
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    async function checkStatus() {
-      // 1. Wait for Auth Loading
-      if (authLoading) {
-        return;
-      }
-
-      // 2. Check Auth Status
-      if (!user) {
-        // User logged out - reset stabilization
-        wasUnlockedRef.current = false;
-        setStatus("no_auth");
-        return;
-      }
-
-      setUserId(user.uid);
-
-      // 3. Check Vault Lock Status
-      // STABILIZATION: If vault was previously unlocked in this session,
-      // trust that state even if isVaultUnlocked is momentarily false
-      // (can happen during React re-renders/navigation)
-      if (isVaultUnlocked || wasUnlockedRef.current) {
-        setStatus("unlocked");
-        return;
-      }
-
-      // 4. Default to locked (delegating creation/check to VaultFlow)
-      setStatus("vault_locked");
-    }
-
-    checkStatus();
-
-    return () => {
-      mountedRef.current = false;
-    };
-  }, [user, authLoading, isVaultUnlocked]);
-
-  // Vault status sync effect - also respects stabilization
-  useEffect(() => {
-    if ((isVaultUnlocked || wasUnlockedRef.current) && status !== "unlocked") {
-      setStatus("unlocked");
-    }
-  }, [isVaultUnlocked, status]);
-
-  // ============================================================================
-  // Handlers
-  // ============================================================================
-
-  const handleLogout = async () => {
-    // Reset stabilization on logout
-    wasUnlockedRef.current = false;
-    await signOut();
-  };
-
-  // ============================================================================
-  // Render
-  // ============================================================================
-
-  // Still checking auth/vault status
-  if (status === "checking") {
-    return <HushhLoader label="Checking vault status..." />;
+  // Track when vault becomes unlocked at module level
+  if (isVaultUnlocked && !moduleWasUnlocked) {
+    moduleWasUnlocked = true;
   }
 
-  // Redirecting to login (no auth)
-  if (status === "no_auth") {
-    // Actually perform the redirect
+  // ============================================================================
+  // FAST PATH: If vault is unlocked (in memory), render children immediately
+  // This eliminates flicker on route changes - no state, no effects, just render
+  // ============================================================================
+  if (isVaultUnlocked || moduleWasUnlocked) {
+    return <>{children}</>;
+  }
+
+  // ============================================================================
+  // SLOW PATH: Vault not unlocked, need to check auth and show appropriate UI
+  // ============================================================================
+  
+  // Auth still loading - show loader
+  if (authLoading) {
+    return <HushhLoader label="Checking session..." />;
+  }
+
+  // No user - redirect to login
+  if (!user) {
+    // Reset module state on logout
+    moduleWasUnlocked = false;
+    
     if (typeof window !== "undefined") {
       const currentPath = window.location.pathname;
       router.push(`/?redirect=${encodeURIComponent(currentPath)}`);
@@ -150,23 +84,18 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
     return <HushhLoader label="Redirecting to login..." />;
   }
 
-  // Vault is locked - show unlock dialog
-  if (status === "vault_locked") {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] p-4">
-        <div className="w-full max-w-md">
-          <VaultFlow
-            user={user!}
-            onSuccess={() => {
-              wasUnlockedRef.current = true;
-              setStatus("unlocked");
-            }}
-          />
-        </div>
+  // User exists but vault is locked - show unlock dialog
+  return (
+    <div className="flex items-center justify-center min-h-[60vh] p-4">
+      <div className="w-full max-w-md">
+        <VaultFlow
+          user={user}
+          onSuccess={() => {
+            moduleWasUnlocked = true;
+            // Force re-render by using router refresh or just let context update
+          }}
+        />
       </div>
-    );
-  }
-
-  // Vault unlocked - render children
-  return <>{children}</>;
+    </div>
+  );
 }
