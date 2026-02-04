@@ -74,7 +74,7 @@ export function InvestorDetectStep({
     async function autoDetect() {
       try {
         const result = await IdentityService.autoDetect();
-        setDisplayName(result.display_name);
+        setDisplayName(result.displayName);
 
         if (result.detected && result.matches.length > 0) {
           setDetectedMatches(result.matches);

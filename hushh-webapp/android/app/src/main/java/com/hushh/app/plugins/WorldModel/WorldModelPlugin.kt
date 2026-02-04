@@ -22,6 +22,9 @@ import android.util.Base64
  * - storeAttribute: Store an encrypted attribute
  * - getInitialChatState: Get initial chat state for proactive welcome
  * - importPortfolio: Import portfolio from file
+ * - listDomains: List all registered domains
+ * - getUserDomains: Get domains for a specific user
+ * - getAvailableScopes: Get available consent scopes for a user
  */
 
 @CapacitorPlugin(name = "WorldModel")
@@ -331,6 +334,93 @@ class WorldModelPlugin : Plugin() {
                 }
             }
         })
+    }
+    
+    /**
+     * List all registered domains.
+     * 
+     * Parameters:
+     * - includeEmpty: Include domains with no attributes (default: false)
+     * - authToken: Firebase ID token for authentication
+     * 
+     * Returns:
+     * - domains: Array of domain metadata objects
+     */
+    @PluginMethod
+    fun listDomains(call: PluginCall) {
+        val includeEmpty = call.getBoolean("includeEmpty") ?: false
+        val authToken = call.getString("authToken")
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/domains?include_empty=$includeEmpty"
+        
+        val requestBuilder = Request.Builder().url(url).get()
+        
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+        
+        executeRequest(requestBuilder.build(), call)
+    }
+    
+    /**
+     * Get domains for a specific user (only domains with data).
+     * 
+     * Parameters:
+     * - userId: User's Firebase UID
+     * - authToken: Firebase ID token for authentication
+     * 
+     * Returns:
+     * - domains: Array of domain metadata objects with user-specific counts
+     */
+    @PluginMethod
+    fun getUserDomains(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        
+        val authToken = call.getString("authToken")
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/domains/$userId"
+        
+        val requestBuilder = Request.Builder().url(url).get()
+        
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+        
+        executeRequest(requestBuilder.build(), call)
+    }
+    
+    /**
+     * Get available consent scopes for a user.
+     * 
+     * Parameters:
+     * - userId: User's Firebase UID
+     * - authToken: Firebase ID token for authentication
+     * 
+     * Returns:
+     * - scopes: Array of available scopes with display information
+     * - wildcards: Array of wildcard scopes (e.g., "attr.financial.*")
+     */
+    @PluginMethod
+    fun getAvailableScopes(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        
+        val authToken = call.getString("authToken")
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/scopes/$userId"
+        
+        val requestBuilder = Request.Builder().url(url).get()
+        
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+        
+        executeRequest(requestBuilder.build(), call)
     }
     
     // Helper method to execute HTTP requests

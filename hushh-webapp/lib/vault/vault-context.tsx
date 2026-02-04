@@ -93,6 +93,12 @@ export function VaultProvider({ children }: VaultProviderProps) {
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
 
   const lockVault = useCallback(() => {
+    // Read userId before clearing session so we can invalidate vault check cache
+    const userId =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("user_id")
+        : null;
+
     console.log("🔒 Vault locked (key + token cleared from memory)");
     setVaultKey(null);
     setVaultOwnerToken(null);
@@ -102,6 +108,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
     // Note: The vault key is NEVER stored in sessionStorage (XSS protection)
     removeSessionItem("vault_owner_token");
     removeSessionItem("vault_owner_token_expires_at");
+
+    if (userId) {
+      CacheService.getInstance().invalidate(CACHE_KEYS.VAULT_CHECK(userId));
+    }
   }, []);
 
   // Auto-Lock on Sign Out
