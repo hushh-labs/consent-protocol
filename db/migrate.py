@@ -7,34 +7,34 @@ Usage:
     python db/migrate.py --table vault_food        # Create vault_food table
     python db/migrate.py --table vault_professional # Create vault_professional table
     python db/migrate.py --table consent_audit     # Create consent_audit table
-    python db/migrate.py --table session_tokens    # Create session_tokens table
     python db/migrate.py --consent                 # Create all consent-related tables
     python db/migrate.py --full                    # Drop and recreate ALL tables (DESTRUCTIVE!)
     python db/migrate.py --clear consent_audit     # Clear specific table
     python db/migrate.py --status                  # Show table summary
 
 Environment:
-    DATABASE_URL - PostgreSQL connection string
+    DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME (same as runtime — strict parity)
 """
 
 import argparse
 import asyncio
-import os
 import sys
 
 import asyncpg
 from dotenv import load_dotenv
 
-# Load env from .env file (if present)
+# Load env so DB_* are available (same as runtime)
 load_dotenv()
 
-# Database URL from environment (REQUIRED - no hardcoded fallback for security)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Use same DB_* as runtime (db/connection.py)
+from db.connection import get_database_url, get_database_ssl
 
-if not DATABASE_URL:
-    print("❌ ERROR: DATABASE_URL environment variable is required.")
-    print("   Set it in .env or as an environment variable.")
-    print("   Example: DATABASE_URL=postgresql://user:pass@host:5432/dbname")
+try:
+    _database_url = get_database_url()
+    _ssl_config = get_database_ssl()
+except EnvironmentError as e:
+    print(f"❌ ERROR: {e}")
+    print("   Set DB_USER, DB_PASSWORD, DB_HOST in .env (and optionally DB_PORT, DB_NAME).")
     sys.exit(1)
 
 
@@ -346,9 +346,8 @@ async def run_full_migration(pool: asyncpg.Pool):
     print("⚠️  FULL MIGRATION - This will DROP all tables!")
     print("🗑️  Dropping existing tables...")
     
-    for table in ["vault_data", "vault_food", "vault_professional", 
-                  "vault_passkeys", "consent_audit", "vault_keys",
-                  "vault_kai", "vault_kai_preferences", 
+    for table in ["vault_keys", "vault_food", "vault_professional", "consent_audit",
+                  "vault_kai", "vault_kai_preferences",
                   "user_investor_profiles", "investor_profiles"]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     
@@ -473,28 +472,22 @@ Examples:
         return
     
     # Mask password in URL for display
-    display_url = DATABASE_URL
+    display_url = _database_url
     try:
-        parts = DATABASE_URL.split(":")
+        parts = _database_url.split(":")
         if len(parts) >= 3 and "@" in parts[2]:
             display_url = f"{parts[0]}:{parts[1]}:****@{parts[2].split('@')[1]}:{':'.join(parts[3:])}"
     except Exception:
-        display_url = DATABASE_URL
-    
-    print("Connecting to database...")
+        display_url = _database_url
+    print("Connecting to database (DB_* env)...")
     print(f"   URL: {display_url}")
-    
-    # Supabase requires SSL connections
-    ssl_config = None
-    if "supabase.co" in DATABASE_URL:
-        ssl_config = "require"
+    if _ssl_config:
         print("   SSL: enabled (Supabase)")
-    
     pool = await asyncpg.create_pool(
-        DATABASE_URL, 
-        min_size=1, 
+        _database_url,
+        min_size=1,
         max_size=2,
-        ssl=ssl_config
+        ssl=_ssl_config,
     )
     
     try:
