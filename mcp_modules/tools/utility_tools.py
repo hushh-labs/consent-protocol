@@ -166,11 +166,11 @@ async def handle_list_scopes() -> list[TextContent]:
         "available_scopes": scopes,
         "total_scopes": len(scopes),
         "scope_format": "attr.{domain}.* for wildcard, attr.{domain}.{attribute_key} for specific",
-        "usage": "Call request_consent with user_id and desired scope to obtain a consent token",
+        "scopes_are_dynamic": True,
+        "note": "These are example scopes. Per-user scope strings come from the world model: call discover_user_domains(user_id) to get the actual domains and scope strings for a user (backend: GET /api/world-model/scopes/{user_id}).",
+        "usage": "Call discover_user_domains(user_id) first, then request_consent(user_id, scope) with a scope from that result.",
         "privacy_principle": "Each scope requires separate, explicit user consent",
-        "security_note": "vault.owner grants full access and requires passphrase verification.",
-        "hushh_promise": "Your data is never accessed without your permission.",
-        "dynamic_scopes": "Scopes are generated dynamically based on stored user attributes"
+        "hushh_promise": "Your data is never accessed without your permission."
     }))]
 
 
