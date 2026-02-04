@@ -56,6 +56,8 @@ Use this checklist for EVERY new feature that involves data operations.
   // Call Next.js proxy
   return fetch("/api/...");
   ```
+- [ ] Transform snake_case responses from native plugins to camelCase
+- [ ] Use fallback pattern: `result.camelCase || result.snake_case || default`
 - [ ] Handle errors consistently across platforms
 
 ## UI Components
@@ -112,6 +114,32 @@ static async getData() {
   }
   return fetch("/api/...");  // Web
 }
+```
+
+## snake_case Transformation Checklist
+
+When implementing service methods that call native plugins:
+
+- [ ] Native plugins return raw backend JSON (snake_case)
+- [ ] Service layer transforms to camelCase for React components
+- [ ] Use fallback pattern to support both formats during transition
+- [ ] Test on both web AND native platforms
+
+### Example Transformation
+
+```typescript
+// WRONG - assumes native returns camelCase
+const result = await Plugin.getData();
+return { userId: result.userId };  // undefined on native!
+
+// CORRECT - handles both formats
+const result = await Plugin.getData();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const raw = result as any;
+return {
+  userId: raw.user_id || raw.userId,
+  displayName: raw.display_name || raw.displayName,
+};
 ```
 
 ## Verification

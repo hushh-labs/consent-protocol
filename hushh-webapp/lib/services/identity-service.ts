@@ -11,6 +11,9 @@
  * Privacy Architecture:
  * - investor_profiles = PUBLIC (SEC filings, read-only)
  * - user_investor_profiles = PRIVATE (E2E encrypted in vault)
+ * 
+ * Note: All methods return camelCase for React components,
+ * transforming from snake_case backend responses.
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -19,18 +22,33 @@ import {
   HushhAuth,
   InvestorMatch,
   InvestorProfile,
-  IdentityStatusResult,
 } from "@/lib/capacitor";
 import { auth } from "@/lib/firebase/config";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 
 // Re-export types for consumers
-export type { InvestorMatch, InvestorProfile, IdentityStatusResult };
+export type { InvestorMatch, InvestorProfile };
 
+// CamelCase types for React components
 export interface AutoDetectResponse {
   detected: boolean;
-  display_name: string | null;
+  displayName: string | null;
   matches: InvestorMatch[];
+}
+
+export interface IdentityStatusResult {
+  hasConfirmedIdentity: boolean;
+  confirmedAt: string | null;
+  investorName: string | null;
+  investorFirm: string | null;
+}
+
+export interface EncryptedProfileData {
+  profileData: {
+    ciphertext: string;
+    iv: string;
+    tag: string;
+  };
 }
 
 export class IdentityService {
@@ -40,6 +58,8 @@ export class IdentityService {
    * Platform routing:
    * - Web: HushhIdentity → identity-web.ts → Next.js proxy
    * - iOS/Android: HushhIdentity → Native plugin → Backend
+   * 
+   * Returns camelCase for React components.
    */
   static async autoDetect(): Promise<AutoDetectResponse> {
     const platform = Capacitor.getPlatform();
@@ -51,7 +71,7 @@ export class IdentityService {
     const firebaseToken = await this.getFirebaseToken();
     if (!firebaseToken) {
       console.warn("[IdentityService] ❌ No Firebase token available");
-      return { detected: false, display_name: null, matches: [] };
+      return { detected: false, displayName: null, matches: [] };
     }
     
     console.log("[IdentityService] ✅ Got Firebase token (length:", firebaseToken.length, ")");
@@ -65,16 +85,25 @@ export class IdentityService {
         authToken: firebaseToken,
       });
 
+      // Transform snake_case to camelCase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result as any;
+      const transformed: AutoDetectResponse = {
+        detected: raw.detected ?? false,
+        displayName: raw.display_name ?? raw.displayName ?? null,
+        matches: raw.matches || [],
+      };
+
       console.log("[IdentityService] ✅ autoDetect result:", {
-        detected: result.detected,
-        display_name: result.display_name,
-        matchCount: result.matches?.length || 0,
+        detected: transformed.detected,
+        displayName: transformed.displayName,
+        matchCount: transformed.matches?.length || 0,
       });
       
-      return result;
+      return transformed;
     } catch (error) {
       console.error("[IdentityService] ❌ Auto-detect error:", error);
-      return { detected: false, display_name: null, matches: [] };
+      return { detected: false, displayName: null, matches: [] };
     }
   }
 
@@ -135,19 +164,31 @@ export class IdentityService {
   /**
    * Get identity status (has user confirmed an identity?).
    * Requires VAULT_OWNER token.
+   * 
+   * Returns camelCase for React components.
    */
   static async getIdentityStatus(
     vaultOwnerToken: string
   ): Promise<IdentityStatusResult> {
     try {
-      return await HushhIdentity.getIdentityStatus({ vaultOwnerToken });
+      const result = await HushhIdentity.getIdentityStatus({ vaultOwnerToken });
+      
+      // Transform snake_case to camelCase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result as any;
+      return {
+        hasConfirmedIdentity: raw.has_confirmed_identity ?? raw.hasConfirmedIdentity ?? false,
+        confirmedAt: raw.confirmed_at ?? raw.confirmedAt ?? null,
+        investorName: raw.investor_name ?? raw.investorName ?? null,
+        investorFirm: raw.investor_firm ?? raw.investorFirm ?? null,
+      };
     } catch (error) {
       console.error("[IdentityService] Status error:", error);
       return {
-        has_confirmed_identity: false,
-        confirmed_at: null,
-        investor_name: null,
-        investor_firm: null,
+        hasConfirmedIdentity: false,
+        confirmedAt: null,
+        investorName: null,
+        investorFirm: null,
       };
     }
   }

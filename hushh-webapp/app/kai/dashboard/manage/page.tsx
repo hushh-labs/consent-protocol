@@ -108,7 +108,7 @@ function deriveRiskBucket(holdings: Holding[]): string {
 export default function ManagePortfolioPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { vaultKey, isVaultUnlocked } = useVault();
+  const { vaultKey } = useVault();
   const { getPortfolioData, setPortfolioData: setCachePortfolioData } = useCache();
   
   const [isLoading, setIsLoading] = useState(true);
@@ -149,12 +149,82 @@ export default function ManagePortfolioPage() {
         const financialDomain = response.domains.find(d => d.key === "financial");
         
         if (financialDomain && financialDomain.attributeCount > 0) {
-          // Prefer CacheProvider (shared with dashboard) then sessionStorage
-          const parsed = getPortfolioData(user.uid) ?? (() => {
-            const cachedData = sessionStorage.getItem("kai_portfolio_data");
-            return cachedData ? JSON.parse(cachedData) : null;
-          })();
+          // Priority 1: CacheProvider (shared with dashboard)
+          let parsed = getPortfolioData(user.uid);
+          
+          // Priority 2: sessionStorage
+          if (!parsed) {
+            try {
+              const cachedData = sessionStorage.getItem("kai_portfolio_data");
+              if (cachedData) {
+                parsed = JSON.parse(cachedData);
+                console.log("[ManagePortfolio] Loaded from sessionStorage");
+              }
+            } catch (err) {
+              console.warn("[ManagePortfolio] Failed to parse sessionStorage:", err);
+            }
+          }
+          
+          // Priority 3: Decrypt from World Model (fallback)
+          if (!parsed) {
+            console.log("[ManagePortfolio] No cache, attempting to decrypt from World Model...");
+            try {
+              const encryptedData = await WorldModelService.getDomainData(user.uid, "financial");
+              
+              if (encryptedData) {
+                const decrypted = await HushhVault.decryptData({
+                  payload: {
+                    ciphertext: encryptedData.ciphertext,
+                    iv: encryptedData.iv,
+                    tag: encryptedData.tag,
+                    encoding: "base64",
+                    algorithm: encryptedData.algorithm as "aes-256-gcm" || "aes-256-gcm",
+                  },
+                  keyHex: vaultKey,
+                });
+                
+                // Parse decrypted data
+                const allData = JSON.parse(decrypted.plaintext);
+                parsed = allData.financial || allData;
+                
+                // Update cache for future use
+                if (parsed) {
+                  setCachePortfolioData(user.uid, parsed);
+                  sessionStorage.setItem("kai_portfolio_data", JSON.stringify(parsed));
+                  console.log("[ManagePortfolio] Decrypted and cached portfolio data");
+                }
+              }
+            } catch (decryptError) {
+              console.error("[ManagePortfolio] Failed to decrypt from World Model:", decryptError);
+              toast.error("Unable to decrypt portfolio data. Please re-import your statement.");
+            }
+          }
+          
           if (parsed) {
+            // Normalize holdings to ensure unrealized_gain_loss_pct is computed
+            if (parsed.holdings) {
+              parsed.holdings = parsed.holdings.map((h: Holding) => {
+                if (h.unrealized_gain_loss_pct !== undefined && h.unrealized_gain_loss_pct !== 0) {
+                  return h;
+                }
+                const unrealized = h.unrealized_gain_loss;
+                if (unrealized !== undefined) {
+                  let basis: number | undefined;
+                  const costBasis = h.cost_basis;
+                  const marketValue = h.market_value || 0;
+                  if (costBasis !== undefined && Math.abs(costBasis) > 1e-6) {
+                    basis = costBasis;
+                  } else if (marketValue !== 0) {
+                    basis = marketValue - unrealized;
+                  }
+                  if (basis !== undefined && Math.abs(basis) > 1e-6) {
+                    return { ...h, unrealized_gain_loss_pct: (unrealized / basis) * 100 };
+                  }
+                }
+                return h;
+              });
+            }
+            
             setPortfolioData(parsed);
             setHoldings(parsed.holdings || []);
             setAccountInfo(parsed.account_info || {});
@@ -174,7 +244,7 @@ export default function ManagePortfolioPage() {
     }
 
     loadPortfolio();
-  }, [user?.uid, vaultKey, completeStep]);
+  }, [user?.uid, vaultKey, completeStep, getPortfolioData, setCachePortfolioData]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -288,24 +358,6 @@ export default function ManagePortfolioPage() {
   // Loading state
   if (isLoading) {
     return null;
-  }
-
-  // Vault not unlocked
-  if (!isVaultUnlocked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <Card variant="none" effect="glass" showRipple={false}>
-          <CardContent className="p-8 text-center">
-            <p className="text-muted-foreground mb-4">
-              Please unlock your vault to manage your portfolio.
-            </p>
-            <Button onClick={() => router.push("/kai")}>
-              Go to Kai
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   return (

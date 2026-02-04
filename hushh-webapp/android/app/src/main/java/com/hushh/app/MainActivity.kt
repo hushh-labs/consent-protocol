@@ -11,6 +11,7 @@ import com.hushh.app.plugins.HushhKeystore.HushhKeystorePlugin
 import com.hushh.app.plugins.HushhSettings.HushhSettingsPlugin
 import com.hushh.app.plugins.HushhSync.HushhSyncPlugin
 import com.hushh.app.plugins.Kai.KaiPlugin
+import com.hushh.app.plugins.WorldModel.WorldModelPlugin
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,15 +19,16 @@ class MainActivity : BridgeActivity() {
         
         // Register all Hushh native plugins
         registerPlugin(HushhAuthPlugin::class.java)
-        registerPlugin(HushhVaultPlugin::class.java) // Reordered as per instruction
-        registerPlugin(HushhConsentPlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhVaultPlugin::class.java)
+        registerPlugin(HushhConsentPlugin::class.java)
         registerPlugin(HushhIdentityPlugin::class.java) // Investor identity (Kai Preferences)
-        registerPlugin(HushhSyncPlugin::class.java) // Reordered as per instruction
-        registerPlugin(HushhSettingsPlugin::class.java) // Reordered as per instruction
-        registerPlugin(HushhKeystorePlugin::class.java) // Reordered as per instruction
+        registerPlugin(HushhSyncPlugin::class.java)
+        registerPlugin(HushhSettingsPlugin::class.java)
+        registerPlugin(HushhKeystorePlugin::class.java)
         registerPlugin(KaiPlugin::class.java) // Agent Kai plugin
+        registerPlugin(WorldModelPlugin::class.java) // World Model plugin
         
-        Log.d("MainActivity", "✅ [MainActivity] All 8 plugins registered successfully") // Updated count
+        Log.d("MainActivity", "✅ [MainActivity] All 9 plugins registered successfully")
         
         super.onCreate(savedInstanceState)
     }

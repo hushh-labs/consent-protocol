@@ -13,7 +13,8 @@
           "/consent/grant",
           "/analyze",
           "/preferences/store",
-          "/preferences/{user_id}"
+          "/preferences/{user_id}",
+          "/portfolio/analyze-losers"
         ]
       },
       "native": {
@@ -23,6 +24,7 @@
         "requiredMethodNames": [
           "grantConsent",
           "analyze",
+          "analyzePortfolioLosers",
           "storePreferences",
           "getPreferences",
           "resetPreferences"

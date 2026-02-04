@@ -197,21 +197,31 @@ export async function resetPreferences(
 /**
  * Get User's Encrypted Investor Profile (Ciphertext)
  * Platform-aware: Uses HushhIdentity plugin on native, Next.js API on web.
+ * 
+ * Returns camelCase for React components.
  */
-export async function getEncryptedProfile(token: string): Promise<any> {
+export async function getEncryptedProfile(token: string): Promise<{
+  profileData: { ciphertext: string; iv: string; tag: string } | null;
+}> {
+  let result: any;
+  
   if (Capacitor.isNativePlatform()) {
     // Native: Use HushhIdentity plugin (direct backend call)
-    return HushhIdentity.getEncryptedProfile({
+    result = await HushhIdentity.getEncryptedProfile({
       vaultOwnerToken: token,
     });
   } else {
     // Web: Use Next.js API route
-    return apiJson("/api/identity/profile", {
+    result = await apiJson("/api/identity/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ consent_token: token }),
     });
   }
+  
+  // Transform snake_case to camelCase
+  const profileData = result?.profile_data || result?.profileData || null;
+  return { profileData };
 }
 
 /**
@@ -280,19 +290,68 @@ export async function streamKaiAnalysis(params: {
  * Get initial chat state for proactive welcome flow.
  * Platform-aware: Uses Kai plugin on native, Next.js API on web.
  * Requires VAULT_OWNER token for consent-gated data access.
+ * 
+ * Note: Returns camelCase for React components, transforms from snake_case backend response.
  */
 export async function getInitialChatState(userId: string): Promise<{
-  is_new_user: boolean;
-  has_portfolio: boolean;
-  has_financial_data: boolean;
-  welcome_type: string;
-  total_attributes: number;
-  available_domains: string[];
+  isNewUser: boolean;
+  hasPortfolio: boolean;
+  hasFinancialData: boolean;
+  welcomeType: string;
+  totalAttributes: number;
+  availableDomains: string[];
 }> {
   const vaultOwnerToken = requireVaultOwnerToken();
 
-  return Kai.getInitialChatState({
+  const result = await Kai.getInitialChatState({
     userId,
     vaultOwnerToken,
   });
+
+  // Transform snake_case to camelCase for React components
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = result as any;
+  return {
+    isNewUser: raw.is_new_user ?? raw.isNewUser ?? true,
+    hasPortfolio: raw.has_portfolio ?? raw.hasPortfolio ?? false,
+    hasFinancialData: raw.has_financial_data ?? raw.hasFinancialData ?? false,
+    welcomeType: raw.welcome_type ?? raw.welcomeType ?? "new",
+    totalAttributes: raw.total_attributes ?? raw.totalAttributes ?? 0,
+    availableDomains: raw.available_domains ?? raw.availableDomains ?? [],
+  };
+}
+
+/**
+ * Send a chat message to Kai.
+ * Platform-aware: Uses Kai plugin on native, Next.js API on web.
+ * Requires VAULT_OWNER token for consent-gated data access.
+ * 
+ * Note: Returns camelCase for React components, transforms from snake_case backend response.
+ */
+export async function chat(params: {
+  userId: string;
+  message: string;
+  conversationId?: string;
+}): Promise<{
+  response: string;
+  conversationId: string;
+  timestamp: string;
+}> {
+  const vaultOwnerToken = requireVaultOwnerToken();
+
+  const result = await Kai.chat({
+    userId: params.userId,
+    message: params.message,
+    conversationId: params.conversationId,
+    vaultOwnerToken,
+  });
+
+  // Transform snake_case to camelCase for React components
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = result as any;
+  return {
+    response: raw.response || "",
+    conversationId: raw.conversation_id || raw.conversationId || "",
+    timestamp: raw.timestamp || new Date().toISOString(),
+  };
 }

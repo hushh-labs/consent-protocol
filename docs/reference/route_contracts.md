@@ -109,3 +109,61 @@ curl -X GET "http://localhost:3000/api/vault/status?userId=test123&consentToken=
 ### Platform-Specific Token Routing
 
 Domain data is served via **world-model** API (`/api/world-model/[...path]`). Use `WorldModelService` in the frontend; web uses Next.js proxy, native uses WorldModelPlugin. Token validation is identical across platforms.
+
+---
+
+## Response Format Transformation
+
+### Backend → Service Layer Convention
+
+| Layer | Format | Example |
+|-------|--------|---------|
+| Python Backend | snake_case | `{"user_id": "123", "display_name": "John"}` |
+| Native Plugin | snake_case (passthrough) | `{"user_id": "123", "display_name": "John"}` |
+| Service Layer | camelCase | `{"userId": "123", "displayName": "John"}` |
+| React Component | camelCase | `user.userId`, `user.displayName` |
+
+### Service Layer Responsibility
+
+The service layer (`lib/services/*`) is responsible for:
+1. Platform detection (`Capacitor.isNativePlatform()`)
+2. Calling appropriate endpoint (native plugin or web proxy)
+3. **Transforming snake_case to camelCase** for native responses
+4. Returning consistent camelCase to React components
+
+### Transformation Pattern
+
+```typescript
+// Service method with transformation
+static async getData(userId: string): Promise<UserData> {
+  if (Capacitor.isNativePlatform()) {
+    const nativeResult = await Plugin.getData({ userId });
+    // Transform snake_case to camelCase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = nativeResult as any;
+    return {
+      userId: raw.user_id || raw.userId,
+      displayName: raw.display_name || raw.displayName,
+      createdAt: raw.created_at || raw.createdAt,
+    };
+  }
+  // Web proxy - also returns snake_case from backend
+  const response = await fetch(`/api/data?userId=${userId}`);
+  const raw = await response.json();
+  return {
+    userId: raw.user_id || raw.userId,
+    displayName: raw.display_name || raw.displayName,
+    createdAt: raw.created_at || raw.createdAt,
+  };
+}
+```
+
+### Plugins Requiring Transformation
+
+| Plugin | Methods | Status |
+|--------|---------|--------|
+| WorldModel | getMetadata, getAttributes, getUserDomains, listDomains, getAvailableScopes | Required |
+| Kai | getInitialChatState, chat | Required |
+| Identity | autoDetect, getIdentityStatus, getEncryptedProfile | Required |
+| Vault | All crypto methods | Not needed |
+| Consent | Token methods | Not needed |
