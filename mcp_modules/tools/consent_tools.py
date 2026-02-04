@@ -2,8 +2,7 @@
 """
 Consent request and status check handlers.
 
-NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
-Legacy scopes are mapped to dynamic scopes for backward compatibility.
+Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
 """
 
 import json

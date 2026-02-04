@@ -19,30 +19,21 @@ BYOK (Bring Your Own Key):
 
 DEPRECATION NOTICE:
     This service uses legacy vault_* tables (vault_food, vault_professional, etc.).
-    New code should use WorldModelService which stores all data in world_model_attributes.
-    
+    New code should use WorldModelService with world_model_data + world_model_index_v2
+    (store_domain_data, get_encrypted_data, get_domain_data).
     Migration path:
-    - VaultDBService (legacy) → WorldModelService (preferred)
-    - vault_food table → world_model_attributes with domain="food"
-    - vault_professional table → world_model_attributes with domain="professional"
-    - vault_kai table → world_model_attributes with domain="kai_decisions"
+    - VaultDBService (legacy) → WorldModelService blob API (preferred)
+    - vault_* tables → world_model_data encrypted blob + world_model_index_v2
 
 Usage:
     # DEPRECATED - use WorldModelService instead
     from hushh_mcp.services.vault_db import VaultDBService
     
-    # PREFERRED - use WorldModelService
+    # PREFERRED - use WorldModelService blob API
     from hushh_mcp.services.world_model_service import get_world_model_service
     
     service = get_world_model_service()
-    await service.store_attribute(
-        user_id="user_123",
-        domain="food",
-        attribute_key="dietary_restrictions",
-        ciphertext=encrypted_value,
-        iv=iv,
-        tag=tag,
-    )
+    await service.store_domain_data(user_id, domain, encrypted_blob, summary)
 """
 
 import logging
@@ -56,7 +47,7 @@ from hushh_mcp.types import EncryptedPayload
 logger = logging.getLogger(__name__)
 
 # DEPRECATED: Domain to table mapping
-# New code should use world_model_attributes table via WorldModelService
+# New code should use world_model_data + world_model_index_v2 via WorldModelService
 # These are kept for backward compatibility only - DO NOT add new domains here
 DOMAIN_TABLES = {
     "food": "vault_food",

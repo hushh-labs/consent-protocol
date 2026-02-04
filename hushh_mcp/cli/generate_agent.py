@@ -21,7 +21,7 @@ def generate_manifest_py(agent_id: str) -> str:
 manifest = {{
     "id": "{agent_id}",
     "name": "{agent_id.replace('_', ' ').title()} Agent",
-    "scopes": ["vault.read.email"],
+    "scopes": ["attr.food.*"],
     "version": "0.1.0",
     "description": "Generated agent for {agent_id}"
 }}
