@@ -85,9 +85,12 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing required parameters: userId, scopes")
             return
         }
-        
-        // Use VAULT_OWNER token for consent-gated access
-        let vaultOwnerToken = call.getString("vaultOwnerToken")
+
+        // Bootstrap route: backend requires Firebase ID token (NOT VAULT_OWNER).
+        guard let authToken = call.getString("authToken"), !authToken.isEmpty else {
+            call.reject("Missing authToken (Firebase ID token) for grantConsent")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/consent/grant"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -100,10 +103,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = vaultOwnerToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+
+        request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         
         let body: [String: Any] = [
             "user_id": userId,
@@ -141,8 +142,21 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    print("[\(self.TAG)] ✅ grantConsent success: \(json.keys)")
-                    call.resolve(json)
+                    // Normalize response shape to match TS contract:
+                    // Promise<{ token: string; expires_at: string }>
+                    if let tokens = json["tokens"] as? [String: Any] {
+                        let token =
+                            (tokens["agent.kai.analyze"] as? String) ??
+                            (tokens.values.first as? String) ??
+                            ""
+                        let expiresAt = (json["expires_at"] as? String) ?? ""
+                        call.resolve(["token": token, "expires_at": expiresAt])
+                    } else if let token = json["token"] as? String, let expiresAt = json["expires_at"] as? String {
+                        call.resolve(["token": token, "expires_at": expiresAt])
+                    } else {
+                        print("[\(self.TAG)] ✅ grantConsent success (unrecognized shape): \(json.keys)")
+                        call.resolve(json)
+                    }
                 } else if let array = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
                     print("[\(self.TAG)] ✅ grantConsent success (Array)")
                     call.resolve(["data": array])
@@ -169,8 +183,11 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        let vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Consent-gated: requires VAULT_OWNER token
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/analyze"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -183,10 +200,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = vaultOwnerToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         var body: [String: Any] = [
             "user_id": userId,
@@ -271,8 +285,11 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        let vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Consent-gated: requires VAULT_OWNER token
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/preferences/store"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -285,10 +302,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = vaultOwnerToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         let body: [String: Any] = [
             "user_id": userId,
@@ -347,8 +361,11 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        let vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Consent-gated: requires VAULT_OWNER token
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/preferences/\(userId)"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -361,10 +378,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = vaultOwnerToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         urlSession.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -754,8 +768,11 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        let vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Consent-gated: requires VAULT_OWNER token
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/chat/initial-state/\(userId)"
         print("[\(TAG)] 🌐 URL: \(urlStr)")
@@ -768,10 +785,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = vaultOwnerToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         urlSession.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }

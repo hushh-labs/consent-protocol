@@ -10,10 +10,16 @@
         "routerPrefix": "/api/kai",
         "paths": [
           "/health",
+          "/chat",
+          "/chat/history/{conversation_id}",
+          "/chat/conversations/{user_id}",
+          "/chat/initial-state/{user_id}",
           "/consent/grant",
           "/analyze",
           "/preferences/store",
           "/preferences/{user_id}",
+          "/portfolio/import",
+          "/portfolio/summary/{user_id}",
           "/portfolio/analyze-losers"
         ]
       },

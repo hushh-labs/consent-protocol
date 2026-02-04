@@ -359,9 +359,14 @@ export class VaultService {
     // Web: use API route
     console.log("🌐 [VaultService] Using API for setupVault");
     const url = this.getApiUrl("/api/vault/setup");
+    const authToken = await this.getFirebaseToken();
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ userId, ...vaultData }),
     });
     if (!response.ok) throw new Error("Failed to setup vault");

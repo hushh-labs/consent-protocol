@@ -131,7 +131,7 @@ export function KaiSearchBar({
   };
 
   return (
-    <div className="fixed bottom-[88px] left-0 right-0 z-40 px-6">
+    <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-6">
       <div className="max-w-lg mx-auto">
         {/* Suggestions Dropdown */}
         {showSuggestions && suggestions.length > 0 && (

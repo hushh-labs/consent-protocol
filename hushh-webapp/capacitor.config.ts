@@ -11,11 +11,11 @@ const APP_URL =
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "https://consent-protocol-1006304528804.us-central1.run.app";
+  "http://localhost:8000";
 
 const config: CapacitorConfig = {
   appId: "com.hushh.app",
-  appName: "Hushh",
+  appName: "Kai",
   webDir: "out",
 
   // iOS-specific configuration
@@ -53,6 +53,9 @@ const config: CapacitorConfig = {
       backendUrl: BACKEND_URL,
     },
     Kai: {
+      backendUrl: BACKEND_URL,
+    },
+    WorldModel: {
       backendUrl: BACKEND_URL,
     },
     CapacitorHttp: {

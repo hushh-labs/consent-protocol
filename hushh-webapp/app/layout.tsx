@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Quicksand, Exo_2, Figtree } from "next/font/google";
 import "./globals.css";
 import { RootLayoutClient } from "./layout-client";
-import { Providers } from "./providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -71,7 +70,7 @@ export default function RootLayout({
       <RootLayoutClient
         fontClasses={`${inter.variable} ${quicksand.variable} ${exo2.variable} ${figtree.variable}`}
       >
-        <Providers>{children}</Providers>
+        {children}
       </RootLayoutClient>
     </html>
   );

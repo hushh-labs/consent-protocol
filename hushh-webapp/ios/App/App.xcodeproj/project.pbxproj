@@ -25,6 +25,8 @@
 		E8B31D0870530F4CFA77B50B /* HushhSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695EAEF496545F6564EEC117 /* HushhSettingsPlugin.swift */; };
 		F368A19E68607FCBA9D2DD32 /* HushhSyncPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */; };
 		FC968756EFA54153BC098D3D /* HushhVaultPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */; };
+		A1B2C3D42F0E966A009FC3FD /* WorldModelPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F0E966A009FC3FD /* WorldModelPlugin.swift */; };
+		E1F2A3B42F0E966A009FC3FE /* HushhProxyClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F2A3B52F0E966A009FC3FE /* HushhProxyClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		D1F9F90F2F0E966A009FC3FB /* KaiPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KaiPlugin.swift; path = Plugins/KaiPlugin.swift; sourceTree = "<group>"; };
 		EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhVaultPlugin.swift; path = Plugins/HushhVaultPlugin.swift; sourceTree = "<group>"; };
 		EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhSyncPlugin.swift; path = Plugins/HushhSyncPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D52F0E966A009FC3FD /* WorldModelPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorldModelPlugin.swift; path = Plugins/WorldModelPlugin.swift; sourceTree = "<group>"; };
+		E1F2A3B52F0E966A009FC3FE /* HushhProxyClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhProxyClient.swift; path = Plugins/HushhProxyClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +114,8 @@
 				695EAEF496545F6564EEC117 /* HushhSettingsPlugin.swift */,
 				9ECA7AA8B6B21BD4F7D2F44F /* HushhKeystorePlugin.swift */,
 				B8D1F9192F0E967A009FC3FC /* HushhIdentityPlugin.swift */,
+				A1B2C3D52F0E966A009FC3FD /* WorldModelPlugin.swift */,
+				E1F2A3B52F0E966A009FC3FE /* HushhProxyClient.swift */,
 			);
 			name = Plugins;
 			sourceTree = "<group>";
@@ -206,6 +212,8 @@
 				E8B31D0870530F4CFA77B50B /* HushhSettingsPlugin.swift in Sources */,
 				39FF675A1CDE37244E8EAEF2 /* HushhKeystorePlugin.swift in Sources */,
 				B8D1F91A2F0E967A009FC3FC /* HushhIdentityPlugin.swift in Sources */,
+				A1B2C3D42F0E966A009FC3FD /* WorldModelPlugin.swift in Sources */,
+				E1F2A3B42F0E966A009FC3FE /* HushhProxyClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

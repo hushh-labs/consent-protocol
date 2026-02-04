@@ -649,11 +649,11 @@ async def analyze_portfolio_losers_stream(
 
             # Configure with LOW thinking level for better reasoning
             config = genai_types.GenerateContentConfig(
-                temperature=0.2,
+                temperature=1,
                 max_output_tokens=8192,
                 thinking_config=genai_types.ThinkingConfig(
                     include_thoughts=True,
-                    thinking_level=genai_types.ThinkingLevel.LOW,
+                    thinking_level=genai_types.ThinkingLevel.MEDIUM,
                 ),
             )
 

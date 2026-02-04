@@ -111,8 +111,11 @@ When creating `app/api/{feature}/route.ts`, ALL must exist:
 3. ✅ Android plugin: `android/.../plugins/{Feature}/{Feature}Plugin.kt`
 4. ✅ Service: `lib/services/{feature}-service.ts`
 5. ✅ Interface: `lib/capacitor/{feature}.ts`
+6. ✅ **Plugin Registration**: Register iOS plugin in `ios/App/App/MyViewController.swift` and Android plugin in `android/.../MainActivity.kt`
 
-**If any is missing, the feature is INCOMPLETE.**
+If you add a new iOS Swift file and edit `project.pbxproj` manually: use **24-character hexadecimal IDs only** (0-9, A-F). Any other character causes Xcode "invalid hex digit" errors. See `docs/guides/feature_checklist.md` and `docs/guides/mobile_development.md` for details.
+
+**If any is missing, the feature is INCOMPLETE.** Unregistered plugins will cause runtime failures when TypeScript calls them on native platforms.
 
 **Tri-flow plugin mapping:** Every contract that has native support is declared in `hushh-webapp/route-contracts.json` with a `native` block (tsPluginFile, iosPluginFile, androidPluginFile, requiredMethodNames). Contracts with native blocks: kaiProxy (Kai), vaultWebProxy (HushhVault), vaultOwnerToken (HushhConsent), worldModelProxy (WorldModel), identityProxy (HushhIdentity), consentPendingMgmt (HushhConsent). Run `npm run verify:routes` in `hushh-webapp/` to validate.
 

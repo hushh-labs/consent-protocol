@@ -114,7 +114,7 @@ export default function AgentNavPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center px-6">
+    <div className="fixed inset-0 flex flex-col items-center justify-center px-4 sm:px-6">
       {/* Search Logo - Massive */}
       {/* Search Logo - Massive & Fixed Size */}
       <div className="mb-8 shrink-0 select-none pointer-events-none">
@@ -124,7 +124,7 @@ export default function AgentNavPage() {
       </div>
 
       {/* Combined Headline & Typing Animation - Jitter Free Layout */}
-      <div className="w-full max-w-5xl flex flex-row items-baseline justify-center gap-3 mb-16 px-4">
+      <div className="w-full max-w-5xl flex flex-row items-baseline justify-center gap-3 mb-16 px-2 sm:px-4">
         {/* Right-aligned Static Text */}
         <div className="flex-1 flex justify-end text-right">
           <span className="hushh-gradient-text text-xl md:text-3xl font-bold whitespace-nowrap">
