@@ -105,11 +105,20 @@ export class WorldModelService {
    * Get auth headers for API requests.
    * Returns headers object with Authorization if vault_owner_token is available.
    */
-  private static getAuthHeaders(): HeadersInit {
-    const token = typeof window !== "undefined" 
-      ? sessionStorage.getItem("vault_owner_token") 
-      : null;
+  private static getAuthHeaders(vaultOwnerToken?: string): HeadersInit {
+    const token =
+      vaultOwnerToken ??
+      (typeof window !== "undefined"
+        ? sessionStorage.getItem("vault_owner_token")
+        : null);
     return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  private static getVaultOwnerToken(vaultOwnerToken?: string): string | undefined {
+    if (typeof window === "undefined") {
+      return vaultOwnerToken;
+    }
+    return vaultOwnerToken || sessionStorage.getItem("vault_owner_token") || undefined;
   }
 
   /**
@@ -121,7 +130,11 @@ export class WorldModelService {
    * @param userId - User's ID
    * @param forceRefresh - If true, bypasses cache and fetches fresh data
    */
-  static async getMetadata(userId: string, forceRefresh = false): Promise<WorldModelMetadata> {
+  static async getMetadata(
+    userId: string,
+    forceRefresh = false,
+    vaultOwnerToken?: string
+  ): Promise<WorldModelMetadata> {
     const cache = CacheService.getInstance();
     const cacheKey = CACHE_KEYS.WORLD_MODEL_METADATA(userId);
 
@@ -139,7 +152,10 @@ export class WorldModelService {
     if (Capacitor.isNativePlatform()) {
       // Use Capacitor plugin for native platforms
       // Native plugins return snake_case from backend - transform to camelCase
-      const nativeResult = await HushhWorldModel.getMetadata({ userId });
+      const nativeResult = await HushhWorldModel.getMetadata({
+        userId,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
       result = {
@@ -162,7 +178,7 @@ export class WorldModelService {
     } else {
       // Web: Use ApiService.apiFetch() for tri-flow compliance
       const response = await ApiService.apiFetch(`/api/world-model/metadata/${userId}`, {
-        headers: this.getAuthHeaders(),
+        headers: this.getAuthHeaders(vaultOwnerToken),
       });
 
       // Handle 404 as valid "no data" response for new users
@@ -211,9 +227,15 @@ export class WorldModelService {
   /**
    * Get user's world model index.
    */
-  static async getIndex(userId: string): Promise<WorldModelIndex> {
+  static async getIndex(
+    userId: string,
+    vaultOwnerToken?: string
+  ): Promise<WorldModelIndex> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.getIndex({ userId });
+      const nativeResult = await HushhWorldModel.getIndex({
+        userId,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
       return {
@@ -230,7 +252,7 @@ export class WorldModelService {
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
     const response = await ApiService.apiFetch(`/api/world-model/index/${userId}`, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders(vaultOwnerToken),
     });
 
     if (!response.ok) {
@@ -259,7 +281,11 @@ export class WorldModelService {
     domain?: string
   ): Promise<EncryptedAttribute[]> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.getAttributes({ userId, domain });
+      const nativeResult = await HushhWorldModel.getAttributes({
+        userId,
+        domain,
+        vaultOwnerToken: this.getVaultOwnerToken(),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
       return (raw.attributes || []).map((a: Record<string, unknown>) => ({
@@ -325,11 +351,21 @@ export class WorldModelService {
     domain: string;
     encryptedBlob: EncryptedValue;
     summary: Record<string, unknown>;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     if (Capacitor.isNativePlatform()) {
-      // TODO: Add native plugin method for blob storage
-      // For now, fall through to web implementation
-      console.warn("[WorldModelService] Native storeDomainData not yet implemented");
+      return HushhWorldModel.storeDomainData({
+        userId: params.userId,
+        domain: params.domain,
+        encryptedBlob: {
+          ciphertext: params.encryptedBlob.ciphertext,
+          iv: params.encryptedBlob.iv,
+          tag: params.encryptedBlob.tag,
+          algorithm: params.encryptedBlob.algorithm || "aes-256-gcm",
+        },
+        summary: params.summary,
+        vaultOwnerToken: this.getVaultOwnerToken(params.vaultOwnerToken),
+      });
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -337,7 +373,7 @@ export class WorldModelService {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...this.getAuthHeaders(),
+        ...this.getAuthHeaders(params.vaultOwnerToken),
       },
       body: JSON.stringify({
         user_id: params.userId,
@@ -389,6 +425,7 @@ export class WorldModelService {
         displayName: options?.displayName,
         dataType: options?.dataType,
         source: options?.source,
+        vaultOwnerToken: this.getVaultOwnerToken(),
       });
     }
 
@@ -437,6 +474,7 @@ export class WorldModelService {
         userId,
         domain,
         attributeKey,
+        vaultOwnerToken: this.getVaultOwnerToken(),
       });
       return result.success;
     }
@@ -458,10 +496,14 @@ export class WorldModelService {
    */
   static async getUserDomains(userId: string): Promise<DomainSummary[]> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.getUserDomains({ userId });
+      const nativeResult = await HushhWorldModel.getUserDomains({
+        userId,
+        vaultOwnerToken: this.getVaultOwnerToken(),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
-      return (raw.domains || []).map((d: Record<string, unknown>) => ({
+      const domains = raw.domains || raw.data || [];
+      return (domains as Record<string, unknown>[]).map((d) => ({
         key: (d.domain_key || d.key) as string,
         displayName: (d.display_name || d.displayName) as string,
         icon: (d.icon_name || d.icon) as string,
@@ -501,10 +543,14 @@ export class WorldModelService {
    */
   static async listDomains(includeEmpty = false): Promise<DomainInfo[]> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.listDomains({ includeEmpty });
+      const nativeResult = await HushhWorldModel.listDomains({
+        includeEmpty,
+        vaultOwnerToken: this.getVaultOwnerToken(),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
-      return (raw.domains || []).map((d: Record<string, unknown>) => ({
+      const domains = raw.domains || raw.data || [];
+      return (domains as Record<string, unknown>[]).map((d) => ({
         key: (d.domain_key || d.key) as string,
         displayName: (d.display_name || d.displayName) as string,
         description: (d.description || null) as string | null,
@@ -540,9 +586,15 @@ export class WorldModelService {
   /**
    * Get available scopes for a user (MCP discovery).
    */
-  static async getAvailableScopes(userId: string): Promise<ScopeDiscovery> {
+  static async getAvailableScopes(
+    userId: string,
+    vaultOwnerToken?: string
+  ): Promise<ScopeDiscovery> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.getAvailableScopes({ userId });
+      const nativeResult = await HushhWorldModel.getAvailableScopes({
+        userId,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
       return {
@@ -561,7 +613,7 @@ export class WorldModelService {
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
     const response = await ApiService.apiFetch(`/api/world-model/scopes/${userId}`, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders(vaultOwnerToken),
     });
 
     if (!response.ok) {
@@ -583,12 +635,14 @@ export class WorldModelService {
    */
   static async getPortfolio(
     userId: string,
-    portfolioName = "Main Portfolio"
+    portfolioName = "Main Portfolio",
+    vaultOwnerToken?: string
   ): Promise<Record<string, unknown> | null> {
     if (Capacitor.isNativePlatform()) {
       const nativeResult = await HushhWorldModel.getPortfolio({
         userId,
         portfolioName,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
@@ -599,7 +653,7 @@ export class WorldModelService {
     const response = await ApiService.apiFetch(
       `/api/world-model/portfolio/${userId}?portfolio_name=${encodeURIComponent(portfolioName)}`,
       {
-        headers: this.getAuthHeaders(),
+        headers: this.getAuthHeaders(vaultOwnerToken),
       }
     );
 
@@ -643,18 +697,22 @@ export class WorldModelService {
    * Get all portfolios for a user.
    */
   static async listPortfolios(
-    userId: string
+    userId: string,
+    vaultOwnerToken?: string
   ): Promise<Record<string, unknown>[]> {
     if (Capacitor.isNativePlatform()) {
-      const nativeResult = await HushhWorldModel.listPortfolios({ userId });
+      const nativeResult = await HushhWorldModel.listPortfolios({
+        userId,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = nativeResult as any;
-      return raw.portfolios || [];
+      return raw.portfolios || raw.data || [];
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
     const response = await ApiService.apiFetch(`/api/world-model/portfolios/${userId}`, {
-      headers: this.getAuthHeaders(),
+      headers: this.getAuthHeaders(vaultOwnerToken),
     });
 
     if (!response.ok) {
@@ -675,18 +733,31 @@ export class WorldModelService {
    */
   static async getDomainData(
     userId: string,
-    domain: string
+    domain: string,
+    vaultOwnerToken?: string
   ): Promise<EncryptedValue | null> {
     if (Capacitor.isNativePlatform()) {
-      // TODO: Add native plugin method for blob retrieval
-      console.warn("[WorldModelService] Native getDomainData not yet implemented");
+      const result = await HushhWorldModel.getDomainData({
+        userId,
+        domain,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
+      if (!result.encrypted_blob) {
+        return null;
+      }
+      return {
+        ciphertext: result.encrypted_blob.ciphertext,
+        iv: result.encrypted_blob.iv,
+        tag: result.encrypted_blob.tag,
+        algorithm: result.encrypted_blob.algorithm || "aes-256-gcm",
+      };
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
     const response = await ApiService.apiFetch(
       `/api/world-model/domain-data/${userId}/${domain}`,
       {
-        headers: this.getAuthHeaders(),
+        headers: this.getAuthHeaders(vaultOwnerToken),
       }
     );
 
@@ -721,11 +792,16 @@ export class WorldModelService {
    */
   static async clearDomain(
     userId: string,
-    domain: string
+    domain: string,
+    vaultOwnerToken?: string
   ): Promise<boolean> {
     if (Capacitor.isNativePlatform()) {
-      // TODO: Add native plugin method for domain clearing
-      console.warn("[WorldModelService] Native clearDomain not yet implemented");
+      const result = await HushhWorldModel.clearDomain({
+        userId,
+        domain,
+        vaultOwnerToken: this.getVaultOwnerToken(vaultOwnerToken),
+      });
+      return result.success;
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -733,7 +809,7 @@ export class WorldModelService {
       `/api/world-model/domain-data/${userId}/${domain}`,
       {
         method: "DELETE",
-        headers: this.getAuthHeaders(),
+        headers: this.getAuthHeaders(vaultOwnerToken),
       }
     );
 

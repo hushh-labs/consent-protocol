@@ -161,7 +161,7 @@ export function EditHoldingModal({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
-      <div className="w-full max-w-lg bg-background rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90vh] overflow-hidden">
+      <div className="w-full max-w-lg bg-background rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90dvh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-semibold">
@@ -177,7 +177,7 @@ export function EditHoldingModal({
         </div>
 
         {/* Form */}
-        <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+        <div className="p-4 space-y-4 overflow-y-auto max-h-[60dvh]">
           {/* Symbol */}
           <div>
             <label className="block text-sm font-medium mb-1">

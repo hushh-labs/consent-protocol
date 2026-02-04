@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import Foundation
 
 /**
  * WorldModel Plugin - iOS Implementation
@@ -25,13 +26,20 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "WorldModel"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "getMetadata", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getIndex", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAttributes", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "storeAttribute", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deleteAttribute", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getInitialChatState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importPortfolio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listDomains", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getUserDomains", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getAvailableScopes", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getAvailableScopes", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPortfolio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listPortfolios", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "storeDomainData", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getDomainData", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearDomain", returnType: CAPPluginReturnPromise)
     ]
     
     // URLSession with reasonable timeouts
@@ -50,16 +58,21 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func getBackendUrl(_ call: CAPPluginCall) -> String {
-        if let url = call.getString("backendUrl"), !url.isEmpty {
-            return url
+        return HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName,
+            defaultBackendUrl: defaultBackendUrl
+        )
+    }
+
+    // Consent-first: world-model operations are consent-gated and must use VAULT_OWNER token.
+    private func getVaultOwnerToken(_ call: CAPPluginCall) -> String? {
+        let raw = call.getString("vaultOwnerToken")
+        guard let token = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
+            return nil
         }
-        if let url = bridge?.config.getPluginConfig(jsName).getString("backendUrl"), !url.isEmpty {
-            return url
-        }
-        if let envUrl = ProcessInfo.processInfo.environment["NEXT_PUBLIC_BACKEND_URL"], !envUrl.isEmpty {
-            return envUrl
-        }
-        return defaultBackendUrl
+        return token
     }
     
     // MARK: - Plugin Methods
@@ -83,7 +96,9 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        // Metadata is currently treated as low-sensitivity and may be public on backend;
+        // if a VAULT_OWNER token is available, we still forward it.
+        let vaultOwnerToken = getVaultOwnerToken(call)
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/world-model/metadata/\(userId)"
         
@@ -96,7 +111,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
+        if let token = vaultOwnerToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         
@@ -116,15 +131,24 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
      */
     @objc func getAttributes(_ call: CAPPluginCall) {
         print("[\(TAG)] getAttributes called")
-        guard let userId = call.getString("userId"),
-              let domain = call.getString("domain") else {
-            call.reject("Missing required parameters: userId, domain")
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing required parameter: userId")
             return
         }
-        
-        let authToken = call.getString("authToken")
+
+        let domain = call.getString("domain")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
-        let urlStr = "\(backendUrl)/api/world-model/attributes/\(userId)?domain=\(domain)"
+
+        let urlStr: String
+        if let domain = domain, !domain.isEmpty {
+            urlStr = "\(backendUrl)/api/world-model/attributes/\(userId)?domain=\(domain)"
+        } else {
+            urlStr = "\(backendUrl)/api/world-model/attributes/\(userId)"
+        }
         
         guard let url = URL(string: urlStr) else {
             call.reject("Invalid URL: \(urlStr)")
@@ -135,9 +159,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
@@ -161,7 +183,6 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func storeAttribute(_ call: CAPPluginCall) {
         print("[\(TAG)] storeAttribute called")
         guard let userId = call.getString("userId"),
-              let domain = call.getString("domain"),
               let attributeKey = call.getString("attributeKey"),
               let ciphertext = call.getString("ciphertext"),
               let iv = call.getString("iv"),
@@ -169,8 +190,12 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing required parameters")
             return
         }
-        
-        let authToken = call.getString("authToken")
+
+        let domain = call.getString("domain")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/world-model/attributes"
         
@@ -182,19 +207,19 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         var body: [String: Any] = [
             "user_id": userId,
-            "domain": domain,
             "attribute_key": attributeKey,
             "ciphertext": ciphertext,
             "iv": iv,
             "tag": tag
         ]
+
+        if let domain = domain, !domain.isEmpty {
+            body["domain"] = domain
+        }
         
         // Optional fields
         if let source = call.getString("source") {
@@ -206,9 +231,192 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         if let displayName = call.getString("displayName") {
             body["display_name"] = displayName
         }
+        if let dataType = call.getString("dataType") {
+            body["data_type"] = dataType
+        }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Get user's world model index.
+     */
+    @objc func getIndex(_ call: CAPPluginCall) {
+        print("[\(TAG)] getIndex called")
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing required parameter: userId")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/index/\(userId)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Delete a specific attribute.
+     */
+    @objc func deleteAttribute(_ call: CAPPluginCall) {
+        print("[\(TAG)] deleteAttribute called")
+        guard let userId = call.getString("userId"),
+              let domain = call.getString("domain"),
+              let attributeKey = call.getString("attributeKey") else {
+            call.reject("Missing required parameters: userId, domain, attributeKey")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/attributes/\(userId)/\(domain)/\(attributeKey)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Store encrypted domain blob.
+     */
+    @objc func storeDomainData(_ call: CAPPluginCall) {
+        print("[\(TAG)] storeDomainData called")
+        guard let userId = call.getString("userId"),
+              let domain = call.getString("domain"),
+              let encryptedBlob = call.getObject("encryptedBlob"),
+              let ciphertext = encryptedBlob["ciphertext"] as? String,
+              let iv = encryptedBlob["iv"] as? String,
+              let tag = encryptedBlob["tag"] as? String,
+              let summary = call.getObject("summary") else {
+            call.reject("Missing required parameters")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/store-domain"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        var blob: [String: Any] = [
+            "ciphertext": ciphertext,
+            "iv": iv,
+            "tag": tag
+        ]
+        if let algorithm = encryptedBlob["algorithm"] as? String {
+            blob["algorithm"] = algorithm
+        }
+
+        let body: [String: Any] = [
+            "user_id": userId,
+            "domain": domain,
+            "encrypted_blob": blob,
+            "summary": summary
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Get encrypted domain blob.
+     */
+    @objc func getDomainData(_ call: CAPPluginCall) {
+        print("[\(TAG)] getDomainData called")
+        guard let userId = call.getString("userId"),
+              let domain = call.getString("domain") else {
+            call.reject("Missing required parameters: userId, domain")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/domain-data/\(userId)/\(domain)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Clear a domain blob.
+     */
+    @objc func clearDomain(_ call: CAPPluginCall) {
+        print("[\(TAG)] clearDomain called")
+        guard let userId = call.getString("userId"),
+              let domain = call.getString("domain") else {
+            call.reject("Missing required parameters: userId, domain")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/domain-data/\(userId)/\(domain)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
     
@@ -234,7 +442,10 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/chat/initial-state/\(userId)"
         
@@ -246,10 +457,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
@@ -268,7 +476,10 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         print("[\(TAG)] listDomains called")
         
         let includeEmpty = call.getBool("includeEmpty") ?? false
-        let authToken = call.getString("authToken")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/world-model/domains?include_empty=\(includeEmpty)"
         
@@ -280,10 +491,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
@@ -305,7 +513,10 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/world-model/domains/\(userId)"
         
@@ -318,9 +529,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
@@ -343,7 +552,10 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         
-        let authToken = call.getString("authToken")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/world-model/scopes/\(userId)"
         
@@ -356,10 +568,72 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * Get user's portfolio data.
+     */
+    @objc func getPortfolio(_ call: CAPPluginCall) {
+        print("[\(TAG)] getPortfolio called")
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing required parameter: userId")
+            return
+        }
+
+        let portfolioName = call.getString("portfolioName") ?? "Main Portfolio"
+        let encodedName = portfolioName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? portfolioName
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/portfolio/\(userId)?portfolio_name=\(encodedName)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        executeRequest(request, call: call, backendUrl: backendUrl)
+    }
+
+    /**
+     * List all portfolios for a user.
+     */
+    @objc func listPortfolios(_ call: CAPPluginCall) {
+        print("[\(TAG)] listPortfolios called")
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing required parameter: userId")
+            return
+        }
+
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/world-model/portfolios/\(userId)"
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
         executeRequest(request, call: call, backendUrl: backendUrl)
     }
     
@@ -391,7 +665,10 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         let fileType = call.getString("fileType") ?? "text/csv"
-        let authToken = call.getString("authToken")
+        guard let vaultOwnerToken = getVaultOwnerToken(call) else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
         let backendUrl = getBackendUrl(call)
         let urlStr = "\(backendUrl)/api/kai/portfolio/import"
         
@@ -405,10 +682,7 @@ public class WorldModelPlugin: CAPPlugin, CAPBridgedPlugin {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
         
         var body = Data()
         

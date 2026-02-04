@@ -337,10 +337,23 @@ export interface HushhVaultPlugin {
 
   getConsentHistory(options: {
     userId: string;
-    authToken?: string;
+    vaultOwnerToken?: string;
     page?: number;
     limit?: number;
   }): Promise<{ items: any[] }>;
+
+  /**
+   * Vault status (domain counts without decrypted data).
+   * Calls backend: POST /db/vault/status
+   * Requires:
+   * - Firebase ID token as `authToken` (Authorization header)
+   * - VAULT_OWNER token as `vaultOwnerToken` (JSON body `consentToken`)
+   */
+  getVaultStatus(options: {
+    userId: string;
+    vaultOwnerToken: string;
+    authToken: string;
+  }): Promise<Record<string, unknown>>;
 }
 
 export const HushhVault = registerPlugin<HushhVaultPlugin>("HushhVault", {

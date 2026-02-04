@@ -387,4 +387,25 @@ export class HushhVaultWeb extends WebPlugin {
     const data = await response.json();
     return { items: data.items || [] };
   }
+
+  async getVaultStatus(options: {
+    userId: string;
+    vaultOwnerToken: string;
+    authToken: string;
+  }): Promise<Record<string, unknown>> {
+    // Web implementation uses the Next.js proxy route.
+    const response = await fetch("/api/vault/status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${options.authToken}`,
+      },
+      body: JSON.stringify({
+        userId: options.userId,
+        consentToken: options.vaultOwnerToken,
+      }),
+    });
+    if (!response.ok) throw new Error("Failed to fetch vault status");
+    return response.json();
+  }
 }

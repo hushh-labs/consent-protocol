@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import android.util.Base64
+import java.net.URLEncoder
 
 /**
  * WorldModel Plugin - Android Implementation
@@ -81,6 +82,12 @@ class WorldModelPlugin : Plugin() {
             raw
         }
     }
+
+    private fun getAuthToken(call: PluginCall): String? {
+        // Consent-first: World Model access is consent-gated. Do not fall back to Firebase tokens.
+        val raw = call.getString("vaultOwnerToken")
+        return if (raw.isNullOrBlank()) null else raw
+    }
     
     /**
      * Get user's world model metadata.
@@ -96,7 +103,7 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/world-model/metadata/$userId"
         
@@ -106,6 +113,29 @@ class WorldModelPlugin : Plugin() {
             requestBuilder.addHeader("Authorization", "Bearer $authToken")
         }
         
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Get user's world model index.
+     */
+    @PluginMethod
+    fun getIndex(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/index/$userId"
+
+        val requestBuilder = Request.Builder().url(url).get()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
         executeRequest(requestBuilder.build(), call)
     }
     
@@ -124,14 +154,14 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val domain = call.getString("domain") ?: run {
-            call.reject("Missing domain")
-            return
-        }
-        
-        val authToken = call.getString("authToken")
+        val domain = call.getString("domain")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
-        val url = "$backendUrl/api/world-model/attributes/$userId?domain=$domain"
+        val url = if (!domain.isNullOrBlank()) {
+            "$backendUrl/api/world-model/attributes/$userId?domain=$domain"
+        } else {
+            "$backendUrl/api/world-model/attributes/$userId"
+        }
         
         val requestBuilder = Request.Builder().url(url).get()
         
@@ -161,11 +191,6 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val domain = call.getString("domain") ?: run {
-            call.reject("Missing domain")
-            return
-        }
-        
         val attributeKey = call.getString("attributeKey") ?: run {
             call.reject("Missing attributeKey")
             return
@@ -186,22 +211,25 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/world-model/attributes"
         
         val json = JSONObject().apply {
             put("user_id", userId)
-            put("domain", domain)
             put("attribute_key", attributeKey)
             put("ciphertext", ciphertext)
             put("iv", iv)
             put("tag", tag)
+            if (!call.getString("domain").isNullOrBlank()) {
+                put("domain", call.getString("domain"))
+            }
             
             // Optional fields
             call.getString("source")?.let { put("source", it) }
             call.getFloat("confidence")?.let { put("confidence", it) }
             call.getString("displayName")?.let { put("display_name", it) }
+            call.getString("dataType")?.let { put("data_type", it) }
         }
         
         val body = json.toString().toRequestBody("application/json".toMediaType())
@@ -212,6 +240,39 @@ class WorldModelPlugin : Plugin() {
             requestBuilder.addHeader("Authorization", "Bearer $authToken")
         }
         
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Delete a specific attribute.
+     */
+    @PluginMethod
+    fun deleteAttribute(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val domain = call.getString("domain") ?: run {
+            call.reject("Missing domain")
+            return
+        }
+
+        val attributeKey = call.getString("attributeKey") ?: run {
+            call.reject("Missing attributeKey")
+            return
+        }
+
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/attributes/$userId/$domain/$attributeKey"
+
+        val requestBuilder = Request.Builder().url(url).delete()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
         executeRequest(requestBuilder.build(), call)
     }
     
@@ -229,7 +290,7 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/chat/initial-state/$userId"
         
@@ -270,7 +331,7 @@ class WorldModelPlugin : Plugin() {
         }
         
         val fileType = call.getString("fileType") ?: "text/csv"
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/portfolio/import"
         
@@ -349,7 +410,7 @@ class WorldModelPlugin : Plugin() {
     @PluginMethod
     fun listDomains(call: PluginCall) {
         val includeEmpty = call.getBoolean("includeEmpty") ?: false
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/world-model/domains?include_empty=$includeEmpty"
         
@@ -379,7 +440,7 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/world-model/domains/$userId"
         
@@ -410,7 +471,7 @@ class WorldModelPlugin : Plugin() {
             return
         }
         
-        val authToken = call.getString("authToken")
+        val authToken = getAuthToken(call)
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/world-model/scopes/$userId"
         
@@ -420,6 +481,167 @@ class WorldModelPlugin : Plugin() {
             requestBuilder.addHeader("Authorization", "Bearer $authToken")
         }
         
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Get user's portfolio.
+     */
+    @PluginMethod
+    fun getPortfolio(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val portfolioName = call.getString("portfolioName") ?: "Main Portfolio"
+        val encodedName = URLEncoder.encode(portfolioName, "UTF-8")
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/portfolio/$userId?portfolio_name=$encodedName"
+
+        val requestBuilder = Request.Builder().url(url).get()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * List all portfolios for a user.
+     */
+    @PluginMethod
+    fun listPortfolios(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/portfolios/$userId"
+
+        val requestBuilder = Request.Builder().url(url).get()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Store encrypted domain blob.
+     */
+    @PluginMethod
+    fun storeDomainData(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val domain = call.getString("domain") ?: run {
+            call.reject("Missing domain")
+            return
+        }
+
+        val encryptedBlob = call.getObject("encryptedBlob") ?: run {
+            call.reject("Missing encryptedBlob")
+            return
+        }
+
+        val ciphertext = encryptedBlob.getString("ciphertext")
+        val iv = encryptedBlob.getString("iv")
+        val tag = encryptedBlob.getString("tag")
+        if (ciphertext == null || iv == null || tag == null) {
+            call.reject("Missing encryptedBlob fields")
+            return
+        }
+
+        val summary = call.getObject("summary") ?: JSObject()
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/store-domain"
+
+        val blob = JSONObject().apply {
+            put("ciphertext", ciphertext)
+            put("iv", iv)
+            put("tag", tag)
+            encryptedBlob.getString("algorithm")?.let { put("algorithm", it) }
+        }
+
+        val json = JSONObject().apply {
+            put("user_id", userId)
+            put("domain", domain)
+            put("encrypted_blob", blob)
+            put("summary", summary)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val requestBuilder = Request.Builder().url(url).post(body)
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Get encrypted domain blob.
+     */
+    @PluginMethod
+    fun getDomainData(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val domain = call.getString("domain") ?: run {
+            call.reject("Missing domain")
+            return
+        }
+
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/domain-data/$userId/$domain"
+
+        val requestBuilder = Request.Builder().url(url).get()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
+        executeRequest(requestBuilder.build(), call)
+    }
+
+    /**
+     * Clear a domain blob.
+     */
+    @PluginMethod
+    fun clearDomain(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val domain = call.getString("domain") ?: run {
+            call.reject("Missing domain")
+            return
+        }
+
+        val authToken = getAuthToken(call)
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/world-model/domain-data/$userId/$domain"
+
+        val requestBuilder = Request.Builder().url(url).delete()
+
+        if (authToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $authToken")
+        }
+
         executeRequest(requestBuilder.build(), call)
     }
     
