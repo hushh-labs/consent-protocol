@@ -128,9 +128,11 @@ async def request_consent(request: ConsentRequest):
     pending = await service.get_pending_requests(request.user_id)
     pending_for_scope = [p for p in pending if p.get("scope") == scope_dot]
     if pending_for_scope:
+        existing_id = pending_for_scope[0].get("id") or pending_for_scope[0].get("request_id")
         return ConsentResponse(
             status="pending",
-            message="Consent request already pending. Waiting for user approval."
+            message="Consent request already pending. Waiting for user approval.",
+            request_id=existing_id
         )
     
     # Generate a request ID
@@ -156,7 +158,8 @@ async def request_consent(request: ConsentRequest):
     
     return ConsentResponse(
         status="pending",
-        message=f"Consent request submitted. User must approve in their dashboard. Request ID: {request_id}"
+        message=f"Consent request submitted. User must approve in their dashboard. Request ID: {request_id}",
+        request_id=request_id
     )
 
 
