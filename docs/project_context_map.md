@@ -28,7 +28,7 @@ npm run dev
 
 ### Environment Files
 
-- Backend: `consent-protocol/.env` (DATABASE_URL, GEMINI_API_KEY)
+- Backend: `consent-protocol/.env` (DB_* per .env.example, GOOGLE_API_KEY)
 - Frontend: `hushh-webapp/.env.local` (NEXT_PUBLIC_BACKEND_URL, Firebase config)
 
 ---

@@ -55,7 +55,7 @@ The workflows automatically fetch these secrets from Google Cloud Secret Manager
 - `VAULT_ENCRYPTION_KEY`
 - `GOOGLE_API_KEY`
 - `FIREBASE_SERVICE_ACCOUNT_JSON`
-- `DATABASE_URL`
+- `DB_USER`, `DB_PASSWORD` (DB_HOST, DB_PORT, DB_NAME as env vars)
 - `FRONTEND_URL`
 
 **Frontend Build Args** (baked into image):

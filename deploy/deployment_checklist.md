@@ -58,7 +58,7 @@
   - [x] `DB_USER`
   - [x] `DB_PASSWORD`
   
-  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). `DATABASE_URL` may exist for migration scripts but is not used by runtime.
+  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are Cloud Run env vars (not secrets). Do not use `DATABASE_URL`; migrations use DB_* only. Delete `DATABASE_URL` from Secret Manager for strict parity.
 
 ---
 

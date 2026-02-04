@@ -57,7 +57,7 @@ steps:
       - "--set-env-vars=ENVIRONMENT=production,GOOGLE_GENAI_USE_VERTEXAI=True,DB_HOST=aws-1-us-east-1.pooler.supabase.com,DB_PORT=5432,DB_NAME=postgres"
       # Note: Update DB_HOST with your actual Supabase pooler host from Supabase Dashboard
       - "--set-secrets=SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,FIREBASE_SERVICE_ACCOUNT_JSON=FIREBASE_SERVICE_ACCOUNT_JSON:latest,FRONTEND_URL=FRONTEND_URL:latest,DB_USER=DB_USER:latest,DB_PASSWORD=DB_PASSWORD:latest"
-      - "--add-cloudsql-instances=hushh-pda:us-central1:hushh-vault-db"
+      # Omit --add-cloudsql-instances for Supabase (DB_HOST = pooler.supabase.com). For Cloud SQL-backed deployments only, add: --add-cloudsql-instances=PROJECT:REGION:INSTANCE
     id: "deploy-backend"
 
 # Images to store in Container Registry

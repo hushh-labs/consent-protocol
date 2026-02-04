@@ -1,11 +1,65 @@
 # Environment Variables and Secrets Reference
 
-> Single source of truth for env vars and Secret Manager parity.  
-> See also: [deploy/README.md](../../deploy/README.md), [deploy/.env.backend.example](../../deploy/.env.backend.example), [deploy/.env.frontend.example](../../deploy/.env.frontend.example).
+> Single source of truth for env vars and **strict parity** with code and GCP Secret Manager.  
+> **Rule:** What is in `.env` / Secret Manager must match exactly what the code reads — no extra keys, no missing keys.
+
+See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.example](../../consent-protocol/.env.example), [hushh-webapp/.env.example](../../hushh-webapp/.env.example), [deploy/.env.backend.example](../../deploy/.env.backend.example), [deploy/.env.frontend.example](../../deploy/.env.frontend.example).
 
 ---
 
-## Backend (consent-protocol)
+## Parity rule: code ↔ .env ↔ Secret Manager
+
+- **Local:** `.env` (backend) and `.env.local` (frontend) must contain exactly the keys the application code reads. Use the repo `.env.example` files as the template; they are audited to match the code.
+- **Production:** GCP Secret Manager must hold **exactly** the secrets the code expects — no more, no less. The Cloud Build config (`deploy/*.cloudbuild.yaml`) injects only these; do not add secrets that are not read by the code, and do not remove any that are.
+
+---
+
+## Audit: env vars read by code
+
+### Backend (consent-protocol)
+
+| Variable | Where read | Required | Notes |
+|----------|------------|----------|--------|
+| `SECRET_KEY` | `hushh_mcp/config.py` | Yes | Min 32 chars (64-char hex recommended) |
+| `VAULT_ENCRYPTION_KEY` | `hushh_mcp/config.py` | Yes | Exactly 64-char hex |
+| `DB_USER` | `db/connection.py`, `db/db_client.py` | Yes | |
+| `DB_PASSWORD` | same | Yes | |
+| `DB_HOST` | same | Yes | |
+| `DB_PORT` | same | No (default 5432) | |
+| `DB_NAME` | same | No (default postgres) | |
+| `FRONTEND_URL` | `server.py` | Yes (prod CORS) | |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `api/utils/firebase_admin.py` | Yes (auth) | |
+| `GOOGLE_API_KEY` | `hushh_mcp/config.py`, services | Yes (Gemini/Vertex) | |
+| `DEFAULT_CONSENT_TOKEN_EXPIRY_MS` | `hushh_mcp/config.py` | No | |
+| `DEFAULT_TRUST_LINK_EXPIRY_MS` | same | No | |
+| `ENVIRONMENT` | `hushh_mcp/config.py`, `api/routes/debug_firebase.py` | No | |
+| `AGENT_ID` | `hushh_mcp/config.py` | No | |
+| `HUSHH_HACKATHON` | `hushh_mcp/config.py` | No | |
+| `CONSENT_TIMEOUT_SECONDS` | `api/routes/sse.py`, `developer.py` | No | |
+| `ROOT_PATH` | `server.py` | No | |
+| `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env (Gemini SDK) | No | Set in deploy, not in .env |
+
+**Migrations/scripts:** Use **DB_*** only (same as runtime). `db/migrate.py` and `scripts/clear_kai_decisions.py` use `db.connection.get_database_url()` and `get_database_ssl()`. No `DATABASE_URL` anywhere.
+
+### Frontend (hushh-webapp)
+
+| Variable | Where read | Required | Notes |
+|----------|------------|----------|--------|
+| `NEXT_PUBLIC_BACKEND_URL` | `lib/api/consent.ts`, `lib/config.ts`, api routes, etc. | Yes | Prod build: from Secret Manager `BACKEND_URL` |
+| `NEXT_PUBLIC_FIREBASE_*` (6 keys) | `lib/firebase/config.ts` | Yes | API key, auth domain, project ID, storage bucket, messaging sender ID, app ID |
+| `NEXT_PUBLIC_APP_REVIEW_MODE` | `lib/config.ts` | No | |
+| `NEXT_PUBLIC_REVIEWER_EMAIL` | `lib/config.ts` | If app review | |
+| `NEXT_PUBLIC_REVIEWER_PASSWORD` | `lib/config.ts` | If app review | |
+| `NEXT_PUBLIC_CONSENT_TIMEOUT_SECONDS` | `lib/constants.ts` | No | |
+| `NEXT_PUBLIC_FRONTEND_URL` | `lib/config.ts` | No | |
+| `CAPACITOR_BUILD` | `next.config.ts` | Build script | |
+| `BACKEND_URL` | Server-side api routes | No | Fallback for NEXT_PUBLIC_BACKEND_URL |
+| `SESSION_SECRET` | `lib/auth/session.ts` | If session API | Server-only |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `lib/firebase/admin.ts` | Server-side Firebase | Server-only |
+
+---
+
+## Backend (consent-protocol) — reference
 
 | Variable | Required | Secret | Where set | Notes |
 |----------|----------|--------|-----------|--------|
@@ -26,8 +80,8 @@
 | `DEFAULT_CONSENT_TOKEN_EXPIRY_MS` | No | No | `.env` | |
 | `DEFAULT_TRUST_LINK_EXPIRY_MS` | No | No | `.env` | |
 | `CONSENT_TIMEOUT_SECONDS` | No | No | `.env` / MCP config | |
-| `PORT` | No | No | `.env` (default 3000) | |
-| `ROOT_PATH` | No | No | Optional | |
+| `PORT` | No | No | Optional (uvicorn/runner) | |
+| `ROOT_PATH` | No | No | Optional (Swagger) | |
 
 **CI (GitHub Actions):** Backend tests use `TESTING=true`, dummy `SECRET_KEY`, and dummy `VAULT_ENCRYPTION_KEY`; no `.env` file required.
 
@@ -77,26 +131,57 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 
 ---
 
-## Secret Manager (GCP)
+## Secret Manager (GCP) — strict parity with code
 
-### Backend (7 secrets)
+Secret Manager must hold **exactly** the keys the code uses. No extra secrets; no missing secrets. Cloud Build injects only these.
 
-- `SECRET_KEY`
-- `VAULT_ENCRYPTION_KEY`
-- `GOOGLE_API_KEY`
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
-- `FRONTEND_URL`
-- `DB_USER`
-- `DB_PASSWORD`
+### Backend (7 secrets) — all injected by `deploy/backend.cloudbuild.yaml`
 
-**Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). `DATABASE_URL` may exist in Secret Manager for migration scripts (`db/migrate.py`) but is not used by runtime code.
+| Secret name | Env var / usage in code |
+|-------------|-------------------------|
+| `SECRET_KEY` | `SECRET_KEY` (hushh_mcp/config.py) |
+| `VAULT_ENCRYPTION_KEY` | `VAULT_ENCRYPTION_KEY` (hushh_mcp/config.py) |
+| `GOOGLE_API_KEY` | `GOOGLE_API_KEY` (config + Gemini/Vertex services) |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `FIREBASE_SERVICE_ACCOUNT_JSON` (api/utils/firebase_admin.py) |
+| `FRONTEND_URL` | `FRONTEND_URL` (server.py CORS) |
+| `DB_USER` | `DB_USER` (db/connection.py, db/db_client.py) |
+| `DB_PASSWORD` | `DB_PASSWORD` (same) |
 
-### Frontend (4 secrets, build-time only)
+**Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`.
 
-- `BACKEND_URL`
-- `APP_REVIEW_MODE`
-- `REVIEWER_EMAIL`
-- `REVIEWER_PASSWORD`
+**Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) and scripts (e.g. `scripts/clear_kai_decisions.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
+
+### Frontend (4 secrets, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
+
+| Secret name | Build-arg / usage in code |
+|-------------|---------------------------|
+| `BACKEND_URL` | `NEXT_PUBLIC_BACKEND_URL` (baked into client) |
+| `APP_REVIEW_MODE` | `NEXT_PUBLIC_APP_REVIEW_MODE` (lib/config.ts) |
+| `REVIEWER_EMAIL` | `NEXT_PUBLIC_REVIEWER_EMAIL` (lib/config.ts) |
+| `REVIEWER_PASSWORD` | `NEXT_PUBLIC_REVIEWER_PASSWORD` (lib/config.ts) |
+
+### gcloud CLI: list and create only these secrets
+
+```bash
+# List existing secrets (ensure only the 11 above exist for this project)
+gcloud secrets list --project=YOUR_PROJECT_ID
+
+# Create a missing backend secret (repeat for each of the 7 names)
+gcloud secrets create SECRET_KEY --replication-policy=automatic --project=YOUR_PROJECT_ID
+echo -n "your-value" | gcloud secrets versions add SECRET_KEY --data-file=- --project=YOUR_PROJECT_ID
+
+# Create a missing frontend secret (repeat for each of the 4 names)
+gcloud secrets create BACKEND_URL --replication-policy=automatic --project=YOUR_PROJECT_ID
+echo -n "https://your-backend.run.app" | gcloud secrets versions add BACKEND_URL --data-file=- --project=YOUR_PROJECT_ID
+```
+
+**Required backend 7:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`.  
+**Required frontend 4:** `BACKEND_URL`, `APP_REVIEW_MODE`, `REVIEWER_EMAIL`, `REVIEWER_PASSWORD`.
+
+**Delete if present (strict parity):** `DATABASE_URL` is not used anywhere. To remove:
+```bash
+gcloud secrets delete DATABASE_URL --project=YOUR_PROJECT_ID
+```
 
 Verify with `deploy/verify-secrets.ps1` (or equivalent); see [deploy/README.md](../../deploy/README.md).
 
