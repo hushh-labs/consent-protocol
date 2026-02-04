@@ -2,8 +2,7 @@
 """
 Developer API v1 endpoints for external access with consent.
 
-NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
-Legacy scopes are mapped to dynamic scopes for backward compatibility.
+Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
 """
 
 import logging
@@ -15,9 +14,20 @@ from fastapi import APIRouter, HTTPException
 
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
-from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
+from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_enum
 from hushh_mcp.services.consent_db import ConsentDBService
 from shared import REGISTERED_DEVELOPERS
+
+# World-model scopes only (dot notation). API accepts these or API-format equivalents (e.g. attr_food).
+VALID_WORLD_MODEL_SCOPES = {
+    "world_model.read",
+    "world_model.write",
+    "attr.food.*",
+    "attr.professional.*",
+    "attr.financial.*",
+    "attr.health.*",
+    "attr.kai_decisions.*",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +83,21 @@ async def request_consent(request: ConsentRequest):
     
     dev_info = REGISTERED_DEVELOPERS[request.developer_token]
     
+    # Normalize to dot notation for storage and validation (e.g. attr_food -> attr.food.*)
+    scope_dot = normalize_scope(request.scope)
+    if scope_dot not in VALID_WORLD_MODEL_SCOPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scope: {request.scope}. Use world_model.read, world_model.write, or attr.{{domain}}.* (e.g. attr.food.*)"
+        )
+
     # Verify scope is allowed for this developer
-    if "*" not in dev_info["approved_scopes"] and request.scope not in dev_info["approved_scopes"]:
-        raise HTTPException(status_code=403, detail=f"Scope '{request.scope}' not approved for this developer")
-    
-    # Convert scope to enum using centralized resolver
-    scope_enum = resolve_scope_to_enum(request.scope)
-    scope_dot = scope_enum.value if scope_enum else request.scope
+    approved = dev_info["approved_scopes"]
+    if "*" not in approved and scope_dot not in approved:
+        raise HTTPException(status_code=403, detail=f"Scope '{scope_dot}' not approved for this developer")
+
+    # Resolve to enum for token issuance
+    scope_enum = resolve_scope_to_enum(scope_dot)
     
     # Check if consent already granted (query database with dot notation)
     service = ConsentDBService()
@@ -157,16 +175,18 @@ async def get_professional_data(_request: DataAccessRequest):
 @router.get("/list-scopes")
 async def list_available_scopes():
     """
-    List all available consent scopes.
-    
+    List all available consent scopes (world-model only).
+
     Developers can reference this to understand what data they can request.
     """
     return {
         "scopes": [
-            {"name": "vault_read_food", "description": "Read user's food preferences (dietary, cuisines, budget)"},
-            {"name": "vault_read_professional", "description": "Read user's professional profile (title, skills, experience)"},
-            {"name": "vault_read_finance", "description": "Read user's financial data"},
-            {"name": "vault_write_food", "description": "Write user's food preferences"},
-            {"name": "vault_write_professional", "description": "Write user's professional profile"},
+            {"name": "world_model.read", "description": "Read full world model (all domains)"},
+            {"name": "world_model.write", "description": "Write to world model"},
+            {"name": "attr.food.*", "description": "Read user's food preferences (dietary, cuisines, budget)"},
+            {"name": "attr.professional.*", "description": "Read user's professional profile (title, skills, experience)"},
+            {"name": "attr.financial.*", "description": "Read user's financial data"},
+            {"name": "attr.health.*", "description": "Read user's health and wellness data"},
+            {"name": "attr.kai_decisions.*", "description": "Read/write Kai decision history"},
         ]
     }
