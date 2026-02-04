@@ -38,13 +38,15 @@ async def read_resource(uri: str) -> str:
     """Read MCP resource content by URI."""
     import logging
     logger = logging.getLogger("hushh-mcp-server")
-    
-    logger.info(f"📖 Reading resource: {uri}")
-    
-    if uri == "hushh://info/server":
+
+    # Normalize: MCP SDK may pass AnyUrl; some hosts add trailing slash
+    uri_str = str(uri).strip().rstrip("/")
+    logger.info(f"📖 Reading resource: {uri_str}")
+
+    if uri_str == "hushh://info/server":
         return json.dumps(SERVER_INFO, indent=2)
     
-    elif uri == "hushh://info/protocol":
+    elif uri_str == "hushh://info/protocol":
         protocol_info = {
             "name": "HushhMCP Protocol",
             "version": "1.0.0",
@@ -56,22 +58,19 @@ async def read_resource(uri: str) -> str:
                 "🔗 TrustLinks - Agent-to-agent delegation with proof"
             ],
             "token_format": "HCT:base64(user|agent|scope|issued|expires).signature",
-            "supported_scopes": [
+            "scopes_are_dynamic": True,
+            "scope_note": "Scopes are NOT a fixed list. They come from the world model registry and per-user metadata. Always use discover_user_domains(user_id) or GET /api/world-model/scopes/{user_id} or GET /api/world-model/metadata/{user_id} to get the actual scope strings for a user. Domains (e.g. financial, food, health) are defined in the domain registry; available_scopes per user come from world_model_index_v2.available_domains.",
+            "scope_examples": [
                 "world_model.read - Full world model (all domains)",
                 "world_model.write - Write to world model",
-                "attr.financial.* - Financial domain attributes",
-                "attr.food.* - Food/dining domain attributes",
-                "attr.health.* - Health domain attributes",
-                "attr.professional.* - Professional profile domain attributes",
-                "attr.kai_decisions.* - Kai decision history and writes"
+                "attr.{domain}.* - One domain (domain key from discover_user_domains or metadata; e.g. attr.financial.*, attr.food.*)"
             ],
-            "scope_note": "Domains are dynamic; use discover_user_domains(user_id) or GET /api/world-model/metadata/{user_id} or GET /api/world-model/scopes/{user_id} to get per-user domains and scope strings.",
             "zero_knowledge": True,
             "server_sees_plaintext": False
         }
         return json.dumps(protocol_info, indent=2)
 
-    elif uri == "hushh://info/connector":
+    elif uri_str == "hushh://info/connector":
         connector_info = {
             "what": "The Hushh connector provides consent-first personal data access for AI agents. Data is only returned after explicit user approval. Zero-knowledge and scoped access apply where applicable.",
             "tools": [
@@ -90,15 +89,14 @@ async def read_resource(uri: str) -> str:
                 "3. If status is pending, poll check_consent_status(user_id, scope) until granted or denied",
                 "4. Use the returned consent_token with get_* tools or world-model data APIs",
             ],
-            "supported_scopes": [
-                "world_model.read",
-                "world_model.write",
-                "attr.{domain}.* (e.g. attr.financial.*, attr.food.*, attr.kai_decisions.*; domain from discover_user_domains or metadata)"
-            ],
-            "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000)."
+            "scopes_are_dynamic": True,
+            "supported_scopes": "world_model.read, world_model.write, and attr.{domain}.* where {domain} is from the world model (discover_user_domains or GET /api/world-model/scopes/{user_id}). No fixed list - domains come from domain registry and per-user world model index.",
+            "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/world-model/scopes/{user_id} (from world_model_index_v2.available_domains).",
+            "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
+            "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). The app must be open or polling GET /api/consent/pending so the user sees the request. SSE then notifies the MCP when the user approves or denies."
         }
         return json.dumps(connector_info, indent=2)
 
     else:
-        logger.warning(f"❌ Unknown resource URI: {uri}")
-        return json.dumps({"error": f"Unknown resource: {uri}"})
+        logger.warning(f"❌ Unknown resource URI: {uri_str}")
+        return json.dumps({"error": f"Unknown resource: {uri_str}"})

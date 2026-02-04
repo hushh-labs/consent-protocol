@@ -35,15 +35,30 @@ Press `Ctrl+C` to stop.
 
 ### 3. Configure Claude Desktop
 
-**Location:** `C:\Users\<YOUR_USERNAME>\AppData\Roaming\Claude\claude_desktop_config.json`
+**Config file location:**
 
-**Windows path finder:**
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-```powershell
-notepad "$env:APPDATA\Claude\claude_desktop_config.json"
+**macOS:** Create or edit the file (use your actual repo path for `args` and `PYTHONPATH`):
+
+```json
+{
+  "mcpServers": {
+    "hushh-consent": {
+      "command": "/usr/local/bin/python3",
+      "args": [
+        "/path/to/hushh-research/consent-protocol/mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/hushh-research/consent-protocol"
+      }
+    }
+  }
+}
 ```
 
-**Add this configuration:**
+**Windows:** (use your actual path; escape backslashes in JSON as `\\`)
 
 ```json
 {
@@ -51,17 +66,17 @@ notepad "$env:APPDATA\Claude\claude_desktop_config.json"
     "hushh-consent": {
       "command": "python",
       "args": [
-        "C:\\OneDrive - NS\\Repository\\hushh-research\\consent-protocol\\mcp_server.py"
+        "C:\\path\\to\\hushh-research\\consent-protocol\\mcp_server.py"
       ],
       "env": {
-        "PYTHONPATH": "C:\\OneDrive - NS\\Repository\\hushh-research\\consent-protocol"
+        "PYTHONPATH": "C:\\path\\to\\hushh-research\\consent-protocol"
       }
     }
   }
 }
 ```
 
-> ⚠️ **Important:** Update the paths to match your actual directory location!
+> **Important:** Replace `/path/to/hushh-research` (or the Windows path) with your actual directory location.
 
 ### 4. Restart Claude Desktop
 
@@ -131,12 +146,14 @@ Claude: "Get professional profile using the food token"
 
 ## Troubleshooting
 
-| Issue                    | Solution                                 |
-| ------------------------ | ---------------------------------------- |
-| Server not found         | Check PYTHONPATH in config               |
-| Import errors            | Run `pip install -r requirements.txt`    |
-| Claude doesn't see tools | Fully restart Claude (check system tray) |
-| Token errors             | Ensure `.env` has SECRET_KEY             |
+| Issue                          | Solution                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| Server not found               | Check PYTHONPATH in config                                               |
+| Import errors                  | Run `pip install -r requirements.txt`                                    |
+| Claude doesn't see tools       | Fully restart Claude (check system tray)                                 |
+| Token errors                   | Ensure `.env` has SECRET_KEY                                             |
+| Consent request never appears  | User must have the Hushh app **consent/dashboard page open** so it can poll `GET /api/consent/pending` and show the request. Then SSE will notify the MCP when they approve or deny. |
+| Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the world model, not a fixed list. |
 
 ## Protocol Compliance
 
