@@ -32,8 +32,9 @@ When creating any feature that accesses data:
 4. **Android Plugin** → Add Kotlin method in `android/.../plugins/`
 5. **Service** → Create platform detector in `lib/services/`
 6. **Component** → Use service method (NOT fetch)
+7. **Plugin Registration** → Register iOS plugin in `ios/App/App/MyViewController.swift` and Android plugin in `android/.../MainActivity.kt`
 
-ALL 6 must exist or feature is incomplete.
+ALL 7 must exist or feature is incomplete.
 
 ### BEFORE SUGGESTING CODE
 

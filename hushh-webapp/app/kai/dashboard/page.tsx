@@ -100,7 +100,7 @@ export default function KaiPage() {
   return (
     <div className="relative min-h-0 pb-40">
       {/* Main Content - KaiFlow handles all states */}
-      <div className="w-full p-6">
+      <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
         <KaiFlow
           userId={user.uid}
           // Prefer in-memory token, but allow empty string as fallback.

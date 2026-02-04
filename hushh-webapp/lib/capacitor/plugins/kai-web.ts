@@ -16,15 +16,14 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
   async grantConsent(options: {
     userId: string;
     scopes: string[];
+    authToken: string;
     vaultOwnerToken?: string;
   }): Promise<{ token: string; expires_at: string }> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    // grantConsent may use VAULT_OWNER token if available
-    if (options.vaultOwnerToken) {
-      headers["Authorization"] = `Bearer ${options.vaultOwnerToken}`;
-    }
+    // Bootstrap route: backend requires Firebase ID token
+    headers["Authorization"] = `Bearer ${options.authToken}`;
 
     const response = await fetch("/api/kai/consent/grant", {
       method: "POST",

@@ -12,12 +12,15 @@ export class HushhWorldModelWeb
   extends WebPlugin
   implements HushhWorldModelPlugin
 {
-  private async getAuthHeader(): Promise<string> {
-    const token = sessionStorage.getItem("vault_owner_token");
+  private async getAuthHeader(overrideToken?: string): Promise<string> {
+    const token = overrideToken || sessionStorage.getItem("vault_owner_token");
     return token ? `Bearer ${token}` : "";
   }
 
-  async getMetadata(options: { userId: string }): Promise<{
+  async getMetadata(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     userId: string;
     domains: Array<{
       key: string;
@@ -34,12 +37,11 @@ export class HushhWorldModelWeb
     suggestedDomains: string[];
     lastUpdated: string | null;
   }> {
-    const response = await fetch(
-      `/api/world-model/metadata/${options.userId}`,
-      {
-        headers: { Authorization: await this.getAuthHeader() },
-      }
-    );
+    const response = await fetch(`/api/world-model/metadata/${options.userId}`, {
+      headers: {
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to get metadata: ${response.status}`);
@@ -67,7 +69,10 @@ export class HushhWorldModelWeb
     };
   }
 
-  async getIndex(options: { userId: string }): Promise<{
+  async getIndex(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     userId: string;
     domainSummaries: Record<string, Record<string, unknown>>;
     availableDomains: string[];
@@ -78,7 +83,9 @@ export class HushhWorldModelWeb
     modelVersion: number;
   }> {
     const response = await fetch(`/api/world-model/index/${options.userId}`, {
-      headers: { Authorization: await this.getAuthHeader() },
+      headers: {
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
     });
 
     if (!response.ok) {
@@ -102,6 +109,7 @@ export class HushhWorldModelWeb
   async getAttributes(options: {
     userId: string;
     domain?: string;
+    vaultOwnerToken?: string;
   }): Promise<{
     attributes: Array<{
       domain: string;
@@ -121,7 +129,9 @@ export class HushhWorldModelWeb
       : `/api/world-model/attributes/${options.userId}`;
 
     const response = await fetch(url, {
-      headers: { Authorization: await this.getAuthHeader() },
+      headers: {
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
     });
 
     if (!response.ok) {
@@ -156,12 +166,13 @@ export class HushhWorldModelWeb
     displayName?: string;
     dataType?: string;
     source?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean; scope: string }> {
     const response = await fetch("/api/world-model/attributes", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: await this.getAuthHeader(),
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
       },
       body: JSON.stringify({
         user_id: options.userId,
@@ -192,19 +203,25 @@ export class HushhWorldModelWeb
     userId: string;
     domain: string;
     attributeKey: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     const response = await fetch(
       `/api/world-model/attributes/${options.userId}/${options.domain}/${options.attributeKey}`,
       {
         method: "DELETE",
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
       }
     );
 
     return { success: response.ok };
   }
 
-  async getUserDomains(options: { userId: string }): Promise<{
+  async getUserDomains(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     domains: Array<{
       key: string;
       displayName: string;
@@ -213,12 +230,11 @@ export class HushhWorldModelWeb
       attributeCount: number;
     }>;
   }> {
-    const response = await fetch(
-      `/api/world-model/domains/${options.userId}`,
-      {
-        headers: { Authorization: await this.getAuthHeader() },
-      }
-    );
+    const response = await fetch(`/api/world-model/domains/${options.userId}`, {
+      headers: {
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to get user domains: ${response.status}`);
@@ -237,7 +253,10 @@ export class HushhWorldModelWeb
     };
   }
 
-  async listDomains(options: { includeEmpty?: boolean }): Promise<{
+  async listDomains(options: {
+    includeEmpty?: boolean;
+    vaultOwnerToken?: string;
+  }): Promise<{
     domains: Array<{
       key: string;
       displayName: string;
@@ -249,7 +268,12 @@ export class HushhWorldModelWeb
     }>;
   }> {
     const response = await fetch(
-      `/api/world-model/domains?include_empty=${options.includeEmpty || false}`
+      `/api/world-model/domains?include_empty=${options.includeEmpty || false}`,
+      {
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
+      }
     );
 
     if (!response.ok) {
@@ -271,7 +295,10 @@ export class HushhWorldModelWeb
     };
   }
 
-  async getAvailableScopes(options: { userId: string }): Promise<{
+  async getAvailableScopes(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     userId: string;
     availableDomains: Array<{
       domain: string;
@@ -281,12 +308,11 @@ export class HushhWorldModelWeb
     allScopes: string[];
     wildcardScopes: string[];
   }> {
-    const response = await fetch(
-      `/api/world-model/scopes/${options.userId}`,
-      {
-        headers: { Authorization: await this.getAuthHeader() },
-      }
-    );
+    const response = await fetch(`/api/world-model/scopes/${options.userId}`, {
+      headers: {
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to get scopes: ${response.status}`);
@@ -305,12 +331,15 @@ export class HushhWorldModelWeb
   async getPortfolio(options: {
     userId: string;
     portfolioName?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ portfolio: Record<string, unknown> | null }> {
     const portfolioName = options.portfolioName || "Main Portfolio";
     const response = await fetch(
       `/api/world-model/portfolio/${options.userId}?portfolio_name=${encodeURIComponent(portfolioName)}`,
       {
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
       }
     );
 
@@ -322,13 +351,18 @@ export class HushhWorldModelWeb
     return { portfolio: data.portfolio };
   }
 
-  async listPortfolios(options: { userId: string }): Promise<{
+  async listPortfolios(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     portfolios: Record<string, unknown>[];
   }> {
     const response = await fetch(
       `/api/world-model/portfolios/${options.userId}`,
       {
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
       }
     );
 
@@ -340,9 +374,97 @@ export class HushhWorldModelWeb
     return { portfolios: data.portfolios || [] };
   }
 
-  async getInitialChatState(options: { userId: string }): Promise<{
+  async storeDomainData(options: {
+    userId: string;
+    domain: string;
+    encryptedBlob: {
+      ciphertext: string;
+      iv: string;
+      tag: string;
+      algorithm?: string;
+    };
+    summary: Record<string, unknown>;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }> {
+    const response = await fetch("/api/world-model/store-domain", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+      },
+      body: JSON.stringify({
+        user_id: options.userId,
+        domain: options.domain,
+        encrypted_blob: {
+          ciphertext: options.encryptedBlob.ciphertext,
+          iv: options.encryptedBlob.iv,
+          tag: options.encryptedBlob.tag,
+          algorithm: options.encryptedBlob.algorithm || "aes-256-gcm",
+        },
+        summary: options.summary,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to store domain data: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async getDomainData(options: {
+    userId: string;
+    domain: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    encrypted_blob?: {
+      ciphertext: string;
+      iv: string;
+      tag: string;
+      algorithm?: string;
+    };
+  }> {
+    const response = await fetch(
+      `/api/world-model/domain-data/${options.userId}/${options.domain}`,
+      {
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to get domain data: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async clearDomain(options: {
+    userId: string;
+    domain: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }> {
+    const response = await fetch(
+      `/api/world-model/domain-data/${options.userId}/${options.domain}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
+      }
+    );
+
+    return { success: response.ok };
+  }
+
+  async getInitialChatState(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     is_new_user: boolean;
     has_portfolio: boolean;
+    has_financial_data?: boolean;
     welcome_type: string;
     total_attributes: number;
     available_domains: string[];
@@ -350,7 +472,9 @@ export class HushhWorldModelWeb
     const response = await fetch(
       `/api/kai/chat/initial-state/${options.userId}`,
       {
-        headers: { Authorization: await this.getAuthHeader() },
+        headers: {
+          Authorization: await this.getAuthHeader(options.vaultOwnerToken),
+        },
       }
     );
 

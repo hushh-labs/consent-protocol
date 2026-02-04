@@ -763,7 +763,7 @@ export function PortfolioReviewView({
       </Card>
 
       {/* Save Button - Fixed at bottom */}
-      <div className="fixed bottom-20 left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t">
+      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t safe-area-pb">
         <div className="max-w-lg mx-auto">
           <Button
             className="w-full h-14 text-base font-semibold rounded-xl"

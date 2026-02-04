@@ -554,7 +554,7 @@ class HushhVaultPlugin : Plugin() {
     @PluginMethod
     fun getPendingConsents(call: PluginCall) {
         val userId = call.getString("userId")
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         // Python Backend supports this via /api/consent/pending
         val url = "$backendUrl/api/consent/pending?userId=$userId"
@@ -562,7 +562,7 @@ class HushhVaultPlugin : Plugin() {
         Thread {
             try {
                 val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
-                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                if (vaultOwnerToken != null) requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val body = response.body?.string() ?: "{}"
@@ -582,14 +582,14 @@ class HushhVaultPlugin : Plugin() {
     @PluginMethod
     fun getActiveConsents(call: PluginCall) {
         val userId = call.getString("userId")
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/active?userId=$userId"
 
         Thread {
             try {
                 val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
-                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                if (vaultOwnerToken != null) requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val body = response.body?.string() ?: "{}"
@@ -611,14 +611,14 @@ class HushhVaultPlugin : Plugin() {
         val userId = call.getString("userId")
         val page = call.getInt("page") ?: 1
         val limit = call.getInt("limit") ?: 50
-        val authToken = call.getString("authToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken")
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/consent/history?userId=$userId&page=$page&limit=$limit"
 
         Thread {
             try {
                 val requestBuilder = Request.Builder().url(url).get().addHeader("Content-Type", "application/json")
-                if (authToken != null) requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                if (vaultOwnerToken != null) requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
 
                 val response = httpClient.newCall(requestBuilder.build()).execute()
                 val body = response.body?.string() ?: "{}"
@@ -631,6 +631,63 @@ class HushhVaultPlugin : Plugin() {
                 }
             } catch (e: Exception) {
                 activity.runOnUiThread { call.reject("Error: ${e.message}") }
+            }
+        }.start()
+    }
+
+    /**
+     * Vault status (domain counts without decrypted data).
+     *
+     * Backend contract:
+     * - Firebase ID token in Authorization header as `authToken`
+     * - VAULT_OWNER token in body as `consentToken`
+     */
+    @PluginMethod
+    fun getVaultStatus(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        val authToken = call.getString("authToken") ?: run {
+            call.reject("Missing authToken")
+            return
+        }
+
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/db/vault/status"
+
+        val json = JSONObject().apply {
+            put("userId", userId)
+            put("consentToken", vaultOwnerToken)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer $authToken")
+            .build()
+
+        val pluginCall = call
+        Thread {
+            try {
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string()
+                if (!response.isSuccessful || responseBody == null) {
+                    activity.runOnUiThread {
+                        pluginCall.reject("Failed to fetch vault status: ${response.code}")
+                    }
+                    return@Thread
+                }
+                val result = JSObject(responseBody)
+                activity.runOnUiThread { pluginCall.resolve(result) }
+            } catch (e: Exception) {
+                activity.runOnUiThread { pluginCall.reject("Error: ${e.message}") }
             }
         }.start()
     }
