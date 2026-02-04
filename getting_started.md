@@ -64,10 +64,6 @@ DB_HOST=aws-1-us-east-1.pooler.supabase.com
 DB_PORT=5432
 DB_NAME=postgres
 
-# Optional: Supabase REST API (for backward compatibility)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-service-role-key
-
 # Secret Key (for HMAC token signing)
 SECRET_KEY=your-secret-key-here
 
@@ -103,8 +99,7 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-app.appspot.com
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 NEXT_PUBLIC_FIREBASE_APP_ID=1:123456789:web:abc123
 
-# Database Proxy (for /api routes)
-DATABASE_URL=postgresql://user:password@localhost:5432/hushh_vault
+# Backend uses DB_* above; no DATABASE_URL. See consent-protocol/.env.example.
 ```
 
 ---
@@ -377,11 +372,12 @@ npx cap sync ios
 ### Database connection errors
 
 ```bash
-# Verify DATABASE_URL is correct
-echo $DATABASE_URL
-
-# Test connection
-psql $DATABASE_URL -c "SELECT 1"
+# Verify DB_* in consent-protocol/.env (see .env.example)
+cd consent-protocol && python -c "
+from db.connection import get_database_url
+print('DB URL (masked):', get_database_url()[:50] + '...')
+"
+# Or test with psql using DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
 ```
 
 ---
