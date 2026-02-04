@@ -41,6 +41,8 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
 
 3. **Configure Secrets** (one-time setup)
 
+   Secrets in GCP Secret Manager must match **exactly** what the code uses — no more, no less. See [docs/reference/env_and_secrets.md](../docs/reference/env_and_secrets.md) for the full audit and gcloud CLI.
+
    ```powershell
    cd deploy
    .\verify-secrets.ps1
@@ -56,7 +58,7 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
    - `DB_USER`
    - `DB_PASSWORD`
 
-   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). `DATABASE_URL` may exist in Secret Manager for migration scripts but is not used by runtime code.
+   **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). **Do not use `DATABASE_URL`** — migrations and scripts use DB_* only (strict parity). Delete `DATABASE_URL` from Secret Manager if present.
 
 ---
 
@@ -141,7 +143,7 @@ All required secrets must exist in Google Cloud Secret Manager before deployment
 
 **Note:** 
 - `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets) in `backend.cloudbuild.yaml`
-- `DATABASE_URL` exists in Secret Manager but is only used by migration scripts (`db/migrate.py`), not runtime code
+- Migrations use DB_* only (no DATABASE_URL). See docs/reference/env_and_secrets.md.
 - **Action required:** Create `DB_USER` and `DB_PASSWORD` secrets in Secret Manager if they don't exist:
   ```bash
   echo "your-db-username" | gcloud secrets create DB_USER --data-file=-
