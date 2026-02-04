@@ -98,17 +98,45 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
   ) as Array<Record<string, unknown>>;
   
   // Normalize holdings - handle various field name formats
-  const normalizedHoldings = rawHoldings.map((h) => ({
-    symbol: String(h.symbol || h.symbol_cusip || ""),
-    name: String(h.name || h.description || "Unknown"),
-    quantity: Number(h.quantity || 0),
-    price: Number(h.price || h.price_per_unit || 0),
-    market_value: Number(h.market_value || 0),
-    cost_basis: h.cost_basis !== undefined ? Number(h.cost_basis) : undefined,
-    unrealized_gain_loss: h.unrealized_gain_loss !== undefined ? Number(h.unrealized_gain_loss) : undefined,
-    unrealized_gain_loss_pct: h.unrealized_gain_loss_pct !== undefined ? Number(h.unrealized_gain_loss_pct) : undefined,
-    asset_type: h.asset_type ? String(h.asset_type) : (h.asset_class ? String(h.asset_class) : undefined),
-  }));
+  const normalizedHoldings = rawHoldings.map((h) => {
+    const marketValue = h.market_value !== undefined ? Number(h.market_value) : 0;
+    const costBasis = h.cost_basis !== undefined ? Number(h.cost_basis) : undefined;
+    const unrealized = h.unrealized_gain_loss !== undefined
+      ? Number(h.unrealized_gain_loss)
+      : undefined;
+    let unrealizedPct =
+      h.unrealized_gain_loss_pct !== undefined
+        ? Number(h.unrealized_gain_loss_pct)
+        : undefined;
+
+    // If percentage is missing but we have P/L and a reasonable denominator,
+    // derive a fallback % so UI can always show something meaningful.
+    if (unrealizedPct === undefined && unrealized !== undefined) {
+      // Prefer cost basis as denominator when available.
+      let basis: number | undefined;
+      if (costBasis !== undefined && Math.abs(costBasis) > 1e-6) {
+        basis = costBasis;
+      } else if (marketValue !== 0) {
+        basis = marketValue - unrealized;
+      }
+
+      if (basis !== undefined && Math.abs(basis) > 1e-6) {
+        unrealizedPct = (unrealized / basis) * 100;
+      }
+    }
+
+    return {
+      symbol: String(h.symbol || h.symbol_cusip || ""),
+      name: String(h.name || h.description || "Unknown"),
+      quantity: Number(h.quantity || 0),
+      price: Number(h.price || h.price_per_unit || 0),
+      market_value: marketValue,
+      cost_basis: costBasis,
+      unrealized_gain_loss: unrealized,
+      unrealized_gain_loss_pct: unrealizedPct,
+      asset_type: h.asset_type ? String(h.asset_type) : (h.asset_class ? String(h.asset_class) : undefined),
+    };
+  });
 
   console.log("[KaiFlow] Normalized holdings:", normalizedHoldings.length, normalizedHoldings.slice(0, 2));
 
@@ -214,6 +242,49 @@ function normalizePortfolioData(backendData: Record<string, unknown>): ReviewPor
   return result;
 }
 
+/**
+ * Normalize holdings array to ensure unrealized_gain_loss_pct is computed.
+ * This helper can be used in multiple places (checkFinancialData, handleSaveComplete).
+ */
+function normalizeHoldingsWithPct<T extends { 
+  unrealized_gain_loss_pct?: number; 
+  unrealized_gain_loss?: number; 
+  cost_basis?: number; 
+  market_value?: number;
+}>(holdings: T[] | undefined): T[] | undefined {
+  if (!holdings) return holdings;
+  
+  return holdings.map((h) => {
+    // If percentage is already present and valid, keep it
+    if (h.unrealized_gain_loss_pct !== undefined && h.unrealized_gain_loss_pct !== 0) {
+      return h;
+    }
+
+    // Derive percentage from unrealized_gain_loss if available
+    const unrealized = h.unrealized_gain_loss;
+    if (unrealized !== undefined) {
+      let basis: number | undefined;
+      const costBasis = h.cost_basis;
+      const marketValue = h.market_value || 0;
+
+      if (costBasis !== undefined && Math.abs(costBasis) > 1e-6) {
+        basis = costBasis;
+      } else if (marketValue !== 0) {
+        basis = marketValue - unrealized;
+      }
+
+      if (basis !== undefined && Math.abs(basis) > 1e-6) {
+        return {
+          ...h,
+          unrealized_gain_loss_pct: (unrealized / basis) * 100,
+        };
+      }
+    }
+
+    return h;
+  });
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -244,6 +315,89 @@ export function KaiFlow({
   });
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const handleAnalyzeLosers = useCallback(() => {
+    if (!flowData.portfolioData) {
+      toast.error("No portfolio data available.");
+      return;
+    }
+
+    const rawHoldings = (flowData.portfolioData.holdings ||
+      flowData.portfolioData.detailed_holdings ||
+      []) as unknown as Array<{
+      symbol?: string;
+      name?: string;
+      unrealized_gain_loss_pct?: number;
+      unrealized_gain_loss?: number;
+      market_value?: number;
+      sector?: string;
+      asset_type?: string;
+    }>;
+
+    const totalValue = rawHoldings.reduce(
+      (sum, h) => sum + (h.market_value !== undefined ? Number(h.market_value) : 0),
+      0
+    );
+
+    const holdingsForOptimize = rawHoldings
+      .map((h) => {
+        const mv = h.market_value !== undefined ? Number(h.market_value) : undefined;
+        const gainLoss =
+          h.unrealized_gain_loss !== undefined
+            ? Number(h.unrealized_gain_loss)
+            : undefined;
+        const gainLossPct =
+          h.unrealized_gain_loss_pct !== undefined
+            ? Number(h.unrealized_gain_loss_pct)
+            : undefined;
+
+        const symbol = String(h.symbol || "").toUpperCase().trim();
+
+        return {
+          symbol,
+          name: h.name ? String(h.name) : undefined,
+          gain_loss_pct: gainLossPct,
+          gain_loss: gainLoss,
+          market_value: mv,
+          weight_pct:
+            totalValue > 0 && mv !== undefined ? (mv / totalValue) * 100 : undefined,
+          sector: h.sector ? String(h.sector) : undefined,
+          asset_type: h.asset_type ? String(h.asset_type) : undefined,
+        };
+      })
+      .filter((h) => h.symbol);
+
+    const losers = holdingsForOptimize
+      .filter(
+        (l) => l.gain_loss_pct === undefined || (l.gain_loss_pct as number) <= -5
+      )
+      .slice(0, 25);
+
+    const forceOptimize = losers.length === 0;
+
+    if (forceOptimize) {
+      toast.info(
+        "No positions are below -5%. Optimizing the portfolio using your full holdings."
+      );
+    } else {
+      toast.info("Optimizing around your current losers and allocations.");
+    }
+
+    sessionStorage.setItem(
+      "kai_losers_analysis_input",
+      JSON.stringify({
+        userId,
+        thresholdPct: -5,
+        maxPositions: 10,
+        losers,
+        holdings: holdingsForOptimize,
+        forceOptimize,
+        hadBelowThreshold: losers.length > 0,
+      })
+    );
+
+    router.push("/kai/dashboard/portfolio-health");
+  }, [flowData.portfolioData, router, userId]);
+
   // Check World Model for financial data on mount
   useEffect(() => {
     async function checkFinancialData() {
@@ -264,6 +418,19 @@ export function KaiFlow({
         if (hasFinancialData) {
           // Prefer CacheProvider (in-memory + sessionStorage) for reuse with Manage page
           let portfolioData: PortfolioData | undefined = getPortfolioData(userId) ?? undefined;
+
+          // Also check sessionStorage as fallback
+          if (!portfolioData) {
+            try {
+              const sessionData = sessionStorage.getItem("kai_portfolio_data");
+              if (sessionData) {
+                portfolioData = JSON.parse(sessionData) as PortfolioData;
+                console.log("[KaiFlow] Loaded portfolio data from sessionStorage");
+              }
+            } catch (err) {
+              console.warn("[KaiFlow] Failed to parse sessionStorage data:", err);
+            }
+          }
 
           if (!portfolioData && vaultKey) {
             // No cache - try to decrypt from World Model
@@ -290,8 +457,7 @@ export function KaiFlow({
                 // Extract financial domain data
                 // The structure could be { financial: {...} } or direct portfolio data
                 portfolioData = allData.financial || allData;
-                setPortfolioData(userId, portfolioData as PortfolioData);
-                console.log("[KaiFlow] Successfully decrypted and cached portfolio data");
+                console.log("[KaiFlow] Successfully decrypted portfolio data from World Model");
               }
             } catch (decryptError) {
               // Handle encryption key mismatch or corrupted data
@@ -309,6 +475,23 @@ export function KaiFlow({
               }
               
               // For other errors, continue without portfolio data - user can re-import
+            }
+          }
+
+          // Ensure holdings have unrealized_gain_loss_pct computed
+          // This handles data loaded from cache/World Model that may not have been normalized
+          if (portfolioData?.holdings) {
+            portfolioData.holdings = normalizeHoldingsWithPct(portfolioData.holdings);
+            console.log("[KaiFlow] Normalized holdings with unrealized_gain_loss_pct");
+          }
+
+          // Update cache with normalized data
+          if (portfolioData) {
+            setPortfolioData(userId, portfolioData);
+            try {
+              sessionStorage.setItem("kai_portfolio_data", JSON.stringify(portfolioData));
+            } catch (err) {
+              console.warn("[KaiFlow] Failed to update sessionStorage:", err);
             }
           }
 
@@ -354,7 +537,8 @@ export function KaiFlow({
   const handleFileUpload = useCallback(
     async (file: File) => {
       if (!vaultKey) {
-        setError("Vault key not available. Please unlock your vault.");
+        // Treat missing key as vault-locked state and rely on VaultLockGuard / VaultFlow
+        toast.error("Please unlock your vault before importing a statement.");
         return;
       }
 
@@ -615,6 +799,9 @@ export function KaiFlow({
   const handleSaveComplete = useCallback((savedData: ReviewPortfolioData) => {
     // Convert to dashboard format and update flow data
     // Map the review types to dashboard types
+    // Normalize holdings to ensure unrealized_gain_loss_pct is computed
+    const normalizedHoldings = normalizeHoldingsWithPct(savedData.holdings);
+    
     const portfolioData: PortfolioData = {
       account_info: savedData.account_info ? {
         account_number: savedData.account_info.account_number,
@@ -628,7 +815,7 @@ export function KaiFlow({
         cash_balance: savedData.account_summary.cash_balance,
         equities_value: savedData.account_summary.equities_value,
       } : undefined,
-      holdings: savedData.holdings,
+      holdings: normalizedHoldings,
       transactions: [],
       asset_allocation: savedData.asset_allocation ? {
         cash_percent: savedData.asset_allocation.cash_pct,
@@ -647,7 +834,18 @@ export function KaiFlow({
       } : undefined,
     };
 
-    const holdingSymbols = savedData.holdings?.map((h) => h.symbol) || [];
+    const holdingSymbols = normalizedHoldings?.map((h) => h.symbol) || [];
+
+    // Update cache context so other pages (Manage, etc.) can access the data
+    setPortfolioData(userId, portfolioData);
+
+    // Also store in sessionStorage for persistence across same-session navigation
+    try {
+      sessionStorage.setItem("kai_portfolio_data", JSON.stringify(portfolioData));
+      console.log("[KaiFlow] Portfolio data saved to cache and sessionStorage");
+    } catch (err) {
+      console.warn("[KaiFlow] Failed to save to sessionStorage:", err);
+    }
 
     setFlowData({
       hasFinancialData: true,
@@ -658,7 +856,7 @@ export function KaiFlow({
     });
 
     setState("dashboard");
-  }, []);
+  }, [userId, setPortfolioData]);
 
   // Handle skip import - preserve existing data if available
   const handleSkipImport = useCallback(() => {
@@ -870,6 +1068,7 @@ export function KaiFlow({
           portfolioData={flowData.portfolioData}
           onManagePortfolio={handleManagePortfolio}
           onAnalyzeStock={handleAnalyzeStock}
+          onAnalyzeLosers={handleAnalyzeLosers}
           onReupload={handleReimport}
           onClearData={handleClearData}
         />

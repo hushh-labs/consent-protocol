@@ -211,6 +211,75 @@ class KaiPlugin : Plugin() {
             }
         })
     }
+
+    @PluginMethod
+    fun analyzePortfolioLosers(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+
+        val losersArray = call.getArray("losers") ?: run {
+            call.reject("Missing losers")
+            return
+        }
+
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+
+        val thresholdPct = call.getDouble("thresholdPct") ?: -5.0
+        val maxPositions = call.getInt("maxPositions") ?: 10
+
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/portfolio/analyze-losers"
+
+        val json = JSONObject().apply {
+            put("user_id", userId)
+            put("losers", losersArray)
+            put("threshold_pct", thresholdPct)
+            put("max_positions", maxPositions)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val requestBuilder = Request.Builder().url(url).post(body)
+        requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
+
+        val request = requestBuilder.build()
+        val pluginCall = call
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                val errorMsg = "Network error: ${e.message} | backendUrl: $backendUrl"
+                android.util.Log.e(TAG, "❌ [analyzePortfolioLosers] $errorMsg")
+                pluginCall.reject(errorMsg)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val responseBody = response.body?.string()
+                val truncatedBody =
+                    if (responseBody != null && responseBody.length > 500) responseBody.take(500) + "..." else responseBody
+
+                if (!response.isSuccessful || responseBody == null) {
+                    val errorMsg = "Request failed: HTTP ${response.code} | backendUrl: $backendUrl" +
+                        if (truncatedBody != null) " | body: $truncatedBody" else ""
+                    android.util.Log.e(TAG, "❌ [analyzePortfolioLosers] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                    return
+                }
+
+                try {
+                    val result = JSObject(responseBody)
+                    pluginCall.resolve(result)
+                } catch (e: Exception) {
+                    val errorMsg = "JSON parsing error: ${e.message} | backendUrl: $backendUrl"
+                    android.util.Log.e(TAG, "❌ [analyzePortfolioLosers] $errorMsg")
+                    pluginCall.reject(errorMsg)
+                }
+            }
+        })
+    }
     
     @PluginMethod
     fun storePreferences(call: PluginCall) {

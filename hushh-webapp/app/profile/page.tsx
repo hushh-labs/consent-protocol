@@ -68,7 +68,7 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isAuthenticated, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { registerSteps, completeStep, reset } = useStepProgress();
   const [domains, setDomains] = useState<DomainSummary[]>([]);
@@ -76,28 +76,21 @@ export default function ProfilePage() {
   const [loadingDomains, setLoadingDomains] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  // Consolidated init effect - handles auth check and data loading
+  // Load world model data - auth is handled by VaultLockGuard in layout
   useEffect(() => {
     let cancelled = false;
 
-    async function init() {
+    async function loadData() {
       // Wait for auth to finish loading
       if (authLoading) return;
 
       // Register steps only once
       if (!initialized) {
-        registerSteps(2);
+        registerSteps(1); // Only 1 step now - loading world model data
         setInitialized(true);
       }
 
-      // Step 1: Auth check
-      if (!isAuthenticated) {
-        router.push("/");
-        return;
-      }
-      completeStep();
-
-      // Step 2: Load world model data
+      // Load world model data
       if (!user?.uid) return;
 
       try {
@@ -116,13 +109,13 @@ export default function ProfilePage() {
       }
     }
 
-    init();
+    loadData();
 
     return () => {
       cancelled = true;
       reset();
     };
-  }, [authLoading, isAuthenticated, user?.uid]);
+  }, [authLoading, user?.uid]);
 
   const handleSignOut = async () => {
     try {
@@ -155,8 +148,8 @@ export default function ProfilePage() {
 
   const provider = getProvider();
 
-  // Show nothing while checking auth or if not authenticated
-  if (authLoading || !isAuthenticated) {
+  // Show loading state while auth is loading
+  if (authLoading) {
     return null;
   }
 

@@ -140,6 +140,18 @@ const PERCENTAGE_FIELDS = new Set([
 // FORMATTING HELPERS
 // =============================================================================
 
+/**
+ * Clean markdown formatting from text (removes *, **, ***, `)
+ */
+function cleanMarkdown(text: string): string {
+  return text
+    .replace(/\*\*\*/g, '')  // Remove bold+italic
+    .replace(/\*\*/g, '')    // Remove bold
+    .replace(/\*/g, '')      // Remove italic
+    .replace(/`/g, '')       // Remove code backticks
+    .trim();
+}
+
 function formatCurrency(value: number): string {
   const formatted = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -179,7 +191,8 @@ function formatValue(key: string, value: unknown): string {
   }
   
   if (typeof value === "string") {
-    return value;
+    // Clean any markdown formatting from string values
+    return cleanMarkdown(value);
   }
   
   if (typeof value === "boolean") {

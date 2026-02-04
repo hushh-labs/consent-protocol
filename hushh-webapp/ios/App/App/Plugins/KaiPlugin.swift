@@ -30,6 +30,7 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPreferences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resetPreferences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importPortfolio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "analyzePortfolioLosers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "chat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getInitialChatState", returnType: CAPPluginReturnPromise)
     ]
@@ -568,6 +569,87 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     print("[\(self.TAG)] ✅ importPortfolio success: holdings=\(json["holdings_count"] ?? "?")")
+                    call.resolve(json)
+                } else {
+                    print("[\(self.TAG)] ❌ Invalid response format")
+                    call.reject("Invalid response format")
+                }
+            } catch {
+                print("[\(self.TAG)] ❌ JSON parsing error: \(error.localizedDescription)")
+                call.reject("JSON parsing error: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+
+    // MARK: - Losers Analysis
+
+    @objc func analyzePortfolioLosers(_ call: CAPPluginCall) {
+        print("[\(TAG)] 🔍 analyzePortfolioLosers called")
+
+        guard let userId = call.getString("userId"),
+              let losers = call.getArray("losers", JSObject.self),
+              let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            print("[\(TAG)] ❌ Missing required parameters: userId, losers, vaultOwnerToken")
+            call.reject("Missing required parameters: userId, losers, vaultOwnerToken")
+            return
+        }
+
+        let thresholdPct = call.getDouble("thresholdPct") ?? -5.0
+        let maxPositions = call.getInt("maxPositions") ?? 10
+
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/portfolio/analyze-losers"
+        print("[\(TAG)] 🌐 URL: \(urlStr)")
+
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+
+        let body: [String: Any] = [
+            "user_id": userId,
+            "losers": losers,
+            "threshold_pct": thresholdPct,
+            "max_positions": maxPositions
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        urlSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                let errorMsg = "Network error: \(error.localizedDescription) | backendUrl: \(backendUrl)"
+                print("[\(self.TAG)] ❌ \(errorMsg)")
+                call.reject(errorMsg)
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[\(self.TAG)] 📡 Response status: \(httpResponse.statusCode)")
+                if !(200...299).contains(httpResponse.statusCode) {
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "no body"
+                    let truncatedBody = bodyStr.count > 500 ? String(bodyStr.prefix(500)) + "..." : bodyStr
+                    let errorMsg = "HTTP Error \(httpResponse.statusCode) | backendUrl: \(backendUrl) | body: \(truncatedBody)"
+                    print("[\(self.TAG)] ❌ \(errorMsg)")
+                    call.reject(errorMsg)
+                    return
+                }
+            }
+
+            guard let data = data else {
+                print("[\(self.TAG)] ❌ No data received")
+                call.reject("No data received")
+                return
+            }
+
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("[\(self.TAG)] ✅ analyzePortfolioLosers success")
                     call.resolve(json)
                 } else {
                     print("[\(self.TAG)] ❌ Invalid response format")

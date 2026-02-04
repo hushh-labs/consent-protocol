@@ -907,6 +907,24 @@ export class ApiService {
     const headers: HeadersInit = {
       Authorization: `Bearer ${params.vaultOwnerToken}`,
     };
+
+    // For native platforms, call backend directly (bypass Next.js proxy)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const response = await fetch(`${API_BASE}/api/kai/portfolio/import/stream`, {
+          method: "POST",
+          body: params.formData,
+          headers,
+          signal: params.signal,
+        });
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native importPortfolioStream error:", error);
+        throw error;
+      }
+    }
+
+    // Web: use Next.js proxy
     return apiFetch("/api/kai/portfolio/import/stream", {
       method: "POST",
       body: params.formData,
@@ -1051,6 +1069,160 @@ export class ApiService {
     }
 
     return apiFetch("/api/kai/chat/analyze-loser", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Analyze portfolio losers (criteria-first) using Renaissance rubric.
+   *
+   * IMPORTANT: Backend does not persist full holdings (BYOK). Caller must provide
+   * loser positions computed client-side from the imported portfolio data.
+   */
+  static async analyzePortfolioLosers(data: {
+    userId: string;
+    losers: Array<{
+      symbol: string;
+      name?: string;
+      gain_loss_pct?: number;
+      gain_loss?: number;
+      market_value?: number;
+    }>;
+    thresholdPct?: number;
+    maxPositions?: number;
+    vaultOwnerToken: string;
+    holdings?: Array<{
+      symbol: string;
+      name?: string;
+      gain_loss_pct?: number;
+      gain_loss?: number;
+      market_value?: number;
+      sector?: string;
+      asset_type?: string;
+    }>;
+    forceOptimize?: boolean;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      losers: data.losers,
+      threshold_pct: data.thresholdPct ?? -5.0,
+      max_positions: data.maxPositions ?? 10,
+      holdings: data.holdings,
+      force_optimize: data.forceOptimize,
+    };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await Kai.analyzePortfolioLosers({
+          userId: data.userId,
+          losers: data.losers,
+          thresholdPct: body.threshold_pct,
+          maxPositions: body.max_positions,
+          vaultOwnerToken: data.vaultOwnerToken,
+        });
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("[ApiService] Native analyzePortfolioLosers error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    return apiFetch("/api/kai/portfolio/analyze-losers", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Streaming version of portfolio losers analysis with AI reasoning.
+   * 
+   * Returns a Response with SSE stream that emits:
+   * - 'stage' events: Current processing stage
+   * - 'thinking' events: AI reasoning/thought summaries
+   * - 'chunk' events: Partial response text
+   * - 'complete' events: Final parsed JSON result
+   * - 'error' events: Error messages
+   * 
+   * @example
+   * const response = await ApiService.analyzePortfolioLosersStream({...});
+   * const reader = response.body?.getReader();
+   * const decoder = new TextDecoder();
+   * while (true) {
+   *   const { done, value } = await reader.read();
+   *   if (done) break;
+   *   const text = decoder.decode(value);
+   *   // Parse SSE events from text
+   * }
+   */
+  static async analyzePortfolioLosersStream(data: {
+    userId: string;
+    losers: Array<{
+      symbol: string;
+      name?: string;
+      gain_loss_pct?: number;
+      gain_loss?: number;
+      market_value?: number;
+    }>;
+    thresholdPct?: number;
+    maxPositions?: number;
+    vaultOwnerToken: string;
+    holdings?: Array<{
+      symbol: string;
+      name?: string;
+      gain_loss_pct?: number;
+      gain_loss?: number;
+      market_value?: number;
+      sector?: string;
+      asset_type?: string;
+    }>;
+    forceOptimize?: boolean;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      losers: data.losers,
+      threshold_pct: data.thresholdPct ?? -5.0,
+      max_positions: data.maxPositions ?? 10,
+      holdings: data.holdings,
+      force_optimize: data.forceOptimize,
+    };
+
+    // For native platforms, use direct API call
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const authToken = await this.getFirebaseToken();
+        
+        const response = await fetch(`${API_BASE}/api/kai/portfolio/analyze-losers/stream`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+
+        return response;
+      } catch (error) {
+        console.error("[ApiService] Native analyzePortfolioLosersStream error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    // For web, use the Next.js proxy
+    return apiFetch("/api/kai/portfolio/analyze-losers/stream", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${data.vaultOwnerToken}`,

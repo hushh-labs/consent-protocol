@@ -49,12 +49,12 @@ interface ChatMessage {
 }
 
 interface InitialChatState {
-  is_new_user: boolean;
-  has_portfolio: boolean;
-  has_financial_data: boolean;
-  welcome_type: "new" | "returning_no_portfolio" | "returning";
-  total_attributes: number;
-  available_domains: string[];
+  isNewUser: boolean;
+  hasPortfolio: boolean;
+  hasFinancialData: boolean;
+  welcomeType: "new" | "returning_no_portfolio" | "returning" | string;
+  totalAttributes: number;
+  availableDomains: string[];
 }
 
 interface KaiChatProps {
@@ -109,7 +109,7 @@ export function KaiChat({
         // Determine welcome message based on user state
         let welcomeMessage: ChatMessage;
         
-        if (state.is_new_user || state.welcome_type === "new") {
+        if (state.isNewUser || state.welcomeType === "new") {
           // New user - proactive portfolio import prompt
           welcomeMessage = {
             id: "welcome-new",
@@ -127,7 +127,7 @@ export function KaiChat({
             },
             createdAt: new Date(),
           };
-        } else if (!state.has_portfolio || state.welcome_type === "returning_no_portfolio") {
+        } else if (!state.hasPortfolio || state.welcomeType === "returning_no_portfolio") {
           // Returning user without portfolio
           welcomeMessage = {
             id: "welcome-no-portfolio",
@@ -145,12 +145,12 @@ export function KaiChat({
           };
         } else {
           // Returning user with portfolio - personalized welcome
-          const domainCount = state.available_domains.length;
+          const domainCount = state.availableDomains.length;
           welcomeMessage = {
             id: "welcome-returning",
             role: "assistant",
             content:
-              `Welcome back! I have your portfolio and ${state.total_attributes} data points across ${domainCount} categories. ` +
+              `Welcome back! I have your portfolio and ${state.totalAttributes} data points across ${domainCount} categories. ` +
               "What would you like to explore today? I can analyze stocks, review your holdings, or help identify opportunities.",
             contentType: "text",
             createdAt: new Date(),
