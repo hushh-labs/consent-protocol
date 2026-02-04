@@ -20,7 +20,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
         # Mock token object
         self.mock_token_obj = MagicMock()
         self.mock_token_obj.user_id = "user_123"
-        self.mock_token_obj.scope = "vault.read.food"
+        self.mock_token_obj.scope = "attr.food.*"
         
     def test_context_storage(self):
         """Test that context is stored and retrieved correctly."""
@@ -43,7 +43,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
         mock_validate.return_value = (True, "OK", self.mock_token_obj)
         
         # Define tool
-        @hushh_tool(scope="vault.read.food")
+        @hushh_tool(scope="attr.food.*")
         def my_test_tool(arg):
             return f"Processed {arg}"
             
@@ -63,7 +63,7 @@ class TestHushhAdkFoundation(unittest.TestCase):
         # Setup mock validation FAILURE
         mock_validate.return_value = (False, "Scope mismatch", None)
         
-        @hushh_tool(scope="vault.read.food")
+        @hushh_tool(scope="attr.food.*")
         def sensitive_tool():
             return "Secret"
             

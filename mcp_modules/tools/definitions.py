@@ -32,13 +32,12 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "scope": {
                         "type": "string",
-                        "description": "Data scope to access. Each scope requires separate consent.",
-                        "enum": [
-                            "vault.read.food",
-                            "vault.read.professional",
-                            "vault.read.finance",
-                            "vault.read.all"
-                        ]
+                        "description": (
+                            "Data scope to access. Use world_model.read for full world model, "
+                            "or attr.{domain}.* for one domain (e.g. attr.financial.*, attr.food.*). "
+                            "Domains per user from discover_user_domains(user_id). Each scope requires separate consent."
+                        ),
+                        "examples": ["world_model.read", "attr.financial.*", "attr.food.*", "attr.health.*"]
                     },
                     "reason": {
                         "type": "string",
@@ -79,7 +78,7 @@ def get_tool_definitions() -> list[Tool]:
             description=(
                 "🍽️ Retrieve user's food preferences including dietary restrictions, "
                 "favorite cuisines, and monthly dining budget. "
-                "REQUIRES: Valid consent token with 'vault.read.food' scope. "
+                "REQUIRES: Valid consent token with attr.food.* or world_model.read scope. "
                 "Will be DENIED without proper consent."
             ),
             inputSchema={
@@ -91,7 +90,7 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with vault.read.food scope"
+                        "description": "Valid consent token with attr.food.* or world_model.read scope"
                     }
                 },
                 "required": ["user_id", "consent_token"]
@@ -104,7 +103,7 @@ def get_tool_definitions() -> list[Tool]:
             description=(
                 "💼 Retrieve user's professional profile including job title, skills, "
                 "experience level, and job preferences. "
-                "REQUIRES: Valid consent token with 'vault.read.professional' scope. "
+                "REQUIRES: Valid consent token with attr.professional.* or world_model.read scope. "
                 "A food token WILL NOT work - scopes are isolated."
             ),
             inputSchema={
@@ -116,7 +115,7 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with vault.read.professional scope"
+                        "description": "Valid consent token with attr.professional.* or world_model.read scope"
                     }
                 },
                 "required": ["user_id", "consent_token"]
@@ -167,6 +166,26 @@ def get_tool_definitions() -> list[Tool]:
                 "type": "object",
                 "properties": {},
                 "required": []
+            }
+        ),
+        
+        # Tool 6b: Discover user's domains and scopes (per-user discovery)
+        Tool(
+            name="discover_user_domains",
+            description=(
+                "Discover which domains a user has and the scope strings to request. "
+                "Call this before request_consent to know which scopes (e.g. attr.financial.*, attr.food.*) "
+                "are available for that user. Returns user_id, list of domain keys, and available_scopes."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The user's unique identifier (Firebase UID or email to resolve)"
+                    }
+                },
+                "required": ["user_id"]
             }
         ),
         

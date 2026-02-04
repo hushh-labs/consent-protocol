@@ -20,6 +20,11 @@ DEPRECATED TABLES (DO NOT USE):
 - vault_portfolios (merged into world_model_data.financial)
 - vault_food (merged into world_model_data.food)
 - vault_professional (merged into world_model_data.professional)
+
+DEPRECATED METHODS (use blob + index only):
+- store_attribute, store_attribute_obj, get_attribute, get_domain_attributes,
+  get_all_attributes, delete_attribute (all use world_model_attributes).
+  New code must use store_domain_data, get_encrypted_data, get_domain_data.
 """
 
 import json
@@ -237,9 +242,8 @@ class WorldModelService:
     ) -> tuple[bool, str]:
         """
         Store an encrypted attribute with auto domain registration.
-        
+        DEPRECATED: use store_domain_data (client encrypts full domain blob).
         If domain is None, it will be inferred from the attribute_key.
-        
         Returns:
             Tuple of (success, generated_scope)
         """
@@ -310,7 +314,7 @@ class WorldModelService:
         domain: str,
         attribute_key: str,
     ) -> Optional[EncryptedAttribute]:
-        """Get a specific encrypted attribute."""
+        """Get a specific encrypted attribute. DEPRECATED: use get_domain_data + client decrypt."""
         try:
             result = self.supabase.table("world_model_attributes").select("*").eq(
                 "user_id", user_id
@@ -334,7 +338,7 @@ class WorldModelService:
         user_id: str,
         domain: str,
     ) -> list[EncryptedAttribute]:
-        """Get all attributes for a domain."""
+        """Get all attributes for a domain. DEPRECATED: use get_domain_data + client decrypt."""
         try:
             result = self.supabase.table("world_model_attributes").select("*").eq(
                 "user_id", user_id
@@ -348,7 +352,7 @@ class WorldModelService:
             return []
     
     async def get_all_attributes(self, user_id: str) -> list[EncryptedAttribute]:
-        """Get all attributes for a user across all domains."""
+        """Get all attributes for a user across all domains. DEPRECATED: use get_encrypted_data + client decrypt."""
         try:
             result = self.supabase.table("world_model_attributes").select("*").eq(
                 "user_id", user_id
@@ -365,7 +369,7 @@ class WorldModelService:
         domain: str,
         attribute_key: str,
     ) -> bool:
-        """Delete a specific attribute."""
+        """Delete a specific attribute. DEPRECATED: use client-side blob update (get → remove key → store)."""
         try:
             self.supabase.table("world_model_attributes").delete().eq(
                 "user_id", user_id

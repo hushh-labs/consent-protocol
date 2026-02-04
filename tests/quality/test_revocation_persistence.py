@@ -108,15 +108,15 @@ class TestRevocationPersistence:
         await db.revoke(
             token,
             user_id="user_789",
-            scope="vault.read.food",
+            scope="attr.food.*",
             reason="Consent withdrawn"
         )
-        
+
         record = await db.get_revocation(token)
-        
+
         assert record is not None
         assert record["user_id"] == "user_789"
-        assert record["scope"] == "vault.read.food"
+        assert record["scope"] == "attr.food.*"
         assert record["reason"] == "Consent withdrawn"
         assert "revoked_at" in record
     
