@@ -8,7 +8,7 @@ USER_ID = "user_nyx"
 DELEGATOR = "agent_identity"
 DELEGATEE = "agent_shopper"
 SCOPE_VALID = ConsentScope.WORLD_MODEL_READ
-SCOPE_INVALID = ConsentScope.WORLD_MODEL_READ
+SCOPE_INVALID = ConsentScope.WORLD_MODEL_WRITE  # different scope → link not trusted for it
 
 
 def test_create_and_verify_trust_link():

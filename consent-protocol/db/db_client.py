@@ -285,7 +285,7 @@ class TableQuery:
     
     def _execute_select(self, conn) -> QueryResult:
         """Execute SELECT query."""
-        params = {}
+        params: dict[str, Any] = {}
         
         # Build column list
         if self._columns == "*":
@@ -393,7 +393,7 @@ class TableQuery:
     
     def _execute_delete(self, conn) -> QueryResult:
         """Execute DELETE query."""
-        params = {}
+        params: dict[str, Any] = {}
         sql = f'DELETE FROM "{self.table_name}"'
         sql += self._build_where_clause(params)
         sql += " RETURNING *"
