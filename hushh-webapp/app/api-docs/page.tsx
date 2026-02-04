@@ -19,7 +19,6 @@ import {
   AlertTriangle,
   ArrowLeft,
 } from "lucide-react";
-import { Navbar } from "@/components/navbar";
 
 // VSCode-style syntax highlighting for JSON
 function SyntaxHighlightedJSON({ code }: { code: string }) {
@@ -298,8 +297,6 @@ export default function ApiDocsPage() {
           </Card>
         </section>
       </div>
-
-      <Navbar />
     </div>
   );
 }

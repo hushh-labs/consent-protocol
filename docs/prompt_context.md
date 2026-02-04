@@ -105,3 +105,4 @@ Before providing a solution, strictly follow this cognitive sequence:
 **Signature (required):** Always end your response with a sign-off line that identifies the AI model provider used:
 `Signed-off-by: [AI model provider name]`
 Example: `Signed-off-by: Cursor AI (Claude)` or `Signed-off-by: OpenAI (GPT-4)`
+After using Build mode or Agent mode, always include this AI sign-off at the end of the response.

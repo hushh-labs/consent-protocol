@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
@@ -362,4 +363,355 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
     # Ensure criteria_context is always present for UI (fallback to rubric)
     payload.setdefault("criteria_context", criteria_context)
     return AnalyzeLosersResponse(**payload)
+
+
+async def _build_optimization_context(
+    request: AnalyzeLosersRequest,
+) -> tuple[list[PortfolioLoser], str, list[dict], list[dict], list[dict], bool, float]:
+    """
+    Build the optimization context (shared between streaming and non-streaming endpoints).
+    
+    Returns:
+        Tuple of (losers_filtered, criteria_context, criteria_rows, replacement_pool, 
+                  per_loser_context, optimize_from_losers, total_mv)
+    """
+    losers_in = request.losers or []
+    holdings_in = request.holdings or []
+
+    # Build optimization universe
+    losers_filtered: list[PortfolioLoser] = []
+    for l in losers_in:
+        pct = l.gain_loss_pct
+        if pct is None or pct <= request.threshold_pct:
+            losers_filtered.append(l)
+    losers_filtered = losers_filtered[: request.max_positions]
+
+    optimize_from_losers = bool(losers_filtered)
+
+    if not optimize_from_losers:
+        if request.force_optimize and holdings_in:
+            sorted_holdings = sorted(
+                holdings_in,
+                key=lambda h: h.market_value or 0.0,
+                reverse=True,
+            )[: request.max_positions]
+            losers_filtered = [
+                PortfolioLoser(
+                    symbol=h.symbol,
+                    name=h.name,
+                    gain_loss_pct=h.gain_loss_pct,
+                    gain_loss=h.gain_loss,
+                    market_value=h.market_value,
+                )
+                for h in sorted_holdings
+            ]
+            optimize_from_losers = False
+        else:
+            if not losers_in:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No losers provided. Provide loser positions from the client portfolio.",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No losers met the threshold. Lower threshold_pct or provide more losers.",
+            )
+
+    renaissance = get_renaissance_service()
+    criteria_context = await renaissance.get_screening_context()
+    criteria_rows = await renaissance.get_screening_criteria()
+
+    ace_pool = await renaissance.get_by_tier("ACE")
+    king_pool = await renaissance.get_by_tier("KING")
+    replacement_pool = [
+        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis}
+        for s in (ace_pool[:15] + king_pool[:15])
+    ]
+
+    total_mv = sum((l.market_value or 0.0) for l in losers_filtered) or 0.0
+    per_loser_context: list[dict[str, Any]] = []
+    for l in losers_filtered:
+        ticker = l.symbol.upper().strip()
+        ren_ctx = await renaissance.get_analysis_context(ticker)
+        weight_pct = (
+            (l.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
+        )
+        per_loser_context.append(
+            {
+                "symbol": ticker,
+                "name": l.name,
+                "gain_loss_pct": l.gain_loss_pct,
+                "gain_loss": l.gain_loss,
+                "market_value": l.market_value,
+                "weight_pct": weight_pct,
+                "renaissance": {
+                    "is_investable": ren_ctx.get("is_investable", False),
+                    "tier": ren_ctx.get("tier"),
+                    "tier_description": ren_ctx.get("tier_description"),
+                    "investment_thesis": ren_ctx.get("investment_thesis"),
+                    "fcf_billions": ren_ctx.get("fcf_billions"),
+                    "conviction_weight": ren_ctx.get("conviction_weight"),
+                    "is_avoid": ren_ctx.get("is_avoid", False),
+                    "avoid_category": ren_ctx.get("avoid_category"),
+                    "avoid_reason": ren_ctx.get("avoid_reason"),
+                    "avoid_source": ren_ctx.get("avoid_source"),
+                },
+            }
+        )
+
+    return (
+        losers_filtered,
+        criteria_context,
+        criteria_rows,
+        replacement_pool,
+        per_loser_context,
+        optimize_from_losers,
+        total_mv,
+    )
+
+
+def _build_optimization_prompt(
+    criteria_context: str,
+    criteria_rows: list[dict],
+    replacement_pool: list[dict],
+    portfolio_snapshot: dict,
+) -> str:
+    """Build the LLM prompt for portfolio optimization."""
+    return f"""
+You are Kai's **Optimize Portfolio** investment committee.
+
+ROLE AND CONSTRAINTS
+--------------------
+- You apply the Renaissance screening rubric, tiers, and avoid rules to optimize a REAL portfolio.
+- BYOK / consent-first: you NEVER place trades. You only propose illustrative, auditable rebalancing plans.
+- You must act like a cautious CIO:
+  - No leverage, margin, derivatives, or shorting.
+  - No market timing or price targets. Focus on allocation quality and risk.
+  - Prefer **moving capital from avoid / low-quality names into ACE/KING investable names**.
+  - Respect diversification: avoid extreme concentration in any single name or sector.
+
+DATA YOU HAVE
+-------------
+<<RENAISSANCE_RUBRIC>>
+{criteria_context}
+
+<<RENAISSANCE_CRITERIA_TABLE>>
+{json.dumps(_convert_decimals(criteria_rows), ensure_ascii=False)}
+
+<<RENAISSANCE_TIERS>>
+ACE: conviction_weight 1.0  — highest quality, very rare, default bias STRONG_BUY.
+KING: conviction_weight 0.85 — high quality, bias BUY.
+QUEEN: conviction_weight 0.70 — solid but with more questions, bias HOLD_TO_BUY.
+JACK: conviction_weight 0.55 — acceptable but lower quality, bias HOLD.
+Any ticker not in the investable universe has conviction_weight 0.0.
+If a ticker is in the Renaissance avoid list, conviction_weight is effectively NEGATIVE regardless of tier.
+
+<<REPLACEMENT_POOL>>
+{json.dumps(_convert_decimals(replacement_pool), ensure_ascii=False)}
+
+<<USER_PORTFOLIO_SNAPSHOT>>
+Depending on mode, this is either:
+- Mode "losers": positions currently losing beyond the given threshold.
+- Mode "full_portfolio": top positions by market value to optimize around.
+Use their market values and weight_pct fields to reason about risk and concentration.
+{json.dumps(_convert_decimals(portfolio_snapshot), ensure_ascii=False)}
+
+INSTRUCTIONS
+------------
+1) Diagnose portfolio health focusing on these losers:
+   - Classify each loser as one of: "core_keep", "trim", "exit", "rotate", "watchlist".
+   - Compute how much risk is in:
+     * Renaissance AVOID names.
+     * Non-investable names (neither investable nor avoid).
+     * ACE/KING investable names.
+   - Comment on concentration and drawdowns using the data available (do NOT invent missing holdings).
+
+2) Design target allocations (conceptual, not exact trading instructions):
+   - For each loser, propose a **target_weight_delta** (relative importance) and an `action`:
+     * "HOLD", "ADD", "TRIM", "EXIT", or "ROTATE".
+   - When suggesting EXIT or ROTATE, pick 1–3 candidates from the replacement pool that better fit the Renaissance rubric.
+   - Keep plans self-funded: assume sells in losers finance buys in higher-quality names.
+
+3) Build three plan flavours:
+   - "minimal": only obvious, high-conviction changes (e.g., exit avoid names, small trims).
+   - "standard": reasonable diversification and risk clean-up.
+   - "maximal": aggressively apply the Renaissance funnel, accepting more turnover (still no leverage).
+
+RULES
+-----
+- Ground EVERY claim in the provided data (loser inputs + Renaissance context + criteria table + replacement pool).
+- If you lack key data, set `needs_more_data=true` and say exactly what is missing.
+- If a stock is in the avoid list, treat it as a **hard negative prior** and explain why (avoid_category + avoid_reason).
+- If a stock is ACE/KING, treat it as a **quality prior**; consider trimming rather than exiting unless the position is extremely large or breaks diversification rules.
+- Use the screening criteria rubric to justify recommendations. Whenever possible, reference specific criteria IDs or titles.
+- NEVER recommend options, margin, or shorting. NEVER guarantee outcomes.
+
+OUTPUT FORMAT
+-------------
+Return ONLY valid JSON with this shape (no prose, no markdown):
+{{
+  "criteria_context": string,
+  "summary": {{
+    "health_score": number,                     // 0–100 overall portfolio health score
+    "health_reasons": [string],                 // bullets explaining the score
+    "portfolio_diagnostics": {{
+      "total_losers_value": number,             // sum of losers market_value
+      "avoid_weight_estimate_pct": number,      // approximate % of losers value in avoid names
+      "investable_weight_estimate_pct": number, // approximate % of losers value in ACE/KING
+      "concentration_notes": [string]
+    }},
+    "plans": {{
+      "minimal": {{ "actions": [ /* PlanAction */ ] }},
+      "standard": {{ "actions": [ /* PlanAction */ ] }},
+      "maximal": {{ "actions": [ /* PlanAction */ ] }}
+    }}
+  }},
+  "losers": [
+    {{
+      "symbol": string,
+      "renaissance_status": "investable_tier" | "avoid" | "neither",
+      "tier": string | null,
+      "avoid_category": string | null,
+      "criteria_flags": [string],
+      "needs_more_data": boolean,
+      "likely_driver": "fundamental" | "sentiment" | "macro_rates" | "idiosyncratic" | "unknown",
+      "confidence": number,
+      "recommended_action": "hold" | "add" | "trim" | "exit" | "rotate",
+      "why": string,
+      "replacement_candidates": [{{ "ticker": string, "tier": string, "why": string }}],
+      "current_weight_estimate_pct": number | null,
+      "target_weight_delta": number | null
+    }}
+  ],
+  "portfolio_level_takeaways": [string]
+}}
+""".strip()
+
+
+@router.post("/portfolio/analyze-losers/stream")
+async def analyze_portfolio_losers_stream(
+    request: AnalyzeLosersRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Streaming version of portfolio losers analysis with AI reasoning.
+    
+    Uses SSE to stream:
+    - 'thinking' events: AI reasoning/thought summaries
+    - 'chunk' events: Partial response text
+    - 'complete' events: Final parsed JSON result
+    - 'error' events: Error messages
+    """
+    if token_data["user_id"] != request.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token"
+        )
+
+    async def generate():
+        try:
+            # Stage 1: Building context
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
+            
+            (
+                losers_filtered,
+                criteria_context,
+                criteria_rows,
+                replacement_pool,
+                per_loser_context,
+                optimize_from_losers,
+                total_mv,
+            ) = await _build_optimization_context(request)
+
+            portfolio_snapshot = {
+                "threshold_pct": request.threshold_pct,
+                "max_positions": request.max_positions,
+                "mode": "losers" if optimize_from_losers else "full_portfolio",
+                "total_positions_market_value": total_mv,
+                "positions": per_loser_context,
+            }
+
+            prompt = _build_optimization_prompt(
+                criteria_context, criteria_rows, replacement_pool, portfolio_snapshot
+            )
+
+            # Stage 2: LLM reasoning
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'thinking', 'message': 'AI reasoning about portfolio health...'})}\n\n"
+
+            from google import genai
+            from google.genai import types as genai_types
+            from google.genai.types import HttpOptions
+            from hushh_mcp.constants import GEMINI_MODEL
+
+            client = genai.Client(http_options=HttpOptions(api_version="v1"))
+            model_to_use = GEMINI_MODEL
+            logger.info(f"Optimize Portfolio Stream: Using Vertex AI with model {model_to_use}")
+
+            # Configure with LOW thinking level for better reasoning
+            config = genai_types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=8192,
+                thinking_config=genai_types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_level=genai_types.ThinkingLevel.LOW,
+                ),
+            )
+
+            # Stream the response
+            full_response = ""
+            thought_count = 0
+            chunk_count = 0
+
+            # Get the stream object first (must await the coroutine)
+            stream = await client.aio.models.generate_content_stream(
+                model=model_to_use,
+                contents=prompt,
+                config=config,
+            )
+
+            # Then iterate over the stream
+            async for chunk in stream:
+                # Check for thought summaries (Gemini thinking mode)
+                if hasattr(chunk, "candidates") and chunk.candidates:
+                    for candidate in chunk.candidates:
+                        if hasattr(candidate, "content") and candidate.content:
+                            for part in candidate.content.parts:
+                                # Check for thought content
+                                if hasattr(part, "thought") and part.thought:
+                                    thought_count += 1
+                                    yield f"data: {json.dumps({'type': 'thinking', 'thought': part.text, 'count': thought_count})}\n\n"
+                                # Regular text content
+                                elif hasattr(part, "text") and part.text:
+                                    chunk_count += 1
+                                    full_response += part.text
+                                    yield f"data: {json.dumps({'type': 'chunk', 'text': part.text, 'count': chunk_count})}\n\n"
+
+            # Stage 3: Extracting results
+            yield f"data: {json.dumps({'type': 'stage', 'stage': 'extracting', 'message': 'Extracting optimization recommendations...'})}\n\n"
+
+            # Parse the final JSON
+            try:
+                payload = _extract_json_object(full_response)
+                payload.setdefault("criteria_context", criteria_context)
+                
+                yield f"data: {json.dumps({'type': 'complete', 'data': payload})}\n\n"
+            except Exception as parse_error:
+                logger.error(f"Failed to parse LLM response: {parse_error}")
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to parse AI response', 'raw': full_response[:500]})}\n\n"
+
+        except HTTPException as http_err:
+            yield f"data: {json.dumps({'type': 'error', 'message': http_err.detail})}\n\n"
+        except Exception as e:
+            logger.error(f"Streaming losers analysis failed: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 

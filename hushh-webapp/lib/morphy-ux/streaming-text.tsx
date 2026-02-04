@@ -208,6 +208,16 @@ export function StreamingTextDisplay({
     return () => container.removeEventListener("scroll", handleScroll);
   }, [handleScroll]);
 
+  // Scroll to bottom on mount
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      // Immediate scroll to bottom on mount
+      container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      lastScrollHeightRef.current = container.scrollHeight;
+    }
+  }, []); // Empty deps = run once on mount
+
   // Initial scroll to bottom when streaming starts
   useEffect(() => {
     if (isStreaming && !userScrolledUp) {
@@ -225,6 +235,24 @@ export function StreamingTextDisplay({
       }
     }
   }, [isStreaming, userScrolledUp]);
+
+  // Scroll to bottom when displayText first has content
+  useEffect(() => {
+    if (displayText && displayText.length > 0 && !userScrolledUp) {
+      const container = containerRef.current;
+      if (container) {
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            lastScrollHeightRef.current = containerRef.current.scrollHeight;
+            containerRef.current.scrollTo({
+              top: containerRef.current.scrollHeight,
+              behavior: "auto",
+            });
+          }
+        });
+      }
+    }
+  }, [displayText.length > 0]); // Only trigger when text goes from empty to non-empty
 
   const isEmpty = !displayText || displayText.length === 0;
 

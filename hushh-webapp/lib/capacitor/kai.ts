@@ -174,6 +174,30 @@ export interface KaiPlugin {
     source: string;
     error?: string;
   }>;
+
+  /**
+   * Analyze portfolio losers with Renaissance rubric.
+   * Calls: POST /api/kai/portfolio/analyze-losers
+   * Requires: VAULT_OWNER token
+   */
+  analyzePortfolioLosers(options: {
+    userId: string;
+    losers: Array<{
+      symbol: string;
+      name?: string;
+      gain_loss_pct?: number;
+      gain_loss?: number;
+      market_value?: number;
+    }>;
+    thresholdPct?: number;
+    maxPositions?: number;
+    vaultOwnerToken: string;
+  }): Promise<{
+    criteria_context: string;
+    summary: Record<string, unknown>;
+    losers: Array<Record<string, unknown>>;
+    portfolio_level_takeaways: string[];
+  }>;
 }
 
 export const Kai = registerPlugin<KaiPlugin>("Kai", {
