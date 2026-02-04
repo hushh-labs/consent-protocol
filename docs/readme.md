@@ -80,7 +80,7 @@ Hushh uses Capacitor 8 for native iOS and Android apps:
 │   │                                                                      │   │
 │   │  • FastAPI with consent-first validation                            │   │
 │   │  • AES-256-GCM encrypted vault storage                              │   │
-│   │  • PostgreSQL (Cloud SQL) for production                            │   │
+│   │  • PostgreSQL (Supabase session pooler) for production              │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -271,7 +271,7 @@ cp hushh-webapp/.env.example hushh-webapp/.env.local
 
 # Required variables:
 # NEXT_PUBLIC_FIREBASE_*  (Authentication)
-# DATABASE_URL            (PostgreSQL - cloud mode only)
+# Backend uses DB_* (see consent-protocol/.env.example); no DATABASE_URL
 ```
 
 ### 3. Start Services

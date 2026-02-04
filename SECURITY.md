@@ -97,7 +97,7 @@ When contributing to Hushh, please follow these security guidelines:
 These environment variables should be kept secret:
 
 - `SECRET_KEY` - Used for signing consent tokens
-- `DATABASE_URL` - Database connection string
+- `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` - Database (Supabase session pooler)
 - `FIREBASE_*` - Firebase configuration
 - `GOOGLE_*` - Google Cloud credentials
 
