@@ -36,10 +36,21 @@ SERVER_INFO = {
     "version": "1.0.0",
     "protocol": "HushhMCP",
     "transport": "stdio",
-    "tools_count": 7,
+    "description": "Consent-first personal data access for AI agents; no data without explicit user approval.",
+    "tools_count": 8,
+    "tools": [
+        {"name": "request_consent", "purpose": "Request user consent for a data scope"},
+        {"name": "validate_token", "purpose": "Validate a consent token (signature, expiry, scope)"},
+        {"name": "discover_user_domains", "purpose": "Discover which domains a user has and scope strings to request"},
+        {"name": "list_scopes", "purpose": "List available consent scope categories (static examples)"},
+        {"name": "check_consent_status", "purpose": "Poll status of a pending consent request until granted or denied"},
+        {"name": "get_food_preferences", "purpose": "Get food/dining preferences (requires consent token)"},
+        {"name": "get_professional_profile", "purpose": "Get professional profile (requires consent token)"},
+        {"name": "delegate_to_agent", "purpose": "Create TrustLink for agent-to-agent delegation"},
+    ],
     "compliance": [
         "Consent First",
-        "Scoped Access", 
+        "Scoped Access",
         "Zero Knowledge",
         "Cryptographic Signatures",
         "TrustLink Delegation"
@@ -50,17 +61,12 @@ SERVER_INFO = {
 # SCOPE MAPPINGS
 # ============================================================================
 
-# Map MCP scope strings to API format
-# Supports both dynamic attr.* scopes and legacy vault.read.* scopes
+# Map MCP scope strings (dot notation) to API format. Only world-model scopes are supported.
 SCOPE_API_MAP = {
-    # Dynamic attr.* scopes (canonical - preferred)
+    "world_model.read": "world_model_read",
     "attr.food.*": "attr_food",
     "attr.professional.*": "attr_professional",
     "attr.financial.*": "attr_financial",
     "attr.health.*": "attr_health",
-    # Legacy vault.read.* scopes (deprecated - for backward compatibility)
-    "vault.read.food": "vault_read_food",
-    "vault.read.professional": "vault_read_professional",
-    "vault.read.finance": "vault_read_finance",
-    # "vault.read.all" - DISABLED for MCP (security)
+    "attr.kai_decisions.*": "attr_kai_decisions",
 }

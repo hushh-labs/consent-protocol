@@ -129,17 +129,18 @@ class DynamicScopeGenerator:
         """
         Validate that a scope is valid.
         
-        For specific scopes, checks if the attribute exists for the user.
-        For wildcards, checks if the domain has any attributes.
+        Uses world_model_index_v2: checks if the domain exists in available_domains.
+        For specific attribute keys we cannot validate without decrypting the blob,
+        so we accept "user has this domain" as sufficient.
         
         Args:
             scope: The scope to validate
-            user_id: Optional user ID to check against stored attributes
+            user_id: Optional user ID to check against stored data
         
         Returns:
             True if the scope is valid
         """
-        domain, attribute_key, is_wildcard = self.parse_scope(scope)
+        domain, _attribute_key, _is_wildcard = self.parse_scope(scope)
         
         if domain is None:
             return False
@@ -149,52 +150,24 @@ class DynamicScopeGenerator:
             return True
         
         try:
-            if is_wildcard or attribute_key is None:
-                # Check if user has any attributes in this domain
-                result = self.supabase.table("world_model_attributes").select(
-                    "id", count="exact"
-                ).eq("user_id", user_id).eq("domain", domain).limit(1).execute()
-                return (result.count or 0) > 0
-            else:
-                # Check if specific attribute exists
-                result = self.supabase.table("world_model_attributes").select(
-                    "id", count="exact"
-                ).eq("user_id", user_id).eq("domain", domain).eq(
-                    "attribute_key", attribute_key
-                ).execute()
-                return (result.count or 0) > 0
+            result = self.supabase.table("world_model_index_v2").select(
+                "available_domains"
+            ).eq("user_id", user_id).limit(1).execute()
+            if not result.data:
+                logger.debug(f"No world model index for user {user_id}")
+                return False
+            available_domains = result.data[0].get("available_domains") or []
+            return domain in available_domains
         except Exception as e:
             logger.error(f"Error validating scope {scope}: {e}")
             return False
     
     async def get_available_scopes(self, user_id: str) -> list[str]:
         """
-        Get all valid scopes for a user based on stored attributes.
+        Get all valid wildcard scopes for a user from world_model_index_v2.
         
-        Args:
-            user_id: The user ID
-        
-        Returns:
-            List of scope strings
-        """
-        try:
-            result = self.supabase.table("world_model_attributes").select(
-                "domain", "attribute_key"
-            ).eq("user_id", user_id).execute()
-            
-            scopes = []
-            for row in (result.data or []):
-                scope = self.generate_scope(row["domain"], row["attribute_key"])
-                scopes.append(scope)
-            
-            return sorted(scopes)
-        except Exception as e:
-            logger.error(f"Error getting available scopes for {user_id}: {e}")
-            return []
-    
-    async def get_available_wildcards(self, user_id: str) -> list[str]:
-        """
-        Get all valid wildcard scopes for a user.
+        We only have domain-level info in the index (no per-attribute keys),
+        so we return wildcard scopes (attr.{domain}.*) per available domain.
         
         Args:
             user_id: The user ID
@@ -203,17 +176,28 @@ class DynamicScopeGenerator:
             List of wildcard scope strings
         """
         try:
-            result = self.supabase.table("world_model_attributes").select(
-                "domain"
-            ).eq("user_id", user_id).execute()
-            
-            # Get unique domains
-            domains = set(row["domain"] for row in (result.data or []))
-            
-            return sorted([self.generate_domain_wildcard(d) for d in domains])
+            result = self.supabase.table("world_model_index_v2").select(
+                "available_domains"
+            ).eq("user_id", user_id).limit(1).execute()
+            if not result.data:
+                return []
+            available_domains = result.data[0].get("available_domains") or []
+            return sorted([self.generate_domain_wildcard(d) for d in available_domains])
         except Exception as e:
-            logger.error(f"Error getting available wildcards for {user_id}: {e}")
+            logger.error(f"Error getting available scopes for {user_id}: {e}")
             return []
+    
+    async def get_available_wildcards(self, user_id: str) -> list[str]:
+        """
+        Get all valid wildcard scopes for a user from world_model_index_v2.
+        
+        Args:
+            user_id: The user ID
+        
+        Returns:
+            List of wildcard scope strings
+        """
+        return await self.get_available_scopes(user_id)
     
     async def check_scope_access(
         self,
@@ -251,30 +235,21 @@ class DynamicScopeGenerator:
         """
         Expand a wildcard scope into specific scopes for a user.
         
+        world_model_index_v2 does not store per-attribute keys, so we return
+        the wildcard itself as the only scope.
+        
         Args:
             wildcard: The wildcard scope (e.g., 'attr.financial.*')
-            user_id: The user ID
+            user_id: The user ID (unused; kept for API compatibility)
         
         Returns:
-            List of specific scopes covered by the wildcard
+            List containing the wildcard (no per-attribute expansion)
         """
+        _ = user_id
         domain, _, is_wildcard = self.parse_scope(wildcard)
-        
         if not is_wildcard or domain is None:
             return [wildcard]
-        
-        try:
-            result = self.supabase.table("world_model_attributes").select(
-                "attribute_key"
-            ).eq("user_id", user_id).eq("domain", domain).execute()
-            
-            return [
-                self.generate_scope(domain, row["attribute_key"])
-                for row in (result.data or [])
-            ]
-        except Exception as e:
-            logger.error(f"Error expanding wildcard {wildcard}: {e}")
-            return []
+        return [wildcard]
     
     def get_scope_display_info(self, scope: str) -> dict:
         """

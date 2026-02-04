@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict, List
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
+from hushh_mcp.constants import ConsentScope  # WORLD_MODEL_READ / WORLD_MODEL_WRITE for attr.kai_decisions.*
 from hushh_mcp.types import EncryptedPayload, UserID
 from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
 
@@ -32,9 +32,9 @@ def store_decision_card(
 ) -> EncryptedPayload:
     """
     Operon: Store encrypted decision card in vault.
-    
-    TrustLink Required: vault.write.decision
-    
+
+    TrustLink Required: world_model.write (covers attr.kai_decisions.*)
+
     Args:
         user_id: User identifier
         session_id: Kai session ID
@@ -57,19 +57,19 @@ def store_decision_card(
         ...     consent_token="HCT:..."
         ... )
     """
-    # Validate TrustLink
+    # Validate TrustLink (world-model write covers attr.kai_decisions.*)
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("vault.write.decision")
+        ConsentScope.WORLD_MODEL_WRITE
     )
-    
+
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
         raise PermissionError(f"TrustLink validation failed: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError(f"Token user mismatch: expected {user_id}, got {token.user_id}")
-    
+
     logger.info(f"[Storage Operon] Storing decision for {decision_card.get('ticker')} - user {user_id}")
     
     # Serialize decision card
@@ -93,9 +93,9 @@ def retrieve_decision_card(
 ) -> Dict[str, Any]:
     """
     Operon: Retrieve and decrypt decision card from vault.
-    
-    TrustLink Required: vault.read.decision_history
-    
+
+    TrustLink Required: world_model.write (covers attr.kai_decisions.*)
+
     Args:
         encrypted_payload: Encrypted decision data from database
         vault_key_hex: User's vault encryption key (client-provided)
@@ -109,21 +109,21 @@ def retrieve_decision_card(
         PermissionError: If TrustLink validation fails
         ValueError: If decryption fails
     """
-    # Validate TrustLink
+    # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("vault.read.decision_history")
+        ConsentScope.WORLD_MODEL_READ
     )
-    
+
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
         raise PermissionError(f"TrustLink validation failed: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[Storage Operon] Retrieving decision for user {user_id}")
-    
+
     # Decrypt using client-provided vault key
     try:
         decrypted_json = decrypt_data(encrypted_payload, vault_key_hex)
@@ -145,9 +145,9 @@ def retrieve_decision_history(
 ) -> List[Dict[str, Any]]:
     """
     Operon: Retrieve decision history metadata (without full decryption).
-    
-    TrustLink Required: vault.read.decision_history
-    
+
+    TrustLink Required: world_model.read (covers attr.kai_decisions.*)
+
     This returns only metadata (ticker, decision, confidence, timestamp).
     Full decision cards must be retrieved individually with vault keys.
     
@@ -162,19 +162,19 @@ def retrieve_decision_history(
     Raises:
         PermissionError: If TrustLink validation fails
     """
-    # Validate TrustLink
+    # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("vault.read.decision_history")
+        ConsentScope.WORLD_MODEL_READ
     )
-    
+
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
         raise PermissionError(f"TrustLink validation failed: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[Storage Operon] Retrieving decision history for user {user_id}")
     
     # This operon just validates consent

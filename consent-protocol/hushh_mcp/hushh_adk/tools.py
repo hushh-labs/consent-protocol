@@ -12,6 +12,7 @@ import functools
 import logging
 from typing import Callable, Optional
 
+from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.hushh_adk.context import HushhContext
 
@@ -41,10 +42,11 @@ def hushh_tool(scope: str, name: Optional[str] = None):
                 logger.critical(error_msg)
                 raise PermissionError(error_msg)
             
-            # 2. Validate Token Scope
+            # 2. Validate Token Scope (resolve world-model scope string to enum)
+            expected = resolve_scope_to_enum(scope) if isinstance(scope, str) else scope
             valid, reason, token_obj = validate_token(
                 ctx.consent_token,
-                expected_scope=scope
+                expected_scope=expected
             )
             
             if not valid:

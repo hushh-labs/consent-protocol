@@ -57,7 +57,7 @@ manifest = {
     "id": "agent_professional_profile",
     "name": "Professional Profile Agent",
     "description": "Helps user manage career data securely.",
-    "scopes": ["vault.read.professional", "vault.write.professional"],
+    "scopes": ["attr.professional.*"],
     "version": "0.1.0"
 }
 ```
@@ -81,7 +81,7 @@ from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 
 class ProfessionalProfileAgent:
-    required_scope = ConsentScope.VAULT_READ_PROFESSIONAL
+    required_scope = ConsentScope.WORLD_MODEL_READ  # or resolve_scope_to_enum("attr.professional.*")
 
     def handle(self, user_id: str, token: str):
         valid, reason, parsed = validate_token(token, expected_scope=self.required_scope)
@@ -103,7 +103,7 @@ Write a `pytest` test in `tests/test_my_agent.py` like this:
 
 ```python
 def test_professional_agent_flow():
-    token = issue_token("user_abc", "agent_professional_profile", "vault.read.professional")
+    token = issue_token("user_abc", "agent_professional_profile", ConsentScope.WORLD_MODEL_READ)
     agent = ProfessionalProfileAgent()
     result = agent.handle("user_abc", token.token)
     assert "summary" in result
