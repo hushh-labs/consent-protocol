@@ -831,7 +831,7 @@ export default function ConsentsPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl py-6 px-4 md:px-6 space-y-6 pb-28">
+    <div className="w-full mx-auto px-4 sm:px-6 py-5 md:py-6 md:max-w-4xl space-y-6 pb-28">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

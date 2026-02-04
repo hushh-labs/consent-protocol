@@ -12,7 +12,7 @@ export interface HushhWorldModelPlugin {
    * Get user's world model metadata for UI display.
    * Calls: GET /api/world-model/metadata/:userId
    */
-  getMetadata(options: { userId: string }): Promise<{
+  getMetadata(options: { userId: string; vaultOwnerToken?: string }): Promise<{
     userId: string;
     domains: Array<{
       key: string;
@@ -34,7 +34,7 @@ export interface HushhWorldModelPlugin {
    * Get user's world model index.
    * Calls: GET /api/world-model/index/:userId
    */
-  getIndex(options: { userId: string }): Promise<{
+  getIndex(options: { userId: string; vaultOwnerToken?: string }): Promise<{
     userId: string;
     domainSummaries: Record<string, Record<string, unknown>>;
     availableDomains: string[];
@@ -49,7 +49,11 @@ export interface HushhWorldModelPlugin {
    * Get attributes for a user, optionally filtered by domain.
    * Calls: GET /api/world-model/attributes/:userId
    */
-  getAttributes(options: { userId: string; domain?: string }): Promise<{
+  getAttributes(options: {
+    userId: string;
+    domain?: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     attributes: Array<{
       domain: string;
       attributeKey: string;
@@ -78,6 +82,7 @@ export interface HushhWorldModelPlugin {
     displayName?: string;
     dataType?: string;
     source?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean; scope: string }>;
 
   /**
@@ -88,13 +93,14 @@ export interface HushhWorldModelPlugin {
     userId: string;
     domain: string;
     attributeKey: string;
+    vaultOwnerToken?: string;
   }): Promise<{ success: boolean }>;
 
   /**
    * Get domains that have data for a user.
    * Calls: GET /api/world-model/domains/:userId
    */
-  getUserDomains(options: { userId: string }): Promise<{
+  getUserDomains(options: { userId: string; vaultOwnerToken?: string }): Promise<{
     domains: Array<{
       key: string;
       displayName: string;
@@ -108,7 +114,10 @@ export interface HushhWorldModelPlugin {
    * List all registered domains.
    * Calls: GET /api/world-model/domains
    */
-  listDomains(options: { includeEmpty?: boolean }): Promise<{
+  listDomains(options: {
+    includeEmpty?: boolean;
+    vaultOwnerToken?: string;
+  }): Promise<{
     domains: Array<{
       key: string;
       displayName: string;
@@ -124,7 +133,10 @@ export interface HushhWorldModelPlugin {
    * Get available scopes for a user (MCP discovery).
    * Calls: GET /api/world-model/scopes/:userId
    */
-  getAvailableScopes(options: { userId: string }): Promise<{
+  getAvailableScopes(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     userId: string;
     availableDomains: Array<{
       domain: string;
@@ -142,23 +154,75 @@ export interface HushhWorldModelPlugin {
   getPortfolio(options: {
     userId: string;
     portfolioName?: string;
+    vaultOwnerToken?: string;
   }): Promise<{ portfolio: Record<string, unknown> | null }>;
 
   /**
    * List all portfolios for a user.
    * Calls: GET /api/world-model/portfolios/:userId
    */
-  listPortfolios(options: { userId: string }): Promise<{
+  listPortfolios(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     portfolios: Record<string, unknown>[];
   }>;
+
+  /**
+   * Store encrypted domain blob (BYOK v2).
+   * Calls: POST /api/world-model/store-domain
+   */
+  storeDomainData(options: {
+    userId: string;
+    domain: string;
+    encryptedBlob: {
+      ciphertext: string;
+      iv: string;
+      tag: string;
+      algorithm?: string;
+    };
+    summary: Record<string, unknown>;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
+   * Get encrypted domain blob.
+   * Calls: GET /api/world-model/domain-data/:userId/:domain
+   */
+  getDomainData(options: {
+    userId: string;
+    domain: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
+    encrypted_blob?: {
+      ciphertext: string;
+      iv: string;
+      tag: string;
+      algorithm?: string;
+    };
+  }>;
+
+  /**
+   * Clear a domain blob.
+   * Calls: DELETE /api/world-model/domain-data/:userId/:domain
+   */
+  clearDomain(options: {
+    userId: string;
+    domain: string;
+    vaultOwnerToken?: string;
+  }): Promise<{ success: boolean }>;
 
   /**
    * Get initial chat state for proactive welcome flow.
    * Calls: GET /api/kai/chat/initial-state/:userId
    */
-  getInitialChatState(options: { userId: string }): Promise<{
+  getInitialChatState(options: {
+    userId: string;
+    vaultOwnerToken?: string;
+  }): Promise<{
     is_new_user: boolean;
     has_portfolio: boolean;
+    has_financial_data?: boolean;
     welcome_type: string;
     total_attributes: number;
     available_domains: string[];
@@ -166,7 +230,7 @@ export interface HushhWorldModelPlugin {
 }
 
 export const HushhWorldModel = registerPlugin<HushhWorldModelPlugin>(
-  "HushhWorldModel",
+  "WorldModel",
   {
     web: () =>
       import("./plugins/world-model-web").then(

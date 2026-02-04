@@ -103,7 +103,7 @@ export default function ApiDocsPage() {
     <div className="min-h-screen pb-24">
       {/* Header */}
       <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
-        <div className="container mx-auto max-w-4xl px-4 py-4 flex items-center gap-4">
+        <div className="w-full mx-auto px-4 sm:px-6 py-4 md:max-w-4xl flex items-center gap-4">
           <Link
             href="/docs"
             className="text-muted-foreground hover:text-foreground cursor-pointer"
@@ -135,7 +135,7 @@ export default function ApiDocsPage() {
         </div>
       </header>
 
-      <div className="container mx-auto max-w-4xl px-4 py-8 space-y-12">
+      <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-4xl space-y-12">
         {/* Intro */}
         <div className="space-y-2">
           <p className="text-lg text-muted-foreground">

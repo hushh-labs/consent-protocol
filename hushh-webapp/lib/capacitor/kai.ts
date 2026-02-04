@@ -28,6 +28,14 @@ export interface KaiPlugin {
   grantConsent(options: {
     userId: string;
     scopes: string[];
+    /**
+     * Firebase ID token (bootstrap auth) required by backend for /api/kai/consent/grant.
+     */
+    authToken: string;
+    /**
+     * Deprecated: VAULT_OWNER token is not accepted by the backend for this endpoint.
+     * Kept only for backward compatibility during migration.
+     */
     vaultOwnerToken?: string;
   }): Promise<{ token: string; expires_at: string }>;
 
@@ -39,7 +47,7 @@ export interface KaiPlugin {
   analyze(options: {
     userId: string;
     ticker: string;
-    consentToken?: string;
+    consentToken: string;
     riskProfile: string;
     processingMode: string;
     context?: any;

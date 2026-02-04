@@ -82,8 +82,11 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Bootstrap route: backend requires Firebase ID token (NOT VAULT_OWNER).
+        val authToken = call.getString("authToken") ?: run {
+            call.reject("Missing authToken (Firebase ID token)")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/consent/grant"
         
@@ -96,9 +99,7 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).post(body)
         
-        if (vaultOwnerToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
-        }
+        requestBuilder.addHeader("Authorization", "Bearer $authToken")
         
         val request = requestBuilder.build()
         val pluginCall = call // Rename to avoid shadowing in callback
@@ -119,8 +120,24 @@ class KaiPlugin : Plugin() {
                 }
                 
                 try {
-                    val result = JSObject(responseBody)
-                    pluginCall.resolve(result)
+                    // Normalize to TS contract: { token, expires_at }
+                    val json = JSONObject(responseBody)
+                    val tokensObj = json.optJSONObject("tokens")
+                    if (tokensObj != null) {
+                        val token =
+                            tokensObj.optString("agent.kai.analyze").takeIf { it.isNotBlank() }
+                                ?: run {
+                                    val keys = tokensObj.keys()
+                                    if (keys.hasNext()) tokensObj.optString(keys.next()) else ""
+                                }
+                        val expiresAt = json.optString("expires_at", "")
+                        pluginCall.resolve(JSObject().apply {
+                            put("token", token)
+                            put("expires_at", expiresAt)
+                        })
+                    } else {
+                        pluginCall.resolve(JSObject(responseBody))
+                    }
                 } catch (e: Exception) {
                     pluginCall.reject("JSON parsing error: ${e.message}")
                 }
@@ -151,8 +168,11 @@ class KaiPlugin : Plugin() {
             return
         }
         
-        // Use VAULT_OWNER token for consent-gated access
-        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        // Consent-gated: requires VAULT_OWNER token
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
         val contextObj = call.getObject("context") // Optional context object
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/analyze"
@@ -173,9 +193,7 @@ class KaiPlugin : Plugin() {
         
         val requestBuilder = Request.Builder().url(url).post(body)
         
-        if (vaultOwnerToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
-        }
+        requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
         
         val request = requestBuilder.build()
         val pluginCall = call
@@ -642,17 +660,19 @@ class KaiPlugin : Plugin() {
         }
         
         // Use VAULT_OWNER token for consent-gated access
-        val vaultOwnerToken = call.getString("vaultOwnerToken")
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
         val backendUrl = getBackendUrl(call)
         val url = "$backendUrl/api/kai/chat/initial-state/$userId"
         
         android.util.Log.d(TAG, "🌐 URL: $url")
         
-        val requestBuilder = Request.Builder().url(url).get()
-        
-        if (vaultOwnerToken != null) {
-            requestBuilder.addHeader("Authorization", "Bearer $vaultOwnerToken")
-        }
+        val requestBuilder = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
         
         val request = requestBuilder.build()
         val pluginCall = call

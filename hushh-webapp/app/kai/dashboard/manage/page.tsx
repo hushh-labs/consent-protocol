@@ -108,7 +108,7 @@ function deriveRiskBucket(holdings: Holding[]): string {
 export default function ManagePortfolioPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { vaultKey } = useVault();
+  const { vaultKey, vaultOwnerToken } = useVault();
   const { getPortfolioData, setPortfolioData: setCachePortfolioData } = useCache();
   
   const [isLoading, setIsLoading] = useState(true);
@@ -145,7 +145,11 @@ export default function ManagePortfolioPage() {
 
       try {
         // Get encrypted data from world model
-        const response = await WorldModelService.getMetadata(user.uid);
+        const response = await WorldModelService.getMetadata(
+          user.uid,
+          false,
+          vaultOwnerToken || undefined
+        );
         const financialDomain = response.domains.find(d => d.key === "financial");
         
         if (financialDomain && financialDomain.attributeCount > 0) {
@@ -169,7 +173,11 @@ export default function ManagePortfolioPage() {
           if (!parsed) {
             console.log("[ManagePortfolio] No cache, attempting to decrypt from World Model...");
             try {
-              const encryptedData = await WorldModelService.getDomainData(user.uid, "financial");
+              const encryptedData = await WorldModelService.getDomainData(
+                user.uid,
+                "financial",
+                vaultOwnerToken || undefined
+              );
               
               if (encryptedData) {
                 const decrypted = await HushhVault.decryptData({
@@ -244,7 +252,14 @@ export default function ManagePortfolioPage() {
     }
 
     loadPortfolio();
-  }, [user?.uid, vaultKey, completeStep, getPortfolioData, setCachePortfolioData]);
+  }, [
+    user?.uid,
+    vaultKey,
+    vaultOwnerToken,
+    completeStep,
+    getPortfolioData,
+    setCachePortfolioData,
+  ]);
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -291,6 +306,7 @@ export default function ManagePortfolioPage() {
           risk_bucket: deriveRiskBucket(holdings),
           last_updated: new Date().toISOString(),
         },
+        vaultOwnerToken: vaultOwnerToken || undefined,
       });
 
       if (result.success) {
@@ -361,7 +377,7 @@ export default function ManagePortfolioPage() {
   }
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-[100dvh] pb-24">
       <div className="p-4 space-y-4">
         {/* Account Info */}
         {(accountInfo.account_number || accountInfo.brokerage_name) && (
@@ -521,7 +537,7 @@ export default function ManagePortfolioPage() {
 
       {/* Save Button - Fixed at bottom */}
       {hasChanges && (
-        <div className="fixed bottom-20 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border">
+        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border safe-area-pb">
           <Button
             onClick={handleSave}
             disabled={isSaving}

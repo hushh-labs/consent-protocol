@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import CommonCrypto
+import Foundation
 
 /**
  * HushhConsentPlugin - Token Management + Backend API (Capacitor 8)
@@ -53,6 +54,15 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         config.timeoutIntervalForResource = 30
         return URLSession(configuration: config)
     }()
+
+    private func resolvedBackendUrl(_ call: CAPPluginCall) -> String {
+        return HushhProxyClient.resolveBackendUrl(
+            call: call,
+            plugin: self,
+            jsName: jsName,
+            defaultBackendUrl: defaultBackendUrl
+        )
+    }
     
     // MARK: - Issue Token
     @objc func issueToken(_ call: CAPPluginCall) {
@@ -127,15 +137,23 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing required parameters: userId and scope")
             return
         }
-        
-        let authToken = call.getString("authToken")
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+
+        // Consent-gated: requires VAULT_OWNER token only
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = resolvedBackendUrl(call)
         
         let body: [String: Any] = ["userId": userId, "scope": scope]
         
         print("🔒 [\(TAG)] Revoking consent for scope: \(scope)")
         
-        performRequest(url: "\(backendUrl)/api/consent/revoke", body: body, authToken: authToken) { result, error in
+        performRequest(
+            url: "\(backendUrl)/api/consent/revoke",
+            body: body,
+            authToken: vaultOwnerToken
+        ) { result, error in
             if let error = error {
                 call.reject("Backend rejected revoke: \(error)")
             } else {
@@ -247,8 +265,9 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Missing required parameters: userId and authToken")
             return
         }
-        
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+
+        // Bootstrap-only: Firebase ID token required
+        let backendUrl = resolvedBackendUrl(call)
         let body: [String: Any] = ["userId": userId]
         
         print("[\(TAG)] Requesting VAULT_OWNER token for user: \(userId)")
@@ -281,11 +300,11 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     @objc func getPending(_ call: CAPPluginCall) {
-        performConsentRequest(call: call, endpoint: "pending")
+        performConsentListRequest(call: call, endpoint: "pending")
     }
     
     @objc func getActive(_ call: CAPPluginCall) {
-        performConsentRequest(call: call, endpoint: "active")
+        performConsentListRequest(call: call, endpoint: "active")
     }
     
     @objc func getHistory(_ call: CAPPluginCall) {
@@ -296,17 +315,32 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         
         let page = call.getInt("page") ?? 1
         let limit = call.getInt("limit") ?? 20
-        let authToken = call.getString("authToken")
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
-        
-        let body: [String: Any] = ["userId": userId, "page": page, "limit": limit]
-        
-        performRequest(url: "\(backendUrl)/api/consent/history", body: body, authToken: authToken) { result, error in
-            if let json = result as? [String: Any] {
-                call.resolve(json)
-            } else {
-                call.reject(error ?? "Failed to get consent history")
+
+        // Consent-gated: requires VAULT_OWNER token only
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let urlStr = "\(backendUrl)/api/consent/history?userId=\(encodedUserId)&page=\(page)&limit=\(limit)"
+
+        performGet(urlStr: urlStr, authToken: vaultOwnerToken) { result, error in
+            if let error = error {
+                call.reject(error)
+                return
             }
+            if let dict = result as? [String: Any] {
+                call.resolve(dict)
+                return
+            }
+            if let array = result as? [[String: Any]] {
+                // Normalize for JS call sites that expect an object
+                call.resolve(["items": array])
+                return
+            }
+            call.resolve(["items": []])
         }
     }
     
@@ -323,8 +357,11 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         let exportKey = call.getString("exportKey")
         let userId = call.getString("userId")
         
-        let authToken = call.getString("authToken")
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = resolvedBackendUrl(call)
         
         var body: [String: Any] = ["requestId": requestId]
         if let v = userId { body["userId"] = v }
@@ -333,7 +370,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         if let v = encryptedTag { body["encryptedTag"] = v }
         if let v = exportKey { body["exportKey"] = v }
         
-        performRequest(url: "\(backendUrl)/api/consent/pending/approve", body: body, authToken: authToken) { result, error in
+        performRequest(url: "\(backendUrl)/api/consent/pending/approve", body: body, authToken: vaultOwnerToken) { result, error in
             if let error = error {
                 call.reject(error)
             } else {
@@ -351,32 +388,6 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     
     // MARK: - Helpers
-    private func performConsentRequest(call: CAPPluginCall, endpoint: String) {
-        guard let userId = call.getString("userId") else {
-            call.reject("Missing required parameter: userId")
-            return
-        }
-        
-        let authToken = call.getString("authToken")
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
-        
-        performRequest(url: "\(backendUrl)/api/consent/\(endpoint)", body: ["userId": userId], authToken: authToken) { result, error in
-            if let error = error {
-                call.reject(error)
-                return
-            }
-            
-            // Backend returns a JSON array directly, matching Android's JSONArray(body)
-            if let array = result as? [[String: Any]] {
-                call.resolve(["consents": array])
-            } else if let dict = result as? [String: Any], let consents = dict["consents"] as? [[String: Any]] {
-                call.resolve(["consents": consents])
-            } else {
-                call.resolve(["consents": []])
-            }
-        }
-    }
-    
     private func performActionRequest(call: CAPPluginCall, endpoint: String) {
         guard let requestId = call.getString("requestId") else {
             call.reject("Missing required parameter: requestId")
@@ -384,8 +395,11 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         
         let userId = call.getString("userId")
-        let authToken = call.getString("authToken")
-        let backendUrl = call.getString("backendUrl") ?? defaultBackendUrl
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+        let backendUrl = resolvedBackendUrl(call)
         
         if endpoint == "deny" {
             // deny endpoint expects userId and requestId as query parameters
@@ -394,7 +408,7 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             let url = "\(backendUrl)/api/consent/pending/deny?userId=\(uid)&requestId=\(requestId)"
-            performRequest(url: url, body: [:], authToken: authToken) { result, error in
+            performRequest(url: url, body: [:], authToken: vaultOwnerToken) { result, error in
                 call.resolve(["success": error == nil])
             }
         } else {
@@ -403,9 +417,75 @@ public class HushhConsentPlugin: CAPPlugin, CAPBridgedPlugin {
             var body: [String: Any] = ["requestId": requestId]
             if let uid = userId { body["userId"] = uid }
             
-            performRequest(url: "\(backendUrl)\(path)", body: body, authToken: authToken) { result, error in
+            performRequest(url: "\(backendUrl)\(path)", body: body, authToken: vaultOwnerToken) { result, error in
                 call.resolve(["success": error == nil])
             }
+        }
+    }
+
+    // MARK: - Consent list (GET semantics)
+    private func performConsentListRequest(call: CAPPluginCall, endpoint: String) {
+        guard let userId = call.getString("userId") else {
+            call.reject("Missing required parameter: userId")
+            return
+        }
+
+        guard let vaultOwnerToken = call.getString("vaultOwnerToken"), !vaultOwnerToken.isEmpty else {
+            call.reject("Missing required parameter: vaultOwnerToken")
+            return
+        }
+
+        let backendUrl = resolvedBackendUrl(call)
+        let encodedUserId = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let urlStr = "\(backendUrl)/api/consent/\(endpoint)?userId=\(encodedUserId)"
+
+        performGet(urlStr: urlStr, authToken: vaultOwnerToken) { result, error in
+            if let error = error {
+                call.reject(error)
+                return
+            }
+
+            // Backend may return array directly; normalize into { consents: [...] }
+            if let array = result as? [[String: Any]] {
+                call.resolve(["consents": array])
+                return
+            }
+            if let dict = result as? [String: Any] {
+                if let consents = dict["consents"] as? [[String: Any]] {
+                    call.resolve(["consents": consents])
+                    return
+                }
+                if let pending = dict["pending"] as? [[String: Any]] {
+                    call.resolve(["consents": pending])
+                    return
+                }
+                if let active = dict["active"] as? [[String: Any]] {
+                    call.resolve(["consents": active])
+                    return
+                }
+            }
+            call.resolve(["consents": []])
+        }
+    }
+
+    private func performGet(urlStr: String, authToken: String, completion: @escaping (Any?, String?) -> Void) {
+        do {
+            let request = try HushhProxyClient.makeJsonRequest(
+                method: "GET",
+                urlStr: urlStr,
+                bearerToken: authToken,
+                jsonBody: nil
+            )
+            HushhProxyClient.executeJson(urlSession, request: request) { result in
+                switch result {
+                case .success(let json):
+                    completion(json, nil)
+                case .failure(let error):
+                    completion(nil, error.localizedDescription)
+                }
+            }
+        } catch {
+            completion(nil, error.localizedDescription)
         }
     }
     
