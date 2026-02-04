@@ -38,7 +38,7 @@ class KaiDecisionsService:
     Service layer for Kai decision operations.
     
     Handles CRUD for encrypted Kai decisions (vault_kai table).
-    All operations require VAULT_OWNER or appropriate vault.read/write consent.
+    All operations require VAULT_OWNER or world_model read/write consent.
     """
     
     def __init__(self):
@@ -65,8 +65,7 @@ class KaiDecisionsService:
         if not valid or not token_obj:
             raise ConsentValidationError(f"Invalid consent token: {reason}", reason="invalid_token")
         
-        # Accept VAULT_OWNER or world_model.read / world_model.write
-        # NOTE: Legacy VAULT_READ_FINANCE and VAULT_WRITE_FINANCE have been removed.
+        # Accept VAULT_OWNER or world_model read/write
         allowed_scopes = [
             ConsentScope.VAULT_OWNER.value,
             ConsentScope.WORLD_MODEL_READ.value,
@@ -74,9 +73,10 @@ class KaiDecisionsService:
             ConsentScope.AGENT_KAI_ANALYZE.value,
         ]
         
-        if token_obj.scope not in allowed_scopes:
+        scope_val = token_obj.scope.value if hasattr(token_obj.scope, "value") else token_obj.scope
+        if scope_val not in allowed_scopes:
             raise ConsentValidationError(
-                f"Insufficient scope: {token_obj.scope}. Required one of: {allowed_scopes}",
+                f"Insufficient scope: {scope_val}. Required one of: {allowed_scopes}",
                 reason="insufficient_scope"
             )
         

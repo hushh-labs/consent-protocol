@@ -10,7 +10,7 @@ from typing import Dict
 # Mock developer registry (in production, this would be a database)
 REGISTERED_DEVELOPERS: Dict[str, Dict] = {
     "dev-hushh-001": {"name": "Hushh Internal", "approved_scopes": ["*"]},
-    "dev-partner-001": {"name": "Partner App", "approved_scopes": ["vault_read_food", "vault_read_professional"]},
+    "dev-partner-001": {"name": "Partner App", "approved_scopes": ["attr.food.*", "attr.professional.*"]},
     # MCP Server developer (Claude Desktop, Cursor, etc.)
     "mcp_dev_claude_desktop": {"name": "Claude Desktop (MCP)", "approved_scopes": ["*"]},
 }

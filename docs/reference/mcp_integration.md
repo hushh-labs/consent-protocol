@@ -91,14 +91,25 @@ When an MCP agent requests user data, the following flow occurs:
 
 ## 🔧 MCP Tools
 
-| Tool                       | Scope Required            | Description                                  |
-| -------------------------- | ------------------------- | -------------------------------------------- |
-| `request_consent`          | Any                       | Request user permission for data access      |
-| `check_consent_status`     | Any                       | Poll for consent approval status             |
-| `get_food_preferences`     | `vault.read.food`         | Get food/dining preferences (requires token) |
-| `get_professional_profile` | `vault.read.professional` | Get career data (requires token)             |
-| `delegate_to_agent`        | Any                       | Create TrustLink for A2A delegation          |
-| `list_scopes`              | None                      | List available consent scopes                |
+| Tool                       | Scope Required            | Description                                                                 |
+| -------------------------- | ------------------------- | --------------------------------------------------------------------------- |
+| `request_consent`          | Any                       | Request user permission for a scope (world_model.read, attr.{domain}.*)     |
+| `validate_token`           | None                      | Validate a consent token before using it with get_* or APIs                  |
+| `discover_user_domains`    | None                      | Discover which domains a user has; returns scope strings (call first)       |
+| `list_scopes`              | None                      | List available consent scopes (static reference)                             |
+| `check_consent_status`     | Any                       | Poll pending consent until granted or denied                                |
+| `get_food_preferences`     | `attr.food.*` or `world_model.read` | Get food/dining preferences (requires token)                |
+| `get_professional_profile` | `attr.professional.*` or `world_model.read` | Get career data (requires token)              |
+| `delegate_to_agent`        | Any                       | Create TrustLink for A2A delegation                                         |
+
+Agents can read resource **`hushh://info/connector`** for full usage, tool list, recommended flow, and supported scopes.
+
+### Recommended flow
+
+1. **Discover** — `discover_user_domains(user_id)` to get domains and scope strings.
+2. **Request** — `request_consent(user_id, scope)` for each scope needed.
+3. **If pending** — Poll `check_consent_status(user_id, scope)` until granted or denied.
+4. **Use** — Use the returned consent token with get_* tools or world-model data APIs.
 
 ---
 
