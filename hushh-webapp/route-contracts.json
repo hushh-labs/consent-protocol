@@ -1,6 +1,9 @@
 {
   "version": 1,
-  "allowlistedWebRouteFiles": ["hushh-webapp/app/api/chat/route.ts"],
+  "allowlistedWebRouteFiles": [
+    "hushh-webapp/app/api/chat/route.ts",
+    "hushh-webapp/app/api/consent/events/[userId]/route.ts"
+  ],
   "contracts": [
     {
       "id": "kaiProxy",
