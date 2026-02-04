@@ -19,7 +19,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -72,7 +72,7 @@ class PortfolioSummaryResponse(BaseModel):
 async def import_portfolio(
     file: UploadFile,
     user_id: str = Form(..., description="User's ID"),
-    authorization: str = Header(..., description="Bearer token with VAULT_OWNER token"),
+    token_data: dict = Depends(require_vault_owner_token),
 ) -> PortfolioImportResponse:
     """
     Import a brokerage statement and analyze the portfolio.
@@ -108,34 +108,12 @@ async def import_portfolio(
         "source": "schwab"
     }
     ```
-    
-    Note: This endpoint uses manual token validation instead of Depends() due to
-    multipart form data handling requirements with file uploads.
     """
-    from hushh_mcp.consent.token import validate_token
-    from hushh_mcp.constants import ConsentScope
-    
-    # Manual token validation (can't use Depends with multipart form + file upload)
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token = authorization.removeprefix("Bearer ").strip()
-    valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
-    
-    if not valid or not token_obj:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {reason}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
     # Verify user_id matches token (consent-first: token contains user_id)
-    if token_obj.user_id != user_id:
-        logger.warning(f"User ID mismatch: token={token_obj.user_id}, request={user_id}")
+    if token_data["user_id"] != user_id:
+        logger.warning(
+            f"User ID mismatch: token={token_data['user_id']}, request={user_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User ID does not match token"
@@ -227,7 +205,7 @@ async def get_portfolio_summary(
 async def import_portfolio_stream(
     file: UploadFile,
     user_id: str = Form(..., description="User's ID"),
-    authorization: str = Header(..., description="Bearer token with VAULT_OWNER token"),
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     SSE streaming endpoint for portfolio import with real-time progress.
@@ -254,30 +232,11 @@ async def import_portfolio_stream(
     
     **Authentication**: Requires valid VAULT_OWNER token.
     """
-    from hushh_mcp.consent.token import validate_token
-    from hushh_mcp.constants import ConsentScope
-    
-    # Manual token validation (can't use Depends with multipart form + file upload)
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token = authorization.removeprefix("Bearer ").strip()
-    valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
-    
-    if not valid or not token_obj:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {reason}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
     # Verify user_id matches token
-    if token_obj.user_id != user_id:
-        logger.warning(f"User ID mismatch: token={token_obj.user_id}, request={user_id}")
+    if token_data["user_id"] != user_id:
+        logger.warning(
+            f"User ID mismatch: token={token_data['user_id']}, request={user_id}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User ID does not match token"
@@ -484,11 +443,11 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             # Using LOW thinking level for better reasoning during document parsing
             try:
                 config = types.GenerateContentConfig(
-                    temperature=0.1,
+                    temperature=1,
                     max_output_tokens=32768,
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_level=types.ThinkingLevel.LOW,  # Better reasoning for document parsing
+                        thinking_level=types.ThinkingLevel.MEDIUM,  # Better reasoning for document parsing
                     )
                 )
                 logger.info("SSE: Thinking mode enabled with level=LOW")
