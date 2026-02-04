@@ -1,11 +1,16 @@
 "use client";
 
-import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
+/**
+ * Profile Layout
+ * 
+ * Profile page allows sign out even when vault is locked.
+ * Vault protection is handled at the API call level (world model data requires vaultOwnerToken).
+ */
 
 export default function ProfileLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <VaultLockGuard>{children}</VaultLockGuard>;
+  return <>{children}</>;
 }

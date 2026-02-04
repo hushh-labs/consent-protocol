@@ -12,9 +12,8 @@ Authentication:
 
 import json
 import logging
-import re
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -94,7 +93,7 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     end = s.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError("No JSON object found in LLM output")
-    return json.loads(s[start : end + 1])
+    return cast(dict[str, Any], json.loads(s[start : end + 1]))
 
 
 def _convert_decimals(obj: Any) -> Any:
@@ -131,10 +130,10 @@ async def analyze_portfolio_losers(
     # - If none and force_optimize + holdings, fall back to top holdings.
     # ------------------------------------------------------------------
     losers_filtered: list[PortfolioLoser] = []
-    for l in losers_in:
-        pct = l.gain_loss_pct
+    for loser in losers_in:
+        pct = loser.gain_loss_pct
         if pct is None or pct <= request.threshold_pct:
-            losers_filtered.append(l)
+            losers_filtered.append(loser)
     losers_filtered = losers_filtered[: request.max_positions]
 
     optimize_from_losers = bool(losers_filtered)
@@ -174,7 +173,7 @@ async def analyze_portfolio_losers(
     criteria_rows = await renaissance.get_screening_criteria()
 
     # Build investable replacement candidates by sector (best-effort)
-    sectors = {((l.name or "").strip(),) for l in losers_filtered}  # placeholder; sector not reliably provided
+    # Sector placeholder not used; we give LLM global pool + per-ticker Renaissance context
     # We primarily give LLM a global pool + per-ticker Renaissance context
     ace_pool = await renaissance.get_by_tier("ACE")
     king_pool = await renaissance.get_by_tier("KING")
@@ -184,21 +183,21 @@ async def analyze_portfolio_losers(
     ]
 
     # Per-position Renaissance context (optimization universe)
-    total_mv = sum((l.market_value or 0.0) for l in losers_filtered) or 0.0
+    total_mv = sum((loser.market_value or 0.0) for loser in losers_filtered) or 0.0
     per_loser_context: list[dict[str, Any]] = []
-    for l in losers_filtered:
-        ticker = l.symbol.upper().strip()
+    for loser in losers_filtered:
+        ticker = loser.symbol.upper().strip()
         ren_ctx = await renaissance.get_analysis_context(ticker)
         weight_pct = (
-            (l.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
+            (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
         )
         per_loser_context.append(
             {
                 "symbol": ticker,
-                "name": l.name,
-                "gain_loss_pct": l.gain_loss_pct,
-                "gain_loss": l.gain_loss,
-                "market_value": l.market_value,
+                "name": loser.name,
+                "gain_loss_pct": loser.gain_loss_pct,
+                "gain_loss": loser.gain_loss,
+                "market_value": loser.market_value,
                 "weight_pct": weight_pct,
                 "renaissance": {
                     "is_investable": ren_ctx.get("is_investable", False),
@@ -220,6 +219,7 @@ async def analyze_portfolio_losers(
     from google import genai
     from google.genai import types as genai_types
     from google.genai.types import HttpOptions
+
     from hushh_mcp.constants import GEMINI_MODEL
 
     client = genai.Client(http_options=HttpOptions(api_version="v1"))
@@ -380,10 +380,10 @@ async def _build_optimization_context(
 
     # Build optimization universe
     losers_filtered: list[PortfolioLoser] = []
-    for l in losers_in:
-        pct = l.gain_loss_pct
+    for loser in losers_in:
+        pct = loser.gain_loss_pct
         if pct is None or pct <= request.threshold_pct:
-            losers_filtered.append(l)
+            losers_filtered.append(loser)
     losers_filtered = losers_filtered[: request.max_positions]
 
     optimize_from_losers = bool(losers_filtered)
@@ -428,21 +428,21 @@ async def _build_optimization_context(
         for s in (ace_pool[:15] + king_pool[:15])
     ]
 
-    total_mv = sum((l.market_value or 0.0) for l in losers_filtered) or 0.0
+    total_mv = sum((loser.market_value or 0.0) for loser in losers_filtered) or 0.0
     per_loser_context: list[dict[str, Any]] = []
-    for l in losers_filtered:
-        ticker = l.symbol.upper().strip()
+    for loser in losers_filtered:
+        ticker = loser.symbol.upper().strip()
         ren_ctx = await renaissance.get_analysis_context(ticker)
         weight_pct = (
-            (l.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
+            (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
         )
         per_loser_context.append(
             {
                 "symbol": ticker,
-                "name": l.name,
-                "gain_loss_pct": l.gain_loss_pct,
-                "gain_loss": l.gain_loss,
-                "market_value": l.market_value,
+                "name": loser.name,
+                "gain_loss_pct": loser.gain_loss_pct,
+                "gain_loss": loser.gain_loss,
+                "market_value": loser.market_value,
                 "weight_pct": weight_pct,
                 "renaissance": {
                     "is_investable": ren_ctx.get("is_investable", False),
@@ -641,6 +641,7 @@ async def analyze_portfolio_losers_stream(
             from google import genai
             from google.genai import types as genai_types
             from google.genai.types import HttpOptions
+
             from hushh_mcp.constants import GEMINI_MODEL
 
             client = genai.Client(http_options=HttpOptions(api_version="v1"))

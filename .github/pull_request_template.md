@@ -24,3 +24,10 @@ _Attach proof of work here._
 
 - [ ] Does this change access user data?
 - [ ] If yes, have you implemented `checkConsentToken()`?
+
+## 🤖 Sign-Off & Token Usage (AI-assisted work)
+
+_If any commit or change was produced or assisted by AI:_
+
+- [ ] Commit message body includes `Signed-off-by: [AI Provider Name] <identifier>`
+- [ ] Token usage noted in commit body or below (when available): `Tokens used: ...`

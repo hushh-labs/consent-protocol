@@ -102,7 +102,13 @@ Before providing a solution, strictly follow this cognitive sequence:
 
 ---
 
-**Signature (required):** Always end your response with a sign-off line that identifies the AI model provider used:
-`Signed-off-by: [AI model provider name]`
-Example: `Signed-off-by: Cursor AI (Claude)` or `Signed-off-by: OpenAI (GPT-4)`
-After using Build mode or Agent mode, always include this AI sign-off at the end of the response.
+**Signature (required):** Always end your response with:
+
+1. **Sign-off:** A line that identifies the AI model provider used:
+   `Signed-off-by: [AI model provider name]`
+   Example: `Signed-off-by: Cursor AI (Claude)` or `Signed-off-by: OpenAI (GPT-4)`
+
+2. **Token usage (when available):** If the environment provides token counts, add:
+   `Tokens used: [input/output or total as provided]`
+
+After using Build mode or Agent mode, always include the sign-off at the end of the response; include token usage when the environment supplies it.
