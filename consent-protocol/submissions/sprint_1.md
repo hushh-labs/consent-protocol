@@ -67,8 +67,7 @@ Examples:
 
 Choose one or more of the following scopes your agent will use:
 
-* `vault.read.email`
-* `vault.read.finance`
+* `world_model.read` or `attr.{domain}.*` (e.g. `attr.financial.*`)
 * `agent.identity.verify`
 * `custom.your_scope_here`
 

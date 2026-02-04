@@ -49,6 +49,7 @@ python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+Use **.venv** only. If you have both `venv` and `.venv`, remove `venv` and use `.venv` to avoid two environments.
 
 ---
 

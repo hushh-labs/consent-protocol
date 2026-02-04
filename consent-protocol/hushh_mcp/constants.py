@@ -57,13 +57,7 @@ class ConsentScope(str, Enum):
     EXTERNAL_MARKET_DATA = "external.market.data"
     EXTERNAL_RENAISSANCE = "external.renaissance.data"
 
-    # NOTE: Legacy VAULT_READ_* and VAULT_WRITE_* scopes have been removed.
-    # All data access now uses dynamic attr.{domain}.{key} scopes:
-    # - attr.financial.* replaces vault.read.finance / vault.write.finance
-    # - attr.food.* replaces vault.read.food / vault.write.food
-    # - attr.professional.* replaces vault.read.professional / vault.write.professional
-    # - attr.financial.risk_profile replaces vault.read.risk_profile / vault.write.risk_profile
-    # - attr.kai_decisions.* replaces vault.read.decision_history / vault.write.decision
+    # Data access uses world_model.read, world_model.write, and dynamic attr.{domain}.* scopes.
 
     @classmethod
     def list(cls):

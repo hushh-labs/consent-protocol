@@ -22,23 +22,22 @@ system_instruction: |
   Tone: Professional, data-driven, objective, and insightful.
 
 required_scopes:
-  - vault.read.finance
-  - vault.write.finance
+  - attr.financial.*
 
 tools:
   - name: perform_fundamental_analysis
     py_func: hushh_mcp.agents.kai.tools.perform_fundamental_analysis
-    required_scope: vault.read.finance
+    required_scope: attr.financial.*
     description: Analyze business fundamentals (SEC filings, Moat, Resilience).
 
   - name: perform_sentiment_analysis
     py_func: hushh_mcp.agents.kai.tools.perform_sentiment_analysis
-    required_scope: vault.read.finance
+    required_scope: attr.financial.*
     description: Analyze market sentiment (News, Social, Analyst Ratings).
 
   - name: perform_valuation_analysis
     py_func: hushh_mcp.agents.kai.tools.perform_valuation_analysis
-    required_scope: vault.read.finance
+    required_scope: attr.financial.*
     description: quantitative valuation models (DCF, Comps).
 
 inputs:

@@ -73,14 +73,25 @@ notepad "$env:APPDATA\Claude\claude_desktop_config.json"
 
 Once connected, Claude will have access to these tools:
 
-| Tool                       | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `request_consent`          | Request user consent for data access     |
-| `validate_token`           | Validate a consent token                 |
-| `get_food_preferences`     | Get food data (requires consent)         |
-| `get_professional_profile` | Get professional data (requires consent) |
-| `delegate_to_agent`        | Create TrustLink for A2A delegation      |
-| `list_scopes`              | List available consent scopes            |
+| Tool                       | Description                                                       |
+| -------------------------- | ----------------------------------------------------------------- |
+| `request_consent`          | Request user consent for a scope (e.g. world_model.read, attr.food.*) |
+| `validate_token`           | Validate a consent token before use                               |
+| `discover_user_domains`    | Discover which domains a user has and scope strings to request    |
+| `list_scopes`              | List available consent scopes (static reference)                   |
+| `check_consent_status`     | Poll pending consent until granted or denied                      |
+| `get_food_preferences`     | Get food/dining data (requires consent)                           |
+| `get_professional_profile` | Get professional data (requires consent)                          |
+| `delegate_to_agent`        | Create TrustLink for A2A delegation                               |
+
+Agents can read **`hushh://info/connector`** for full usage, tool list, recommended flow, and supported scopes.
+
+### Recommended flow
+
+1. **Discover domains** — `discover_user_domains(user_id)` to get domains and scope strings for the user.
+2. **Request consent** — `request_consent(user_id, scope)` for each scope needed (e.g. `world_model.read` or `attr.food.*`).
+3. **If pending** — Poll `check_consent_status(user_id, scope)` until granted or denied.
+4. **Use data** — Use the returned consent token with `get_*` tools or world-model data APIs.
 
 ## Demo Script
 

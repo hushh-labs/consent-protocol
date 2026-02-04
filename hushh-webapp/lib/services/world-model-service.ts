@@ -462,33 +462,112 @@ export class WorldModelService {
   }
 
   /**
-   * Delete a specific attribute.
+   * Delete a specific attribute (client-side blob update for BYOK).
+   * Fetches full blob, decrypts, removes the key from the domain, re-encrypts, stores.
+   * Requires vaultKey and vaultOwnerToken when using the blob flow (web or native).
    */
   static async deleteAttribute(
     userId: string,
     domain: string,
-    attributeKey: string
+    attributeKey: string,
+    options?: { vaultKey: string; vaultOwnerToken?: string }
   ): Promise<boolean> {
+    const vaultOwnerToken = options?.vaultOwnerToken ?? this.getVaultOwnerToken();
+    const vaultKey = options?.vaultKey;
+
     if (Capacitor.isNativePlatform()) {
+      if (vaultKey) {
+        return this.deleteAttributeBlobFlow(userId, domain, attributeKey, vaultKey, vaultOwnerToken);
+      }
       const result = await HushhWorldModel.deleteAttribute({
         userId,
         domain,
         attributeKey,
-        vaultOwnerToken: this.getVaultOwnerToken(),
+        vaultOwnerToken: vaultOwnerToken ?? undefined,
       });
       return result.success;
     }
 
-    // Web: Use ApiService.apiFetch() for tri-flow compliance
+    // Web: client-side blob flow (required; legacy DELETE returns 410)
+    if (vaultKey) {
+      return this.deleteAttributeBlobFlow(userId, domain, attributeKey, vaultKey, vaultOwnerToken);
+    }
     const response = await ApiService.apiFetch(
-      `/api/world-model/attributes/${userId}/${domain}/${attributeKey}`,
-      {
-        method: "DELETE",
-        headers: this.getAuthHeaders(),
-      }
+      `/api/world-model/attributes/${userId}/${domain}/${encodeURIComponent(attributeKey)}`,
+      { method: "DELETE", headers: this.getAuthHeaders(vaultOwnerToken) }
     );
-
+    if (response.status === 410) {
+      return false;
+    }
     return response.ok;
+  }
+
+  private static async deleteAttributeBlobFlow(
+    userId: string,
+    domain: string,
+    attributeKey: string,
+    vaultKey: string,
+    vaultOwnerToken?: string
+  ): Promise<boolean> {
+    const blob = await WorldModelService.getDomainData(userId, domain, vaultOwnerToken);
+    if (!blob) {
+      return true;
+    }
+    const { decryptData } = await import("@/lib/vault/encrypt");
+    const { HushhVault } = await import("@/lib/capacitor");
+    let full: Record<string, Record<string, unknown>>;
+    try {
+      const decrypted = await decryptData(
+        {
+          ciphertext: blob.ciphertext,
+          iv: blob.iv,
+          tag: blob.tag,
+          encoding: "base64",
+          algorithm: (blob.algorithm || "aes-256-gcm") as "aes-256-gcm",
+        },
+        vaultKey
+      );
+      full = JSON.parse(decrypted) as Record<string, Record<string, unknown>>;
+    } catch {
+      return false;
+    }
+    if (!full[domain]) {
+      return true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(full[domain], attributeKey)) {
+      return true;
+    }
+    delete full[domain][attributeKey];
+    const metadata = await WorldModelService.getMetadata(userId, true, vaultOwnerToken);
+    const domainMeta = metadata.domains.find((d) => d.key === domain);
+    const currentSummary = domainMeta?.summary ?? {};
+    const updatedSummary: Record<string, unknown> = { ...currentSummary };
+    const countKeys = ["holdings_count", "attribute_count", "item_count"];
+    for (const key of countKeys) {
+      const v = updatedSummary[key];
+      if (typeof v === "number" && v > 0) {
+        updatedSummary[key] = v - 1;
+        break;
+      }
+    }
+    updatedSummary.last_updated = new Date().toISOString();
+    const encrypted = await HushhVault.encryptData({
+      keyHex: vaultKey,
+      plaintext: JSON.stringify(full),
+    });
+    const result = await WorldModelService.storeDomainData({
+      userId,
+      domain,
+      encryptedBlob: {
+        ciphertext: encrypted.ciphertext,
+        iv: encrypted.iv,
+        tag: encrypted.tag,
+        algorithm: "aes-256-gcm",
+      },
+      summary: updatedSummary as Record<string, string | number>,
+      vaultOwnerToken: vaultOwnerToken ?? undefined,
+    });
+    return result.success;
   }
 
   /**
