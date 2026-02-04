@@ -66,7 +66,7 @@ gcloud builds submit --tag gcr.io/PROJECT_ID/consent-protocol:latest .
 gcloud run deploy consent-protocol \
   --image gcr.io/PROJECT_ID/consent-protocol:latest \
   --region us-central1 --allow-unauthenticated \
-  --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest" \
+  --set-secrets "SECRET_KEY=SECRET_KEY:latest,VAULT_ENCRYPTION_KEY=VAULT_ENCRYPTION_KEY:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,FIREBASE_SERVICE_ACCOUNT_JSON=FIREBASE_SERVICE_ACCOUNT_JSON:latest,FRONTEND_URL=FRONTEND_URL:latest,DB_USER=DB_USER:latest,DB_PASSWORD=DB_PASSWORD:latest" \
   --port 8080
 ```
 
@@ -140,16 +140,12 @@ Hushh uses **SQLAlchemy with Supabase's Session Pooler** for direct PostgreSQL c
 Set these environment variables:
 
 ```bash
-# Database Connection (Session Pooler)
+# Database Connection (Session Pooler) — DB_* only; see consent-protocol/.env.example
 DB_USER=postgres.your-project-ref
 DB_PASSWORD=your-password
 DB_HOST=aws-1-us-east-1.pooler.supabase.com
 DB_PORT=5432
 DB_NAME=postgres
-
-# Optional: Supabase REST API (for backward compatibility)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-service-role-key
 ```
 
 ### Local Development
@@ -194,7 +190,7 @@ gcloud run services logs read SERVICE_NAME --region us-central1 --limit 30
 | `No module named 'asyncpg'`        | Missing dependency in requirements.txt        | Add `asyncpg>=0.29.0`          |
 | `No module named 'firebase_admin'` | Missing dependency in requirements.txt        | Add `firebase-admin>=6.2.0`    |
 | `SECRET_KEY must be 32+ chars`     | Missing secret                                | Add via Secret Manager         |
-| `SSL connection` errors            | Supabase connection issue                      | Verify SUPABASE_URL and SUPABASE_KEY |
+| `SSL connection` errors            | Supabase connection issue                      | Verify DB_HOST (pooler), DB_USER, DB_PASSWORD in .env |
 | Empty JSON response                | Unhandled error in API route                  | Add try/catch error handling   |
 | `VAULT_READ_REJECTED` (401)        | Missing session token in production           | Ensure X-Session-Token header  |
 
