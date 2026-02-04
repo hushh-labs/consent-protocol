@@ -1,6 +1,7 @@
 -- Supabase Schema Initialization Script
--- Generated from source database schema
--- Run this in Supabase Dashboard SQL Editor or via psql
+-- Mirror of db/migrate.py table definitions; for Supabase Dashboard / one-off init.
+-- Prefer: python db/migrate.py --init (programmatic setup, same DB_* as runtime).
+-- Run this in Supabase Dashboard SQL Editor or via psql.
 
 -- Enable extensions
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -59,23 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_investor_type ON investor_profiles(investor_type)
 CREATE INDEX IF NOT EXISTS idx_investor_style ON investor_profiles USING GIN (investment_style);
 CREATE INDEX IF NOT EXISTS idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
 
--- 3. consent_events (consent event tracking)
-CREATE TABLE IF NOT EXISTS consent_events (
-    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id VARCHAR(128) NOT NULL,
-    request_id VARCHAR(32),
-    agent_id VARCHAR(256) NOT NULL,
-    scope VARCHAR(64) NOT NULL,
-    scope_description TEXT,
-    action VARCHAR(32) NOT NULL,
-    token_hash VARCHAR(64),
-    expires_at TIMESTAMPTZ,
-    poll_timeout_at TIMESTAMPTZ,
-    metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 4. vault_kai (encrypted investment decisions)
+-- 3. vault_kai (encrypted investment decisions)
 CREATE TABLE IF NOT EXISTS vault_kai (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
@@ -93,7 +78,7 @@ CREATE TABLE IF NOT EXISTS vault_kai (
 CREATE INDEX IF NOT EXISTS idx_vault_kai_user ON vault_kai(user_id);
 CREATE INDEX IF NOT EXISTS idx_vault_kai_ticker ON vault_kai(ticker);
 
--- 5. consent_audit (consent token audit trail)
+-- 4. consent_audit (consent token audit trail; app uses this only)
 CREATE TABLE IF NOT EXISTS consent_audit (
     id SERIAL PRIMARY KEY,
     token_id TEXT NOT NULL,
@@ -120,7 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_consent_audit_user_action ON consent_audit(user_i
 CREATE INDEX IF NOT EXISTS idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
 
--- 6. user_investor_profiles (private vault layer)
+-- 5. user_investor_profiles (private vault layer)
 CREATE TABLE IF NOT EXISTS user_investor_profiles (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
@@ -144,7 +129,7 @@ CREATE TABLE IF NOT EXISTS user_investor_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_user_investor_user ON user_investor_profiles(user_id);
 
--- 7. vault_food (food & dining domain data)
+-- 6. vault_food (food & dining domain data)
 CREATE TABLE IF NOT EXISTS vault_food (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
@@ -161,7 +146,7 @@ CREATE TABLE IF NOT EXISTS vault_food (
 
 CREATE INDEX IF NOT EXISTS idx_vault_food_user ON vault_food(user_id);
 
--- 8. vault_professional (professional profile domain data)
+-- 7. vault_professional (professional profile domain data)
 CREATE TABLE IF NOT EXISTS vault_professional (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
@@ -178,7 +163,7 @@ CREATE TABLE IF NOT EXISTS vault_professional (
 
 CREATE INDEX IF NOT EXISTS idx_vault_professional_user ON vault_professional(user_id);
 
--- 9. vault_kai_preferences (encrypted user settings)
+-- 8. vault_kai_preferences (encrypted user settings)
 CREATE TABLE IF NOT EXISTS vault_kai_preferences (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,

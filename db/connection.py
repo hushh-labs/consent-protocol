@@ -37,26 +37,36 @@ logger = logging.getLogger(__name__)
 _pool: Optional[asyncpg.Pool] = None
 
 
-def _get_database_url() -> str:
+def get_database_url() -> str:
     """
-    Build database URL from individual environment variables.
-    
-    Uses the shared pooler method with DB_USER, DB_PASSWORD, DB_HOST, etc.
+    Build database URL from DB_* environment variables (single source of truth).
+    Used by runtime pool, migrations, and scripts. No DATABASE_URL.
     """
     db_user = os.getenv("DB_USER")
     db_password = os.getenv("DB_PASSWORD")
     db_host = os.getenv("DB_HOST")
     db_port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "postgres")
-    
     if not all([db_user, db_password, db_host]):
         raise EnvironmentError(
             "Database credentials not set. Required: DB_USER, DB_PASSWORD, DB_HOST. "
             "Optional: DB_PORT (default 5432), DB_NAME (default postgres). "
-            "Get these from Supabase Dashboard → Project Settings → Database → Connection Pooling."
+            "Set in .env; get from Supabase Dashboard → Project Settings → Database → Connection Pooling."
         )
-    
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+
+def get_database_ssl():
+    """Return ssl config for asyncpg when using Supabase pooler."""
+    db_host = os.getenv("DB_HOST", "")
+    if "supabase.com" in db_host or "pooler.supabase" in db_host:
+        return "require"
+    return None
+
+
+def _get_database_url() -> str:
+    """Internal alias for get_database_url (used by get_pool)."""
+    return get_database_url()
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -72,16 +82,11 @@ async def get_pool() -> asyncpg.Pool:
     
     if _pool is None:
         database_url = _get_database_url()
+        ssl_config = get_database_ssl()
         db_host = os.getenv("DB_HOST", "")
-        
         logger.info(f"Connecting to PostgreSQL at {db_host}...")
-        
-        # Supabase pooler requires SSL connections
-        ssl_config = None
-        if "supabase.com" in db_host or "pooler.supabase" in db_host:
-            ssl_config = "require"
+        if ssl_config:
             logger.info("SSL enabled for Supabase pooler connection")
-        
         _pool = await asyncpg.create_pool(
             database_url,
             min_size=2,
