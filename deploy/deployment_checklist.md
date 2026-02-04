@@ -49,12 +49,16 @@
   .\verify-secrets.ps1 -UpdateValues
   ```
 
-- [x] Verify all 5 required secrets exist:
+- [x] Verify all 7 required backend secrets exist:
   - [x] `SECRET_KEY`
   - [x] `VAULT_ENCRYPTION_KEY`
   - [x] `GOOGLE_API_KEY`
   - [x] `FIREBASE_SERVICE_ACCOUNT_JSON`
-  - [x] `DATABASE_URL`
+  - [x] `FRONTEND_URL`
+  - [x] `DB_USER`
+  - [x] `DB_PASSWORD`
+  
+  **Note:** `DB_HOST`, `DB_PORT`, `DB_NAME` are set as Cloud Run env vars (not secrets). `DATABASE_URL` may exist for migration scripts but is not used by runtime.
 
 ---
 
@@ -83,6 +87,8 @@
   ```bash
   gcloud run services logs read consent-protocol --region=us-central1 --limit=20
   ```
+
+- [x] Backend env: Cloud Run sets `ENVIRONMENT=production` and `GOOGLE_GENAI_USE_VERTEXAI=True` (Vertex AI for Gemini)
 
 ---
 

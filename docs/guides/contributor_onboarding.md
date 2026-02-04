@@ -103,7 +103,7 @@ Before you start coding:
 
 ## Step 3: Test CI Locally (Critical!)
 
-**Always test CI checks locally before committing.** This saves time and prevents broken PRs.
+**Always test CI checks locally before committing.** This saves time and prevents broken PRs. See the [CI Configuration Reference](../reference/ci.md) for the full workflow, path filters, and coding rules.
 
 ### Run Local CI Tests
 
@@ -113,9 +113,9 @@ Before you start coding:
 ```
 
 This script runs the same checks as GitHub Actions CI:
-- ✅ Frontend: TypeScript, lint, build
+- ✅ Frontend: TypeScript, lint, Next build, Capacitor build
 - ✅ Backend: Ruff lint, Mypy type check, pytest
-- ⚠️ Integration: Route contract verification (warnings only)
+- ✅ Integration: Route contract verification (must pass in CI)
 
 ### What to Expect
 
@@ -257,10 +257,21 @@ test: add tests for consent validation
 - `style`: Formatting
 - `chore`: Maintenance
 
+**AI-assisted commits (required from now on):** If any change was produced or assisted by AI, the commit message **body** must include:
+1. `Signed-off-by: [AI Provider Name] <[identifier]>` (e.g. `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`).
+2. `Tokens used: [as provided by environment]` when your IDE or tool reports token usage.
+
+See [Contributing - AI-Assisted Contributions](../../contributing.md#ai-assisted-contributions-sign-off-and-token-usage) and `.cursorrules` for the full convention.
+
 ### Commit
 
 ```bash
 git commit -m "feat: add movie recommendation agent"
+```
+
+For AI-assisted work, use a multi-line commit message so you can add sign-off and token usage in the body:
+```bash
+git commit -m "feat: add movie recommendation agent" -m "Signed-off-by: Cursor AI (Claude) <ai@cursor.com>" -m "Tokens used: 12500 (input) / 800 (output)"
 ```
 
 ---
