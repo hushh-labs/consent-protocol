@@ -65,6 +65,7 @@ class ConsentResponse(BaseModel):
     message: str
     consent_token: Optional[str] = None
     expires_at: Optional[int] = None
+    request_id: Optional[str] = None  # When status is 'pending', use this for SSE poll URL
 
 
 class DataAccessRequest(BaseModel):
