@@ -176,28 +176,39 @@ async def get_portfolio_summary(
             detail="User ID does not match token"
         )
     
-    # Get financial attributes from world model
+    # Get portfolio summary from world_model_index_v2 (no decryption)
     world_model = get_world_model_service()
-    attributes = await world_model.get_domain_attributes(user_id, "financial")
-    
-    if not attributes:
+    index = await world_model.get_index_v2(user_id)
+    if index is None or "financial" not in index.available_domains:
         return PortfolioSummaryResponse(
             user_id=user_id,
             has_portfolio=False,
         )
-    
-    # Build summary from attributes
-    attr_map = {a.attribute_key: a.ciphertext for a in attributes}
-    
+    summary = index.domain_summaries.get("financial") or {}
+    has_portfolio = summary.get("has_portfolio", False)
+    if isinstance(has_portfolio, str):
+        has_portfolio = has_portfolio == "true" or has_portfolio == "1"
+    holdings_count = summary.get("holdings_count")
+    if holdings_count is not None:
+        holdings_count = int(holdings_count)
+    losers_count = summary.get("losers_count")
+    if losers_count is not None:
+        losers_count = int(losers_count)
+    winners_count = summary.get("winners_count")
+    if winners_count is not None:
+        winners_count = int(winners_count)
+    total_gain_loss_pct = summary.get("total_gain_loss_pct")
+    if total_gain_loss_pct is not None:
+        total_gain_loss_pct = float(total_gain_loss_pct)
     return PortfolioSummaryResponse(
         user_id=user_id,
-        has_portfolio="portfolio_imported" in attr_map,
-        holdings_count=int(attr_map.get("holdings_count", 0)) if "holdings_count" in attr_map else None,
-        portfolio_value_bucket=attr_map.get("portfolio_value_bucket"),
-        risk_bucket=attr_map.get("risk_bucket"),
-        losers_count=int(attr_map.get("losers_count", 0)) if "losers_count" in attr_map else None,
-        winners_count=int(attr_map.get("winners_count", 0)) if "winners_count" in attr_map else None,
-        total_gain_loss_pct=float(attr_map.get("total_gain_loss_pct", 0)) if "total_gain_loss_pct" in attr_map else None,
+        has_portfolio=bool(has_portfolio),
+        holdings_count=holdings_count,
+        portfolio_value_bucket=summary.get("portfolio_value_bucket"),
+        risk_bucket=summary.get("risk_bucket"),
+        losers_count=losers_count,
+        winners_count=winners_count,
+        total_gain_loss_pct=total_gain_loss_pct,
     )
 
 

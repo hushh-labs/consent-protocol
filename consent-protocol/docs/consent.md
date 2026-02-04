@@ -9,7 +9,7 @@ This doc explains how to use the HushhMCP **consent token system** to grant, val
 A `HushhConsentToken` is a **signed, stateless contract** that proves:
 
 - A user explicitly authorized an agent
-- For a specific scope (e.g., `vault.read.email`)
+- For a specific scope (e.g., `attr.food.*` or `world_model.read`)
 - For a limited amount of time
 
 It includes:
@@ -30,12 +30,13 @@ It includes:
 ### ✅ 1. Issue a Token
 
 ```python
+from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import issue_token
 
 token_obj = issue_token(
     user_id="user_abc",
     agent_id="agent_food_dining",
-    scope="vault.read.food"
+    scope=resolve_scope_to_enum("attr.food.*")  # or ConsentScope.WORLD_MODEL_READ
 )
 ```
 
@@ -49,11 +50,12 @@ token_obj = issue_token(
 Before your agent takes action, always verify consent:
 
 ```python
+from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
 
 is_valid, reason, parsed_token = validate_token(
     token_str=token_obj.token,
-    expected_scope="vault.read.food"
+    expected_scope=resolve_scope_to_enum("attr.food.*")
 )
 ```
 

@@ -128,10 +128,9 @@ async def approve_consent(
     active_tokens = await service.get_active_tokens(userId)
     existing_token = None
     
-    # 1. Filter active tokens for the requested scope and agent
+    # 1. Filter active tokens for the requested scope and agent (match on requested scope string, e.g. attr.food.*)
     for t in active_tokens:
-        # Check Scope Match
-        if t.get("scope") != consent_scope.value:
+        if t.get("scope") != requested_scope:
             continue
             
         # Check Agent Match (Normalize developer token format)
@@ -148,7 +147,7 @@ async def approve_consent(
     
     if existing_token:
         # IDEMPOTENT RETURN: Reuse existing token
-        logger.info(f"♻️ Idempotent: Reusing existing active token for {consent_scope.value}")
+        logger.info(f"♻️ Idempotent: Reusing existing active token for {requested_scope}")
         
         # Log REUSE event for audit trail (optional, but good for tracking)
         # await consent_db.insert_event(..., action="TOKEN_REUSED", ...) 
@@ -197,11 +196,11 @@ async def approve_consent(
         }
         logger.info("   Stored encrypted export for token (DB + cache)")
     
-    # Log CONSENT_GRANTED to database with dot notation scope
+    # Log CONSENT_GRANTED to database with requested scope (dot notation, e.g. attr.food.* or world_model.read)
     await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
-        scope=consent_scope.value,  # Use dot notation (e.g., "vault.read.food")
+        scope=requested_scope,
         action="CONSENT_GRANTED",
         token_id=token.token,
         request_id=requestId,

@@ -8,7 +8,7 @@ CRITICAL: These tests enforce our core architecture rules:
 1. API routes must use service layer (not direct Supabase)
 2. All vault operations must validate consent tokens
 3. No backdoors or bypasses allowed
-4. Dynamic attr.{domain}.* scopes must be used (not legacy vault.read.*/vault.write.*)
+4. World-model scopes only: attr.{domain}.* and world_model.read/write
 5. World Model service must be used for new data storage
 """
 import os
@@ -129,7 +129,7 @@ This service file is required for architecture compliance.
 
 
 class TestDynamicScopeCompliance:
-    """Ensure dynamic attr.{domain}.* scopes are used instead of legacy vault.read.*/vault.write.* scopes."""
+    """Ensure world-model scopes (attr.{domain}.*, world_model.read/write) are used."""
     
     @pytest.fixture(autouse=True)
     def setup(self):

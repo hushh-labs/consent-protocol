@@ -103,13 +103,17 @@ Development: http://localhost:8000
 | -------- | ------------------------------------------- | -------------------------------------- |
 | `GET`    | `/api/world-model/index/{user_id}`          | Get user's world model index           |
 | `POST`   | `/api/world-model/index`                    | Update world model index               |
-| `GET`    | `/api/world-model/attributes/{user_id}`     | Get encrypted attributes               |
-| `POST`   | `/api/world-model/attributes`               | Store encrypted attribute              |
-| `DELETE` | `/api/world-model/attributes/{user_id}/{domain}/{key}` | Delete attribute        |
-| `GET`    | `/api/world-model/metadata/{user_id}`       | Get UI-ready metadata                  |
+| `GET`    | `/api/world-model/attributes/{user_id}`     | Deprecated (410). Use blob endpoints.  |
+| `POST`   | `/api/world-model/attributes`               | Deprecated (410). Use store-domain.   |
+| `DELETE` | `/api/world-model/attributes/{user_id}/{domain}/{key}` | **410 Gone.** Attribute-level delete is client-side only: get domain data → decrypt → remove key → re-encrypt → store domain. |
+| `GET`    | `/api/world-model/metadata/{user_id}`       | **Agent discovery.** Get user's domains and per-domain `available_scopes` (e.g. `attr.financial.*`). No auth. Use `domains[].key` and `domains[].available_scopes` to request consent. |
+| `GET`    | `/api/world-model/scopes/{user_id}`         | Get available scope strings for user (e.g. `["attr.financial.*","attr.food.*"]`). Lightweight alternative to metadata for agents. |
 | `GET`    | `/api/world-model/domains`                  | List all registered domains            |
 | `GET`    | `/api/world-model/domains/{user_id}`        | Get user's domains                     |
-| `GET`    | `/api/world-model/scopes/{user_id}`         | Get available scopes (MCP discovery)   |
+
+**Agent domain discovery:** To discover which domains a user has before requesting consent, call **GET /api/world-model/metadata/{user_id}** (or **GET /api/world-model/scopes/{user_id}** for scope strings only). Use the returned `available_scopes` to call `request_consent(user_id, scope)` for each scope needed.
+
+**World model (blob-based):** Data is stored in `world_model_data` as a single encrypted blob per user; metadata is in `world_model_index_v2`. Use `GET /api/world-model/data/{user_id}` and `POST /api/world-model/store-domain` for read/write. **Attribute-level delete** is client-side only: get domain data, decrypt with vault key, remove the key, re-encrypt the full blob, then call store-domain. The legacy `DELETE /api/world-model/attributes/...` returns **410 Gone**.
 
 ---
 

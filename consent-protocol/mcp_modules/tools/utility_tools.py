@@ -1,19 +1,21 @@
 # mcp/tools/utility_tools.py
 """
-Utility tool handlers (validate_token, delegate, list_scopes).
+Utility tool handlers (validate_token, delegate, list_scopes, discover_user_domains).
 
-NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
-Legacy scopes are mapped to dynamic scopes for backward compatibility.
+Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
 """
 
 import json
 import logging
+import re
 
+import httpx
 from mcp.types import TextContent
 
 from hushh_mcp.consent.scope_helpers import get_scope_description, resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import AGENT_PORTS
+from mcp_modules.config import FASTAPI_URL
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
 
@@ -169,4 +171,69 @@ async def handle_list_scopes() -> list[TextContent]:
         "security_note": "vault.owner grants full access and requires passphrase verification.",
         "hushh_promise": "Your data is never accessed without your permission.",
         "dynamic_scopes": "Scopes are generated dynamically based on stored user attributes"
+    }))]
+
+
+async def handle_discover_user_domains(args: dict) -> list[TextContent]:
+    """
+    Discover which domains a user has and the scope strings to request.
+    Calls GET /api/world-model/scopes/{user_id} (or metadata). Use before request_consent.
+    """
+    from .consent_tools import resolve_email_to_uid
+
+    user_id = args.get("user_id") or ""
+    if not user_id.strip():
+        return [TextContent(type="text", text=json.dumps({
+            "error": "user_id is required",
+            "usage": "Call discover_user_domains with user_id (Firebase UID or email)"
+        }))]
+
+    resolved_uid, _email, _display = await resolve_email_to_uid(user_id)
+    if resolved_uid is None:
+        return [TextContent(type="text", text=json.dumps({
+            "error": "User not found",
+            "user_id": user_id,
+            "hint": "Provide a valid Firebase UID or registered email"
+        }))]
+    uid = resolved_uid
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{FASTAPI_URL}/api/world-model/scopes/{uid}")
+            if r.status_code == 404:
+                return [TextContent(type="text", text=json.dumps({
+                    "user_id": uid,
+                    "domains": [],
+                    "scopes": [],
+                    "message": "No world model data for this user (new user or no domains yet)",
+                    "usage": "Call request_consent with scope='world_model.read' or attr.{domain}.* after user adds data"
+                }))]
+            r.raise_for_status()
+            data = r.json()
+    except httpx.ConnectError as e:
+        logger.warning(f"⚠️ Discover domains: backend not reachable: {e}")
+        return [TextContent(type="text", text=json.dumps({
+            "error": "Cannot reach backend",
+            "message": str(e),
+            "hint": f"Ensure FastAPI is running at {FASTAPI_URL}"
+        }))]
+    except Exception as e:
+        logger.exception("Discover user domains failed")
+        return [TextContent(type="text", text=json.dumps({
+            "error": "discover_failed",
+            "message": str(e)
+        }))]
+
+    scopes = data.get("scopes") or []
+    domains = []
+    for s in scopes:
+        m = re.match(r"^attr\.([a-zA-Z0-9_]+)\.\*$", s)
+        if m:
+            domains.append(m.group(1))
+
+    return [TextContent(type="text", text=json.dumps({
+        "user_id": data.get("user_id", uid),
+        "domains": domains,
+        "scopes": scopes,
+        "usage": "Call request_consent(user_id, scope) with one of the scopes above to request consent"
     }))]
