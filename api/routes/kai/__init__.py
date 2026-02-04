@@ -36,6 +36,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/chat",
     "/chat/history/{conversation_id}",
     "/chat/conversations/{user_id}",
+    "/chat/initial-state/{user_id}",
     "/consent/grant",
     "/analyze",
     "/preferences/store",
