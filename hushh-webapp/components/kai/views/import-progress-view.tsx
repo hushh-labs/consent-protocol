@@ -173,8 +173,8 @@ export function ImportProgressView({
             text={thoughtsText}
             isStreaming={isThinking}
             isComplete={isComplete || isExtracting}
-            icon="spinner"
-            iconClassName="w-12 h-12" // 3x of w-4
+            icon={isThinking ? "spinner" : "brain"}
+            iconClassName="w-6 h-6"
             maxHeight="250px"
             className="border-primary/10"
           />
@@ -187,7 +187,7 @@ export function ImportProgressView({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-primary" />
+                <Database className="w-3.5 h-3.5 text-primary" />
                 Data Extraction
               </span>
               <span>
@@ -202,7 +202,7 @@ export function ImportProgressView({
               isComplete={isComplete}
               formatAsHuman={true}
               icon="database"
-              iconClassName="w-12 h-12" // 3x of w-4
+              iconClassName="w-6 h-6"
               maxHeight="300px"
             />
 
