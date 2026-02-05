@@ -38,67 +38,64 @@ export default function KaiLandingPage() {
   }, [user]);
 
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-0">
-      <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        {/* Hero */}
-        <div className="text-center space-y-4">
-          {/* Hushh Logo - using same pattern as welcome page for dark mode support */}
-          <div className="flex justify-center">
-            <Image
-              src="/hushh-logo-new.svg"
-              alt="Hushh"
-              width={250}
-              height={250}
-              className="object-contain dark:brightness-0 dark:invert"
-              priority
-            />
-          </div>
-          
-          {/* Kai Title with Icon */}
-          <div className="flex items-center justify-center">
-            <div className="px-6 py-4 rounded-2xl bg-primary/10 flex items-center justify-center gap-6">
-              <TrendingUp className="h-8 w-8 text-primary" />
-              <h1 className="text-5xl font-bold tracking-tight">Kai</h1>
+    <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-0 bg-background/50">
+      <div className="w-full max-w-md space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+        {/* Hero Section */}
+        <div className="text-center space-y-6">
+          <div className="flex flex-col items-center justify-center gap-4">
+            <div className="p-5 rounded-3xl bg-primary/10 ring-1 ring-primary/20 shadow-inner">
+              <TrendingUp className="h-12 w-12 text-primary animate-pulse" />
             </div>
-          </div>
-          
-          {/* Hushh Technologies Badge */}
-          <div className="flex justify-center">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border/50">
+            <h1 className="text-6xl font-black tracking-tighter">Kai</h1>
+            <span className="inline-flex items-center px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-muted/50 text-muted-foreground border border-border/50">
               Hushh Technologies
             </span>
           </div>
           
-          {/* Tagline */}
-          <p className="text-muted-foreground text-balance pt-2 max-w-md mx-auto">
-            Your AI investment committee. Three specialist agents analyze, debate, and deliver decisions with receipts.
+          <p className="text-muted-foreground text-lg font-medium leading-relaxed max-w-xs mx-auto">
+            Your personal investment committee. Smart, private, and precise.
           </p>
         </div>
 
-        {/* Value bullets */}
-        <div className="space-y-4">
-          <Card variant="none" effect="glass" className="p-5">
+        {/* Feature Ecosystem */}
+        <div className="grid gap-3">
+          <Card variant="none" effect="glass" className="p-4 border-white/5">
             <CardContent className="p-0 flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
-                <BarChart3 className="h-6 w-6" />
+              <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-500 shrink-0">
+                <BarChart3 className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-semibold text-base">Investment Analysis</h3>
-                <p className="text-sm text-muted-foreground">
-                  Get Buy/Hold/Reduce decisions from three specialist agents.
+                <h3 className="font-bold text-sm">Portfolio Health</h3>
+                <p className="text-xs text-muted-foreground">
+                  Smart rebalancing and risk analysis of your holdings.
                 </p>
               </div>
             </CardContent>
           </Card>
-          <Card variant="none" effect="glass" className="p-5">
+
+          <Card variant="none" effect="glass" className="p-4 border-white/5">
             <CardContent className="p-0 flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400 shrink-0">
-                <Shield className="h-6 w-6" />
+              <div className="p-2.5 rounded-2xl bg-blue-500/10 text-blue-500 shrink-0">
+                <Shield className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-semibold text-base">On-Device Privacy</h3>
-                <p className="text-sm text-muted-foreground">
-                  Your financial data stays encrypted in your personal vault.
+                <h3 className="font-bold text-sm">Vault Privacy</h3>
+                <p className="text-xs text-muted-foreground">
+                  E2E encryption for all your financial statements.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card variant="none" effect="glass" className="p-4 border-white/5 opacity-80">
+            <CardContent className="p-0 flex items-center gap-4">
+              <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-500 shrink-0">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">Committee Insights</h3>
+                <p className="text-xs text-muted-foreground">
+                  Three specialist agents debating every decision.
                 </p>
               </div>
             </CardContent>

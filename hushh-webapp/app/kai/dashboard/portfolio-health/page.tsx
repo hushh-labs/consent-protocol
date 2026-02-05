@@ -10,6 +10,7 @@ import { Button } from "@/lib/morphy-ux/button";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
 import { Activity, ArrowLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type LoserInput = {
   symbol: string;
@@ -21,6 +22,7 @@ type LoserInput = {
 
 type OptimizePlanAction = {
   symbol?: string;
+  name?: string;
   current_weight_pct?: number;
   target_weight_pct?: number;
   action?: string;
@@ -458,63 +460,100 @@ export default function PortfolioHealthPage() {
             </CardContent>
           </Card>
 
-          {/* Per-position details */}
-          <Card variant="none" effect="glass" showRipple={false}>
+          {/* Per-position details - Overhauled for creativity & clarity */}
+          <Card variant="none" effect="glass" showRipple={false} className="border-white/10">
             <CardHeader>
-              <CardTitle>Positions Requiring Attention</CardTitle>
+              <div className="flex items-center gap-2">
+                <Activity className="w-5 h-5 text-primary" />
+                <CardTitle>Positions Requiring Attention</CardTitle>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {(result.losers || []).map((l, idx) => (
-                <Card
-                  key={idx}
-                  variant="none"
-                  effect="glass"
-                  showRipple={false}
-                >
-                  <CardContent className="p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">
-                        {l.symbol || "—"}
-                        {l.renaissance_tier ? ` • ${l.renaissance_tier}` : ""}
+            <CardContent className="space-y-6 pt-2">
+              {(result.losers || []).map((l, idx) => {
+                const currentWeight = l.current_weight_pct || 0;
+                const targetWeight = l.target_weight_pct || 0;
+                const isReduction = targetWeight < currentWeight;
+
+                return (
+                  <div key={idx} className="relative group animate-in fade-in slide-in-from-right-2 duration-500" style={{ animationDelay: `${idx * 100}ms` }}>
+                    {/* Header: Symbol & Tier */}
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-background/50 border border-white/5 flex items-center justify-center font-black text-sm tracking-tight text-foreground shadow-sm group-hover:border-primary/30 transition-colors">
+                          {l.symbol || "—"}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{l.name || "Symbol Position"}</span>
+                            {l.renaissance_tier && (
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border",
+                                l.renaissance_tier === "ACE" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                                l.renaissance_tier === "KING" ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                                "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                              )}>
+                                {l.renaissance_tier}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] uppercase font-bold text-muted-foreground/60 tracking-widest leading-none">
+                            {l.action || "No Action Recommended"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {l.action ? `Action: ${l.action}` : ""}
+                      
+                      <div className="text-right">
+                        <span className={cn(
+                          "text-xs font-black px-2 py-1 rounded-lg",
+                          isReduction ? "bg-red-500/10 text-red-500" : "bg-emerald-500/10 text-emerald-500"
+                        )}>
+                          {isReduction ? `-${(currentWeight - targetWeight).toFixed(1)}%` : `+${(targetWeight - currentWeight).toFixed(1)}%`}
+                        </span>
                       </div>
                     </div>
-                    {typeof l.current_weight_pct === "number" &&
-                      typeof l.target_weight_pct === "number" && (
-                        <p className="text-xs text-muted-foreground">
-                          Weight: {l.current_weight_pct.toFixed(1)}% →{" "}
-                          {l.target_weight_pct.toFixed(1)}%
-                        </p>
-                      )}
+
+                    {/* Weight Visualization Bar */}
+                    <div className="space-y-1.5 px-1">
+                      <div className="flex justify-between text-[10px] font-bold text-muted-foreground/80 uppercase tracking-tighter">
+                        <span>Current: {currentWeight.toFixed(1)}%</span>
+                        <span>Target: {targetWeight.toFixed(1)}%</span>
+                      </div>
+                      <div className="relative h-2 w-full bg-muted/30 rounded-full overflow-hidden border border-white/5">
+                        {/* Current Weight Line */}
+                        <div 
+                          className="absolute h-full bg-muted-foreground/20 transition-all duration-1000 ease-out"
+                          style={{ width: `${currentWeight}%` }}
+                        />
+                        {/* Target Weight Overlay */}
+                        <div 
+                          className={cn(
+                            "absolute h-full transition-all duration-1000 ease-out",
+                            isReduction ? "bg-red-500/60" : "bg-emerald-500/60"
+                          )}
+                          style={{ 
+                            width: `${targetWeight}%`,
+                            left: 0
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Rationale */}
                     {l.rationale && (
-                      <p className="text-sm text-muted-foreground">
-                        {l.rationale}
-                      </p>
+                      <div className="mt-3 px-1">
+                        <p className="text-sm text-muted-foreground/90 leading-relaxed italic">
+                          "{l.rationale}"
+                        </p>
+                      </div>
                     )}
-                    {Array.isArray((l as any).replacement_candidates) &&
-                      (l as any).replacement_candidates.length > 0 && (
-                        <div className="text-sm">
-                          <div className="font-medium mb-1">
-                            Replacement candidates
-                          </div>
-                          <ul className="list-disc pl-5 text-muted-foreground">
-                            {(l as any).replacement_candidates.map(
-                              (c: any, j: number) => (
-                                <li key={j}>
-                                  {c.ticker}
-                                  {c.tier ? ` (${c.tier})` : ""} —{" "}
-                                  {c.why || ""}
-                                </li>
-                              )
-                            )}
-                          </ul>
-                        </div>
-                      )}
-                  </CardContent>
-                </Card>
-              ))}
+
+                    {/* Divider */}
+                    {idx < (result.losers || []).length - 1 && (
+                      <div className="mt-6 border-b border-white/5" />
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         </>
