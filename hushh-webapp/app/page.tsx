@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
-import { Shield, Lock, Key, ArrowRight, AlertCircle } from "lucide-react";
+import { Shield, Lock, Key, ArrowRight, AlertCircle, Sparkles } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
@@ -13,6 +13,16 @@ import { useAuth } from "@/lib/firebase/auth-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
+import { isAndroid } from "@/lib/capacitor/platform";
+
+// Global utility for resetting welcome screen (accessible from browser console)
+if (typeof window !== "undefined") {
+  (window as any).resetWelcomeScreen = () => {
+    localStorage.removeItem("hushh_has_visited");
+    console.log("✅ Welcome screen reset. Refreshing...");
+    window.location.href = "/";
+  };
+}
 
 // --- Welcome Component for First-Time Users ---
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
@@ -41,38 +51,59 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
           </div>
 
           <p className="text-lg text-muted-foreground leading-relaxed text-balance">
-            Your personal data assistant. <br />
+            Your Personal Agent. <br />
             Private. Secure. Yours.
           </p>
         </div>
 
         {/* Feature Cards Carousel / Stack */}
-        <div className="space-y-4">
-          <div className="flex items-start gap-4 p-4 rounded-2xl bg-white/50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 backdrop-blur-md">
-            <div className="p-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400">
-              <Shield className="h-6 w-6" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm mb-1">
-                End-to-End Encrypted
-              </h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Your data is encrypted on your device. Only you hold the keys.
-              </p>
-            </div>
-          </div>
+        <div className="space-y-3">
+          {/* Kai Feature */}
+          <Card variant="gradient" effect="fade" className="border-white/20 dark:border-white/10">
+            <CardContent className="flex items-start gap-4 p-4">
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                <Sparkles className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm mb-1">Meet Kai</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Your personal AI agent. Analyzing your data, privately and securely.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
-          <div className="flex items-start gap-4 p-4 rounded-2xl bg-white/50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 backdrop-blur-md">
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <Lock className="h-6 w-6" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm mb-1">Total Control</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Grant and revoke access to your data with granular precision.
-              </p>
-            </div>
-          </div>
+          {/* E2EE Feature */}
+          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
+            <CardContent className="flex items-start gap-4 p-4">
+              <div className="p-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400">
+                <Shield className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm mb-1">
+                  End-to-End Encrypted
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Your data is encrypted on your device. Only you hold the keys.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Control Feature */}
+          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
+            <CardContent className="flex items-start gap-4 p-4">
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <Lock className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm mb-1">Total Control</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Grant and revoke access to your data with granular precision.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Action */}
@@ -87,13 +118,6 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
             Get Started
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
-          <p className="text-center text-xs text-muted-foreground mt-4">
-            Read our{" "}
-            <Link href="/docs" className="underline hover:text-foreground">
-              documentation
-            </Link>{" "}
-            to learn more.
-          </p>
         </div>
       </div>
     </main>
@@ -301,52 +325,109 @@ function LoginScreenContent() {
           {/* Login Buttons */}
           <div className="space-y-6">
             <div className="space-y-4">
-              <Button
-                variant="none"
-                className="w-full bg-white text-black hover:bg-gray-100 border border-gray-200 h-12 rounded-xl shadow-sm transition-all relative overflow-hidden group"
-                onClick={handleGoogleLogin}
-              >
-                <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Continue with Google
-              </Button>
+              {/* Platform-aware order: Apple first (iOS/Web), Google first (Android) */}
+              {isAndroid() ? (
+                <>
+                  {/* Google Button - First on Android */}
+                  <Button
+                    variant="link"
+                    effect="fade"
+                    className="w-full h-12 rounded-xl"
+                    onClick={handleGoogleLogin}
+                  >
+                    <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      />
+                    </svg>
+                    Continue with Google
+                  </Button>
 
-              <Button
-                variant="none"
-                className="w-full bg-black text-white hover:bg-gray-900 border border-gray-800 h-12 rounded-xl shadow-sm transition-all dark:bg-white dark:text-black dark:hover:bg-gray-100"
-                onClick={handleAppleLogin}
-              >
-                <svg
-                  className="w-5 h-5 mr-3"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
-                </svg>
-                Continue with Apple
-              </Button>
+                  {/* Apple Button - Second on Android */}
+                  <Button
+                    variant="link"
+                    effect="fade"
+                    className="w-full h-12 rounded-xl"
+                    onClick={handleAppleLogin}
+                  >
+                    <svg
+                      className="w-5 h-5 mr-3"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
+                    </svg>
+                    Continue with Apple
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {/* Apple Button - First on iOS/Web */}
+                  <Button
+                    variant="link"
+                    effect="fade"
+                    className="w-full h-12 rounded-xl"
+                    onClick={handleAppleLogin}
+                  >
+                    <svg
+                      className="w-5 h-5 mr-3"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M17.05 20.28c-.98.95-2.05.88-3.08.38-1.07-.52-2.07-.51-3.2 0-1.01.43-2.1.49-2.98-.38C5.22 17.63 2.7 12 5.45 8.04c1.47-2.09 3.8-2.31 5.33-1.18 1.1.75 3.3.73 4.45-.04 2.1-1.31 3.55-.95 4.5 1.14-.15.08.2.14 0 .2-2.63 1.34-3.35 6.03.95 7.84-.46 1.4-1.25 2.89-2.26 4.4l-.07.08-.05-.2zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.17 2.22-1.8 4.19-3.74 4.25z" />
+                    </svg>
+                    Continue with Apple
+                  </Button>
+
+                  {/* Google Button - Second on iOS/Web */}
+                  <Button
+                    variant="link"
+                    effect="fade"
+                    className="w-full h-12 rounded-xl"
+                    onClick={handleGoogleLogin}
+                  >
+                    <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      />
+                    </svg>
+                    Continue with Google
+                  </Button>
+                </>
+              )}
 
               {/* Reviewer Button - Only shown in APP_REVIEW_MODE */}
               {isAppReviewMode() && (
                 <Button
-                  variant="none"
-                  className="w-full bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white hover:opacity-90 h-12 rounded-xl shadow-lg transition-all"
+                  variant="link"
+                  effect="glass"
+                  className="w-full h-12 rounded-xl"
                   onClick={handleReviewerLogin}
                 >
                   <Shield className="w-5 h-5 mr-3" />
@@ -400,24 +481,11 @@ function LoginScreen() {
 }
 
 export default function Home() {
-  const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    // Check local storage
-    const hasVisited = localStorage.getItem("hushh_has_visited");
-    if (hasVisited) {
-      setShowWelcome(false);
-    } else {
-      setShowWelcome(true);
-    }
-  }, []);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   const handleGetStarted = () => {
-    localStorage.setItem("hushh_has_visited", "true");
     setShowWelcome(false);
   };
-
-  if (showWelcome === null) return null;
 
   if (showWelcome) {
     return <WelcomeScreen onGetStarted={handleGetStarted} />;
