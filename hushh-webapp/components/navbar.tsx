@@ -115,8 +115,8 @@ export const Navbar = () => {
   ];
 
   return (
-    <nav className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
-      <div className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5">
+    <nav className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] inset-x-0 z-100 flex justify-center px-4 pointer-events-none transform-gpu">
+      <div className="pointer-events-auto flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-2xl ring-1 ring-black/5 min-h-[56px]">
         {navigationItems.map((item) => {
           const Icon = item.icon;
           // Handle trailing slashes from Capacitor static export

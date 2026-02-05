@@ -31,6 +31,7 @@ import {
   Wallet,
   PieChart as PieChartIcon,
   Shield,
+  Briefcase,
   ChevronRight,
   Upload,
   Trash2,
@@ -563,7 +564,7 @@ export function DashboardView({
           title="Holdings"
           value={holdingsCount > 0 ? holdingsCount.toString() : "—"}
           description="Number of positions in your portfolio"
-          icon={<Wallet className="w-5 h-5" />}
+          icon={<Briefcase />}
           size="sm"
         />
         <KPICard
@@ -571,6 +572,7 @@ export function DashboardView({
           value={totalUnrealizedGainLoss !== 0 ? formatCurrency(totalUnrealizedGainLoss) : "—"}
           description="Unrealized gain or loss on current holdings"
           change={totalUnrealizedGainLoss !== 0 ? (totalUnrealizedGainLoss / (totalValue - totalUnrealizedGainLoss) * 100) : undefined}
+          icon={<TrendingUp />}
           variant={totalUnrealizedGainLoss >= 0 ? "success" : "danger"}
           size="sm"
         />
@@ -578,7 +580,7 @@ export function DashboardView({
           title="Risk"
           value={holdingsCount > 0 ? riskBucket : "—"}
           description="Portfolio risk level based on allocation"
-          icon={<Shield className="w-5 h-5" />}
+          icon={<Shield />}
           variant={riskBucket === "Aggressive" ? "warning" : riskBucket === "Conservative" ? "info" : "default"}
           size="sm"
         />
