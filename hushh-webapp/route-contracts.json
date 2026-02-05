@@ -2,7 +2,8 @@
   "version": 1,
   "allowlistedWebRouteFiles": [
     "hushh-webapp/app/api/chat/route.ts",
-    "hushh-webapp/app/api/consent/events/[userId]/route.ts"
+    "hushh-webapp/app/api/consent/events/[userId]/route.ts",
+    "hushh-webapp/app/api/notifications/register/route.ts"
   ],
   "contracts": [
     {

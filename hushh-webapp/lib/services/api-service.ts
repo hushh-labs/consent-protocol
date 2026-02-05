@@ -445,6 +445,30 @@ export class ApiService {
   }
 
   /**
+   * Register push notification token (FCM/APNs) for consent notifications.
+   * Route: POST /api/notifications/register
+   * Requires Firebase ID token in Authorization (Bearer).
+   */
+  static async registerPushToken(
+    userId: string,
+    token: string,
+    platform: "web" | "ios" | "android",
+    idToken: string
+  ): Promise<Response> {
+    return apiFetch("/api/notifications/register", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        token,
+        platform,
+      }),
+    });
+  }
+
+  /**
    * Get active consents
    * Route: GET /api/consent/active?userId=xxx
    */

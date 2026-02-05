@@ -79,7 +79,7 @@ export function ExitDialog({ open, onOpenChange, onConfirm }: ExitDialogProps) {
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleExit}
-            className="bg-gradient-to-r from-red-500 via-red-600 to-red-700 text-white hover:from-red-600 hover:via-red-700 hover:to-red-800 shadow-lg"
+            className="bg-red-600 text-white hover:bg-red-700 shadow-md"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Exit Hushh

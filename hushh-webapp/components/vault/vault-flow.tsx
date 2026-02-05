@@ -48,6 +48,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
   const [recoveryKey, setRecoveryKey] = useState<string>("");
   const [recoveryKeyInput, setRecoveryKeyInput] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isUnlocking, setIsUnlocking] = useState(false);
 
   const { unlockVault } = useVault();
 
@@ -80,6 +81,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       return;
     }
 
+    setIsUnlocking(true);
     try {
       setError(null);
       // 1. Generate encrypted vault data
@@ -97,10 +99,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     } catch (err: any) {
       console.error("Create vault error:", err);
       toast.error(err.message || "Failed to create vault");
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
   const handleUnlockPassphrase = async () => {
+    setIsUnlocking(true);
     try {
       setError(null);
       const vaultData = await VaultService.getVault(user.uid);
@@ -138,10 +143,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     } catch (err: any) {
       console.error("Unlock error:", err);
       toast.error("Invalid passphrase or failed to unlock");
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
   const handleRecoveryKeySubmit = async () => {
+    setIsUnlocking(true);
     try {
       setError(null);
       const vaultData = await VaultService.getVault(user.uid);
@@ -179,6 +187,8 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     } catch (err: any) {
       console.error("Recovery error:", err);
       toast.error("Invalid recovery key or failed to recover");
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
@@ -296,8 +306,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                 effect="glass"
                 className="w-full"
                 onClick={handleCreatePassphrase}
+                disabled={isUnlocking || passphrase.length < 8 || passphrase !== confirmPassphrase}
               >
-                Create Vault
+                {isUnlocking ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
+                ) : (
+                  "Create Vault"
+                )}
               </Button>
             </div>
           )}
@@ -332,6 +347,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   effect="glass"
                   className="flex-1 order-2 sm:order-1"
                   onClick={() => setStep("recovery")}
+                  disabled={isUnlocking}
                 >
                   Use Recovery Key
                 </Button>
@@ -340,8 +356,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   effect="glass"
                   className="flex-1 order-1 sm:order-2"
                   onClick={handleUnlockPassphrase}
+                  disabled={isUnlocking || !passphrase}
                 >
-                  Unlock
+                  {isUnlocking ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Unlocking...</>
+                  ) : (
+                    "Unlock"
+                  )}
                 </Button>
               </div>
             </div>
@@ -375,6 +396,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   effect="glass"
                   className="flex-1 order-2 sm:order-1"
                   onClick={() => setStep("unlock")}
+                  disabled={isUnlocking}
                 >
                   Use Passphrase
                 </Button>
@@ -383,8 +405,13 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   effect="fill"
                   className="flex-1 text-white order-1 sm:order-2"
                   onClick={handleRecoveryKeySubmit}
+                  disabled={isUnlocking || !recoveryKeyInput}
                 >
-                  Unlock
+                  {isUnlocking ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Unlocking...</>
+                  ) : (
+                    "Unlock"
+                  )}
                 </Button>
               </div>
             </div>
