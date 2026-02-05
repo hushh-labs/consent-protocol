@@ -24,6 +24,35 @@ if (typeof window !== "undefined") {
   };
 }
 
+// --- Shared Components ---
+function SharedHeader() {
+  return (
+    <div className="text-center space-y-6">
+      <h1
+        className="text-4xl font-bold tracking-tight bg-clip-text text-transparent mb-6"
+        style={{
+          backgroundImage: "linear-gradient(to right, #e91e63, #9c27b0)",
+        }}
+      >
+        Welcome to
+      </h1>
+
+      <div className="mx-auto h-24 w-auto flex items-center justify-center mb-2">
+        <img
+          src="/hushh-logo-new.svg"
+          alt="Hushh Logo"
+          className="h-full w-auto object-contain dark:brightness-0 dark:invert"
+        />
+      </div>
+
+      <p className="text-lg text-muted-foreground leading-relaxed text-balance">
+        Your Personal Agent. <br />
+        Private. Secure. Yours.
+      </p>
+    </div>
+  );
+}
+
 // --- Welcome Component for First-Time Users ---
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
   return (
@@ -32,29 +61,7 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
 
       <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         {/* Header / Logo */}
-        <div className="text-center space-y-6">
-          <h1
-            className="text-4xl font-bold tracking-tight bg-clip-text text-transparent mb-6"
-            style={{
-              backgroundImage: "linear-gradient(to right, #e91e63, #9c27b0)",
-            }}
-          >
-            Welcome to
-          </h1>
-
-          <div className="mx-auto h-24 w-auto flex items-center justify-center mb-2">
-            <img
-              src="/hushh-logo-new.svg"
-              alt="Hushh Logo"
-              className="h-full w-auto object-contain dark:brightness-0 dark:invert"
-            />
-          </div>
-
-          <p className="text-lg text-muted-foreground leading-relaxed text-balance">
-            Your Personal Agent. <br />
-            Private. Secure. Yours.
-          </p>
-        </div>
+        <SharedHeader />
 
         {/* Feature Cards Carousel / Stack */}
         <div className="space-y-3">
@@ -287,32 +294,21 @@ function LoginScreenContent() {
 
   return (
     <main className="flex-1 flex items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-6">
-        {/* Header - Shown only for Login state */}
-        <div className="text-center space-y-4 pt-8">
-          <>
-            <div className="flex justify-center gap-3 mb-6">
-              <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <Shield className="h-8 w-8 text-primary" />
-              </div>
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight">Login</h1>
-            <p className="text-lg text-muted-foreground max-w-xs mx-auto text-balance">
-              Take control of your digital identity. Secure. Private. Yours.
-            </p>
-          </>
-        </div>
+      <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        {/* Header - Shared for seamless transition */}
+        <SharedHeader />
 
         {/* Main Login Content */}
         <div className="p-2 space-y-4">
           {/* Review Mode Alert */}
+          {/* Review Mode Alert */}
           {isAppReviewMode() && (
-            <Alert className="bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800">
-              <Shield className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-              <AlertDescription className="text-orange-800 dark:text-orange-200">
-                App Review Mode Active - Reviewer test account available below
-              </AlertDescription>
-            </Alert>
+            <Card variant="none" effect="glass" className="border-yellow-500/30">
+              <CardContent className="flex items-center gap-3 p-3 text-sm font-medium">
+                <Shield className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0" />
+                <span>App Review Mode Active - Reviewer test account available below</span>
+              </CardContent>
+            </Card>
           )}
 
           {/* Error Alert */}
@@ -324,7 +320,7 @@ function LoginScreenContent() {
           )}
           {/* Login Buttons */}
           <div className="space-y-6">
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Platform-aware order: Apple first (iOS/Web), Google first (Android) */}
               {isAndroid() ? (
                 <>
@@ -332,7 +328,7 @@ function LoginScreenContent() {
                   <Button
                     variant="link"
                     effect="glass"
-                    className="w-full h-12 rounded-xl"
+                    className="w-full h-14 rounded-xl text-base"
                     onClick={handleGoogleLogin}
                   >
                     <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
@@ -360,7 +356,7 @@ function LoginScreenContent() {
                   <Button
                     variant="link"
                     effect="glass"
-                    className="w-full h-12 rounded-xl"
+                    className="w-full h-14 rounded-xl text-base"
                     onClick={handleAppleLogin}
                   >
                     <svg
@@ -378,8 +374,10 @@ function LoginScreenContent() {
                   {/* Apple Button - First on iOS/Web */}
                   <Button
                     variant="link"
-                    effect="fade"
-                    className="w-full h-12 rounded-xl"
+                    effect="glass"
+                    size="xl"
+                    fullWidth
+                    className="rounded-xl"
                     onClick={handleAppleLogin}
                   >
                     <svg
@@ -395,8 +393,10 @@ function LoginScreenContent() {
                   {/* Google Button - Second on iOS/Web */}
                   <Button
                     variant="link"
-                    effect="fade"
-                    className="w-full h-12 rounded-xl"
+                    effect="glass"
+                    size="xl"
+                    fullWidth
+                    className="rounded-xl"
                     onClick={handleGoogleLogin}
                   >
                     <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
@@ -427,7 +427,9 @@ function LoginScreenContent() {
                 <Button
                   variant="link"
                   effect="glass"
-                  className="w-full h-12 rounded-xl"
+                  size="xl"
+                  fullWidth
+                  className="rounded-xl"
                   onClick={handleReviewerLogin}
                 >
                   <Shield className="w-5 h-5 mr-3" />
