@@ -44,7 +44,7 @@ export const getVariantStyles = (
   switch (variant) {
     case "gradient":
       if (effect === "fill") {
-        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-[var(--morphy-primary-start)]/90 hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200`;
+        return `bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] hover:from-black/90 hover:to-black/90 dark:hover:from-[var(--morphy-primary-start)]/90 dark:hover:to-[var(--morphy-primary-end)]/90 text-white dark:text-black shadow-md transition-shadow,transition-colors duration-200`;
       } else if (effect === "fade") {
         // Dark mode: black text for visibility on gold/yellow gradient
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] dark:text-black transition-colors duration-200";
@@ -182,10 +182,10 @@ export const getVariantStyles = (
 
     case "link":
       // Silver hover in dark mode for hushh brand
-      const baseLinkStyles = "text-[#374151] dark:text-[#e5e7eb] hover:text-[var(--morphy-primary-start)] dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200";
+      const baseLinkStyles = "text-[#374151] dark:text-[#e5e7eb] hover:text-black dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200";
       
       if (effect === "glass") {
-        return `${baseLinkStyles} bg-white/50 dark:bg-black/50 shadow-sm border border-black/5 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60`;
+        return `${baseLinkStyles} bg-white/50 dark:bg-black/50 shadow-sm border border-black/10 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60`;
       }
       
       if (effect === "fade") {
@@ -411,7 +411,7 @@ export const getRippleColor = (
       case "metallic":
         return "bg-gray-400/30 dark:bg-[#c0c0c0]/30";
       case "link":
-        return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#c0c0c0]/20";
+        return "bg-black/10 dark:bg-white/20";
       case "black":
         return "bg-black/20 dark:bg-[#c0c0c0]/20";
       case "none":
@@ -441,7 +441,7 @@ export const getRippleColor = (
       return "bg-gray-400/20";
     case "link":
       // Silver ripple in dark mode for link variant
-      return "bg-[var(--morphy-primary-start)]/20 dark:bg-[#c0c0c0]/20";
+      return "bg-black/10 dark:bg-white/20";
     case "none":
     default:
       return "bg-foreground/10 dark:bg-[#c0c0c0]/10";

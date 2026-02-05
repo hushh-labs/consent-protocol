@@ -15,10 +15,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Save, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Loader2, RefreshCw } from "lucide-react";
+import { Kbd } from "@/components/ui/kbd";
+
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Button } from "@/lib/morphy-ux/button";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
@@ -124,6 +135,10 @@ export default function ManagePortfolioPage() {
   const [editingIndex, setEditingIndex] = useState<number>(-1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { registerSteps, completeStep, reset } = useStepProgress();
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   // Register 2 steps: Auth check, Load holdings
   useEffect(() => {
@@ -377,7 +392,7 @@ export default function ManagePortfolioPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] pb-24">
+    <div className="min-h-screen pb-24">
       <div className="p-4 space-y-4">
         {/* Account Info */}
         {(accountInfo.account_number || accountInfo.brokerage_name) && (
@@ -461,64 +476,113 @@ export default function ManagePortfolioPage() {
 
           <div className="space-y-3">
             {holdings.length > 0 ? (
-              holdings.map((holding, index) => {
-                const gainLoss = holding.unrealized_gain_loss || 0;
-                const isPositive = gainLoss >= 0;
+              <>
+                {holdings
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((holding, index) => {
+                    const actualIndex = (currentPage - 1) * itemsPerPage + index;
+                    const gainLoss = holding.unrealized_gain_loss || 0;
+                    const isPositive = gainLoss >= 0;
 
-                return (
-                  <Card
-                    key={`${holding.symbol}-${index}`}
-                    variant="none"
-                    effect="glass"
-                    showRipple={false}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">
-                              {holding.symbol}
-                            </span>
-                            <span className="text-sm text-muted-foreground truncate">
-                              {holding.name}
-                            </span>
+                    return (
+                      <Card
+                        key={`${holding.symbol}-${actualIndex}`}
+                        variant="none"
+                        effect="glass"
+                        showRipple={false}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-lg">
+                                  {holding.symbol}
+                                </span>
+                                <span className="text-sm text-muted-foreground truncate">
+                                  {holding.name}
+                                </span>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {holding.quantity.toLocaleString()} @ {formatCurrency(holding.price)} = {formatCurrency(holding.market_value)}
+                              </p>
+                              {holding.cost_basis !== undefined && (
+                                <p className="text-sm mt-1">
+                                  <span className="text-muted-foreground font-medium">Cost: </span>
+                                  <span className="font-semibold">{formatCurrency(holding.cost_basis)}</span>
+                                  <span className="mx-2 opacity-20">|</span>
+                                  <span className="text-muted-foreground font-medium">G/L: </span>
+                                  <span className={cn("font-bold", isPositive ? "text-emerald-500" : "text-red-500")}>
+                                    {isPositive ? "+" : ""}{formatCurrency(gainLoss)}
+                                  </span>
+                                </p>
+                              )}
+
+                            </div>
+                            <div className="flex items-center gap-3 ml-4 border-l border-primary/10 pl-4">
+                              <div className="flex flex-col items-center gap-1">
+                                <Button
+                                  variant="none"
+                                  effect="glass"
+                                  size="icon-sm"
+                                  className="h-10 w-10 text-muted-foreground hover:text-primary transition-all duration-300 rounded-xl"
+                                  onClick={() => handleEditHolding(actualIndex)}
+                                  icon={{ icon: Pencil }}
+                                />
+                                <Kbd className="text-[8px] px-1 h-3.5">EDIT</Kbd>
+                              </div>
+                              <div className="flex flex-col items-center gap-1">
+                                <Button
+                                  variant="none"
+                                  effect="glass"
+                                  size="icon-sm"
+                                  className="h-10 w-10 text-red-400 hover:text-red-500 hover:bg-red-50 transition-all duration-300 rounded-xl"
+                                  onClick={() => handleDeleteHolding(actualIndex)}
+                                  icon={{ icon: Trash2 }}
+                                />
+                                <Kbd className="text-[8px] px-1 h-3.5">DEL</Kbd>
+                              </div>
+                            </div>
+
                           </div>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {holding.quantity.toLocaleString()} @ {formatCurrency(holding.price)} = {formatCurrency(holding.market_value)}
-                          </p>
-                          {holding.cost_basis !== undefined && (
-                            <p className="text-sm mt-1">
-                              <span className="text-muted-foreground">Cost: </span>
-                              {formatCurrency(holding.cost_basis)}
-                              <span className="mx-2">|</span>
-                              <span className="text-muted-foreground">G/L: </span>
-                              <span className={cn(isPositive ? "text-emerald-500" : "text-red-500")}>
-                                {formatCurrency(gainLoss)}
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 ml-4">
-                          <button
-                            onClick={() => handleEditHolding(index)}
-                            className="p-2 rounded-full hover:bg-muted transition-colors"
-                            aria-label="Edit holding"
-                          >
-                            <Pencil className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteHolding(index)}
-                            className="p-2 rounded-full hover:bg-red-500/10 transition-colors"
-                            aria-label="Delete holding"
-                          >
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+
+                {holdings.length > itemsPerPage && (
+                  <div className="mt-6">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious 
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            className={cn("cursor-pointer", currentPage === 1 && "pointer-events-none opacity-50")}
+                          />
+                        </PaginationItem>
+                        
+                        {Array.from({ length: Math.ceil(holdings.length / itemsPerPage) }).map((_, i) => (
+                          <PaginationItem key={i}>
+                            <PaginationLink
+                              isActive={currentPage === i + 1}
+                              onClick={() => setCurrentPage(i + 1)}
+                              className="cursor-pointer"
+                            >
+                              {i + 1}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+
+                        <PaginationItem>
+                          <PaginationNext 
+                            onClick={() => setCurrentPage(prev => Math.min(Math.ceil(holdings.length / itemsPerPage), prev + 1))}
+                            className={cn("cursor-pointer", currentPage === Math.ceil(holdings.length / itemsPerPage) && "pointer-events-none opacity-50")}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </>
             ) : (
               <Card variant="muted" effect="glass" showRipple={false}>
                 <CardContent className="p-8 text-center">
