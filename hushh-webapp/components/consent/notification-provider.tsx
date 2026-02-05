@@ -8,6 +8,8 @@
  * Uses unified SSE context (no more duplicate connections).
  *
  * Responsibilities:
+ * - Register FCM push token with backend (web; when user is logged in)
+ * - Handle foreground FCM messages (onMessage) → refresh pending / show toasts
  * - Poll for initial pending consents on mount
  * - Subscribe to SSE events for new requests
  * - Show interactive toast with Approve/Deny buttons
@@ -15,6 +17,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, X } from "lucide-react";
 import { useVault } from "@/lib/vault/vault-context";
@@ -24,6 +27,8 @@ import {
   type PendingConsent,
 } from "@/lib/consent";
 import { ApiService } from "@/lib/services/api-service";
+import { useAuth } from "@/hooks/use-auth";
+import { registerConsentPushToken } from "@/lib/notifications";
 
 // ============================================================================
 // Helpers
@@ -42,14 +47,23 @@ const formatScope = (scope: string): { label: string; emoji: string } => {
 // Main Provider
 // ============================================================================
 
+/** Custom event dispatched when a consent push is received (e.g. FCM onMessage) */
+export const CONSENT_PUSH_MESSAGE_EVENT = "consent-push-message";
+
 export function ConsentNotificationProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const { isVaultUnlocked } = useVault();
   const { lastEvent, eventCount, isConnected } = useConsentSSE();
   const [pendingCount, setPendingCount] = useState(0);
+  const { user } = useAuth();
+  const pushRegisteredRef = useRef(false);
+  const fetchPendingRef = useRef<(userId: string) => void>(() => {});
+  const sseDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const SSE_DEBOUNCE_MS = 600;
 
   // Use the centralized consent actions hook
   const {
@@ -133,14 +147,19 @@ export function ConsentNotificationProvider({
           );
           setPendingCount(pending.length);
 
-          // Show toast for NEW requests only
+          // Show toast for requests: new ones OR ones already marked as pending (to replace fallback toast)
           pending.forEach((consent) => {
             const show = shouldShowToast(consent.id);
+            const isAlreadyPending = !show; // If shouldShow is false, request is already tracked
             console.log(
-              `🔔 [NotificationProvider] Consent ${consent.id}: shouldShow=${show}`
+              `🔔 [NotificationProvider] Consent ${consent.id}: shouldShow=${show}, isAlreadyPending=${isAlreadyPending}`
             );
             if (show) {
               markAsPending(consent.id);
+              showConsentToast(consent);
+            } else if (isAlreadyPending) {
+              // Request was marked as pending (e.g., from REQUESTED SSE event while vault locked)
+              // Show full toast to replace any fallback toast
               showConsentToast(consent);
             }
           });
@@ -157,7 +176,68 @@ export function ConsentNotificationProvider({
     [shouldShowToast, markAsPending, showConsentToast]
   );
 
+  // Keep ref updated for push message handler
+  fetchPendingRef.current = fetchPendingAndShowToasts;
+
+  // Register FCM push token with backend when user is logged in (web only)
+  useEffect(() => {
+    if (!user) return;
+    const userId = sessionStorage.getItem("user_id");
+    if (!userId || pushRegisteredRef.current) return;
+    let cancelled = false;
+    pushRegisteredRef.current = true;
+    user
+      .getIdToken()
+      .then((idToken) => {
+        if (!cancelled) return registerConsentPushToken(userId, idToken);
+        return undefined;
+      })
+      .catch((err) => {
+        console.warn("[NotificationProvider] Push registration failed:", err);
+        pushRegisteredRef.current = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Foreground FCM: onMessage → dispatch event so we refresh pending (and show toasts if vault unlocked)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let unsubscribe: (() => void) | undefined;
+    import("firebase/messaging")
+      .then((mod) =>
+        import("@/lib/firebase/config").then(({ app }) => {
+          const messaging = mod.getMessaging(app);
+          return mod.onMessage(messaging, () => {
+            window.dispatchEvent(new CustomEvent(CONSENT_PUSH_MESSAGE_EVENT));
+          });
+        })
+      )
+      .then((unsub) => {
+        unsubscribe = unsub;
+      })
+      .catch(() => {
+        // No FCM (e.g. native, or vapid not set) – ignore
+      });
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, []);
+
+  // React to consent push message (foreground): refresh pending list
+  useEffect(() => {
+    const handler = () => {
+      if (!isVaultUnlocked) return;
+      const userId = sessionStorage.getItem("user_id");
+      if (userId) fetchPendingRef.current(userId);
+    };
+    window.addEventListener(CONSENT_PUSH_MESSAGE_EVENT, handler);
+    return () => window.removeEventListener(CONSENT_PUSH_MESSAGE_EVENT, handler);
+  }, [isVaultUnlocked]);
+
   // Initial fetch on mount - only if vault is unlocked
+  // Also fetch when vault unlocks (to show full toasts for any REQUESTED events that arrived while locked)
   useEffect(() => {
     // Don't fetch if vault is not unlocked (no vault owner token)
     if (!isVaultUnlocked) {
@@ -174,14 +254,13 @@ export function ConsentNotificationProvider({
       );
       return;
     }
-    console.log("🔔 [NotificationProvider] Initial fetch on mount");
+    console.log("🔔 [NotificationProvider] Fetching pending (vault unlocked)");
     fetchPendingAndShowToasts(userId);
   }, [isVaultUnlocked, fetchPendingAndShowToasts]);
 
-  // React to SSE events - only if vault is unlocked
+  // React to SSE events (debounce fetchPendingAndShowToasts to avoid burst API calls)
   useEffect(() => {
     if (!lastEvent) return;
-    if (!isVaultUnlocked) return;
 
     const userId = sessionStorage.getItem("user_id");
     if (!userId) return;
@@ -192,22 +271,72 @@ export function ConsentNotificationProvider({
       `📡 [NotificationProvider] SSE event: ${action} for ${request_id}`
     );
 
+    const scheduleFetch = () => {
+      if (sseDebounceRef.current) clearTimeout(sseDebounceRef.current);
+      sseDebounceRef.current = setTimeout(() => {
+        sseDebounceRef.current = null;
+        if (isVaultUnlocked) fetchPendingAndShowToasts(userId);
+      }, SSE_DEBOUNCE_MS);
+    };
+
     if (action === "REQUESTED") {
-      // New request - refresh to show toast
-      fetchPendingAndShowToasts(userId);
-    } else if (action === "CONSENT_GRANTED" || action === "CONSENT_DENIED") {
+      // Mark as pending so full toast shows when vault unlocks
+      markAsPending(request_id);
+      
+      if (isVaultUnlocked) {
+        // Vault unlocked: fetch immediately to show full toast with Approve/Deny
+        // (debounce is handled inside fetchPendingAndShowToasts via scheduleFetch)
+        fetchPendingAndShowToasts(userId);
+      } else {
+        // Vault locked: show fallback toast, schedule fetch for when vault unlocks
+        toast(
+          <div className="flex flex-col gap-3">
+            <p className="font-semibold text-sm">New consent request</p>
+            <p className="text-xs text-muted-foreground">
+              Unlock your vault to review and respond.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                router.push("/consents?tab=pending");
+                toast.dismiss(request_id);
+              }}
+              className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+            >
+              Review
+            </button>
+          </div>,
+          { id: request_id, duration: Infinity, position: "top-center" }
+        );
+        // Schedule fetch for when vault unlocks (will show full toast then)
+        scheduleFetch();
+      }
+      return () => {
+        if (sseDebounceRef.current) clearTimeout(sseDebounceRef.current);
+      };
+    }
+
+    if (!isVaultUnlocked) return;
+
+    if (action === "CONSENT_GRANTED" || action === "CONSENT_DENIED") {
       // Request resolved - dismiss toast only if still pending (not being processed)
       if (shouldDismissToast(request_id)) {
         toast.dismiss(request_id);
       }
       clearRequest(request_id);
-
-      // Refresh pending count
-      fetchPendingAndShowToasts(userId);
+      scheduleFetch();
     } else if (action === "REVOKED") {
-      // Refresh counts
-      fetchPendingAndShowToasts(userId);
+      scheduleFetch();
+    } else if (action === "TIMEOUT") {
+      // Request expired (optional timeout job)
+      if (shouldDismissToast(request_id)) toast.dismiss(request_id);
+      clearRequest(request_id);
+      scheduleFetch();
     }
+
+    return () => {
+      if (sseDebounceRef.current) clearTimeout(sseDebounceRef.current);
+    };
   }, [
     lastEvent,
     eventCount,
@@ -215,6 +344,7 @@ export function ConsentNotificationProvider({
     shouldDismissToast,
     clearRequest,
     fetchPendingAndShowToasts,
+    router,
   ]);
 
   // Log SSE connection status
@@ -256,9 +386,10 @@ export function usePendingConsentCount() {
     fetchCount();
   }, [fetchCount]);
 
-  // Refresh on SSE events
+  // Refresh on SSE events that affect pending count (avoid refetch on every event)
+  const actionsAffectingCount = ["REQUESTED", "CONSENT_GRANTED", "CONSENT_DENIED", "REVOKED", "TIMEOUT"];
   useEffect(() => {
-    if (lastEvent && isVaultUnlocked) {
+    if (lastEvent && isVaultUnlocked && actionsAffectingCount.includes(lastEvent.action)) {
       fetchCount();
     }
   }, [lastEvent, eventCount, isVaultUnlocked, fetchCount]);

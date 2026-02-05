@@ -15,7 +15,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import {
@@ -460,7 +460,8 @@ export function KaiChat({
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 p-4 border-b border-border/50 bg-background/80 backdrop-blur-sm">
         <Button
-          variant="ghost"
+          variant="none"
+          effect="glass"
           size="icon"
           className="shrink-0"
           onClick={() => router.push("/kai")}
@@ -547,7 +548,8 @@ export function KaiChat({
         <div className="shrink-0 px-4 pb-2">
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
             <Button
-              variant="outline"
+              variant="none"
+              effect="glass"
               size="sm"
               className="shrink-0 rounded-full text-xs"
               onClick={() => handleQuickAction("Analyze my portfolio")}
@@ -556,7 +558,8 @@ export function KaiChat({
               Analyze Portfolio
             </Button>
             <Button
-              variant="outline"
+              variant="none"
+              effect="glass"
               size="sm"
               className="shrink-0 rounded-full text-xs"
               onClick={() => handleQuickAction("Import my brokerage statement")}
@@ -565,7 +568,8 @@ export function KaiChat({
               Import Statement
             </Button>
             <Button
-              variant="outline"
+              variant="none"
+              effect="glass"
               size="sm"
               className="shrink-0 rounded-full text-xs"
               onClick={() => handleQuickAction("What stocks should I analyze?")}
@@ -582,7 +586,8 @@ export function KaiChat({
         <div className="flex items-center gap-2">
           {/* Voice Input */}
           <Button
-            variant="ghost"
+            variant="none"
+            effect="glass"
             size="icon"
             className={cn(
               "shrink-0 rounded-full",
@@ -611,11 +616,11 @@ export function KaiChat({
           {/* Send Button */}
           <Button
             size="icon"
+            variant={input.trim() ? "gradient" : "none"}
+            effect="fill"
             className={cn(
               "shrink-0 rounded-full transition-all",
-              input.trim()
-                ? "bg-gradient-to-r from-[var(--morphy-primary-start)] to-[var(--morphy-primary-end)] text-white shadow-md"
-                : "bg-muted text-muted-foreground"
+              !input.trim() && "bg-muted text-muted-foreground"
             )}
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
