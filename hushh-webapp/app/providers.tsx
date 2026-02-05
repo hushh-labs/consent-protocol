@@ -20,6 +20,8 @@ import { NavigationProvider } from "@/lib/navigation/navigation-context";
 import { StepProgressProvider } from "@/lib/progress/step-progress-context";
 import { StepProgressBar } from "@/components/ui/step-progress-bar";
 import { CacheProvider } from "@/lib/cache/cache-context";
+import { ConsentSSEProvider } from "@/lib/consent";
+import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
 import { StatusBarBlur, TopAppBar } from "@/components/ui/top-app-bar";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
@@ -37,19 +39,23 @@ export function Providers({ children }: ProvidersProps) {
         <AuthProvider>
           <CacheProvider>
             <VaultProvider>
-              <NavigationProvider>
-                {/* Flex container for proper scroll behavior */}
-                <div className="flex flex-col flex-1 min-h-0">
-                  <Navbar />
-                  <StatusBarBlur />
-                  <TopAppBar />
-                  {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
-                  <div className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[64px]">
-                    {children}
-                  </div>
-                </div>
-                <Toaster />
-              </NavigationProvider>
+              <ConsentSSEProvider>
+                <ConsentNotificationProvider>
+                  <NavigationProvider>
+                    {/* Flex container for proper scroll behavior */}
+                    <div className="flex flex-col flex-1 min-h-0">
+                      <Navbar />
+                      <StatusBarBlur />
+                      <TopAppBar />
+                      {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
+                      <div className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[64px]">
+                        {children}
+                      </div>
+                    </div>
+                    <Toaster />
+                  </NavigationProvider>
+                </ConsentNotificationProvider>
+              </ConsentSSEProvider>
             </VaultProvider>
           </CacheProvider>
         </AuthProvider>
