@@ -50,7 +50,7 @@ export const getVariantStyles = (
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] dark:text-black transition-colors duration-200";
       } else {
         // Silver accent border in dark mode for hushh brand
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "blue":
@@ -59,7 +59,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "blue-gradient":
@@ -68,7 +68,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 border border-[var(--morphy-primary-start)]/20 text-[var(--morphy-primary-start)] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-white/20 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "yellow":
@@ -77,7 +77,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#fbbf24]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#fbbf24]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "yellow-gradient":
@@ -86,7 +86,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#fbbf24]/10 to-[#f59e0b]/10 border border-[#fbbf24]/20 text-[#fbbf24] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[3px_3px_15px_var(--activeShadowColor)] border border-[#fbbf24]/20 hover:shadow-[3px_3px_20px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#fbbf24]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "purple":
@@ -97,7 +97,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#7c3aed]/10 to-[#8b5cf6]/10 border border-[#7c3aed]/20 text-[#7c3aed] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[var(--morphy-primary-start)]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "green":
@@ -108,7 +108,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#10b981]/10 to-[#059669]/10 border border-[#10b981]/20 text-[#10b981] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#10b981]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#10b981]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "orange":
@@ -119,7 +119,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[#f59e0b]/10 to-[#d97706]/10 border border-[#f59e0b]/20 text-[#f59e0b] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[#f59e0b]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[#f59e0b]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "metallic":
@@ -174,7 +174,7 @@ export const getVariantStyles = (
       } else if (effect === "fade") {
         return "bg-gradient-to-r from-[var(--morphy-primary-start)]/10 to-[var(--morphy-primary-end)]/10 dark:from-[#c0c0c0]/10 dark:to-[#a0a0a0]/10 border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 text-[var(--morphy-primary-start)] dark:text-[#c0c0c0] transition-colors duration-200";
       } else {
-        return "bg-[var(--activeGlassColor)] shadow-[0px_4px_12px_var(--activeShadowColor)] border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 hover:shadow-[0px_6px_16px_var(--activeShadowColor)] transition-shadow,transition-colors duration-200";
+        return "bg-white/50 dark:bg-black/50 shadow-sm border border-[var(--morphy-primary-start)]/20 dark:border-[#c0c0c0]/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all duration-200";
       }
 
     case "black":
@@ -182,14 +182,24 @@ export const getVariantStyles = (
 
     case "link":
       // Silver hover in dark mode for hushh brand
-      return "text-[#374151] dark:text-[#e5e7eb] hover:text-[var(--morphy-primary-start)] dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200 bg-transparent border-none shadow-none";
+      const baseLinkStyles = "text-[#374151] dark:text-[#e5e7eb] hover:text-[var(--morphy-primary-start)] dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200";
+      
+      if (effect === "glass") {
+        return `${baseLinkStyles} bg-white/50 dark:bg-black/50 shadow-sm border border-black/5 dark:border-white/10 backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60`;
+      }
+      
+      if (effect === "fade") {
+        return `${baseLinkStyles} bg-black/5 dark:bg-white/5 border border-transparent hover:bg-black/10 dark:hover:bg-white/10`;
+      }
+
+      return `${baseLinkStyles} bg-transparent border-none shadow-none`;
 
     case "none":
     default:
       if (effect === "fill") {
         return "bg-transparent border-transparent hover:bg-transparent hover:text-accent-foreground transition-colors duration-200";
       } else {
-        return "bg-transparent border-transparent backdrop-blur-[6px] hover:bg-transparent transition-all duration-200";
+        return "bg-white/40 dark:bg-black/40 border border-white/20 dark:border-white/10 shadow-sm backdrop-blur-md hover:bg-white/50 dark:hover:bg-black/50 transition-all duration-200";
       }
   }
 };
