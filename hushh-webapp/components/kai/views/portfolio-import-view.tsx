@@ -13,7 +13,8 @@
 
 import { useState, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import { Upload, FileText, CheckCircle, AlertCircle, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -222,7 +223,7 @@ export function PortfolioImportView({
 
       {/* Skip Option */}
       <div className="text-center">
-        <Button
+        <MorphyButton
           variant="none"
           effect="fade"
           onClick={onSkip}
@@ -230,8 +231,9 @@ export function PortfolioImportView({
           className="text-muted-foreground hover:text-foreground"
         >
           Skip for now
-        </Button>
+        </MorphyButton>
       </div>
+
     </div>
   );
 }

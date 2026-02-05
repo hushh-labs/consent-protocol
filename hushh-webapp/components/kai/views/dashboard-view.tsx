@@ -42,7 +42,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -449,25 +450,29 @@ export function DashboardView({
 
         <div className="flex items-center gap-2">
           {onAnalyzeLosers && (
-            <Button
+            <MorphyButton
               variant="muted"
+              size="sm"
               onClick={onAnalyzeLosers}
               className="h-9 cursor-pointer"
+              icon={{ icon: Activity }}
             >
-              <Activity className="w-4 h-4 mr-2" />
-              Optimize Portfolio
-            </Button>
+              <span className="ml-2">Optimize Portfolio</span>
+            </MorphyButton>
           )}
+
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button 
-                className="p-2 rounded-full hover:bg-muted transition-colors cursor-pointer"
+              <MorphyButton 
+                variant="muted"
+                size="icon"
+                className="h-9 w-9 rounded-full"
                 aria-label="Portfolio options"
-              >
-                <MoreVertical className="w-5 h-5 text-muted-foreground" />
-              </button>
+                icon={{ icon: MoreVertical }}
+              />
             </DropdownMenuTrigger>
+
             <DropdownMenuContent align="end" className="w-48">
               {onReupload && (
                 <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
@@ -522,21 +527,17 @@ export function DashboardView({
             </div>
           </div>
 
-          {/* Period & Beginning/Ending Values */}
+          {/* Period & Beginning Value */}
           <div className="border-t border-border pt-3">
             {statementPeriod && (
               <p className="text-xs text-muted-foreground text-center mb-2">
                 {statementPeriod}
               </p>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Beginning</p>
+            <div className="flex justify-center">
+              <div className="text-center p-2 px-6 rounded-lg bg-muted/30">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Beginning Balance</p>
                 <p className="text-sm font-semibold">{formatCurrency(beginningValue)}</p>
-              </div>
-              <div className="text-center p-2 rounded-lg bg-muted/30">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Ending</p>
-                <p className="text-sm font-semibold">{formatCurrency(totalValue)}</p>
               </div>
             </div>
           </div>
@@ -660,14 +661,17 @@ export function DashboardView({
               Individual holdings weren&apos;t extracted.
             </p>
             {onReupload && (
-              <button
+              <MorphyButton
+                variant="muted"
+                size="sm"
                 onClick={onReupload}
-                className="text-xs text-primary hover:underline flex items-center gap-1 mx-auto"
+                className="mx-auto"
+                icon={{ icon: Upload }}
               >
-                <Upload className="w-4 h-4" />
                 Re-upload statement
-              </button>
+              </MorphyButton>
             )}
+
           </CardContent>
         </Card>
       )}

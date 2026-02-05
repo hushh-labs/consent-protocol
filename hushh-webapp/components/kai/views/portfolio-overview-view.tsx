@@ -12,7 +12,8 @@
 "use client";
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import {
   TrendingUp,
   TrendingDown,
@@ -201,12 +202,11 @@ export function PortfolioOverviewView({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Review Losers */}
             {losersCount > 0 && onReviewLosers && (
-              <Button
+              <MorphyButton
                 variant="none"
                 effect="glass"
                 className="h-auto p-6 flex flex-col items-start gap-3"
                 onClick={onReviewLosers}
-                showRipple={true}
                 icon={{
                   icon: AlertTriangle,
                   gradient: false,
@@ -218,17 +218,15 @@ export function PortfolioOverviewView({
                     {losersCount} position{losersCount > 1 ? "s" : ""} need attention
                   </p>
                 </div>
-              </Button>
+              </MorphyButton>
             )}
-
             {/* Analyze Stock */}
             {onAnalyzeStock && (
-              <Button
+              <MorphyButton
                 variant="none"
                 effect="glass"
                 className="h-auto p-6 flex flex-col items-start gap-3"
                 onClick={() => onAnalyzeStock()}
-                showRipple={true}
                 icon={{
                   icon: BarChart3,
                   gradient: false,
@@ -240,17 +238,15 @@ export function PortfolioOverviewView({
                     Get Kai's investment analysis
                   </p>
                 </div>
-              </Button>
+              </MorphyButton>
             )}
-
             {/* Import New */}
             {onImportNew && (
-              <Button
+              <MorphyButton
                 variant="none"
                 effect="glass"
                 className="h-auto p-6 flex flex-col items-start gap-3"
                 onClick={onImportNew}
-                showRipple={true}
                 icon={{
                   icon: Upload,
                   gradient: false,
@@ -262,17 +258,15 @@ export function PortfolioOverviewView({
                     Update with latest statement
                   </p>
                 </div>
-              </Button>
+              </MorphyButton>
             )}
-
             {/* Settings */}
             {onSettings && (
-              <Button
+              <MorphyButton
                 variant="none"
                 effect="glass"
                 className="h-auto p-6 flex flex-col items-start gap-3"
                 onClick={onSettings}
-                showRipple={true}
                 icon={{
                   icon: Settings,
                   gradient: false,
@@ -284,8 +278,9 @@ export function PortfolioOverviewView({
                     Risk profile & preferences
                   </p>
                 </div>
-              </Button>
+              </MorphyButton>
             )}
+
           </div>
         </CardContent>
       </Card>
