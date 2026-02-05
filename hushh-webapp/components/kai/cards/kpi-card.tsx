@@ -41,31 +41,31 @@ const variantStyles = {
 const sizeStyles = {
   xs: {
     padding: "p-3",
-    title: "text-xs",
+    title: "text-[10px]",
     value: "text-base",
-    change: "text-xs",
-    icon: "w-5 h-5",
+    change: "text-[10px]",
+    icon: "w-8 h-8",
   },
   sm: {
-    padding: "p-3",
-    title: "text-xs",
+    padding: "p-3.5",
+    title: "text-[10px]",
     value: "text-lg",
-    change: "text-xs",
-    icon: "w-5 h-5",
+    change: "text-[10px]",
+    icon: "w-10 h-10",
   },
   md: {
-    padding: "p-4",
-    title: "text-xs",
+    padding: "p-4.5",
+    title: "text-[10px]",
     value: "text-xl",
-    change: "text-xs",
-    icon: "w-6 h-6",
+    change: "text-[10px]",
+    icon: "w-12 h-12",
   },
   lg: {
-    padding: "p-5",
-    title: "text-sm",
+    padding: "p-6",
+    title: "text-xs",
     value: "text-2xl",
-    change: "text-sm",
-    icon: "w-7 h-7",
+    change: "text-xs",
+    icon: "w-14 h-14",
   },
 };
 
@@ -106,36 +106,38 @@ export function KPICard({
       onClick={onClick}
     >
       <CardContent className={styles.padding}>
-        {/* Header with icon and title */}
-        <div className="flex items-center justify-between mb-1.5">
+        {/* Header with icon and title - Icon followed by Title */}
+        <div className="flex items-center gap-2.5 mb-2">
           {icon && (
-            <div className={cn("text-muted-foreground", styles.icon)}>
+            <div className={cn("text-primary shrink-0", styles.icon)}>
               {icon}
             </div>
           )}
-          <span className={cn("text-muted-foreground uppercase tracking-wide", styles.title, !icon && "w-full")}>
+          <span className={cn("text-muted-foreground uppercase font-black tracking-widest leading-none", styles.title)}>
             {title}
           </span>
         </div>
 
         {/* Value */}
-        <p className={cn("font-bold tracking-tight leading-tight", styles.value)}>{value}</p>
+        <p className={cn("font-black tracking-tighter leading-tight", styles.value)}>{value}</p>
 
         {/* Optional one-line description */}
         {description && (
-          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{description}</p>
+          <p className="text-[10px] uppercase font-bold text-muted-foreground/60 mt-1 line-clamp-1 tracking-wider">
+            {description}
+          </p>
         )}
 
         {/* Change indicator */}
         {change !== undefined && (
-          <div className={cn("flex items-center gap-1 mt-1", styles.change, trendColor)}>
+          <div className={cn("flex items-center gap-1 mt-1.5", styles.change, trendColor)}>
             <TrendIcon className="w-3.5 h-3.5" />
-            <span>
+            <span className="font-bold">
               {isPositive && !isNeutral ? "+" : ""}
               {change.toFixed(2)}%
             </span>
             {changeLabel && (
-              <span className="text-muted-foreground">({changeLabel})</span>
+              <span className="text-muted-foreground font-medium ml-0.5">({changeLabel})</span>
             )}
           </div>
         )}
