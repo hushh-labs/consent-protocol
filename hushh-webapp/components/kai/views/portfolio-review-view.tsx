@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   ArrowLeft,
   Pencil,
@@ -37,11 +37,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Kbd } from "@/components/ui/kbd";
+
+
 import {
   Accordion,
   AccordionContent,
@@ -49,6 +50,18 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { Button as MorphyButton, ButtonProps as MorphyButtonProps } from "@/lib/morphy-ux/button";
+import { 
+  Card as MorphyCard, 
+  CardContent, 
+  CardHeader, 
+  CardTitle,
+  CardDescription,
+  CardFooter
+} from "@/lib/morphy-ux/card";
+
+
+
 
 // =============================================================================
 // TYPES
@@ -212,6 +225,11 @@ export function PortfolioReviewView({
   );
 
   // Computed values
+  // Scroll to top on mount to ensure clean view framing after progress view
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const totalValue = useMemo(() => {
     const holdingsTotal = holdings.reduce(
       (sum, h) => sum + (h.market_value || 0),
@@ -341,88 +359,117 @@ export function PortfolioReviewView({
   };
 
   return (
-    <div className={cn("w-full space-y-6 pb-32", className)}>
+    <div className={cn("relative w-full", className)}>
+
+
+      <div className="w-full max-w-lg lg:max-w-6xl mx-auto space-y-8 pb-56 px-4 md:px-6 transition-all duration-500 ease-in-out">
+
+
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {onBack && (
-            <Button variant="ghost" size="icon" onClick={onBack}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          )}
-          <div>
-            <h1 className="text-xl font-semibold">Review Portfolio</h1>
-            <p className="text-sm text-muted-foreground">
-              Verify and edit before saving to your vault
+          <div className="px-1">
+            <h1 className="text-xl font-bold tracking-tight">Review Portfolio</h1>
+            <p className="text-sm text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px] sm:max-w-none">
+              Verify before saving to vault
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={onReimport}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Re-import
-        </Button>
+        <MorphyButton 
+          variant="muted" 
+          size="default" 
+          onClick={onReimport} 
+          className="shrink-0"
+          icon={{ 
+            icon: RefreshCw
+          }}
+        >
+          <span className="hidden sm:inline ml-2 font-bold">Re-import</span>
+          <span className="sm:hidden font-bold">Retry</span>
+        </MorphyButton>
+
+
       </div>
 
-      {/* Summary Card */}
-      <Card className="bg-linear-to-br from-primary/5 to-primary/10 border-primary/20">
-        <CardContent className="pt-6">
-          <div className="text-center mb-4">
-            <p className="text-sm text-muted-foreground">Total Portfolio Value</p>
-            <p className="text-4xl font-bold tracking-tight">
-              {formatCurrency(totalValue)}
-            </p>
-            {totalUnrealizedGainLoss !== 0 && (
-              <p
-                className={cn(
-                  "text-sm font-medium mt-1",
-                  totalUnrealizedGainLoss >= 0
-                    ? "text-emerald-600"
-                    : "text-red-500"
-                )}
-              >
-                {totalUnrealizedGainLoss >= 0 ? (
-                  <TrendingUp className="inline h-4 w-4 mr-1" />
-                ) : (
-                  <TrendingDown className="inline h-4 w-4 mr-1" />
-                )}
-                {formatCurrency(totalUnrealizedGainLoss)} unrealized
-              </p>
-            )}
-          </div>
 
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-semibold">{holdings.length}</p>
-              <p className="text-xs text-muted-foreground">Holdings</p>
-            </div>
-            <div>
-              <Badge
-                variant={
-                  riskBucket === "conservative"
-                    ? "secondary"
-                    : riskBucket === "moderate"
-                      ? "default"
-                      : "destructive"
-                }
-              >
-                {riskBucket}
-              </Badge>
-              <p className="text-xs text-muted-foreground mt-1">Risk</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">
-                {formatCurrency(initialData.cash_balance || accountSummary.cash_balance || 0)}
-              </p>
-              <p className="text-xs text-muted-foreground">Cash</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Account Info */}
-      <Accordion type="single" collapsible defaultValue="account">
-        <AccordionItem value="account">
-          <AccordionTrigger className="text-base font-medium">
+      <div className="lg:grid lg:grid-cols-12 lg:gap-10 lg:items-start">
+        {/* Left Column / Mobile Top: Summary & Info */}
+        <div className="lg:col-span-5 space-y-8">
+          {/* Summary Card - Redesigned for bigger numbers */}
+          <MorphyCard variant="none" className="overflow-hidden border-none shadow-xl">
+            <div className="absolute inset-0 bg-linear-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20" />
+            <CardContent className="relative pt-8 px-6 pb-8 space-y-8">
+
+              <div className="text-center">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                  Total Portfolio Value
+                </p>
+                <p className="text-4xl sm:text-5xl font-black tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent px-2 break-all">
+                  {formatCurrency(totalValue)}
+                </p>
+
+                {totalUnrealizedGainLoss !== 0 && (
+                  <div className="flex justify-center mt-3">
+                    <Badge
+                      className={cn(
+                        "font-bold py-1 px-3",
+                        totalUnrealizedGainLoss >= 0
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                          : "bg-red-500/10 text-red-500 border-red-500/20"
+                      )}
+                    >
+                      {totalUnrealizedGainLoss >= 0 ? (
+                        <TrendingUp className="h-3 w-3 mr-1.5" />
+                      ) : (
+                        <TrendingDown className="h-3 w-3 mr-1.5" />
+                      )}
+                      {formatCurrency(totalUnrealizedGainLoss)} unrealized
+                    </Badge>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 pt-6 border-t border-primary/10">
+                <div className="min-w-0 text-center sm:text-left sm:pl-4">
+                  <p className="text-2xl font-black">{holdings.length}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assets</p>
+                </div>
+                <div className="min-w-0 flex flex-col items-center justify-center">
+                  <Badge
+                    variant={
+                      riskBucket === "conservative"
+                        ? "secondary"
+                        : riskBucket === "moderate"
+                          ? "default"
+                          : "destructive"
+                    }
+                    className="font-black text-[10px] uppercase tracking-widest px-2"
+                  >
+                    {riskBucket}
+                  </Badge>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">Risk</p>
+                </div>
+                <div className="min-w-0 text-center sm:text-right sm:pr-4">
+                  <p className="text-2xl font-black break-all">
+                    {formatCurrency(initialData.cash_balance || accountSummary.cash_balance || 0)}
+                  </p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cash</p>
+                </div>
+              </div>
+
+            </CardContent>
+          </MorphyCard>
+
+
+      {/* Account & Meta Accordions */}
+      <Accordion type="multiple" defaultValue={["account", "income"]} className="w-full space-y-4">
+
+        <AccordionItem value="account" className="border-b-0 bg-card rounded-2xl border px-5">
+          <AccordionTrigger className="text-base font-bold py-5 hover:no-underline">
+
+
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Account Information
@@ -492,8 +539,10 @@ export function PortfolioReviewView({
 
         {/* Asset Allocation */}
         {(assetAllocation.cash_pct || assetAllocation.equities_pct) && (
-          <AccordionItem value="allocation">
-            <AccordionTrigger className="text-base font-medium">
+        <AccordionItem value="allocation" className="border-b-0 bg-card rounded-2xl border px-5">
+            <AccordionTrigger className="text-base font-bold py-5 hover:no-underline">
+
+
               <div className="flex items-center gap-2">
                 <PieChart className="h-4 w-4" />
                 Asset Allocation
@@ -548,8 +597,10 @@ export function PortfolioReviewView({
 
         {/* Income Summary */}
         {incomeSummary.total_income !== undefined && (
-          <AccordionItem value="income">
-            <AccordionTrigger className="text-base font-medium">
+        <AccordionItem value="income" className="border-b-0 bg-card rounded-2xl border px-5">
+            <AccordionTrigger className="text-base font-bold py-5 hover:no-underline">
+
+
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4" />
                 Income Summary
@@ -584,21 +635,32 @@ export function PortfolioReviewView({
           </AccordionItem>
         )}
       </Accordion>
+        </div>
 
-      {/* Holdings List */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">
-              Holdings ({holdings.length})
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={handleAddHolding}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        {/* Right Column / Mobile Bottom: Holdings */}
+        <div className="lg:col-span-7 mt-8 lg:mt-0">
+          <MorphyCard variant="none" className="h-full border-none shadow-xl bg-card">
+            <CardHeader className="pb-4 px-6 pt-6 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase tracking-widest text-foreground">
+                    Holdings ({holdings.length})
+                  </CardTitle>
+                </div>
+                <MorphyButton 
+                  variant="muted" 
+                  size="sm" 
+                  onClick={handleAddHolding}
+                  icon={{ icon: Plus }}
+                >
+                  <span className="ml-2">Add</span>
+                </MorphyButton>
+              </div>
+
+            </CardHeader>
+
+            <CardContent className="space-y-4 px-6 pt-6">
+
           {holdings.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -687,106 +749,122 @@ export function PortfolioReviewView({
                         />
                       </div>
                     </div>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
+                    <div className="flex justify-end gap-3 pt-2">
+                      <MorphyButton
+                        variant="muted"
                         size="sm"
                         onClick={() => setEditingHoldingIndex(null)}
                       >
                         Done
-                      </Button>
+                      </MorphyButton>
                     </div>
                   </div>
                 ) : (
-                  // View mode
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">{holding.symbol || "—"}</span>
-                        <span className="text-sm text-muted-foreground truncate max-w-[150px]">
+                  // View mode - ADJUSTED FOR MOBILE
+                  <div className="flex items-center justify-between gap-4">
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="font-bold text-base">{holding.symbol || "—"}</span>
+                        <span className="text-xs text-muted-foreground truncate block">
                           {holding.name}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4 mt-1 text-sm">
-                        <span className="text-muted-foreground">
-                          {holding.quantity} shares
+                      <div className="flex items-center gap-3 mt-1 text-[11px] sm:text-xs">
+                        <span className="text-muted-foreground whitespace-nowrap">
+                          {holding.quantity} sh
                         </span>
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground whitespace-nowrap">
                           @ {formatCurrency(holding.price)}
                         </span>
                       </div>
                     </div>
-                    <div className="text-right space-y-0.5">
-                      <p className="font-semibold">
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-sm">
                         {formatCurrency(holding.market_value)}
                       </p>
                       {holding.unrealized_gain_loss !== undefined && (
                         <p
                           className={cn(
-                            "text-sm",
+                            "text-[10px] font-medium",
                             (holding.unrealized_gain_loss || 0) >= 0
                               ? "text-emerald-600"
                               : "text-red-500"
                           )}
                         >
+                          {holding.unrealized_gain_loss >= 0 ? "+" : ""}
                           {formatCurrency(holding.unrealized_gain_loss)}
-                          {holding.unrealized_gain_loss_pct !== undefined && (
-                            <> ({formatPercent(holding.unrealized_gain_loss_pct)})</>
-                          )}
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 ml-3">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => setEditingHoldingIndex(index)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-500 hover:text-red-600"
-                        onClick={() => handleDeleteHolding(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div className="flex items-center gap-2 shrink-0 ml-auto border-l border-primary/10 pl-3">
+                      <div className="flex flex-col items-center gap-1">
+                        <MorphyButton
+                          variant="muted"
+                          size="icon"
+                          className="h-10 w-10 text-muted-foreground hover:text-primary transition-all duration-300 rounded-xl"
+                          onClick={() => setEditingHoldingIndex(index)}
+                          icon={{ icon: Pencil }}
+                        />
+                        <Kbd className="text-[8px] px-1 h-3.5">EDIT</Kbd>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                        <MorphyButton
+                          variant="muted"
+                          size="icon"
+                          className="h-10 w-10 text-red-400 hover:text-red-500 hover:bg-red-50 transition-all duration-300 rounded-xl"
+                          onClick={() => handleDeleteHolding(index)}
+                          icon={{ icon: Trash2 }}
+                        />
+                        <Kbd className="text-[8px] px-1 h-3.5">DEL</Kbd>
+                      </div>
                     </div>
+
                   </div>
                 )}
               </div>
             ))
           )}
         </CardContent>
-      </Card>
-
-      {/* Save Button - Fixed at bottom */}
-      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-lg border-t safe-area-pb">
-        <div className="max-w-lg mx-auto">
-          <Button
-            className="w-full h-14 text-base font-semibold rounded-xl"
-            onClick={handleSave}
-            disabled={isSaving || holdings.length === 0}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Encrypting & Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-5 w-5 mr-2" />
-                Save to Vault
-              </>
-            )}
-          </Button>
-          <p className="text-xs text-center text-muted-foreground mt-2">
-            Data will be encrypted with your vault key before saving
-          </p>
-        </div>
-      </div>
+      </MorphyCard>
     </div>
+  </div>
+
+  </div>
+
+  {/* Save Button - Fixed at bottom */}
+  <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 px-4 sm:px-6 z-50 pointer-events-none">
+    <div className="max-w-lg lg:max-w-xl mx-auto backdrop-blur-3xl border rounded-3xl p-5 shadow-2xl pointer-events-auto bg-white/50 dark:bg-black/50"
+      style={{
+        borderColor: "var(--glass-border)",
+      }}
+    >
+      <MorphyButton
+        variant="gradient"
+        size="xl"
+        className="w-full h-16 text-xl font-black shadow-lg"
+        onClick={handleSave}
+        disabled={isSaving || holdings.length === 0}
+        icon={{ 
+          icon: isSaving ? Loader2 : Save,
+          gradient: false 
+        }}
+      >
+        {isSaving ? "ENCRYPTING & SAVING..." : "SAVE TO VAULT"}
+      </MorphyButton>
+
+      <div className="flex items-center justify-center gap-2 mt-4 opacity-70">
+        <Kbd className="text-[10px] px-1.5 py-0.5">CMD</Kbd>
+        <span className="text-[10px] font-bold">+</span>
+        <Kbd className="text-[10px] px-1.5 py-0.5">S</Kbd>
+        <span className="text-[10px] ml-1 font-bold uppercase tracking-widest">TO SAVE SECURELY</span>
+      </div>
+
+    </div>
+  </div>
+</div>
   );
 }
+
+
+

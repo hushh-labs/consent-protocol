@@ -22,9 +22,15 @@ import {
   ThinkingIndicator,
 } from "@/lib/morphy-ux";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { X, FileText, Sparkles, Database, CheckCircle2, Brain, Zap } from "lucide-react";
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle 
+} from "@/lib/morphy-ux/card";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+import { X, FileText, FileChartColumn, Database, CheckCircle2, Loader2, Zap } from "lucide-react";
+
 
 export type ImportStage =
   | "idle"
@@ -107,11 +113,12 @@ export function ImportProgressView({
   const isComplete = stage === "complete";
 
   // Format thoughts into a single text string for the accordion
+  // Matches the [N] **Header** pattern for bold rendering
   const thoughtsText = useMemo(() => {
     if (thoughts.length === 0) {
-      return isThinking ? "Analyzing document structure..." : "";
+      return isThinking ? "[1] **Analyzing portfolio structure**\nInitializing extraction engine..." : "";
     }
-    return thoughts.map((t, i) => `[${i + 1}] ${t}`).join("\n\n");
+    return thoughts.map((t, i) => `[${i + 1}] **${t}**`).join("\n");
   }, [thoughts, isThinking]);
 
   // Handle when formatting is complete
@@ -124,19 +131,19 @@ export function ImportProgressView({
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Sparkles className={cn("w-5 h-5", isStreaming && "animate-pulse text-primary")} />
+            <FileChartColumn className={cn("w-5 h-5", isStreaming && "text-primary")} />
             <CardTitle className="text-lg">Importing Portfolio</CardTitle>
           </div>
           {onCancel && stage !== "complete" && (
-            <Button
-              variant="ghost"
+            <MorphyButton
+              variant="muted"
               size="icon"
               onClick={onCancel}
-              className="h-8 w-8"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+              className="h-8 w-8 rounded-lg"
+              icon={{ icon: X }}
+            />
           )}
+
         </div>
       </CardHeader>
 
@@ -150,19 +157,13 @@ export function ImportProgressView({
 
         {/* Status Message */}
         <div className="flex items-center gap-2">
-          {(stage === "analyzing" || isThinking || isExtracting) && (
-            <ThinkingIndicator
-              message={stageMessages[stage]}
-              variant="minimal"
-              size="sm"
-            />
-          )}
           {stage !== "analyzing" && !isThinking && !isExtracting && (
             <p className="text-sm text-muted-foreground">
               {stageMessages[stage]}
             </p>
           )}
         </div>
+
 
         {/* AI Reasoning Accordion - Shows during thinking phase */}
         {(isThinking || thoughts.length > 0) && (
@@ -172,11 +173,14 @@ export function ImportProgressView({
             text={thoughtsText}
             isStreaming={isThinking}
             isComplete={isComplete || isExtracting}
-            icon="brain"
-            maxHeight="200px"
-            className="border-purple-500/20"
+            icon="spinner"
+            iconClassName="w-12 h-12" // 3x of w-4
+            maxHeight="250px"
+            className="border-primary/10"
           />
         )}
+
+
 
         {/* Data Extraction Accordion - Shows during extraction phase */}
         {(isExtracting || streamedText) && (
@@ -197,9 +201,11 @@ export function ImportProgressView({
               isStreaming={isStreaming && isExtracting}
               isComplete={isComplete}
               formatAsHuman={true}
-              icon="sparkles"
+              icon="database"
+              iconClassName="w-12 h-12" // 3x of w-4
               maxHeight="300px"
             />
+
           </div>
         )}
 

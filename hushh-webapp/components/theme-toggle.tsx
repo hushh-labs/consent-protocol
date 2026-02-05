@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { Button } from "@/lib/morphy-ux/morphy";
 import {
   Tooltip,
   TooltipTrigger,
@@ -38,7 +37,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex items-center p-1 bg-muted/80 backdrop-blur-3xl border border-white/10 dark:border-white/5 rounded-full shadow-lg ring-1 ring-black/5",
+        "flex items-center p-1 bg-muted/80 backdrop-blur-3xl rounded-full shadow-2xl ring-1 ring-black/5",
         className
       )}
     >
@@ -47,9 +46,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         return (
           <Tooltip key={value}>
             <TooltipTrigger asChild>
-              <Button
-                variant="link"
-                showRipple
+              <button
                 onClick={() => setTheme(value)}
                 className={cn(
                   "relative flex items-center justify-center gap-2 px-3 py-2 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
@@ -77,7 +74,7 @@ export function ThemeToggle({ className }: { className?: string }) {
                     {label}
                   </span>
                 </div>
-              </Button>
+              </button>
             </TooltipTrigger>
             {/* Tooltip only shows if not active (as active shows label) - effectively hidden for now due to expanding pill */}
             <TooltipContent className="hidden">{label}</TooltipContent>

@@ -11,14 +11,15 @@
 
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { cn } from "./cn";
 
 export interface ThinkingIndicatorProps {
-  /** Message to display alongside dots */
+  /** Message to display alongside spinner */
   message?: string;
   /** Visual variant */
   variant?: "default" | "minimal" | "card";
-  /** Dot color */
+  /** Color variant */
   color?: "primary" | "muted" | "accent";
   /** Size variant */
   size?: "sm" | "md" | "lg";
@@ -26,16 +27,16 @@ export interface ThinkingIndicatorProps {
   className?: string;
 }
 
-const dotColorClasses = {
-  primary: "bg-[var(--morphy-primary-start)]",
-  muted: "bg-muted-foreground",
-  accent: "bg-[#fbbf24]",
+const colorClasses = {
+  primary: "text-primary",
+  muted: "text-muted-foreground",
+  accent: "text-[#fbbf24]",
 } as const;
 
-const dotSizeClasses = {
-  sm: "w-1.5 h-1.5",
-  md: "w-2 h-2",
-  lg: "w-2.5 h-2.5",
+const spinnerSizeClasses = {
+  sm: "w-3.5 h-3.5",
+  md: "w-4 h-4",
+  lg: "w-5 h-5",
 } as const;
 
 const textSizeClasses = {
@@ -51,26 +52,18 @@ export function ThinkingIndicator({
   size = "md",
   className,
 }: ThinkingIndicatorProps) {
-  const dots = (
-    <div className="flex gap-1">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className={cn(
-            "rounded-full animate-thinking-bounce",
-            dotColorClasses[color],
-            dotSizeClasses[size]
-          )}
-          style={{
-            animationDelay: `${i * 150}ms`,
-          }}
-        />
-      ))}
-    </div>
+  const spinner = (
+    <Loader2 
+      className={cn(
+        "animate-spin",
+        colorClasses[color],
+        spinnerSizeClasses[size]
+      )} 
+    />
   );
 
   if (variant === "minimal") {
-    return <div className={cn("flex items-center gap-2", className)}>{dots}</div>;
+    return <div className={cn("flex items-center gap-2", className)}>{spinner}</div>;
   }
 
   if (variant === "card") {
@@ -83,7 +76,7 @@ export function ThinkingIndicator({
           className
         )}
       >
-        {dots}
+        {spinner}
         <span className={cn("text-muted-foreground", textSizeClasses[size])}>
           {message}
         </span>
@@ -94,7 +87,7 @@ export function ThinkingIndicator({
   // Default variant
   return (
     <div className={cn("flex items-center gap-3 p-4", className)}>
-      {dots}
+      {spinner}
       <span className={cn("text-muted-foreground", textSizeClasses[size])}>
         {message}
       </span>

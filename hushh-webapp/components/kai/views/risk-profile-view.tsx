@@ -9,8 +9,12 @@
 "use client";
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import { Shield, Scale, TrendingUp, ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+
 
 // =============================================================================
 // TYPES
@@ -76,58 +80,68 @@ export function RiskProfileView({
 
         <CardContent className="space-y-3">
           {profiles.map(({ id, icon: Icon, title, description, color }) => (
-            <button
+            <MorphyButton
               key={id}
+              asChild
+              variant="none"
+              effect="glass"
               onClick={() => onSelect(id)}
-              className={`w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4 group cursor-pointer ${
+              className={cn(
+                "w-full text-left h-auto p-4 rounded-xl border transition-all flex items-center gap-4 group cursor-pointer",
                 currentProfile === id
                   ? "border-primary bg-primary/10"
                   : "border-border hover:border-primary/50 hover:bg-primary/5"
-              }`}
-            >
-              <div
-                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
-                  currentProfile === id
-                    ? "bg-primary/20"
-                    : "bg-muted group-hover:bg-primary/10"
-                } ${color}`}
-              >
-                <Icon size={24} />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-sm text-muted-foreground">{description}</p>
-              </div>
-              {currentProfile === id && (
-                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                  <svg
-                    className="w-4 h-4 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </div>
               )}
-            </button>
+            >
+              <div className="w-full flex items-center gap-4">
+                <div
+                  className={cn(
+                    "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
+                    currentProfile === id
+                      ? "bg-primary/20"
+                      : "bg-muted group-hover:bg-primary/10",
+                    color
+                  )}
+                >
+                  <Icon size={24} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">{title}</h3>
+                  <p className="text-sm text-muted-foreground">{description}</p>
+                </div>
+                {currentProfile === id && (
+                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center shrink-0">
+                    <svg
+                      className="w-4 h-4 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </MorphyButton>
           ))}
+
         </CardContent>
 
         <CardFooter className="flex justify-between">
-          <Button
+          <MorphyButton
             variant="none"
             effect="glass"
             onClick={onSkip}
             className="text-muted-foreground"
           >
             Skip for now
-          </Button>
+          </MorphyButton>
+
           <p className="text-xs text-muted-foreground">
             Select a profile to continue
           </p>
