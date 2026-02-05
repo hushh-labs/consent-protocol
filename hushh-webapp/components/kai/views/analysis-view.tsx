@@ -17,7 +17,8 @@ import { useState } from "react";
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Search, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import { Badge } from "@/components/ui/badge";
 
 // =============================================================================
@@ -109,13 +110,15 @@ export function AnalysisView({
     <div className="w-full space-y-6 pb-36">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button
+        <MorphyButton
+          variant="muted"
+          size="icon"
           onClick={onBack}
-          className="p-2 rounded-full hover:bg-muted transition-colors"
+          className="h-10 w-10 rounded-full"
           aria-label="Back to Dashboard"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
+          icon={{ icon: ArrowLeft }}
+        />
+
         <div>
           <h1 className="text-2xl font-bold">{result.symbol}</h1>
           <p className="text-sm text-muted-foreground">Investment Analysis</p>
@@ -186,20 +189,18 @@ export function AnalysisView({
               { key: "sentiment", label: "Sentiment" },
               { key: "valuation", label: "Valuation" },
             ].map((tab) => (
-              <button
+              <MorphyButton
                 key={tab.key}
+                variant={activeTab === tab.key ? "gradient" : "muted"}
+                size="sm"
                 onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={cn(
-                  "flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors",
-                  activeTab === tab.key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                )}
+                className="flex-1"
               >
                 {tab.label}
-              </button>
+              </MorphyButton>
             ))}
           </div>
+
 
           {/* Tab Content */}
           <div className="min-h-[120px] p-4 rounded-lg bg-muted/50">
@@ -257,20 +258,32 @@ export function AnalysisView({
                   className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background outline-none focus:border-primary transition-colors"
                 />
               </div>
-              <Button type="submit" disabled={!searchInput.trim()}>
+              <MorphyButton 
+                type="submit" 
+                variant="gradient"
+                size="sm"
+                disabled={!searchInput.trim()}
+              >
                 Analyze
-              </Button>
+              </MorphyButton>
             </form>
+
+
           </CardContent>
         </Card>
       )}
 
       {/* Back Button */}
       <div className="text-center">
-        <Button variant="none" effect="glass" onClick={onBack}>
+        <MorphyButton 
+          variant="muted" 
+          effect="glass" 
+          onClick={onBack}
+        >
           Back to Dashboard
-        </Button>
+        </MorphyButton>
       </div>
+
     </div>
   );
 }

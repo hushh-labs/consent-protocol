@@ -137,7 +137,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       };
 
       return (
-        <div className="relative flex items-center justify-center mr-2.5">
+        <div className={cn("relative flex items-center justify-center", children && "mr-2.5")}>
           <div
             className={cn(
               "rounded-lg flex items-center justify-center transition-colors duration-200 border",
@@ -167,7 +167,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           // Add border with transition for smooth hover effect
           "border border-transparent transition-[border-color,box-shadow,background-color] duration-200",
           // Hover border effect for all buttons - silver accent in dark mode for hushh brand
-          "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]",
+          "hover:border-black dark:hover:border-[#c0c0c0]",
           fullWidth ? "w-full" : "",
           loading ? "cursor-wait" : "",
           className

@@ -11,6 +11,8 @@ import {
   Check,
   Copy,
   Download,
+  Shield,
+  ArrowRight
 } from "lucide-react";
 import { VaultService } from "@/lib/services/vault-service";
 import { downloadTextFile } from "@/lib/utils/native-download";
@@ -31,7 +33,7 @@ import { User } from "firebase/auth";
 import { useVault } from "@/lib/vault/vault-context";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 
-type VaultStep = "checking" | "create" | "unlock" | "recovery" | "success";
+type VaultStep = "checking" | "intro" | "create" | "unlock" | "recovery" | "success";
 
 interface VaultFlowProps {
   user: User;
@@ -62,7 +64,7 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     const checkStatus = async () => {
       try {
         const hasVault = await VaultService.checkVault(user.uid);
-        setStep(hasVault ? "unlock" : "create");
+        setStep(hasVault ? "unlock" : "intro");
       } catch (err) {
         console.error("Vault status check failed:", err);
         setError("Failed to check vault status. Please retry.");
@@ -270,18 +272,63 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
     <>
       <Card variant="none" effect="glass">
         <CardContent className="p-6 space-y-4">
+          {/* Intro / Education Step */}
+          {step === "intro" && (
+            <div className="space-y-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex justify-center mb-4">
+                <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <Shield className="h-10 w-10 text-primary" />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold tracking-tight">Secure Your Digital Vault</h3>
+                <p className="text-muted-foreground text-balance max-w-sm mx-auto">
+                  Hushh uses end-to-end encryption to protect your personal data. 
+                  Your vault is stored <strong>locally</strong> on this device.
+                </p>
+              </div>
+
+              <div className="text-left bg-muted/50 rounded-xl p-4 space-y-3 text-sm border border-border/50">
+                <div className="flex gap-3">
+                  <div className="mt-0.5 min-w-[1.25rem] text-primary">
+                     <Check className="h-5 w-5" />
+                  </div>
+                  <p><span className="font-semibold block text-foreground">You hold the only key</span> We cannot see your data or reset your password.</p>
+                </div>
+                <div className="flex gap-3">
+                   <div className="mt-0.5 min-w-[1.25rem] text-primary">
+                     <Check className="h-5 w-5" />
+                  </div>
+                  <p><span className="font-semibold block text-foreground">Local First</span> Encryption happens on your device, not on our servers.</p>
+                </div>
+              </div>
+
+              <Button 
+                variant="gradient" 
+                size="xl" 
+                fullWidth
+                onClick={() => setStep("create")}
+                className="group"
+              >
+                I Understand, Create Vault
+                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+              </Button>
+            </div>
+          )}
+
           {/* Create Passphrase */}
           {step === "create" && (
             <div className="space-y-4">
               <div className="text-center">
-                <Lock className="h-8 w-8 mx-auto text-primary mb-2" />
-                <h3 className="font-semibold">Create Your Vault Passphrase</h3>
-                <p className="text-sm text-muted-foreground mt-1">
+                <Lock className="h-12 w-12 mx-auto text-primary mb-4" />
+                <h3 className="font-semibold text-xl">Create Your Vault Passphrase</h3>
+                <p className="text-base text-muted-foreground mt-2">
                   This passphrase encrypts your data. We never see it.
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="passphrase">Passphrase</Label>
+              <div className="space-y-3">
+                <Label htmlFor="passphrase" className="text-base">Passphrase</Label>
                 <Input
                   id="passphrase"
                   type="password"
@@ -289,27 +336,31 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   autoFocus
+                  className="h-14 text-lg px-4"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm">Confirm Passphrase</Label>
+              <div className="space-y-3">
+                <Label htmlFor="confirm" className="text-base">Confirm Passphrase</Label>
                 <Input
                   id="confirm"
                   type="password"
                   placeholder="Re-enter passphrase"
                   value={confirmPassphrase}
                   onChange={(e) => setConfirmPassphrase(e.target.value)}
+                  className="h-14 text-lg px-4"
                 />
               </div>
               <Button
                 variant="gradient"
                 effect="glass"
-                className="w-full"
+                size="xl"
+                fullWidth
+                className="mt-4"
                 onClick={handleCreatePassphrase}
                 disabled={isUnlocking || passphrase.length < 8 || passphrase !== confirmPassphrase}
               >
                 {isUnlocking ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</>
+                  <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Creating...</>
                 ) : (
                   "Create Vault"
                 )}
@@ -321,14 +372,14 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           {step === "unlock" && (
             <div className="space-y-4">
               <div className="text-center">
-                <Lock className="h-8 w-8 mx-auto text-primary mb-2" />
-                <h3 className="font-semibold">Unlock Your Vault</h3>
-                <p className="text-sm text-muted-foreground mt-1">
+                <Lock className="h-12 w-12 mx-auto text-primary mb-4" />
+                <h3 className="font-semibold text-xl">Unlock Your Vault</h3>
+                <p className="text-base text-muted-foreground mt-2">
                   Enter your passphrase to decrypt your data
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="unlock-passphrase">Passphrase</Label>
+              <div className="space-y-3">
+                <Label htmlFor="unlock-passphrase" className="text-base">Passphrase</Label>
                 <Input
                   id="unlock-passphrase"
                   type="password"
@@ -339,30 +390,35 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                     e.key === "Enter" && handleUnlockPassphrase()
                   }
                   autoFocus
+                  className="h-14 text-lg px-4"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex flex-col gap-3 pt-2">
                 <Button
-                  variant="none"
+                  variant="gradient"
                   effect="glass"
-                  className="flex-1 order-2 sm:order-1"
-                  onClick={() => setStep("recovery")}
-                  disabled={isUnlocking}
-                >
-                  Use Recovery Key
-                </Button>
-                <Button
-                  variant="none"
-                  effect="glass"
-                  className="flex-1 order-1 sm:order-2"
+                  size="xl"
+                  fullWidth
+                  className="text-lg font-semibold"
                   onClick={handleUnlockPassphrase}
                   disabled={isUnlocking || !passphrase}
                 >
                   {isUnlocking ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Unlocking...</>
+                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Unlocking...</>
                   ) : (
                     "Unlock"
                   )}
+                </Button>
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="xl"
+                  fullWidth
+                  className="text-base"
+                  onClick={() => setStep("recovery")}
+                  disabled={isUnlocking}
+                >
+                  Use Recovery Key
                 </Button>
               </div>
             </div>
@@ -372,14 +428,14 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           {step === "recovery" && !recoveryKey && (
             <div className="space-y-4">
               <div className="text-center">
-                <Key className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                <h3 className="font-semibold">Enter Recovery Key</h3>
-                <p className="text-sm text-muted-foreground mt-1">
+                <Key className="h-12 w-12 mx-auto text-primary mb-4" />
+                <h3 className="font-semibold text-xl">Enter Recovery Key</h3>
+                <p className="text-base text-muted-foreground mt-2">
                   Enter your recovery key to unlock your vault
                 </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="recovery-key">Recovery Key</Label>
+              <div className="space-y-3">
+                <Label htmlFor="recovery-key" className="text-base">Recovery Key</Label>
                 <Input
                   id="recovery-key"
                   placeholder="HRK-XXXX-XXXX-XXXX-XXXX"
@@ -387,31 +443,35 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
                   onChange={(e) =>
                     setRecoveryKeyInput(e.target.value.toUpperCase())
                   }
-                  className="font-mono"
+                  className="h-14 text-lg px-4 font-mono"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button
-                  variant="none"
-                  effect="glass"
-                  className="flex-1 order-2 sm:order-1"
-                  onClick={() => setStep("unlock")}
-                  disabled={isUnlocking}
-                >
-                  Use Passphrase
-                </Button>
+              <div className="flex flex-col gap-3 pt-2">
                 <Button
                   variant="gradient"
-                  effect="fill"
-                  className="flex-1 text-white order-1 sm:order-2"
+                  effect="glass"
+                  size="xl"
+                  fullWidth
+                  className="text-lg font-semibold"
                   onClick={handleRecoveryKeySubmit}
                   disabled={isUnlocking || !recoveryKeyInput}
                 >
                   {isUnlocking ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Unlocking...</>
+                    <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Unlocking...</>
                   ) : (
                     "Unlock"
                   )}
+                </Button>
+                <Button
+                  variant="none"
+                  effect="glass"
+                  size="xl"
+                  fullWidth
+                  className="text-base"
+                  onClick={() => setStep("unlock")}
+                  disabled={isUnlocking}
+                >
+                  Use Passphrase
                 </Button>
               </div>
             </div>

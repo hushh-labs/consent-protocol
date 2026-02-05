@@ -131,6 +131,7 @@ export const Navbar = () => {
             <Link
               key={item.href}
               href={item.href}
+              data-tour-id={`nav-${item.label.toLowerCase().replace(" ", "-")}`}
               className={cn(
                 "relative flex items-center justify-center gap-2 px-4 py-2.5 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
                 isActive
