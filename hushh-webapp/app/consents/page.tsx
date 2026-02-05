@@ -184,7 +184,7 @@ const getActionInfoLocal = (
   );
 };
 
-// Human-readable scope labels (no emojis)
+// Human-readable scope labels - comprehensive mappings for user-friendly display
 const formatScopeLocal = (
   scope: string
 ): { icon: string; label: string; description: string } => {
@@ -192,40 +192,180 @@ const formatScopeLocal = (
     string,
     { icon: string; label: string; description: string }
   > = {
-    // API format (underscores)
-    vault_read_finance: {
-      icon: "wallet",
-      label: "Financial Data",
-      description: "Budget and spending preferences",
-    },
+    // Vault owner scopes
     "vault.owner": {
       icon: "crown",
-      label: "Owner Access",
-      description: "Full control (You)",
+      label: "Full Access",
+      description: "Complete control over your vault (You)",
     },
-    // Dot format (from MCP)
+    VAULT_OWNER: {
+      icon: "crown",
+      label: "Full Access",
+      description: "Complete control over your vault (You)",
+    },
+    
+    // Financial scopes
+    vault_read_finance: {
+      icon: "wallet",
+      label: "View Finances",
+      description: "Read your budget and spending preferences",
+    },
+    vault_write_finance: {
+      icon: "wallet",
+      label: "Edit Finances",
+      description: "Update your financial data and preferences",
+    },
     "vault.read.finance": {
       icon: "wallet",
-      label: "Financial Data",
-      description: "Investment preferences and financial data",
+      label: "View Finances",
+      description: "Read investment preferences and financial data",
     },
+    "vault.write.finance": {
+      icon: "wallet",
+      label: "Edit Finances",
+      description: "Update investment preferences and financial data",
+    },
+    "attr.financial.*": {
+      icon: "wallet",
+      label: "Financial Data",
+      description: "All financial attributes and preferences",
+    },
+    
+    // Food & Dining scopes
+    vault_read_food: {
+      icon: "utensils",
+      label: "View Food Prefs",
+      description: "Read your dietary preferences and favorites",
+    },
+    vault_write_food: {
+      icon: "utensils",
+      label: "Edit Food Prefs",
+      description: "Update your dietary preferences and favorites",
+    },
+    "vault.read.food": {
+      icon: "utensils",
+      label: "View Food Prefs",
+      description: "Read your dietary preferences and favorites",
+    },
+    "vault.write.food": {
+      icon: "utensils",
+      label: "Edit Food Prefs",
+      description: "Update your dietary preferences and favorites",
+    },
+    "attr.food.*": {
+      icon: "utensils",
+      label: "Food Preferences",
+      description: "All food and dining attributes",
+    },
+    
+    // Professional scopes
+    vault_read_professional: {
+      icon: "briefcase",
+      label: "View Profile",
+      description: "Read your professional skills and experience",
+    },
+    vault_write_professional: {
+      icon: "briefcase",
+      label: "Edit Profile",
+      description: "Update your professional skills and experience",
+    },
+    "vault.read.professional": {
+      icon: "briefcase",
+      label: "View Profile",
+      description: "Read your professional skills and experience",
+    },
+    "vault.write.professional": {
+      icon: "briefcase",
+      label: "Edit Profile",
+      description: "Update your professional skills and experience",
+    },
+    "attr.professional.*": {
+      icon: "briefcase",
+      label: "Professional Profile",
+      description: "All professional attributes",
+    },
+    
+    // Kai / Investment scopes
     "agent.kai.analyze": {
       icon: "line-chart",
-      label: "Kai Analysis",
-      description: "Investment analysis operations",
+      label: "Investment Analysis",
+      description: "Analyze stocks and investment opportunities",
+    },
+    "vault.read.kai_decisions": {
+      icon: "line-chart",
+      label: "View Decisions",
+      description: "Read your investment decisions history",
+    },
+    "vault.write.kai_decisions": {
+      icon: "line-chart",
+      label: "Save Decisions",
+      description: "Store investment decisions to your vault",
+    },
+    "attr.kai_decisions.*": {
+      icon: "line-chart",
+      label: "Investment Decisions",
+      description: "All Kai investment decision data",
+    },
+    
+    // Generic read/write/all scopes
+    vault_read_all: {
+      icon: "file-text",
+      label: "Read All Data",
+      description: "Full read access to all vault data",
+    },
+    vault_write_all: {
+      icon: "file-text",
+      label: "Write All Data",
+      description: "Full write access to all vault data",
+    },
+    "vault.read.all": {
+      icon: "file-text",
+      label: "Read All Data",
+      description: "Full read access to all vault data",
+    },
+    "vault.write.all": {
+      icon: "file-text",
+      label: "Write All Data",
+      description: "Full write access to all vault data",
     },
   };
 
-  return (
-    scopeMap[scope] || {
-      icon: "lock",
-      label: scope
-        .replace(/[_\.]/g, " ")
-        .replace("vault read ", "")
-        .replace("vault write ", ""),
-      description: `Access: ${scope}`,
-    }
-  );
+  // Check for exact match first
+  if (scopeMap[scope]) {
+    return scopeMap[scope];
+  }
+  
+  // Handle dynamic attr.{domain}.* scopes
+  const attrMatch = scope.match(/^attr\.([a-z_]+)\.(\*|[a-z_]+)$/i);
+  if (attrMatch && attrMatch[1]) {
+    const domain = attrMatch[1];
+    const formattedDomain = domain
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return {
+      icon: domain.includes("food") ? "utensils" 
+          : domain.includes("finance") || domain.includes("kai") ? "wallet"
+          : domain.includes("professional") ? "briefcase"
+          : "file-text",
+      label: formattedDomain,
+      description: `Access to ${formattedDomain.toLowerCase()} data`,
+    };
+  }
+  
+  // Fallback: format scope into readable label
+  const formattedLabel = scope
+    .replace(/^vault[_\.]?(read|write)?[_\.]?/i, "")
+    .replace(/^attr\./i, "")
+    .replace(/[_\.]/g, " ")
+    .replace(/\*/g, "All")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase()) || "Data Access";
+    
+  return {
+    icon: "lock",
+    label: formattedLabel,
+    description: `Permission: ${formattedLabel}`,
+  };
 };
 
 // ============================================================================
@@ -654,7 +794,7 @@ export default function ConsentsPage() {
       `📡 [ConsentsPage] SSE event: ${action} for ${request_id} (${scope})`
     );
 
-    // Debounce 300ms to let DB commit before refreshing
+    // Debounce 600ms to let DB commit and avoid burst refetches
     const timer = setTimeout(() => {
       // SSE events should force refresh to get latest data
       switch (action) {
@@ -698,7 +838,7 @@ export default function ConsentsPage() {
           if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
           fetchAuditLog(userId, true);
       }
-    }, 300);
+    }, 600);
 
     return () => clearTimeout(timer);
   }, [
@@ -818,12 +958,32 @@ export default function ConsentsPage() {
     return new Date(timestamp).toLocaleString();
   };
 
+  // Badge colors with improved dark mode visibility (higher contrast)
   const getScopeColor = (scope: string): string => {
-    if (scope.includes("finance"))
-      return "bg-green-500/10 text-green-600 border-green-500/20";
-    if (scope.includes("all"))
-      return "bg-purple-500/10 text-purple-600 border-purple-500/20";
-    return "bg-gray-500/10 text-gray-600 border-gray-500/20";
+    const scopeLower = scope.toLowerCase();
+    
+    // Owner/Full access - purple/violet
+    if (scopeLower.includes("owner") || scopeLower === "vault_owner")
+      return "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30";
+    
+    // Financial scopes - green
+    if (scopeLower.includes("finance") || scopeLower.includes("financial") || scopeLower.includes("kai"))
+      return "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
+    
+    // Food scopes - orange
+    if (scopeLower.includes("food") || scopeLower.includes("dining"))
+      return "bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-500/30";
+    
+    // Professional scopes - blue
+    if (scopeLower.includes("professional") || scopeLower.includes("career"))
+      return "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/30";
+    
+    // All/full access scopes - violet
+    if (scopeLower.includes("all") || scopeLower.includes("*"))
+      return "bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30";
+    
+    // Default - neutral with good contrast
+    return "bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-500/30";
   };
 
   if (loading) {
