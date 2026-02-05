@@ -842,23 +842,17 @@ export function PortfolioReviewView({
       <MorphyButton
         variant="gradient"
         size="xl"
-        className="w-full h-16 text-xl font-black shadow-lg"
+        className="w-full h-16 text-lg font-black shadow-lg"
         onClick={handleSave}
         disabled={isSaving || holdings.length === 0}
         icon={{ 
           icon: isSaving ? Loader2 : Save,
           gradient: false 
         }}
+        loading={isSaving}
       >
         {isSaving ? "ENCRYPTING & SAVING..." : "SAVE TO VAULT"}
       </MorphyButton>
-
-      <div className="flex items-center justify-center gap-2 mt-4 opacity-70">
-        <Kbd className="text-[10px] px-1.5 py-0.5">CMD</Kbd>
-        <span className="text-[10px] font-bold">+</span>
-        <Kbd className="text-[10px] px-1.5 py-0.5">S</Kbd>
-        <span className="text-[10px] ml-1 font-bold uppercase tracking-widest">TO SAVE SECURELY</span>
-      </div>
 
     </div>
   </div>
