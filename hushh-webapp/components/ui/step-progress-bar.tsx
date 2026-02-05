@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Progress } from "@/components/ui/progress";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 /**
@@ -9,11 +10,7 @@ import { useStepProgress } from "@/lib/progress/step-progress-context";
  * A thin progress bar at the top of the viewport that shows real progress
  * based on completed loading steps.
  *
- * Features:
- * - Shows actual percentage based on steps (not fake progress)
- * - Smooth CSS transitions
- * - Auto-hides when progress reaches 100%
- * - Fixed position at top of viewport
+ * Now uses the shadcn Progress component for consistency.
  */
 export function StepProgressBar() {
   const { progress, isLoading } = useStepProgress();
@@ -38,7 +35,7 @@ export function StepProgressBar() {
       hideTimeoutRef.current = setTimeout(() => {
         setVisible(false);
         setDisplayProgress(0);
-      }, 300); // Wait for transition to complete
+      }, 500); // Slightly longer to ensure animation finishes
     } else if (progress === 0) {
       // Reset state
       setVisible(false);
@@ -59,18 +56,15 @@ export function StepProgressBar() {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-9999 h-[4px] pointer-events-none"
+      className="fixed top-0 left-0 right-0 z-100 flex justify-center pointer-events-none transform-gpu"
       style={{
         opacity: visible ? 1 : 0,
-        transition: "opacity 200ms ease-out",
+        transition: "opacity 300ms ease-in-out",
       }}
     >
-      <div
-        className="h-full bg-primary"
-        style={{
-          width: `${displayProgress}%`,
-          transition: "width 200ms ease-out",
-        }}
+      <Progress 
+        value={displayProgress} 
+        className="h-1 rounded-none bg-transparent"
       />
     </div>
   );

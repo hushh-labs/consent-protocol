@@ -70,10 +70,11 @@ function formatThinkingText(text: string) {
       );
     }
 
-    // Match pattern: **Header text** (without number)
-    const boldHeaderMatch = trimmedLine.match(/^\*\*(.+?)\*\*$/);
-    if (boldHeaderMatch) {
-      const [, title] = boldHeaderMatch;
+    // Match pattern: **Header text** (with or without trailing content)
+    // Be more aggressive in stripping stars from the start of lines
+    const boldHeaderMatch = trimmedLine.match(/^\*\*(.+?)\*\*$/) || trimmedLine.match(/^\*\*(.+)$/);
+    if (boldHeaderMatch && boldHeaderMatch[1]) {
+      const title = boldHeaderMatch[1].replace(/\*\*$/, "").trim();
       return (
         <div key={i} className="mt-4 mb-2 first:mt-0">
           <span className="text-sm font-bold text-foreground align-middle">
@@ -180,7 +181,9 @@ export function StreamingAccordion({
   // Auto-collapse when streaming completes
   // ============================================================================
   useEffect(() => {
-    if (isComplete && wasStreamingRef.current) {
+    // If it's complete, we collapse regardless of whether we saw the start
+    // this ensures that if a component mounts with "isComplete: true", it stays closed.
+    if (isComplete) {
       // Clear any existing timeout
       if (autoCollapseTimeoutRef.current) {
         clearTimeout(autoCollapseTimeoutRef.current);
