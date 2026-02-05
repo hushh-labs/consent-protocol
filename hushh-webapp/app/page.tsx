@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
-import { Shield, Lock, Key, ArrowRight, AlertCircle, Sparkles } from "lucide-react";
+import { Shield, Lock, Key, ArrowRight, AlertCircle, Sparkles, TrendingUp } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
@@ -59,15 +59,15 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
         {/* Feature Cards Carousel / Stack */}
         <div className="space-y-3">
           {/* Kai Feature */}
-          <Card variant="gradient" effect="fade" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-start gap-4 p-4">
-              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
-                <Sparkles className="h-6 w-6" />
+          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0">
+                <TrendingUp className="h-6 w-6" />
               </div>
               <div>
                 <h3 className="font-semibold text-sm mb-1">Meet Kai</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Your personal AI agent. Analyzing your data, privately and securely.
+                  Your personal AI Investment Advisor. Analyzing your portfolio, market trends, and financial opportunities privately.
                 </p>
               </div>
             </CardContent>
@@ -75,8 +75,8 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
 
           {/* E2EE Feature */}
           <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-start gap-4 p-4">
-              <div className="p-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="p-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400 shrink-0">
                 <Shield className="h-6 w-6" />
               </div>
               <div>
@@ -92,8 +92,8 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
 
           {/* Control Feature */}
           <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-start gap-4 p-4">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+            <CardContent className="flex items-center gap-4 p-4">
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
                 <Lock className="h-6 w-6" />
               </div>
               <div>
