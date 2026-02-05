@@ -26,7 +26,8 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
-import { ChevronDownIcon, Brain, Sparkles } from "lucide-react";
+import { ChevronDownIcon, Sparkles, Loader2, Database } from "lucide-react";
+
 import { cn } from "./cn";
 import { StreamingCursor } from "./streaming-cursor";
 import {
@@ -35,6 +36,65 @@ import {
   tryFormatComplete,
   type ParserContext,
 } from "@/lib/utils/json-to-human";
+
+// ============================================================================
+// Helper: Format Thinking Stream
+// ============================================================================
+
+/**
+ * Parses [N] **Header** and renders as bold/headers
+ */
+function formatThinkingText(text: string) {
+  if (!text) return null;
+
+  // Split by line
+  const lines = text.split("\n");
+  
+  return lines.map((line, i) => {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) return <div key={i} className="h-2" />;
+
+    // Match pattern: [number] **Header text**
+    const headerMatch = trimmedLine.match(/^\[(\d+)\]\s+\*\*(.+?)\*\*$/);
+    if (headerMatch) {
+      const [, number, title] = headerMatch;
+      return (
+        <div key={i} className="mt-4 mb-2 first:mt-0">
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-primary/10 text-primary text-[10px] font-bold mr-2 align-middle">
+            {number}
+          </span>
+          <span className="text-sm font-bold text-foreground align-middle">
+            {title}
+          </span>
+        </div>
+      );
+    }
+
+    // Match pattern: **Header text** (without number)
+    const boldHeaderMatch = trimmedLine.match(/^\*\*(.+?)\*\*$/);
+    if (boldHeaderMatch) {
+      const [, title] = boldHeaderMatch;
+      return (
+        <div key={i} className="mt-4 mb-2 first:mt-0">
+          <span className="text-sm font-bold text-foreground align-middle">
+            {title}
+          </span>
+        </div>
+      );
+    }
+    
+    // Regular line - remove leading ** if it's there but didn't match the header pattern
+    const cleanLine = trimmedLine.replace(/^\*\*(.+?)\*\*$/, '$1');
+
+    return (
+      <div key={i} className="mb-1 last:mb-0">
+        {cleanLine}
+      </div>
+    );
+  });
+}
+
+
 
 // ============================================================================
 // Types
@@ -59,8 +119,12 @@ export interface StreamingAccordionProps {
   maxHeight?: string;
   /** Callback when user manually toggles */
   onToggle?: (isOpen: boolean) => void;
-  /** Icon to show in header (default: Brain) */
-  icon?: "brain" | "sparkles" | "none";
+  /** Icon to show in header (default: spinner) */
+  icon?: "brain" | "sparkles" | "spinner" | "database" | "none";
+  /** Custom class for the icon */
+  iconClassName?: string;
+
+
   /** Show streaming cursor */
   showCursor?: boolean;
 }
@@ -79,9 +143,11 @@ export function StreamingAccordion({
   className,
   maxHeight = "300px",
   onToggle,
-  icon = "brain",
+  icon = "spinner",
+  iconClassName,
   showCursor = true,
 }: StreamingAccordionProps) {
+
   // Accordion open state
   const [isOpen, setIsOpen] = useState(false);
   const wasStreamingRef = useRef(false);
@@ -278,7 +344,14 @@ export function StreamingAccordion({
   // ============================================================================
   // Render
   // ============================================================================
-  const IconComponent = icon === "brain" ? Brain : icon === "sparkles" ? Sparkles : null;
+  const IconComponent = 
+    icon === "brain" ? Loader2 : 
+    icon === "sparkles" ? Sparkles : 
+    icon === "database" ? Database :
+    icon === "spinner" ? Loader2 : 
+    null;
+
+
   const isEmpty = !displayText || displayText.length === 0;
 
   return (
@@ -304,16 +377,21 @@ export function StreamingAccordion({
                 <IconComponent
                   className={cn(
                     "w-4 h-4",
-                    isStreaming && "animate-pulse text-primary"
+                    isStreaming && (icon === "spinner" || icon === "brain") ? "animate-spin" : isStreaming && "animate-pulse",
+                    isStreaming && "text-primary",
+                    iconClassName
                   )}
                 />
+
               )}
+
               <span>{title}</span>
               {isStreaming && (
-                <span className="text-xs text-muted-foreground animate-pulse">
-                  (streaming...)
+                <span className="text-xs text-muted-foreground animate-pulse ml-1">
+                  (thinking...)
                 </span>
               )}
+
             </div>
             <ChevronDownIcon className="chevron text-muted-foreground size-4 shrink-0 transition-transform duration-200" />
           </AccordionPrimitive.Trigger>
@@ -334,13 +412,14 @@ export function StreamingAccordion({
                   Waiting for AI response...
                 </p>
               ) : (
-                <p className="whitespace-pre-wrap leading-relaxed text-sm text-muted-foreground">
-                  {displayText}
+                <div className="text-sm text-muted-foreground leading-relaxed">
+                  {formatThinkingText(displayText)}
                   {showCursor && isStreaming && (
                     <StreamingCursor isStreaming={isStreaming} color="primary" />
                   )}
-                </p>
+                </div>
               )}
+
             </div>
 
             {/* Scroll to bottom button */}

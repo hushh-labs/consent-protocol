@@ -7,6 +7,8 @@ body {
   overscroll-behavior: none;
 }
 
+
+
 html body[data-scroll-locked] {
   overflow: visible !important;
   margin-right: 0 !important;
@@ -315,10 +317,11 @@ html body[data-scroll-locked] {
     padding-right: env(safe-area-inset-right);
     /* Safe area bottom is handled by the navbar component */
 
-    /* CRITICAL: Prevent body from scrolling - only content containers should scroll */
+    /* FIXED: Prevent body scroll to allow internal containers to manage viewport */
     overflow: hidden;
     height: 100dvh;
-    min-height: 100vh;
+
+
     
     scrollbar-gutter: stable;
     /* Smooth theme transitions - 200ms for snappy but visible effect */
@@ -327,15 +330,9 @@ html body[data-scroll-locked] {
   }
   html {
     scrollbar-gutter: stable;
+    overflow-x: hidden;
   }
 }
-
-/* ============================================================================
- * GLASS PERFORMANCE OPTIMIZATIONS
- * GPU layer promotion + lighter blur for 120 Hz+ refresh rate support
- * Applied to all glass elements for buttery smooth scrolling
- * ============================================================================ */
-
 /* GPU optimization class - promotes element to its own compositor layer */
 .glass-performant {
   transform: translate3d(0, 0, 0);

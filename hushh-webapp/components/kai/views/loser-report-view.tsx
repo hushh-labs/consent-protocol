@@ -14,7 +14,8 @@
 
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/lib/morphy-ux/card";
-import { Button } from "@/lib/morphy-ux/button";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
+
 import {
   AlertTriangle,
   TrendingDown,
@@ -102,33 +103,31 @@ export function LoserReportView({
               <ArrowUpDown className="w-4 h-4" />
               Sort by:
             </span>
-            <Button
+            <MorphyButton
               variant={sortBy === "loss_pct" ? "gradient" : "none"}
               effect="glass"
               size="sm"
               onClick={() => setSortBy("loss_pct")}
-              showRipple={true}
             >
               Loss %
-            </Button>
-            <Button
+            </MorphyButton>
+            <MorphyButton
               variant={sortBy === "value" ? "gradient" : "none"}
               effect="glass"
               size="sm"
               onClick={() => setSortBy("value")}
-              showRipple={true}
             >
               Portfolio Value
-            </Button>
-            <Button
+            </MorphyButton>
+            <MorphyButton
               variant={sortBy === "loss_amount" ? "gradient" : "none"}
               effect="glass"
               size="sm"
               onClick={() => setSortBy("loss_amount")}
-              showRipple={true}
             >
               Loss Amount
-            </Button>
+            </MorphyButton>
+
           </div>
         </CardContent>
       </Card>
@@ -197,31 +196,30 @@ export function LoserReportView({
       {/* Actions */}
       <div className="flex gap-4 justify-center pt-4">
         {onAnalyzeAll && losers.length > 1 && (
-          <Button
+          <MorphyButton
             variant="gradient"
             effect="glass"
             size="lg"
             onClick={onAnalyzeAll}
-            showRipple={true}
             icon={{
               icon: BarChart3,
               gradient: true,
             }}
           >
             Analyze All {losers.length} Positions
-          </Button>
+          </MorphyButton>
         )}
         {onContinue && (
-          <Button
+          <MorphyButton
             variant="none"
             effect="glass"
             size="lg"
             onClick={onContinue}
-            showRipple={true}
           >
             Continue to Overview
-          </Button>
+          </MorphyButton>
         )}
+
       </div>
 
       {/* Info Card */}
