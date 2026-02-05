@@ -67,7 +67,7 @@ function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
               <div>
                 <h3 className="font-semibold text-sm mb-1">Meet Kai</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Your personal AI Investment Advisor. Analyzing your portfolio, market trends, and financial opportunities privately.
+                  Your AI Investment Advisor. Analyzes your portfolio and markets privately.
                 </p>
               </div>
             </CardContent>
@@ -331,7 +331,7 @@ function LoginScreenContent() {
                   {/* Google Button - First on Android */}
                   <Button
                     variant="link"
-                    effect="fade"
+                    effect="glass"
                     className="w-full h-12 rounded-xl"
                     onClick={handleGoogleLogin}
                   >
@@ -359,7 +359,7 @@ function LoginScreenContent() {
                   {/* Apple Button - Second on Android */}
                   <Button
                     variant="link"
-                    effect="fade"
+                    effect="glass"
                     className="w-full h-12 rounded-xl"
                     onClick={handleAppleLogin}
                   >
@@ -442,26 +442,6 @@ function LoginScreenContent() {
             </p>
           </div>
         </div>
-
-        {/* Security Features */}
-        <Card variant="none" effect="glass" className="bg-muted/30">
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <Shield className="h-4 w-4 text-green-500" />
-                <span>End-to-end encrypted vault</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <Lock className="h-4 w-4 text-blue-500" />
-                <span>PBKDF2 + AES-256-GCM encryption</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <Key className="h-4 w-4 text-purple-500" />
-                <span>Zero-knowledge architecture</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </main>
   );

@@ -48,7 +48,7 @@ export function Providers({ children }: ProvidersProps) {
                       <StatusBarBlur />
                       <TopAppBar />
                       {/* Main scroll container: extends under fixed bar so content can scroll behind it; padding clears bar height */}
-                      <div className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[64px]">
+                      <div className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative z-10 min-h-0 pt-[45px]">
                         {children}
                       </div>
                     </div>
