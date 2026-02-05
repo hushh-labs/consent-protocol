@@ -3,11 +3,10 @@
 /**
  * Consents Layout - Mobile-First
  *
- * Wraps consents page with required providers.
+ * Wraps consents page with VaultLockGuard.
+ * ConsentSSEProvider and ConsentNotificationProvider are mounted at root (providers.tsx).
  */
 
-import { ConsentSSEProvider } from "@/lib/consent";
-import { ConsentNotificationProvider } from "@/components/consent/notification-provider";
 import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
 
 export default function ConsentsLayout({
@@ -17,12 +16,8 @@ export default function ConsentsLayout({
 }) {
   return (
     <VaultLockGuard>
-      <ConsentSSEProvider>
-        <ConsentNotificationProvider>
-          {/* Content - scroll handled by root providers */}
-          {children}
-        </ConsentNotificationProvider>
-      </ConsentSSEProvider>
+      {/* Content - scroll handled by root providers */}
+      {children}
     </VaultLockGuard>
   );
 }
