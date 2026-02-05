@@ -377,7 +377,7 @@ export function StreamingAccordion({
                 <IconComponent
                   className={cn(
                     "w-4 h-4",
-                    isStreaming && (icon === "spinner" || icon === "brain") ? "animate-spin" : isStreaming && "animate-pulse",
+                    isStreaming && (icon === "spinner" || icon === "brain") ? "animate-spin" : "",
                     isStreaming && "text-primary",
                     iconClassName
                   )}
