@@ -460,10 +460,13 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
       if (!userId) return;
 
       const promise = (async () => {
+        const vaultOwnerToken = getVaultOwnerToken();
         const response = await ApiService.revokeConsent({
           userId,
           scope,
-          token: "", // Revoke by scope doesn't use token
+          // Revoke is consent-gated; always include the VAULT_OWNER token explicitly.
+          // (On native builds, relying on sessionStorage can be flaky across webview lifecycles.)
+          token: vaultOwnerToken || "",
         });
 
         if (!response.ok) {
@@ -509,7 +512,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         console.error("Error revoking consent:", err);
       }
     },
-    [onActionComplete]
+    [getVaultOwnerToken, onActionComplete]
   );
 
   return {
