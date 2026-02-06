@@ -44,21 +44,21 @@ interface AssetAllocationDonutProps {
 
 // Theme-aware colors using CSS variables
 const CHART_COLORS = [
-  "hsl(var(--chart-2))",  // Emerald/Teal for equities
-  "hsl(var(--chart-1))",  // Orange for cash
-  "hsl(var(--chart-4))",  // Yellow for bonds
-  "hsl(var(--chart-3))",  // Blue for ETF
-  "hsl(var(--chart-5))",  // Orange variant for mutual funds
+  "var(--chart-2)",  // Emerald/Teal for equities
+  "var(--chart-1)",  // Orange for cash
+  "var(--chart-4)",  // Yellow for bonds
+  "var(--chart-3)",  // Blue for ETF
+  "var(--chart-5)",  // Orange variant for mutual funds
 ];
 
 // Fallback colors for specific asset types
 const DEFAULT_COLORS: Record<string, string> = {
-  cash: "hsl(var(--chart-1))",
-  equities: "hsl(var(--chart-2))",
-  bonds: "hsl(var(--chart-4))",
-  etf: "hsl(var(--chart-3))",
-  mutual_funds: "hsl(var(--chart-5))",
-  other: "hsl(var(--muted-foreground))",
+  cash: "var(--chart-1)",
+  equities: "var(--chart-2)",
+  bonds: "var(--chart-4)",
+  etf: "var(--chart-3)",
+  mutual_funds: "var(--chart-5)",
+  other: "var(--muted-foreground)",
 };
 
 function formatCurrency(value: number): string {
