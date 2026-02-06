@@ -180,6 +180,9 @@ export const getVariantStyles = (
     case "black":
       return "text-black hover:text-black/80 transition-colors duration-200 bg-transparent border-none shadow-none";
 
+    case "morphy":
+      return "bg-foreground text-background shadow-md hover:opacity-90 transition-all duration-200 border-none font-bold";
+
     case "link":
       // Silver hover in dark mode for hushh brand
       const baseLinkStyles = "text-[#374151] dark:text-[#e5e7eb] hover:text-black dark:hover:text-[#c0c0c0] underline-offset-4 hover:underline transition-colors duration-200";
@@ -368,6 +371,9 @@ export const getIconColor = (
     case "link":
       return "text-[#374151] dark:text-[#e5e7eb]";
 
+    case "morphy":
+      return "text-background";
+
     case "none":
     default:
       if (effect === "fill") {
@@ -414,6 +420,8 @@ export const getRippleColor = (
         return "bg-black/10 dark:bg-white/20";
       case "black":
         return "bg-black/20 dark:bg-[#c0c0c0]/20";
+      case "morphy":
+        return "bg-background/20";
       case "none":
       default:
         return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
@@ -442,6 +450,8 @@ export const getRippleColor = (
     case "link":
       // Silver ripple in dark mode for link variant
       return "bg-black/10 dark:bg-white/20";
+    case "morphy":
+      return "bg-background/20";
     case "none":
     default:
       return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
@@ -500,6 +510,9 @@ export const getRippleGradientStyle = (
       case "orange-gradient":
         color = "rgba(0, 0, 0, 0.15)";
         break;
+      case "morphy":
+        color = "rgba(255, 255, 255, 0.3)";
+        break;
       default:
         color = "rgba(255, 255, 255, 0.3)";
     }
@@ -537,6 +550,8 @@ export const getHoverBorderColor = (variant: ColorVariant): string => {
       return "hover:border-gray-400 dark:hover:border-[#c0c0c0]";
     case "black":
       return "hover:border-gray-800 dark:hover:border-[#c0c0c0]";
+    case "morphy":
+      return "hover:border-foreground/80";
     case "link":
       return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
     case "none":
@@ -587,6 +602,8 @@ export const getVariantGradient = (variant: ColorVariant): string => {
       return gradientPresets.metallic;
     case "multi":
       return gradientPresets.multi;
+    case "morphy":
+      return gradientPresets.primary;
     default:
       return gradientPresets.primary;
   }
@@ -612,6 +629,8 @@ export const getRippleGradient = (variant: ColorVariant): string => {
       return "from-gray-400/30 to-gray-400/15";
     case "multi":
       return "from-white/20 to-white/10";
+    case "morphy":
+      return "from-background/20 to-background/5";
     default:
       return "from-foreground/10 to-foreground/5";
   }
