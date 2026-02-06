@@ -91,16 +91,17 @@ When an MCP agent requests user data, the following flow occurs:
 
 ## 🔧 MCP Tools
 
-| Tool                       | Scope Required            | Description                                                                 |
-| -------------------------- | ------------------------- | --------------------------------------------------------------------------- |
-| `request_consent`          | Any                       | Request user permission for a scope (world_model.read, attr.{domain}.*)     |
-| `validate_token`           | None                      | Validate a consent token before using it with get_* or APIs                  |
-| `discover_user_domains`    | None                      | Discover which domains a user has; returns scope strings (call first)       |
-| `list_scopes`              | None                      | List available consent scopes (static reference)                             |
-| `check_consent_status`     | Any                       | Poll pending consent until granted or denied                                |
-| `get_food_preferences`     | `attr.food.*` or `world_model.read` | Get food/dining preferences (requires token)                |
-| `get_professional_profile` | `attr.professional.*` or `world_model.read` | Get career data (requires token)              |
-| `delegate_to_agent`        | Any                       | Create TrustLink for A2A delegation                                         |
+| Tool                       | Scope Required                              | Description                                                              |
+| -------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `request_consent`          | Any                                         | Request user permission for a scope (world_model.read, attr.{domain}.\*) |
+| `validate_token`           | None                                        | Validate a consent token before using it with get\_\* or APIs            |
+| `discover_user_domains`    | None                                        | Discover which domains a user has; returns scope strings (call first)    |
+| `list_scopes`              | None                                        | List available consent scopes (static reference)                         |
+| `check_consent_status`     | Any                                         | Poll pending consent until granted or denied                             |
+| `get_food_preferences`     | `attr.food.*` or `world_model.read`         | Get food/dining preferences                                              |
+| `get_professional_profile` | `attr.professional.*` or `world_model.read` | Get career/professional data                                             |
+| `get_financial_profile`    | `attr.financial.*` or `world_model.read`    | Get investment/financial data (NEW)                                      |
+| `delegate_to_agent`        | Any                                         | Create TrustLink for A2A delegation                                      |
 
 Agents can read resource **`hushh://info/connector`** for full usage, tool list, recommended flow, and supported scopes.
 
@@ -109,7 +110,7 @@ Agents can read resource **`hushh://info/connector`** for full usage, tool list,
 1. **Discover** — `discover_user_domains(user_id)` to get domains and scope strings.
 2. **Request** — `request_consent(user_id, scope)` for each scope needed.
 3. **If pending** — Poll `check_consent_status(user_id, scope)` until granted or denied.
-4. **Use** — Use the returned consent token with get_* tools or world-model data APIs.
+4. **Use** — Use the returned consent token with get\_\* tools or world-model data APIs.
 
 ---
 
@@ -118,17 +119,20 @@ Agents can read resource **`hushh://info/connector`** for full usage, tool list,
 When `request_consent` returns `pending`, the MCP server blocks and polls for user action:
 
 ```
-MCP calls request_consent → Returns "pending"
+MCP calls request_consent → Returns "pending" (non-blocking)
      ↓
-Polls /api/consent/pending every 3s
+Claude/Agent asks user to approve in app/dashboard
      ↓
-Request no longer pending? → Check /api/consent/active
+Agent calls check_consent_status(user_id, scope)
      ↓
-Token found? → APPROVED (return token)
-No token?   → DENIED (return denial message)
-     ↓
-Timeout after 300s? → Return timeout status
+MCP: 1. Check /api/consent/active (found? → SUCCESS)
+     2. Check /api/consent/pending (found? → PENDING)
+     3. Not found? → NOT_FOUND (suggest retry/request)
 ```
+
+### Robust Retry Mechanism
+
+The `request_consent` tool now includes a **5-retry backoff logic** after user approval is detected via SSE (Production). This ensures that sync delays between the consent grant and database propagation are handled gracefully, returning the token immediately when ready.
 
 ### Key Implementation Details
 

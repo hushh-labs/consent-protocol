@@ -1,7 +1,7 @@
 # Consent Protocol
 
 > **Status**: Production Ready  
-> **Last Updated**: January 2026  
+> **Last Updated**: February 2026  
 > **Principle**: Consent-First, BYOK, Zero-Knowledge
 
 ---
@@ -77,11 +77,11 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 
 ### Token Types
 
-| Token Type | Purpose | When Used | Duration |
-|------------|---------|-----------|----------|
-| **Firebase ID Token** | Identity verification only | Bootstrap: issuing VAULT_OWNER token | 1 hour |
-| **VAULT_OWNER Token** | Consent + Identity | ALL consent-gated data operations | 24 hours |
-| **Agent Scoped Token** | Delegated access | Third-party agent operations | 7 days |
+| Token Type             | Purpose                    | When Used                            | Duration |
+| ---------------------- | -------------------------- | ------------------------------------ | -------- |
+| **Firebase ID Token**  | Identity verification only | Bootstrap: issuing VAULT_OWNER token | 1 hour   |
+| **VAULT_OWNER Token**  | Consent + Identity         | ALL consent-gated data operations    | 24 hours |
+| **Agent Scoped Token** | Delegated access           | Third-party agent operations         | 7 days   |
 
 **Key Principle**: VAULT_OWNER token proves both identity AND consent. Firebase is ONLY used to bootstrap the VAULT_OWNER token issuance.
 
@@ -121,23 +121,19 @@ GET  /kai/chat/conversations/{user_id}
 GET  /kai/chat/initial-state/{user_id}
 POST /kai/chat/analyze-loser
 
-# Kai Portfolio
+# Kai Portfolio & World Model Data Retrieval
 POST /kai/portfolio/import
 GET  /kai/portfolio/summary/{user_id}
+GET  /api/consent/data                  # MCP: Get encrypted export
+GET  /api/consent/active                # MCP: List active tokens
+POST /api/consent/request-consent       # MCP: Request token
+GET  /api/consent/pending               # Dashboard: View pending
+POST /api/consent/pending/approve      # Dashboard: Approve request
 
-# World Model
-POST /api/world-model/store-domain
-GET  /api/world-model/data/{user_id}
-
-# Identity
-POST /api/identity/confirm
-GET  /api/identity/status
-
-# Kai Decisions & Preferences
-POST /kai/decision/store
-GET  /kai/decisions/{user_id}
-POST /kai/preferences/store
-GET  /kai/preferences/{user_id}
+# Scoped Data Tools (MCP)
+GET  /api/mcp/get-financial             # Financial Profile
+GET  /api/mcp/get-food-preferences      # Food Preferences
+GET  /api/mcp/get-professional-profile  # Professional Profile
 ```
 
 ---
@@ -175,14 +171,19 @@ def validate_token(token_str, expected_scope=None):
     # Check in-memory revocation
     if token_str in _revoked_tokens:
         return False, "Token has been revoked", None
-    
+
     # Decode and verify signature...
-    
+
     # VAULT_OWNER satisfies any scope (Master Key)
     is_owner = scope == ConsentScope.VAULT_OWNER
-    if expected_scope and not is_owner and scope != expected_scope:
-        return False, f"Scope mismatch", None
-    
+
+    # Use scope_str for dynamic dot-notation matching
+    granted_scope_str = token_obj.scope_str
+    if expected_scope and not is_owner:
+        from hushh_mcp.consent.scope_helpers import scope_matches
+        if not scope_matches(granted_scope_str, expected_scope):
+            return False, f"Scope mismatch: token has '{granted_scope_str}', but '{expected_scope}' required", None
+
     return True, None, token_obj
 ```
 
@@ -190,14 +191,17 @@ def validate_token(token_str, expected_scope=None):
 
 ```typescript
 // hushh-webapp/lib/vault/vault-context.tsx
-const unlockVault = useCallback((key: string, token: string, expiresAt: number) => {
-  // Store vault key in memory only (BYOK)
-  setVaultKey(key);
-  
-  // Sync VAULT_OWNER token to sessionStorage for service layer access
-  setSessionItem("vault_owner_token", token);
-  setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
-}, []);
+const unlockVault = useCallback(
+  (key: string, token: string, expiresAt: number) => {
+    // Store vault key in memory only (BYOK)
+    setVaultKey(key);
+
+    // Sync VAULT_OWNER token to sessionStorage for service layer access
+    setSessionItem("vault_owner_token", token);
+    setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
+  },
+  [],
+);
 ```
 
 ### Service Layer Token Access
@@ -220,6 +224,12 @@ static getVaultOwnerToken(): string | null {
 Component → Service → Next.js Proxy → Python Backend
                          ↓
               Authorization: Bearer {vault_owner_token}
+
+### Integrated Notification Flow (FCM-Only)
+The system uses a unified FCM (Firebase Cloud Messaging) pipeline for both Web and Native.
+1. **Backend** triggers FCM push via `send_consent_notification`.
+2. **Device** receives notification (Foreground: custom event, Background: system tray).
+3. **App** UI polls/refreshes state based on notification type.
 ```
 
 ### Native Flow (iOS/Android)
@@ -233,6 +243,7 @@ Component → Service → Capacitor Plugin → Python Backend
 ### Plugin Implementation
 
 **iOS (Swift)**:
+
 ```swift
 @objc func chat(_ call: CAPPluginCall) {
     guard let vaultOwnerToken = call.getString("vaultOwnerToken") else {
@@ -244,6 +255,7 @@ Component → Service → Capacitor Plugin → Python Backend
 ```
 
 **Android (Kotlin)**:
+
 ```kotlin
 @PluginMethod
 fun chat(call: PluginCall) {
@@ -261,8 +273,8 @@ fun chat(call: PluginCall) {
 
 ### Master Scope
 
-| Scope | Value | Description |
-|-------|-------|-------------|
+| Scope           | Value         | Description                                                                           |
+| --------------- | ------------- | ------------------------------------------------------------------------------------- |
 | **VAULT_OWNER** | `vault.owner` | Master scope - satisfies ANY other scope. Granted only to vault owner via BYOK login. |
 
 ### Dynamic Scopes (Preferred)
@@ -273,18 +285,19 @@ attr.{domain}.*                  # All attributes in domain
 ```
 
 Examples:
+
 - `attr.financial.holdings`
 - `attr.food.dietary_restrictions`
 - `attr.professional.*`
 
 ### Legacy Scopes (Deprecated)
 
-| Legacy | Replacement |
-|--------|-------------|
-| `vault.read.food` | `attr.food.*` |
-| `vault.read.professional` | `attr.professional.*` |
-| `vault.read.finance` | `attr.financial.*` |
-| `vault.write.decision` | `attr.kai_decisions.*` |
+| Legacy                    | Replacement            |
+| ------------------------- | ---------------------- |
+| `vault.read.food`         | `attr.food.*`          |
+| `vault.read.professional` | `attr.professional.*`  |
+| `vault.read.finance`      | `attr.financial.*`     |
+| `vault.write.decision`    | `attr.kai_decisions.*` |
 
 ### Scope Hierarchy
 
@@ -366,21 +379,25 @@ CREATE TABLE consent_audit (
 ## Security Properties
 
 ### 1. Consent-First
+
 - No data access without valid VAULT_OWNER token
 - Token proves user has unlocked their vault (consented)
 - All routes enforce token validation at middleware level
 
 ### 2. BYOK (Bring Your Own Key)
+
 - Vault key stays client-side (memory only)
 - Backend stores ciphertext only
 - VAULT_OWNER token proves key possession without revealing key
 
 ### 3. Zero-Knowledge
+
 - Server cannot decrypt user data
 - Token validation is cryptographic (HMAC signature)
 - Cross-instance revocation via database check
 
 ### 4. Token Hierarchy
+
 - VAULT_OWNER scope satisfies ALL other scopes
 - Scoped tokens for delegated access
 - Time-limited tokens with expiration
@@ -391,27 +408,28 @@ CREATE TABLE consent_audit (
 
 ### CCPA
 
-| Requirement | Implementation |
-|-------------|----------------|
-| Right to Know | Export `consent_audit` table |
-| Right to Delete | Token revocation + vault deletion |
-| Right to Opt-Out | No data sharing without consent tokens |
+| Requirement      | Implementation                            |
+| ---------------- | ----------------------------------------- |
+| Right to Know    | Export `consent_audit` table              |
+| Right to Delete  | Token revocation + vault deletion         |
+| Right to Opt-Out | No data sharing without consent tokens    |
 | Proof of Consent | Cryptographic tokens = verifiable consent |
 
 ### GDPR
 
-| Requirement | Implementation |
-|-------------|----------------|
-| Lawful Basis | Consent tokens = explicit consent |
+| Requirement        | Implementation                        |
+| ------------------ | ------------------------------------- |
+| Lawful Basis       | Consent tokens = explicit consent     |
 | Consent Management | Token expiry, revocation, audit trail |
-| Data Minimization | Scoped tokens limit agent access |
-| Right to Erasure | Vault deletion + token revocation |
+| Data Minimization  | Scoped tokens limit agent access      |
+| Right to Erasure   | Vault deletion + token revocation     |
 
 ---
 
 ## Files Reference
 
 ### Backend
+
 - `consent-protocol/api/middleware.py` - Token validation dependencies
 - `consent-protocol/hushh_mcp/consent/token.py` - Token crypto + validation
 - `consent-protocol/api/routes/consent.py` - Consent endpoints
@@ -419,12 +437,14 @@ CREATE TABLE consent_audit (
 - `consent-protocol/api/routes/kai/portfolio.py` - Portfolio endpoints
 
 ### Frontend
+
 - `hushh-webapp/lib/vault/vault-context.tsx` - Token storage
 - `hushh-webapp/lib/services/api-service.ts` - Service layer
 - `hushh-webapp/lib/capacitor/kai.ts` - Plugin interface
 - `hushh-webapp/lib/capacitor/plugins/kai-web.ts` - Web fallback
 
 ### Native
+
 - `hushh-webapp/ios/App/App/Plugins/KaiPlugin.swift` - iOS plugin
 - `hushh-webapp/android/.../plugins/Kai/KaiPlugin.kt` - Android plugin
 
