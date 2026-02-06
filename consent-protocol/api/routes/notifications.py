@@ -11,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request
 
 from api.utils.firebase_auth import verify_firebase_bearer
-from db.db_client import get_db
+from hushh_mcp.services.push_tokens_service import PushTokensService
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +56,12 @@ async def register_push_token(request: Request):
             detail="platform must be one of: web, ios, android",
         )
 
-    db = get_db()
-    # Upsert: ON CONFLICT (user_id, platform) DO UPDATE SET token, updated_at
-    sql = """
-        INSERT INTO user_push_tokens (user_id, token, platform, created_at, updated_at)
-        VALUES (:user_id, :token, :platform, NOW(), NOW())
-        ON CONFLICT (user_id, platform)
-        DO UPDATE SET token = EXCLUDED.token, updated_at = NOW()
-        RETURNING id, user_id, platform, created_at, updated_at
-    """
-    result = db.execute_raw(
-        sql,
-        {"user_id": user_id, "token": token, "platform": platform},
-    )
-    if result.error:
-        logger.error("Push token registration failed: %s", result.error)
+    try:
+        service = PushTokensService()
+        token_id = service.upsert_user_push_token(user_id=user_id, token=token, platform=platform)
+    except Exception as e:
+        logger.error("Push token registration failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to register token")
 
-    row = result.data[0] if result.data else None
     logger.info("Push token registered for user=%s platform=%s", user_id, platform)
-    return {"ok": True, "user_id": user_id, "platform": platform, "id": row.get("id")}
+    return {"ok": True, "user_id": user_id, "platform": platform, "id": token_id}
