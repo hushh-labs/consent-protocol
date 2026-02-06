@@ -225,6 +225,18 @@
       }
     },
     {
+      "id": "onboardingMgmt",
+      "webRouteFiles": [
+        "hushh-webapp/app/api/onboarding/complete/route.ts",
+        "hushh-webapp/app/api/onboarding/status/route.ts"
+      ],
+      "backend": {
+        "file": "consent-protocol/api/routes/onboarding.py",
+        "routerPrefix": "/api/onboarding",
+        "paths": ["/complete", "/status"]
+      }
+    },
+    {
       "id": "authSessionInternal",
       "webRouteFile": "hushh-webapp/app/api/auth/session/route.ts"
     }
