@@ -1058,7 +1058,7 @@ export function KaiFlow({
           </p>
           <button
             onClick={handleReimport}
-            className="px-6 py-3 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
+            className="px-6 py-3 bg-primary dark:bg-foreground text-white dark:text-black rounded-lg hover:opacity-90 transition-opacity"
           >
             Import Portfolio
           </button>
