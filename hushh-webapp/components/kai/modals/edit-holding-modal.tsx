@@ -13,9 +13,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/lib/morphy-ux/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 
 // =============================================================================
 // TYPES
@@ -115,20 +124,20 @@ export function EditHoldingModal({
 
     if (!formData.symbol.trim()) {
       newErrors.symbol = "Symbol is required";
-    } else if (!/^[A-Z]{1,5}$/.test(formData.symbol.toUpperCase())) {
-      newErrors.symbol = "Invalid symbol format (1-5 letters)";
+    } else if (!/^[A-Z]{0,5}$/.test(formData.symbol.toUpperCase())) {
+      newErrors.symbol = "Invalid symbol format (0-5 letters)";
     }
 
     if (!formData.name.trim()) {
       newErrors.name = "Name is required";
     }
 
-    if (formData.quantity <= 0) {
-      newErrors.quantity = "Quantity must be greater than 0";
+    if (formData.quantity < 0) {
+      newErrors.quantity = "Quantity must be 0 or greater";
     }
 
-    if (formData.price <= 0) {
-      newErrors.price = "Price must be greater than 0";
+    if (formData.price < 0) {
+      newErrors.price = "Price must be 0 or greater";
     }
 
     setErrors(newErrors);
@@ -145,39 +154,21 @@ export function EditHoldingModal({
     });
   }, [formData, validate, onSave]);
 
-  // Handle backdrop click
-  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }, [onClose]);
-
-  if (!isOpen) return null;
-
   const isNewHolding = !holding?.symbol;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={handleBackdropClick}
-    >
-      <div className="w-full max-w-lg bg-background rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[90dvh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-lg font-semibold">
+    <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>
             {isNewHolding ? "Add Holding" : "Edit Holding"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-muted transition-colors"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+          </DrawerTitle>
+          <DrawerDescription>
+            Update your portfolio details securely. All changes are encrypted.
+          </DrawerDescription>
+        </DrawerHeader>
 
-        {/* Form */}
-        <div className="p-4 space-y-4 overflow-y-auto max-h-[60dvh]">
+        <div className="px-4 py-2 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* Symbol */}
           <div>
             <label className="block text-sm font-medium mb-1">
@@ -237,7 +228,7 @@ export function EditHoldingModal({
                 min="0"
                 step="0.0001"
                 className={cn(
-                  "w-full px-3 py-2 rounded-lg border bg-background outline-none transition-colors",
+                  "w-full px-4 py-3 h-12 rounded-xl border bg-background outline-none transition-colors",
                   errors.quantity
                     ? "border-red-500 focus:border-red-500"
                     : "border-border focus:border-primary"
@@ -260,7 +251,7 @@ export function EditHoldingModal({
                 min="0"
                 step="0.01"
                 className={cn(
-                  "w-full px-3 py-2 rounded-lg border bg-background outline-none transition-colors",
+                  "w-full px-4 py-3 h-12 rounded-xl border bg-background outline-none transition-colors",
                   errors.price
                     ? "border-red-500 focus:border-red-500"
                     : "border-border focus:border-primary"
@@ -274,14 +265,14 @@ export function EditHoldingModal({
 
           {/* Market Value (calculated, read-only) */}
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Market Value
+            <label className="block text-sm text-muted-foreground font-medium mb-1">
+              Market Value (Auto-calculated)
             </label>
             <input
               type="text"
               value={`$${formData.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               readOnly
-              className="w-full px-3 py-2 rounded-lg border border-border bg-muted text-muted-foreground"
+              className="w-full px-4 py-3 h-12 rounded-xl border border-border bg-muted/50 text-muted-foreground font-medium"
             />
           </div>
 
@@ -297,7 +288,7 @@ export function EditHoldingModal({
               placeholder="0.00"
               min="0"
               step="0.01"
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background outline-none focus:border-primary transition-colors"
+              className="w-full px-4 py-3 h-12 rounded-xl border border-border bg-background outline-none focus:border-primary transition-colors"
             />
           </div>
 
@@ -310,17 +301,17 @@ export function EditHoldingModal({
               type="date"
               value={formData.acquisition_date || ""}
               onChange={(e) => handleChange("acquisition_date", e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background outline-none focus:border-primary transition-colors"
+              className="w-full px-4 py-3 h-12 rounded-xl border border-border bg-background outline-none focus:border-primary transition-colors"
             />
           </div>
 
           {/* Gain/Loss Preview */}
           {formData.cost_basis !== undefined && formData.cost_basis > 0 && (
-            <div className="p-3 rounded-lg bg-muted">
-              <p className="text-sm text-muted-foreground">Unrealized Gain/Loss</p>
+            <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+              <p className="text-sm text-muted-foreground font-medium">Unrealized Gain/Loss</p>
               <p
                 className={cn(
-                  "text-lg font-semibold",
+                  "text-xl font-bold mt-1",
                   (formData.unrealized_gain_loss || 0) >= 0
                     ? "text-emerald-500"
                     : "text-red-500"
@@ -328,32 +319,39 @@ export function EditHoldingModal({
               >
                 ${(formData.unrealized_gain_loss || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 {" "}
-                ({(formData.unrealized_gain_loss_pct || 0) >= 0 ? "+" : ""}
-                {(formData.unrealized_gain_loss_pct || 0).toFixed(2)}%)
+                <span className="text-sm font-medium opacity-80">
+                  ({(formData.unrealized_gain_loss_pct || 0) >= 0 ? "+" : ""}
+                  {(formData.unrealized_gain_loss_pct || 0).toFixed(2)}%)
+                </span>
               </p>
             </div>
           )}
+          
+          {/* Spatial padding for bottom bar */}
+          <div className="h-20" />
         </div>
 
-        {/* Footer */}
-        <div className="flex gap-3 p-4 border-t border-border">
-          <Button
-            variant="none"
-            effect="glass"
-            onClick={onClose}
-            className="flex-1"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            className="flex-1"
-            icon={{ icon: Save, gradient: false }}
-          >
-            {isNewHolding ? "Add" : "Save"}
-          </Button>
-        </div>
-      </div>
-    </div>
+        <DrawerFooter className="border-t bg-background/80 backdrop-blur-lg">
+          <div className="flex gap-3 w-full">
+            <DrawerClose asChild>
+              <Button
+                variant="none"
+                effect="glass"
+                className="flex-1 h-12 border"
+              >
+                Cancel
+              </Button>
+            </DrawerClose>
+            <Button
+              onClick={handleSave}
+              className="flex-1 h-12"
+              icon={{ icon: Save, gradient: false }}
+            >
+              {isNewHolding ? "Add" : "Save Changes"}
+            </Button>
+          </div>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

@@ -15,33 +15,52 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { OnboardingService } from "@/lib/services/onboarding-service";
+import { KaiOnboardingFlow } from "@/components/kai/kai-onboarding-flow";
+import { getOnboardingStatusCache } from "@/components/vault/vault-lock-guard";
 import { toast } from "sonner";
 
 export default function KaiLandingPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
 
-  // Check onboarding status on mount
+  // Check onboarding status on mount - use cache first for instant response
   useEffect(() => {
     const checkOnboarding = async () => {
       if (!user || showOnboarding) return;
 
+      // Try cache first (preloaded in VaultLockGuard)
+      const cached = getOnboardingStatusCache();
+      if (cached && cached.userId === user.uid) {
+        if (cached.completed) {
+          setOnboardingComplete(true);
+        } else {
+          setTimeout(() => setShowOnboarding(true), 300);
+        }
+        return;
+      }
+
+      // Fallback to API call if cache miss
       const completed = await OnboardingService.checkOnboardingStatus(user.uid);
       if (!completed) {
         // Small delay to ensure layout (navbar) is ready
-        setTimeout(() => setShowOnboarding(true), 800);
+        setTimeout(() => setShowOnboarding(true), 200);
+      } else {
+        // Onboarding already done - trigger flow animation
+        setOnboardingComplete(true);
       }
     };
 
     checkOnboarding();
   }, [user]);
 
+
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-0 bg-background/50">
+    <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-0">
       <div className="w-full max-w-md space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-        {/* Hero Section */}
-        <div className="text-center space-y-6">
+        {/* Hero Section - Restored Original Style */}
+        <div className="text-center space-y-8">
           <div className="flex flex-col items-center justify-center gap-4">
             <div className="p-5 rounded-3xl bg-primary/10 ring-1 ring-primary/20 shadow-inner">
               <TrendingUp className="h-12 w-12 text-primary animate-pulse" />
@@ -57,50 +76,8 @@ export default function KaiLandingPage() {
           </p>
         </div>
 
-        {/* Feature Ecosystem */}
-        <div className="grid gap-3">
-          <Card variant="none" effect="glass" className="p-4 border-white/5">
-            <CardContent className="p-0 flex items-center gap-4">
-              <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-500 shrink-0">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm">Portfolio Health</h3>
-                <p className="text-xs text-muted-foreground">
-                  Smart rebalancing and risk analysis of your holdings.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card variant="none" effect="glass" className="p-4 border-white/5">
-            <CardContent className="p-0 flex items-center gap-4">
-              <div className="p-2.5 rounded-2xl bg-blue-500/10 text-blue-500 shrink-0">
-                <Shield className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm">Vault Privacy</h3>
-                <p className="text-xs text-muted-foreground">
-                  E2E encryption for all your financial statements.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card variant="none" effect="glass" className="p-4 border-white/5 opacity-80">
-            <CardContent className="p-0 flex items-center gap-4">
-              <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-500 shrink-0">
-                <TrendingUp className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm">Committee Insights</h3>
-                <p className="text-xs text-muted-foreground">
-                  Three specialist agents debating every decision.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Feature Flow - Git-branch style animation */}
+        <KaiOnboardingFlow onboardingComplete={onboardingComplete} />
 
         {/* CTA */}
         <div className="pt-4">
@@ -123,6 +100,7 @@ export default function KaiLandingPage() {
           onComplete={async () => {
             if (user) await OnboardingService.completeOnboarding(user.uid);
             setShowOnboarding(false);
+            setOnboardingComplete(true);
             toast.success("You're all set! 🚀");
           }}
           onSkip={() => {
