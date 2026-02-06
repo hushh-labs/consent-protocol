@@ -455,7 +455,7 @@ export function DashboardView({
               variant="muted"
               size="sm"
               onClick={onAnalyzeLosers}
-              className="h-9 cursor-pointer"
+              className="h-8 cursor-pointer"
               icon={{ icon: Activity }}
             >
               <span className="ml-2">Optimize Portfolio</span>
@@ -468,7 +468,7 @@ export function DashboardView({
               <MorphyButton 
                 variant="muted"
                 size="icon"
-                className="h-9 w-9 rounded-full"
+                className="h-8 w-8 rounded-full"
                 aria-label="Portfolio options"
                 icon={{ icon: MoreVertical }}
               />
@@ -565,7 +565,7 @@ export function DashboardView({
           value={holdingsCount > 0 ? holdingsCount.toString() : "—"}
           description="Number of positions in your portfolio"
           icon={<Briefcase />}
-          size="sm"
+          size="xs"
         />
         <KPICard
           title="Gain/Loss"
@@ -574,7 +574,7 @@ export function DashboardView({
           change={totalUnrealizedGainLoss !== 0 ? (totalUnrealizedGainLoss / (totalValue - totalUnrealizedGainLoss) * 100) : undefined}
           icon={<TrendingUp />}
           variant={totalUnrealizedGainLoss >= 0 ? "success" : "danger"}
-          size="sm"
+          size="xs"
         />
         <KPICard
           title="Risk"
@@ -582,7 +582,7 @@ export function DashboardView({
           description="Portfolio risk level based on allocation"
           icon={<Shield />}
           variant={riskBucket === "Aggressive" ? "warning" : riskBucket === "Conservative" ? "info" : "default"}
-          size="sm"
+          size="xs"
         />
       </div>
 
@@ -592,7 +592,7 @@ export function DashboardView({
         <Card variant="none" effect="glass" showRipple={false}>
           <CardHeader className="pb-1 pt-3 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <PieChartIcon className="w-5 h-5" />
+              <PieChartIcon className="w-4 h-4" />
               Allocation
             </CardTitle>
           </CardHeader>
@@ -616,7 +616,7 @@ export function DashboardView({
           <Card variant="none" effect="glass" showRipple={false}>
             <CardHeader className="pb-1 pt-3 px-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-muted-foreground" />
+                <DollarSign className="w-4 h-4 text-muted-foreground" />
                 Income
               </CardTitle>
             </CardHeader>
@@ -638,7 +638,7 @@ export function DashboardView({
             <Card variant="none" effect="glass" showRipple={false}>
               <CardHeader className="pb-1 pt-3 px-4">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-muted-foreground" />
+                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
                   Top Movers
                 </CardTitle>
               </CardHeader>
