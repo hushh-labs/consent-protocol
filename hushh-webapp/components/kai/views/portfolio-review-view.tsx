@@ -188,6 +188,10 @@ function deriveRiskBucket(holdings: Holding[]): string {
   return "conservative";
 }
 
+const SpinningLoader = (props: any) => (
+  <Loader2 {...props} className={cn(props.className, "animate-spin")} />
+);
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -836,33 +840,26 @@ export function PortfolioReviewView({
 
   </div>
 
-  {/* Save Button - Fixed at bottom */}
-  <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 px-4 sm:px-6 z-50 pointer-events-none">
-    <div className="max-w-lg lg:max-w-xl mx-auto backdrop-blur-3xl border rounded-3xl p-5 shadow-2xl pointer-events-auto bg-white/50 dark:bg-black/50"
-      style={{
-        borderColor: "var(--glass-border)",
-      }}
-    >
+  {/* Save Button - Refined Floating Action */}
+  <div className="fixed bottom-24 left-0 right-0 px-10 sm:px-16 z-50 pointer-events-none">
+    <div className="max-w-xs mx-auto pointer-events-auto">
       <MorphyButton
-        variant="gradient"
-        size="xl"
-        className="w-full h-16 text-lg font-black shadow-lg"
+        variant="none"
+        effect="fill"
+        size="default"
+        className="w-full font-black shadow-xl border-none"
         onClick={handleSave}
         disabled={isSaving || holdings.length === 0}
         icon={{ 
-          icon: isSaving ? Loader2 : Save,
+          icon: isSaving ? SpinningLoader : Save,
           gradient: false 
         }}
         loading={isSaving}
       >
-        {isSaving ? "ENCRYPTING & SAVING..." : "SAVE TO VAULT"}
+        {isSaving ? "SAVING..." : "SAVE TO VAULT"}
       </MorphyButton>
-
     </div>
   </div>
 </div>
   );
 }
-
-
-
