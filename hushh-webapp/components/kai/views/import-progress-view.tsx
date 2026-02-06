@@ -165,8 +165,8 @@ export function ImportProgressView({
         </div>
 
 
-        {/* AI Reasoning Accordion - Shows during thinking phase, hides when complete */}
-        {(isThinking || (thoughts.length > 0 && !isComplete)) && (
+        {/* AI Reasoning Accordion - Shows during thinking phase, persists when complete */}
+        {(isThinking || (thoughts.length > 0 && !isComplete) || (isComplete && thoughts.length > 0)) && (
           <StreamingAccordion
             id="ai-reasoning"
             title={`AI Reasoning${thoughtCount > 0 ? ` (${thoughtCount} thoughts)` : ""}`}
@@ -174,16 +174,14 @@ export function ImportProgressView({
             isStreaming={isThinking || isExtracting}
             isComplete={isComplete}
             icon={isComplete ? "brain" : "spinner"}
-            iconClassName="w-6 h-6"
-            maxHeight="250px"
             className="border-primary/10"
           />
         )}
 
 
 
-        {/* Data Extraction Accordion - Shows during extraction phase, hides when complete */}
-        {(isExtracting || (streamedText && !isComplete)) && (
+        {/* Data Extraction Accordion - Shows during extraction phase, persists when complete */}
+        {(isExtracting || (streamedText && !isComplete) || (isComplete && streamedText)) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
               <span className="flex items-center gap-1.5">
@@ -206,7 +204,6 @@ export function ImportProgressView({
               maxHeight="300px"
               defaultExpanded={true}
             />
-
           </div>
         )}
 

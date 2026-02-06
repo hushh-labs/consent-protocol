@@ -84,6 +84,7 @@ class AnalyzeLosersResponse(BaseModel):
     summary: dict
     losers: list[dict]
     portfolio_level_takeaways: list[str]
+    analytics: Optional[dict] = Field(None, description="Radar and sector distribution metrics")
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -172,14 +173,11 @@ async def analyze_portfolio_losers(
     criteria_context = await renaissance.get_screening_context()
     criteria_rows = await renaissance.get_screening_criteria()
 
-    # Build investable replacement candidates by sector (best-effort)
-    # Sector placeholder not used; we give LLM global pool + per-ticker Renaissance context
-    # We primarily give LLM a global pool + per-ticker Renaissance context
-    ace_pool = await renaissance.get_by_tier("ACE")
-    king_pool = await renaissance.get_by_tier("KING")
+    # Build investable replacement candidates: fetch EVERY investable stock
+    all_investable = await renaissance.get_all_investable()
     replacement_pool = [
-        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis}
-        for s in (ace_pool[:15] + king_pool[:15])
+        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis, "name": s.company_name}
+        for s in all_investable
     ]
 
     # Per-position Renaissance context (optimization universe)
@@ -244,8 +242,10 @@ ROLE AND CONSTRAINTS
 - You must act like a cautious CIO:
   - No leverage, margin, derivatives, or shorting.
   - No market timing or price targets. Focus on allocation quality and risk.
-  - Prefer **moving capital from avoid / low-quality names into ACE/KING investable names**.
-  - Respect diversification: avoid extreme concentration in any single name or sector.
+- Prefer **moving capital from avoid / low-quality names into ACE/KING investable names**.
+- Respect diversification: avoid extreme concentration in any single name or sector.
+- REAL DATA: Use the actual `market_value` and `weight_pct` provided. Propose real, data-driven weight changes.
+- NO MOCK DATA: Do not use placeholders. If you lack data, say so, but utilize everything you have.
 
 DATA YOU HAVE
 -------------
@@ -309,7 +309,8 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
 {{
   "criteria_context": string,
   "summary": {{
-    "health_score": number,                     // 0–100 overall portfolio health score
+    "health_score": number,                     // 0–100 current portfolio health score
+    "projected_health_score": number,           // 0–100 PROJECTED health score after plans are executed
     "health_reasons": [string],                 // bullets explaining the score
     "portfolio_diagnostics": {{
       "total_losers_value": number,             // sum of losers market_value
@@ -318,29 +319,38 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
       "concentration_notes": [string]
     }},
     "plans": {{
-      "minimal": {{ "actions": [ /* PlanAction */ ] }},
-      "standard": {{ "actions": [ /* PlanAction */ ] }},
-      "maximal": {{ "actions": [ /* PlanAction */ ] }}
+      "minimal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
+      "standard": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
+      "maximal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }}
     }}
   }},
   "losers": [
     {{
       "symbol": string,
-      "renaissance_status": "investable_tier" | "avoid" | "neither",
-      "tier": string | null,
+      "name": string,
+      "renaissance_tier": string | null,
       "avoid_category": string | null,
       "criteria_flags": [string],
       "needs_more_data": boolean,
       "likely_driver": "fundamental" | "sentiment" | "macro_rates" | "idiosyncratic" | "unknown",
       "confidence": number,
-      "recommended_action": "hold" | "add" | "trim" | "exit" | "rotate",
-      "why": string,
+      "action": "hold" | "add" | "trim" | "exit" | "rotate",
+      "rationale": string,
       "replacement_candidates": [{{ "ticker": string, "tier": string, "why": string }}],
-      "current_weight_estimate_pct": number | null,
-      "target_weight_delta": number | null
+      "current_weight_pct": number | null,
+      "target_weight_pct": number | null
     }}
   ],
-  "portfolio_level_takeaways": [string]
+  "portfolio_level_takeaways": [string],
+  "analytics": {{
+    "health_radar": {{
+      "current": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }},
+      "optimized": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }}
+    }},
+    "sector_shift": [
+      {{ "sector": string, "before_pct": number, "after_pct": number }}
+    ]
+  }}
 }}
 """.strip()
 
@@ -421,11 +431,11 @@ async def _build_optimization_context(
     criteria_context = await renaissance.get_screening_context()
     criteria_rows = await renaissance.get_screening_criteria()
 
-    ace_pool = await renaissance.get_by_tier("ACE")
-    king_pool = await renaissance.get_by_tier("KING")
+    # Build investable replacement candidates: fetch EVERY investable stock
+    all_investable = await renaissance.get_all_investable()
     replacement_pool = [
-        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis}
-        for s in (ace_pool[:15] + king_pool[:15])
+        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis, "name": s.company_name}
+        for s in all_investable
     ]
 
     total_mv = sum((loser.market_value or 0.0) for loser in losers_filtered) or 0.0
@@ -484,11 +494,13 @@ ROLE AND CONSTRAINTS
 --------------------
 - You apply the Renaissance screening rubric, tiers, and avoid rules to optimize a REAL portfolio.
 - BYOK / consent-first: you NEVER place trades. You only propose illustrative, auditable rebalancing plans.
-- You must act like a cautious CIO:
+- You must act like a senior CIO/Portfolio Manager for HNWI clients:
   - No leverage, margin, derivatives, or shorting.
   - No market timing or price targets. Focus on allocation quality and risk.
-  - Prefer **moving capital from avoid / low-quality names into ACE/KING investable names**.
-  - Respect diversification: avoid extreme concentration in any single name or sector.
+  - Prefer **tax-efficient rotation from losers into high-conviction ACE/KING names**.
+  - Respect diversification: avoid >15% concentration in any single name.
+  - REAL DATA: Use the actual `market_value` and `weight_pct` provided. Propose real, data-driven trades.
+  - NO MOCK DATA: Never use placeholders like '0' or 'N/A' if reasoning can be derived.
 
 DATA YOU HAVE
 -------------
@@ -552,7 +564,8 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
 {{
   "criteria_context": string,
   "summary": {{
-    "health_score": number,                     // 0–100 overall portfolio health score
+    "health_score": number,                     // 0–100 current portfolio health score
+    "projected_health_score": number,           // 0–100 PROJECTED health score after plans are executed
     "health_reasons": [string],                 // bullets explaining the score
     "portfolio_diagnostics": {{
       "total_losers_value": number,             // sum of losers market_value
@@ -561,29 +574,38 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
       "concentration_notes": [string]
     }},
     "plans": {{
-      "minimal": {{ "actions": [ /* PlanAction */ ] }},
-      "standard": {{ "actions": [ /* PlanAction */ ] }},
-      "maximal": {{ "actions": [ /* PlanAction */ ] }}
+      "minimal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
+      "standard": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
+      "maximal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }}
     }}
   }},
   "losers": [
     {{
       "symbol": string,
-      "renaissance_status": "investable_tier" | "avoid" | "neither",
-      "tier": string | null,
+      "name": string,
+      "renaissance_tier": string | null,
       "avoid_category": string | null,
       "criteria_flags": [string],
       "needs_more_data": boolean,
       "likely_driver": "fundamental" | "sentiment" | "macro_rates" | "idiosyncratic" | "unknown",
       "confidence": number,
-      "recommended_action": "hold" | "add" | "trim" | "exit" | "rotate",
-      "why": string,
+      "action": "hold" | "add" | "trim" | "exit" | "rotate",
+      "rationale": string,
       "replacement_candidates": [{{ "ticker": string, "tier": string, "why": string }}],
-      "current_weight_estimate_pct": number | null,
-      "target_weight_delta": number | null
+      "current_weight_pct": number | null,
+      "target_weight_pct": number | null
     }}
   ],
-  "portfolio_level_takeaways": [string]
+  "portfolio_level_takeaways": [string],
+  "analytics": {{
+    "health_radar": {{
+      "current": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }},
+      "optimized": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }}
+    }},
+    "sector_shift": [
+      {{ "sector": string, "before_pct": number, "after_pct": number }}
+    ]
+  }}
 }}
 """.strip()
 

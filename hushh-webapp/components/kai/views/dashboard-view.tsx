@@ -271,12 +271,10 @@ export function DashboardView({
     
     // Handle array format from new schema
     if (Array.isArray(allocation)) {
-      return allocation.map((item) => ({
+      return allocation.map((item, index) => ({
         name: item.category,
         value: item.market_value,
-        color: item.category.toLowerCase().includes("cash") ? "#6366f1" :
-               item.category.toLowerCase().includes("equit") ? "#10b981" :
-               item.category.toLowerCase().includes("bond") ? "#f59e0b" : "#8b5cf6",
+        color: `var(--chart-${(index % 5) + 1})`,
       }));
     }
     
@@ -289,31 +287,31 @@ export function DashboardView({
       data.push({
         name: "Cash",
         value: cashBalance || (totalValue * (cashPct || 0) / 100),
-        color: "#6366f1",
+        color: "var(--chart-1)",
       });
     }
     if (equitiesPct || holdingsTotal > 0) {
       data.push({
         name: "Equities",
         value: holdingsTotal || (totalValue * (equitiesPct || 0) / 100),
-        color: "#10b981",
+        color: "var(--chart-2)",
       });
     }
     if (bondsPct) {
       data.push({
         name: "Bonds",
         value: totalValue * bondsPct / 100,
-        color: "#f59e0b",
+        color: "var(--chart-3)",
       });
     }
     
     // Fallback: create from holdings + cash
     if (data.length === 0 && totalValue > 0) {
       if (cashBalance > 0) {
-        data.push({ name: "Cash", value: cashBalance, color: "#6366f1" });
+        data.push({ name: "Cash", value: cashBalance, color: "var(--chart-1)" });
       }
       if (holdingsTotal > 0) {
-        data.push({ name: "Equities", value: holdingsTotal, color: "#10b981" });
+        data.push({ name: "Equities", value: holdingsTotal, color: "var(--chart-2)" });
       }
     }
     
@@ -513,8 +511,8 @@ export function DashboardView({
             </h1>
             <div
               className={cn(
-                "flex items-center justify-center gap-1.5 mt-1 text-sm font-medium",
-                isPositive ? "text-emerald-500" : "text-red-500"
+                "flex items-center justify-center gap-1.5 mt-1 text-sm font-black",
+                isPositive ? "text-emerald-500" : "text-destructive"
               )}
             >
               {isPositive ? (
@@ -522,7 +520,7 @@ export function DashboardView({
               ) : (
                 <TrendingDown className="w-4 h-4" />
               )}
-              <span>
+              <span className="bg-emerald-500/10 dark:bg-emerald-500/20 px-3 py-1 rounded-full border border-emerald-500/20">
                 {formatCurrency(Math.abs(changeInValue))} ({formatPercent(changePercent)})
               </span>
             </div>
