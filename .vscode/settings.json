@@ -1,3 +1,4 @@
 {
-    "CodeGPT.apiKey": "LM Studio"
+    "CodeGPT.apiKey": "LM Studio",
+    "git.ignoreLimitWarning": true
 }

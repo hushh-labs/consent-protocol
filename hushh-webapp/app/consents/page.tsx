@@ -43,7 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/morphy-ux/ui/tab
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
-import { useConsentSSE } from "@/lib/consent";
+import { FCM_MESSAGE_EVENT } from "@/lib/notifications";
 import { ApiService, getApiBaseUrl } from "@/lib/services/api-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 import { getSessionItem } from "@/lib/utils/session-storage";
@@ -773,82 +773,46 @@ export default function ConsentsPage() {
 
     return () => {
       cancelled = true;
-      reset();
+  reset();
     };
   }, [authLoading, vaultOwnerToken]);
 
   // =========================================================================
-  // SSE: React to consent events via unified context (no duplicate connection)
+  // FCM: React to consent push notifications (FCM-only architecture)
   // =========================================================================
-  const { lastEvent, eventCount } = useConsentSSE();
-
   useEffect(() => {
-    if (!lastEvent || !userId) return;
+    if (!userId) return;
 
-    const { action, request_id, scope } = lastEvent;
-    
-    // Use token from session state or vault context
-    const effectiveToken = session?.token || vaultOwnerToken || "";
+    const handleFCMMessage = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log("📬 [ConsentsPage] FCM message received:", customEvent.detail);
 
-    console.log(
-      `📡 [ConsentsPage] SSE event: ${action} for ${request_id} (${scope})`
-    );
+      // Use token from session state or vault context
+      const effectiveToken = session?.token || vaultOwnerToken || "";
 
-    // Debounce 600ms to let DB commit and avoid burst refetches
-    const timer = setTimeout(() => {
-      // SSE events should force refresh to get latest data
-      switch (action) {
-        case "REQUESTED":
-          // New request - only need to refresh pending
-          fetchPendingConsents(userId, true);
-          fetchAuditLog(userId, true);
-          break;
-        case "CONSENT_GRANTED":
-          // Approval - pending → active, update all
-          fetchPendingConsents(userId, true);
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
-          fetchAuditLog(userId, true);
-          break;
-        case "CONSENT_DENIED":
-        case "TIMEOUT":
-          // Denied/timeout - remove from pending, update audit
-          fetchPendingConsents(userId, true);
-          fetchAuditLog(userId, true);
-          break;
-        case "REVOKED":
-          // Revoke - remove from active, update audit
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
-          fetchAuditLog(userId, true);
+      // Debounce 600ms to let DB commit and avoid burst refetches
+      const timer = setTimeout(() => {
+        // Refresh all data when FCM message received
+        fetchPendingConsents(userId, true);
+        if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
+        fetchAuditLog(userId, true);
+      }, 600);
 
-          // If VAULT_OWNER was revoked via SSE (e.g., from another tab), lock vault
-          if (scope === "vault.owner" || scope === "VAULT_OWNER") {
-            console.log(
-              "🔒 [SSE] VAULT_OWNER revoked - dispatching lock event"
-            );
-            window.dispatchEvent(
-              new CustomEvent("vault-lock-requested", {
-                detail: { reason: "VAULT_OWNER token revoked (SSE)" },
-              })
-            );
-          }
-          break;
-        default:
-          // Any other event - refresh all to be safe
-          fetchPendingConsents(userId, true);
-          if (effectiveToken) fetchActiveConsents(userId, effectiveToken, true);
-          fetchAuditLog(userId, true);
-      }
-    }, 600);
+      return () => clearTimeout(timer);
+    };
 
-    return () => clearTimeout(timer);
+    window.addEventListener(FCM_MESSAGE_EVENT, handleFCMMessage);
+
+    return () => {
+      window.removeEventListener(FCM_MESSAGE_EVENT, handleFCMMessage);
+    };
   }, [
-    lastEvent,
-    eventCount,
     userId,
     fetchPendingConsents,
     fetchAuditLog,
     fetchActiveConsents,
     session?.token,
+
     vaultOwnerToken
   ]);
 

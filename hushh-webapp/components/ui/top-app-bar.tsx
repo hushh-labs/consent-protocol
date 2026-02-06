@@ -34,26 +34,37 @@ import {
 const BAR_GLASS_CLASS = "top-bar-glass";
 
 /**
- * StatusBarBlur - Native-only strip under the system status bar.
- * Uses the same transparent blur as TopAppBar so both bands match.
- * Render before TopAppBar (e.g. in providers).
+ * TopBarBackground - Single background layer for status bar and top app bar.
+ * Ensures a continuous frosted look with a single smooth fade mask.
  */
-export function StatusBarBlur() {
+export function TopBarBackground() {
   const [isNative, setIsNative] = useState(false);
+  const pathname = usePathname();
+
   useEffect(() => {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
-  if (!isNative) return null;
+
+  if (pathname === "/") return null;
+
   return (
     <div
       className={cn(
         "fixed top-0 left-0 right-0 z-40",
-        "h-[env(safe-area-inset-top)] min-h-0",
         BAR_GLASS_CLASS,
+        isNative ? "h-[calc(env(safe-area-inset-top)+72px)]" : "h-[64px]"
       )}
       aria-hidden
     />
   );
+}
+
+/**
+ * StatusBarBlur - No longer renders its own glass, now handled by TopBarBackground.
+ * But we keep it as a spacer/logic holder if needed, or just return null.
+ */
+export function StatusBarBlur() {
+  return null;
 }
 
 interface TopAppBarProps {
@@ -78,11 +89,8 @@ export function TopAppBar({ className }: TopAppBarProps) {
   return (
     <div
       className={cn(
-        // Fixed: on native sit below StatusBarBlur so both bands use same style
         "fixed left-0 right-0 z-50",
-        isNative ? "top-[env(safe-area-inset-top)] h-[64px]" : "top-0 h-[64px]",
-        // Match StatusBarBlur so Capacitor status bar area and breadcrumb bar match
-        BAR_GLASS_CLASS,
+        isNative ? "top-[env(safe-area-inset-top)] h-[72px]" : "top-0 h-[64px]",
         // Flex container for back button
         "flex items-center pb-2 px-4",
         className,
@@ -155,7 +163,7 @@ export function TopAppBarSpacer() {
     <div
       className={cn(
         "w-full shrink-0 transition-[height]",
-        isNative ? "h-[calc(64px+env(safe-area-inset-top))]" : "h-[64px]",
+        isNative ? "h-[calc(72px+env(safe-area-inset-top))]" : "h-[64px]",
       )}
     />
   );

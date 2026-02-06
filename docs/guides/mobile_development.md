@@ -38,16 +38,16 @@ The Hushh mobile app uses **Next.js static export** in a native WebView, with **
 
 All 8 plugins exist on both platforms with matching methods:
 
-| Plugin | jsName | Purpose | iOS | Android |
-|--------|--------|---------|-----|---------|
-| **HushhAuth** | `HushhAuth` | Google/Apple Sign-In, Firebase | `HushhAuthPlugin.swift` | `HushhAuthPlugin.kt` |
-| **HushhVault** | `HushhVault` | Encryption, vault operations | `HushhVaultPlugin.swift` | `HushhVaultPlugin.kt` |
-| **HushhConsent** | `HushhConsent` | Token management, consent flow | `HushhConsentPlugin.swift` | `HushhConsentPlugin.kt` |
-| **HushhIdentity** | `HushhIdentity` | Investor identity resolution | `HushhIdentityPlugin.swift` | `HushhIdentityPlugin.kt` |
-| **Kai** | `Kai` | Investment analysis agent | `KaiPlugin.swift` | `KaiPlugin.kt` |
-| **HushhSync** | `HushhSync` | Cloud synchronization | `HushhSyncPlugin.swift` | `HushhSyncPlugin.kt` |
-| **HushhSettings** | `HushhSettings` | App preferences | `HushhSettingsPlugin.swift` | `HushhSettingsPlugin.kt` |
-| **HushhKeystore** | `HushhKeychain` | Secure key storage | `HushhKeystorePlugin.swift` | `HushhKeystorePlugin.kt` |
+| Plugin            | jsName          | Purpose                        | iOS                         | Android                  |
+| ----------------- | --------------- | ------------------------------ | --------------------------- | ------------------------ |
+| **HushhAuth**     | `HushhAuth`     | Google/Apple Sign-In, Firebase | `HushhAuthPlugin.swift`     | `HushhAuthPlugin.kt`     |
+| **HushhVault**    | `HushhVault`    | Encryption, vault operations   | `HushhVaultPlugin.swift`    | `HushhVaultPlugin.kt`    |
+| **HushhConsent**  | `HushhConsent`  | Token management, consent flow | `HushhConsentPlugin.swift`  | `HushhConsentPlugin.kt`  |
+| **HushhIdentity** | `HushhIdentity` | Investor identity resolution   | `HushhIdentityPlugin.swift` | `HushhIdentityPlugin.kt` |
+| **Kai**           | `Kai`           | Investment analysis agent      | `KaiPlugin.swift`           | `KaiPlugin.kt`           |
+| **HushhSync**     | `HushhSync`     | Cloud synchronization          | `HushhSyncPlugin.swift`     | `HushhSyncPlugin.kt`     |
+| **HushhSettings** | `HushhSettings` | App preferences                | `HushhSettingsPlugin.swift` | `HushhSettingsPlugin.kt` |
+| **HushhKeystore** | `HushhKeychain` | Secure key storage             | `HushhKeystorePlugin.swift` | `HushhKeystorePlugin.kt` |
 
 > Note: HushhKeystore uses jsName `HushhKeychain` for historical compatibility.
 
@@ -57,81 +57,81 @@ All 8 plugins exist on both platforms with matching methods:
 
 ### HushhAuth
 
-| Method | Description |
-|--------|-------------|
-| `signInWithGoogle()` | Native Google Sign-In → Firebase credential |
-| `signInWithApple()` | Native Apple Sign-In (iOS) / Firebase OAuth (Android) |
-| `signOut()` | Clear all auth state |
-| `getIdToken()` | Get cached/fresh Firebase ID token |
-| `getCurrentUser()` | Get user profile |
-| `isSignedIn()` | Check auth state |
+| Method               | Description                                           |
+| -------------------- | ----------------------------------------------------- |
+| `signInWithGoogle()` | Native Google Sign-In → Firebase credential           |
+| `signInWithApple()`  | Native Apple Sign-In (iOS) / Firebase OAuth (Android) |
+| `signOut()`          | Clear all auth state                                  |
+| `getIdToken()`       | Get cached/fresh Firebase ID token                    |
+| `getCurrentUser()`   | Get user profile                                      |
+| `isSignedIn()`       | Check auth state                                      |
 
 ### HushhVault
 
-| Method | Description |
-|--------|-------------|
-| `hasVault()` | Check if vault exists for user |
-| `getVault()` | Get vault status |
-| `setupVault()` | Initialize user vault |
-| `getFoodPreferences()` | Get encrypted food preferences |
+| Method                   | Description                      |
+| ------------------------ | -------------------------------- |
+| `hasVault()`             | Check if vault exists for user   |
+| `getVault()`             | Get vault status                 |
+| `setupVault()`           | Initialize user vault            |
+| `getFoodPreferences()`   | Get encrypted food preferences   |
 | `storeFoodPreferences()` | Store encrypted food preferences |
-| `getProfessionalData()` | Get encrypted professional data |
+| `getProfessionalData()`  | Get encrypted professional data  |
 
 ### HushhConsent
 
-| Method | Description |
-|--------|-------------|
-| `issueToken()` | Issue consent token locally |
-| `validateToken()` | Validate token signature/expiry |
-| `revokeToken()` | Revoke consent token |
+| Method                   | Description                            |
+| ------------------------ | -------------------------------------- |
+| `issueToken()`           | Issue consent token locally            |
+| `validateToken()`        | Validate token signature/expiry        |
+| `revokeToken()`          | Revoke consent token                   |
 | `issueVaultOwnerToken()` | Request VAULT_OWNER token from backend |
-| `getPending()` | Get pending consent requests |
-| `getActive()` | Get active consents |
-| `getHistory()` | Get consent audit history |
-| `approve()` | Approve pending consent |
-| `deny()` | Deny pending consent |
-| `createTrustLink()` | Create A2A delegation link |
-| `verifyTrustLink()` | Verify TrustLink signature |
+| `getPending()`           | Get pending consent requests           |
+| `getActive()`            | Get active consents                    |
+| `getHistory()`           | Get consent audit history              |
+| `approve()`              | Approve pending consent                |
+| `deny()`                 | Deny pending consent                   |
+| `createTrustLink()`      | Create A2A delegation link             |
+| `verifyTrustLink()`      | Verify TrustLink signature             |
 
 ### HushhIdentity
 
-| Method | Description |
-|--------|-------------|
-| `searchInvestors()` | Search investor profiles |
-| `getInvestor()` | Get investor by ID |
+| Method                  | Description                    |
+| ----------------------- | ------------------------------ |
+| `searchInvestors()`     | Search investor profiles       |
+| `getInvestor()`         | Get investor by ID             |
 | `syncInvestorProfile()` | Sync investor profile to vault |
 
 ### Kai
 
-| Method | Description |
-|--------|-------------|
-| `analyze()` | Start investment analysis |
-| `getDecisionHistory()` | Get past decisions |
-| `stream()` | Stream analysis with SSE |
+| Method                 | Description               |
+| ---------------------- | ------------------------- |
+| `analyze()`            | Start investment analysis |
+| `getDecisionHistory()` | Get past decisions        |
+| `stream()`             | Stream analysis with SSE  |
 
 ### HushhSync
 
-| Method | Description |
-|--------|-------------|
-| `syncToCloud()` | Sync local data to cloud |
-| `syncFromCloud()` | Pull data from cloud |
+| Method            | Description              |
+| ----------------- | ------------------------ |
+| `syncToCloud()`   | Sync local data to cloud |
+| `syncFromCloud()` | Pull data from cloud     |
 
 ### HushhSettings
 
-| Method | Description |
-|--------|-------------|
-| `get()` | Get setting value |
-| `set()` | Set setting value |
-| `remove()` | Remove setting |
+| Method                  | Description             |
+| ----------------------- | ----------------------- |
+| `get()`                 | Get setting value       |
+| `set()`                 | Set setting value       |
+| `remove()`              | Remove setting          |
 | `getCloudSyncEnabled()` | Check cloud sync status |
 
 ### HushhKeystore (jsName: HushhKeychain)
 
-| Method | Description |
-|--------|-------------|
-| `setSecureItem()` | Store secure value |
-| `getSecureItem()` | Retrieve secure value |
-| `removeSecureItem()` | Delete secure value |
+| Method               | Description           |
+| -------------------- | --------------------- |
+| `setSecureItem()`    | Store secure value    |
+| `getSecureItem()`    | Retrieve secure value |
+| `removeSecureItem()` | Delete secure value   |
 
 ---
 
@@ -252,13 +252,13 @@ class MainActivity : BridgeActivity() {
 
 ## Platform Comparison
 
-| Feature | Web | iOS Native | Android Native |
-|---------|-----|------------|----------------|
-| **Cloud Vault** | Yes | Yes | Yes |
-| **Sign-In** | Firebase JS | HushhAuth.swift | HushhAuth.kt |
-| **HTTP Client** | fetch() | URLSession | OkHttpClient |
-| **Vault Storage** | Web Crypto | Keychain | Keystore |
-| **Biometric** | No | FaceID/TouchID | Fingerprint |
+| Feature           | Web         | iOS Native      | Android Native |
+| ----------------- | ----------- | --------------- | -------------- |
+| **Cloud Vault**   | Yes         | Yes             | Yes            |
+| **Sign-In**       | Firebase JS | HushhAuth.swift | HushhAuth.kt   |
+| **HTTP Client**   | fetch()     | URLSession      | OkHttpClient   |
+| **Vault Storage** | Web Crypto  | Keychain        | Keystore       |
+| **Biometric**     | No          | FaceID/TouchID  | Fingerprint    |
 
 ---
 
@@ -315,13 +315,13 @@ if (Capacitor.isNativePlatform()) {
 
 ### Plugins Requiring Transformation
 
-| Plugin | Methods | Status |
-|--------|---------|--------|
-| WorldModel | getMetadata, getAttributes, getUserDomains, listDomains, getAvailableScopes | Required |
-| Kai | getInitialChatState, chat | Required |
-| Identity | autoDetect, getIdentityStatus, getEncryptedProfile | Required |
-| Vault | All crypto methods | Not needed (simple types) |
-| Consent | Token methods | Not needed (simple types) |
+| Plugin     | Methods                                                                     | Status                    |
+| ---------- | --------------------------------------------------------------------------- | ------------------------- |
+| WorldModel | getMetadata, getAttributes, getUserDomains, listDomains, getAvailableScopes | Required                  |
+| Kai        | getInitialChatState, chat                                                   | Required                  |
+| Identity   | autoDetect, getIdentityStatus, getEncryptedProfile                          | Required                  |
+| Vault      | All crypto methods                                                          | Not needed (simple types) |
+| Consent    | Token methods                                                               | Not needed (simple types) |
 
 ---
 
@@ -342,13 +342,13 @@ Next.js `/api` routes run on a Node.js server. When the app is deployed as a Cap
 
 When adding any new API feature:
 
-| Step | Location | Action |
-|------|----------|--------|
-| 1 | `app/api/.../route.ts` | Create Next.js API route (web only) |
-| 2 | `lib/capacitor/index.ts` | Add TypeScript interface |
-| 3 | `android/.../Plugin.kt` | Implement Kotlin method |
-| 4 | `ios/.../Plugin.swift` | Implement Swift method |
-| 5 | `lib/services/...-service.ts` | Add platform-aware routing |
+| Step | Location                      | Action                              |
+| ---- | ----------------------------- | ----------------------------------- |
+| 1    | `app/api/.../route.ts`        | Create Next.js API route (web only) |
+| 2    | `lib/capacitor/index.ts`      | Add TypeScript interface            |
+| 3    | `android/.../Plugin.kt`       | Implement Kotlin method             |
+| 4    | `ios/.../Plugin.swift`        | Implement Swift method              |
+| 5    | `lib/services/...-service.ts` | Add platform-aware routing          |
 
 ### Platform-Aware ApiService Pattern
 
@@ -385,23 +385,23 @@ export class ApiService {
 
 Native plugins call Python backend directly, bypassing Next.js:
 
-| Operation | Native (Swift/Kotlin) | Web (Next.js) | Backend |
-|-----------|----------------------|---------------|---------|
-| Vault Check | `POST /db/vault/check` | `GET /api/vault/check` | Python |
-| Vault Get | `POST /db/vault/get` | `GET /api/vault/get` | Python |
-| Vault Setup | `POST /db/vault/setup` | `POST /api/vault/setup` | Python |
-| Food Get | `POST /api/food/preferences` | `GET /api/vault/food/preferences` | Python |
-| Professional Get | `POST /api/professional/preferences` | `GET /api/vault/professional/preferences` | Python |
-| Consent Pending | `POST /api/consent/pending` | `GET /api/consent/pending` | Python |
-| Consent Active | `POST /api/consent/active` | `GET /api/consent/active` | Python |
-| Consent History | `POST /api/consent/history` | `GET /api/consent/history` | Python |
+| Operation        | Native (Swift/Kotlin)                | Web (Next.js)                             | Backend |
+| ---------------- | ------------------------------------ | ----------------------------------------- | ------- |
+| Vault Check      | `POST /db/vault/check`               | `GET /api/vault/check`                    | Python  |
+| Vault Get        | `POST /db/vault/get`                 | `GET /api/vault/get`                      | Python  |
+| Vault Setup      | `POST /db/vault/setup`               | `POST /api/vault/setup`                   | Python  |
+| Food Get         | `POST /api/food/preferences`         | `GET /api/vault/food/preferences`         | Python  |
+| Professional Get | `POST /api/professional/preferences` | `GET /api/vault/professional/preferences` | Python  |
+| Consent Pending  | `POST /api/consent/pending`          | `GET /api/consent/pending`                | Python  |
+| Consent Active   | `POST /api/consent/active`           | `GET /api/consent/active`                 | Python  |
+| Consent History  | `POST /api/consent/history`          | `GET /api/consent/history`                | Python  |
 
 ### Backend URLs
 
-| Mode | URL |
-|------|-----|
+| Mode       | URL                                                          |
+| ---------- | ------------------------------------------------------------ |
 | Production | `https://consent-protocol-1006304528804.us-central1.run.app` |
-| Local Dev | `http://localhost:8080` |
+| Local Dev  | `http://localhost:8080`                                      |
 
 Native plugins have `defaultBackendUrl` hardcoded to production. For local testing, pass `backendUrl` parameter.
 
@@ -481,6 +481,7 @@ const config: CapacitorConfig = {
 ```
 
 **Production Checklist:**
+
 - [ ] Set `DEV_MODE = false` in `capacitor.config.ts`
 - [ ] Run `npm run cap:build` to create static export
 - [ ] Run `npx cap sync` to copy assets to native projects
@@ -490,10 +491,10 @@ const config: CapacitorConfig = {
 
 ## Device Requirements
 
-| Requirement | iOS | Android |
-|-------------|-----|---------|
+| Requirement    | iOS     | Android              |
+| -------------- | ------- | -------------------- |
 | **Minimum OS** | iOS 16+ | Android 11+ (API 30) |
-| **Target OS** | iOS 18 | Android 14+ |
+| **Target OS**  | iOS 18  | Android 14+          |
 
 ---
 
@@ -503,10 +504,10 @@ const config: CapacitorConfig = {
 
 The app follows a **Layered Navigation** model:
 
-| Level | Description | Examples | Back Button |
-|-------|-------------|----------|-------------|
-| **1** | Root Pages | `/dashboard`, `/profile` | Exit App Dialog |
-| **2+** | Sub Pages | `/dashboard/kai`, `/settings` | Navigate to Parent |
+| Level  | Description | Examples                      | Back Button        |
+| ------ | ----------- | ----------------------------- | ------------------ |
+| **1**  | Root Pages  | `/dashboard`, `/profile`      | Exit App Dialog    |
+| **2+** | Sub Pages   | `/dashboard/kai`, `/settings` | Navigate to Parent |
 
 ### Exit Dialog Security
 
@@ -528,7 +529,7 @@ When users exit from root-level pages:
 - **StatusBarBlur** (native only): Fixed strip under the system status bar with height `env(safe-area-inset-top)`; uses the same glass style as the breadcrumb bar so both bands match.
 - **TopAppBar**: Fixed breadcrumb bar; height **64px**; on native sits below StatusBarBlur at `top: env(safe-area-inset-top)`.
 - Both use the **masked blur** style (`.top-bar-glass`): theme-aware semi-transparent background, `backdrop-filter: blur(3px) saturate(180%)`, and a faded bottom edge via `mask-image` so the bar blends into the content.
-- **No spacer in layout**: The main scroll container in `Providers` has `pt-[64px]` and extends under the fixed bar so content can scroll behind it; body already has `padding-top: env(safe-area-inset-top)` for the notch/safe area.
+- **No spacer in layout**: The main scroll container in `Providers` has `pt-[45px]` and extends under the fixed bar so content can scroll behind it; body already has `padding-top: env(safe-area-inset-top)` for the notch/safe area.
 - **TopAppBarSpacer** is no longer used in the root layout; the scroll container’s padding provides clearance. The component remains available if a page needs to reserve space for the bar outside the main providers layout.
 
 ---
@@ -564,22 +565,22 @@ When users exit from root-level pages:
 
 ### Implementation Roadmap
 
-| Phase | Feature | iOS | Android | Status |
-|-------|---------|-----|---------|--------|
-| **Phase 1** | Local SQLite Vault | CoreData | Room | 🔜 Planned |
-| **Phase 2** | Local MCP Server | HushhMCPPlugin | HushhMCPPlugin | 🔜 Planned |
-| **Phase 3** | On-Device LLM | MLX Framework | MediaPipe + Gemma | 🔜 Planned |
-| **Phase 4** | System AI Integration | Apple Intelligence | Gemini / AICore | 🔜 Planned |
+| Phase       | Feature               | iOS                | Android           | Status     |
+| ----------- | --------------------- | ------------------ | ----------------- | ---------- |
+| **Phase 1** | Local SQLite Vault    | CoreData           | Room              | 🔜 Planned |
+| **Phase 2** | Local MCP Server      | HushhMCPPlugin     | HushhMCPPlugin    | 🔜 Planned |
+| **Phase 3** | On-Device LLM         | MLX Framework      | MediaPipe + Gemma | 🔜 Planned |
+| **Phase 4** | System AI Integration | Apple Intelligence | Gemini / AICore   | 🔜 Planned |
 
 ### On-Device AI Options
 
-| Option | Platform | Pros | Cons |
-|--------|----------|------|------|
-| **Apple Intelligence** | iOS 18+ | Native, no model download, optimized | Limited to iOS 18+ devices |
-| **MLX Swift** | iOS | Full control, custom models, Apple Silicon | Requires model packaging (~1.5GB) |
-| **MediaPipe + Gemma** | Android | Google-supported, well-documented | Large model downloads (~1.5GB) |
-| **Gemini Nano (AICore)** | Android 14+ | Native, optimized | Limited device availability |
-| **@capgo/capacitor-llm** | Both | Ready-made plugin, cross-platform | Less customization |
+| Option                   | Platform    | Pros                                       | Cons                              |
+| ------------------------ | ----------- | ------------------------------------------ | --------------------------------- |
+| **Apple Intelligence**   | iOS 18+     | Native, no model download, optimized       | Limited to iOS 18+ devices        |
+| **MLX Swift**            | iOS         | Full control, custom models, Apple Silicon | Requires model packaging (~1.5GB) |
+| **MediaPipe + Gemma**    | Android     | Google-supported, well-documented          | Large model downloads (~1.5GB)    |
+| **Gemini Nano (AICore)** | Android 14+ | Native, optimized                          | Limited device availability       |
+| **@capgo/capacitor-llm** | Both        | Ready-made plugin, cross-platform          | Less customization                |
 
 ### Why On-Device AI Matters
 
@@ -610,11 +611,11 @@ User: "Hey Siri, what should I have for dinner based on my preferences?"
 
 ### Device Requirements (Future)
 
-| Requirement | iOS | Android |
-|-------------|-----|---------|
-| **Minimum for Local AI** | A14+ chip (iPhone 12+) | 4GB+ RAM |
-| **For Apple Intelligence** | iOS 18+ | N/A |
-| **For Gemini Nano** | N/A | Android 14+ with AICore |
+| Requirement                | iOS                    | Android                 |
+| -------------------------- | ---------------------- | ----------------------- |
+| **Minimum for Local AI**   | A14+ chip (iPhone 12+) | 4GB+ RAM                |
+| **For Apple Intelligence** | iOS 18+                | N/A                     |
+| **For Gemini Nano**        | N/A                    | Android 14+ with AICore |
 
 ### Plugin Stub (Ready for Implementation)
 

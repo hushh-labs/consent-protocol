@@ -134,10 +134,10 @@ import { VaultFlow } from "@/components/vault/vault-flow";
 
 ## 4. Glass Classes (globals.css)
 
-| Class                | Usage                          | Status |
-| -------------------- | ------------------------------ | ------ |
-| `.glass-interactive` | Glass with hover effects       | Active |
-| `.glass-performant`  | GPU-optimized glass layer      | Active |
+| Class                | Usage                     | Status |
+| -------------------- | ------------------------- | ------ |
+| `.glass-interactive` | Glass with hover effects  | Active |
+| `.glass-performant`  | GPU-optimized glass layer | Active |
 
 > Note: Use the `effect="glass"` prop on Morphy-UX components (Button, Card) for glassmorphism effects, rather than CSS classes directly.
 
@@ -152,14 +152,14 @@ import { VaultFlow } from "@/components/vault/vault-flow";
 
 ### Morphy-UX Gradients (CSS Variables)
 
-| Token                      | Light Mode           | Dark Mode            |
-| -------------------------- | -------------------- | -------------------- |
-| `--morphy-primary-start`   | `#e91e63` (Pink)     | `#e91e63` (Pink)     |
-| `--morphy-primary-end`     | `#9c27b0` (Purple)   | `#9c27b0` (Purple)   |
-| `--morphy-secondary-start` | `#c0c0c0` (Silver)   | `#e91e63` (Pink)     |
-| `--morphy-secondary-end`   | `#e8e8e8` (Silver)   | `#9c27b0` (Purple)   |
+| Token                      | Light Mode         | Dark Mode          |
+| -------------------------- | ------------------ | ------------------ |
+| `--morphy-primary-start`   | `#e91e63` (Pink)   | `#e91e63` (Pink)   |
+| `--morphy-primary-end`     | `#9c27b0` (Purple) | `#9c27b0` (Purple) |
+| `--morphy-secondary-start` | `#c0c0c0` (Silver) | `#e91e63` (Pink)   |
+| `--morphy-secondary-end`   | `#e8e8e8` (Silver) | `#9c27b0` (Purple) |
 
-> Note: The pink/purple gradient is used for primary CTAs and branding. 
+> Note: The pink/purple gradient is used for primary CTAs and branding.
 > Additional color tokens are defined in `lib/morphy-ux/tokens/colors.ts`.
 
 ### Background Gradient Classes
@@ -224,7 +224,7 @@ import { Shield, Lock } from "lucide-react";
 2. **Safe Areas (Hardware Notch)**:
    - **Formula**: `max(env(safe-area-inset-top), 32px)` where a fallback is needed.
    - _Why 32px?_ Ensures functional padding on emulators or web views that report 0px.
-   - **Top bar**: Fixed bar is **64px** tall (breadcrumb bar); on native, StatusBarBlur adds `env(safe-area-inset-top)` above it. Main scroll container uses `pt-[64px]` so content clears the bar and can scroll under it for the masked-blur effect.
+   - **Top bar**: Fixed bar is **64px** tall (breadcrumb bar); on native, StatusBarBlur adds `env(safe-area-inset-top)` above it. Main scroll container uses `pt-[45px]` so content clears the bar and can scroll under it for the masked-blur effect.
 3. **Toast Positioning**:
    - Place toasts at `margin-top: max(env(safe-area-inset-top), 4rem)` to avoid blocking the header or status bar.
    - Use `z-index: 9999` to float above all sheets/modals.
@@ -237,7 +237,7 @@ import { Shield, Lock } from "lucide-react";
    ```
 5. **Backgrounds**: Use fixed, oversized backgrounds (`h-[120vh]`) to prevent white gaps during scroll bounces.
 
-**Top bar (StatusBarBlur + TopAppBar):** The app chrome uses a single "masked blur" style (`.top-bar-glass` in `globals.css`): theme-aware semi-transparent background (`color-mix` with `lab` for light/dark), `backdrop-filter: blur(3px) saturate(180%)`, and a bottom-edge mask so the bar fades into content. On native, `use-status-bar` sets the Capacitor status bar to overlay the WebView; StatusBarBlur (safe-area strip) and TopAppBar (64px breadcrumb bar) share this style so both bands match. Content scrolls under the bar; the main scroll container has `pt-[64px]` and no spacer in the layout.
+**Top bar (StatusBarBlur + TopAppBar):** The app chrome uses a single "masked blur" style (`.top-bar-glass` in `globals.css`): theme-aware semi-transparent background (`color-mix` with `lab` for light/dark), `backdrop-filter: blur(3px) saturate(180%)`, and a bottom-edge mask so the bar fades into content. On native, `use-status-bar` sets the Capacitor status bar to overlay the WebView; StatusBarBlur (safe-area strip) and TopAppBar (64px breadcrumb bar) share this style so both bands match. Content scrolls under the bar; the main scroll container has `pt-[45px]` and no spacer in the layout.
 
 ---
 
@@ -267,8 +267,8 @@ import { Shield, Lock } from "lucide-react";
 | Path                | Purpose                       | Updateable       |
 | ------------------- | ----------------------------- | ---------------- |
 | `components/ui/`    | Stock Shadcn/UI components    | ✅ Yes (via CLI) |
-| `lib/morphy-ux/`    | Core Morphy-UX utilities      | 🛠 Custom         |
-| `lib/morphy-ux/ui/` | Morphy-enhanced UI components | 🛠 Custom         |
+| `lib/morphy-ux/`    | Core Morphy-UX utilities      | 🛠 Custom        |
+| `lib/morphy-ux/ui/` | Morphy-enhanced UI components | 🛠 Custom        |
 
 ---
 
@@ -509,7 +509,11 @@ CacheProvider (lib/cache/cache-context.tsx)
 ### 16.2 CacheService Usage
 
 ```tsx
-import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
+import {
+  CacheService,
+  CACHE_KEYS,
+  CACHE_TTL,
+} from "@/lib/services/cache-service";
 
 const cache = CacheService.getInstance();
 
@@ -517,7 +521,9 @@ const cache = CacheService.getInstance();
 cache.set(CACHE_KEYS.WORLD_MODEL_METADATA(userId), data, CACHE_TTL.MEDIUM);
 
 // Get (returns null if expired)
-const cached = cache.get<WorldModelMetadata>(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+const cached = cache.get<WorldModelMetadata>(
+  CACHE_KEYS.WORLD_MODEL_METADATA(userId),
+);
 
 // Invalidate
 cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
@@ -527,12 +533,12 @@ cache.clear(); // Clear all
 
 ### 16.3 Cache Keys and TTLs
 
-| Key Pattern | TTL | Usage |
-|-------------|-----|-------|
-| `world_model_metadata_{userId}` | 5 min | User's domain metadata |
-| `vault_status_{userId}` | 1 min | Vault status and domain counts |
-| `active_consents_{userId}` | 1 min | Active consent tokens |
-| `portfolio_data_{userId}` | 5 min | Kai portfolio data |
+| Key Pattern                     | TTL   | Usage                          |
+| ------------------------------- | ----- | ------------------------------ |
+| `world_model_metadata_{userId}` | 5 min | User's domain metadata         |
+| `vault_status_{userId}`         | 1 min | Vault status and domain counts |
+| `active_consents_{userId}`      | 1 min | Active consent tokens          |
+| `portfolio_data_{userId}`       | 5 min | Kai portfolio data             |
 
 ### 16.4 CacheProvider Hook
 
@@ -540,11 +546,8 @@ cache.clear(); // Clear all
 import { useCache } from "@/lib/cache/cache-context";
 
 function MyComponent() {
-  const { 
-    getWorldModelMetadata, 
-    setWorldModelMetadata,
-    invalidateUser 
-  } = useCache();
+  const { getWorldModelMetadata, setWorldModelMetadata, invalidateUser } =
+    useCache();
 
   // Check cache first
   const cached = getWorldModelMetadata(userId);
@@ -601,7 +604,7 @@ gsap.to(newPage, { opacity: 1, ... });
 onComplete: () => {
   newPage.style.removeProperty("display");
   newPage.style.removeProperty("opacity");
-}
+};
 ```
 
 ### 17.3 Scroll Container Hierarchy
@@ -624,10 +627,10 @@ body (h-screen, overflow-hidden)
 
 ### 16.1 App Background Classes
 
-| Class                   | Description                                      |
-| ----------------------- | ------------------------------------------------ |
-| `.morphy-app-bg`        | Main app background gradient                     |
-| `.morphy-app-bg-radial` | Subtle radial glow overlay from top              |
+| Class                   | Description                         |
+| ----------------------- | ----------------------------------- |
+| `.morphy-app-bg`        | Main app background gradient        |
+| `.morphy-app-bg-radial` | Subtle radial glow overlay from top |
 
 ### 16.2 Light Mode Background
 
@@ -666,12 +669,12 @@ Deep dark gradient without gold tones:
 
 ### 16.4 Brand Colors
 
-| Token                      | Light Mode           | Dark Mode            |
-| -------------------------- | -------------------- | -------------------- |
-| `--morphy-primary-start`   | `#e91e63` (Pink)     | `#e91e63` (Pink)     |
-| `--morphy-primary-end`     | `#9c27b0` (Purple)   | `#9c27b0` (Purple)   |
-| `--morphy-secondary-start` | `#c0c0c0` (Silver)   | `#e91e63` (Pink)     |
-| `--morphy-secondary-end`   | `#e8e8e8` (Silver)   | `#9c27b0` (Purple)   |
+| Token                      | Light Mode         | Dark Mode          |
+| -------------------------- | ------------------ | ------------------ |
+| `--morphy-primary-start`   | `#e91e63` (Pink)   | `#e91e63` (Pink)   |
+| `--morphy-primary-end`     | `#9c27b0` (Purple) | `#9c27b0` (Purple) |
+| `--morphy-secondary-start` | `#c0c0c0` (Silver) | `#e91e63` (Pink)   |
+| `--morphy-secondary-end`   | `#e8e8e8` (Silver) | `#9c27b0` (Purple) |
 
 ---
 
@@ -685,19 +688,20 @@ The Kai investment dashboard uses specialized components for displaying portfoli
 
 ### 17.1 Component Architecture
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
+| Component               | Location                                            | Purpose                            |
+| ----------------------- | --------------------------------------------------- | ---------------------------------- |
 | `PortfolioHistoryChart` | `components/kai/charts/portfolio-history-chart.tsx` | Real historical data visualization |
-| `TransactionActivity` | `components/kai/cards/transaction-activity.tsx` | Recent trades and activity |
-| `IncomeDetailCard` | `components/kai/cards/income-detail-card.tsx` | Detailed income breakdown |
-| `CashFlowCard` | `components/kai/cards/cash-flow-card.tsx` | Cash flow summary |
-| `AssetAllocationDonut` | `components/kai/charts/asset-allocation-donut.tsx` | Asset allocation pie chart |
+| `TransactionActivity`   | `components/kai/cards/transaction-activity.tsx`     | Recent trades and activity         |
+| `IncomeDetailCard`      | `components/kai/cards/income-detail-card.tsx`       | Detailed income breakdown          |
+| `CashFlowCard`          | `components/kai/cards/cash-flow-card.tsx`           | Cash flow summary                  |
+| `AssetAllocationDonut`  | `components/kai/charts/asset-allocation-donut.tsx`  | Asset allocation pie chart         |
 
 ### 17.2 Data Integrity Principle
 
 **Charts should only display real data.** Never use `Math.random()` or mock data in production charts.
 
 Available data from brokerage statements:
+
 - `historical_values[]` - Quarterly/monthly portfolio values from statement charts
 - `transactions[]` - BUY, SELL, DIVIDEND, REINVEST activity
 - `cash_flow` - Opening/closing balances, deposits, withdrawals
@@ -718,7 +722,7 @@ import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history
   endingValue={totalValue}
   statementPeriod="Feb 27 - Mar 31, 2021"
   height={180}
-/>
+/>;
 
 // Falls back to period summary if data.length < 2
 ```
@@ -728,10 +732,7 @@ import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history
 ```tsx
 import { TransactionActivity } from "@/components/kai/cards/transaction-activity";
 
-<TransactionActivity 
-  transactions={portfolioData.transactions}
-  maxItems={5}
-/>
+<TransactionActivity transactions={portfolioData.transactions} maxItems={5} />;
 ```
 
 ---
@@ -740,17 +741,22 @@ import { TransactionActivity } from "@/components/kai/cards/transaction-activity
 
 ### 18.1 Component Selection
 
-| Use Case | Component | Import |
-|----------|-----------|--------|
-| Content panels that switch | `Tabs` | `@/lib/morphy-ux/ui/tabs` |
-| Single value selection | `SegmentedControl` | `@/lib/morphy-ux/ui/segmented-control` |
+| Use Case                   | Component          | Import                                 |
+| -------------------------- | ------------------ | -------------------------------------- |
+| Content panels that switch | `Tabs`             | `@/lib/morphy-ux/ui/tabs`              |
+| Single value selection     | `SegmentedControl` | `@/lib/morphy-ux/ui/segmented-control` |
 
 **NEVER** import tabs from `@/components/ui/tabs` - always use Morphy-UX tabs for Material 3 ripple effects.
 
 ### 18.2 Morphy-UX Tabs
 
 ```tsx
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/lib/morphy-ux/ui/tabs";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/lib/morphy-ux/ui/tabs";
 
 <Tabs value={activeTab} onValueChange={setActiveTab}>
   <TabsList>
@@ -759,7 +765,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/lib/morphy-ux/ui/tab
   </TabsList>
   <TabsContent value="overview">...</TabsContent>
   <TabsContent value="details">...</TabsContent>
-</Tabs>
+</Tabs>;
 ```
 
 ### 18.3 SegmentedControl

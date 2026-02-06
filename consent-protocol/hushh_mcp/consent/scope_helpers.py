@@ -34,10 +34,13 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
     if scope == "vault.owner":
         return ConsentScope.VAULT_OWNER
 
-    # Dynamic attr.* scopes
+    # Dynamic attr.* scopes - each domain gets isolated handling
+    # CRITICAL: Do NOT map all attr.* to WORLD_MODEL_READ - this breaks isolation!
+    # Instead, we use WORLD_MODEL_READ as a base but validate scope strings directly
     if generator.is_dynamic_scope(scope):
         domain, attribute_key, is_wildcard = generator.parse_scope(scope)
-        # All attr.* scopes map to WORLD_MODEL_READ (write determined by operation context)
+        # Return WORLD_MODEL_READ but scope validation will check exact domain match
+        # This allows dynamic scopes while maintaining isolation
         return ConsentScope.WORLD_MODEL_READ
 
     # World model scopes
@@ -61,6 +64,59 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
 
     # Default to custom temporary
     return ConsentScope.CUSTOM_TEMPORARY
+
+
+def scope_matches(granted_scope: str, requested_scope: str) -> bool:
+    """
+    Check if a granted scope satisfies a requested scope.
+    
+    This is the KEY function for scope isolation. It ensures:
+    - attr.financial.* ONLY matches attr.financial.* or attr.financial.{specific}
+    - attr.financial.* does NOT match attr.food.* or other domains
+    - world_model.read matches ALL attr.* scopes (full access)
+    - vault.owner matches EVERYTHING (master key)
+    
+    Args:
+        granted_scope: The scope that was granted (from token)
+        requested_scope: The scope being requested (from operation)
+    
+    Returns:
+        True if granted scope satisfies requested scope
+    """
+    # Exact match
+    if granted_scope == requested_scope:
+        return True
+    
+    # Master key: vault.owner grants everything
+    if granted_scope == "vault.owner":
+        return True
+    
+    # world_model.read grants access to ALL attr.* domains
+    if granted_scope == "world_model.read":
+        generator = get_scope_generator()
+        if generator.is_dynamic_scope(requested_scope):
+            return True
+    
+    # Wildcard matching for attr.* scopes
+    generator = get_scope_generator()
+    if generator.is_dynamic_scope(granted_scope) and generator.is_dynamic_scope(requested_scope):
+        # Both are attr.* scopes - check domain isolation
+        granted_domain, _, granted_wildcard = generator.parse_scope(granted_scope)
+        requested_domain, _, _ = generator.parse_scope(requested_scope)
+        
+        # Domain must match for isolation
+        if granted_domain != requested_domain:
+            return False
+        
+        # If granted is wildcard (attr.domain.*), it matches all in that domain
+        if granted_wildcard:
+            return True
+        
+        # Otherwise, must be exact match (already checked above)
+        return granted_scope == requested_scope
+    
+    return False
+
 
 
 def get_scope_description(scope: str) -> str:
