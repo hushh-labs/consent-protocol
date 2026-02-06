@@ -55,6 +55,9 @@ const config: CapacitorConfig = {
     Kai: {
       backendUrl: BACKEND_URL,
     },
+    HushhOnboarding: {
+      backendUrl: BACKEND_URL,
+    },
     WorldModel: {
       backendUrl: BACKEND_URL,
     },
