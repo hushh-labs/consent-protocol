@@ -168,7 +168,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6 pb-28">
+    <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6 pb-40">
       {/* Profile Header */}
       <div className="text-center space-y-4">
         {user?.photoURL ? (
