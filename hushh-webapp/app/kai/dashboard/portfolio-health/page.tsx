@@ -380,14 +380,6 @@ export default function PortfolioHealthPage() {
             <h1 className="text-xl font-semibold">Portfolio Optimization</h1>
           </div>
         </div>
-        <Button
-          variant="muted"
-          onClick={() => router.push("/kai/dashboard")}
-          className="cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Dashboard
-        </Button>
       </div>
 
       {/* AI Reasoning Accordion - Shows during thinking phase, persists when complete */}
@@ -461,7 +453,7 @@ export default function PortfolioHealthPage() {
             <CardContent className="p-0">
               <div className="grid md:grid-cols-2 gap-0 border-b border-border/10">
                 {/* Visual Analytics Column */}
-                <div className="p-8 border-r border-border/10 bg-muted/10 relative">
+                <div className="p-4 md:p-8 border-b md:border-b-0 md:border-r border-border/10 bg-muted/10 relative">
                   <div className="absolute top-4 left-6 text-[10px] font-black uppercase tracking-widest text-primary/60">
                     Health Dimensions
                   </div>
@@ -510,36 +502,69 @@ export default function PortfolioHealthPage() {
                 </div>
 
                 {/* Score & Reasons Column */}
-                <div className="p-8 space-y-8">
+                <div className="p-6 md:p-8 flex flex-col justify-center space-y-8">
                   {typeof result.summary.health_score === "number" && (
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-end">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider mb-1">Portfolio Alpha Alignment Index</span>
-                          <span className="text-4xl font-black text-emerald-500">{result.summary.health_score.toFixed(0)}%</span>
+                    <div className="space-y-6">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
+                            Alpha Alignment
+                          </span>
+                          {result.summary.projected_health_score && (
+                            <Badge variant="outline" className="bg-emerald-500/5 text-[9px] font-black uppercase tracking-widest border-emerald-500/20 text-emerald-600 dark:text-emerald-400 h-6">
+                              Projected: {result.summary.projected_health_score.toFixed(0)}%
+                            </Badge>
+                          )}
                         </div>
-                        {result.summary.projected_health_score && (
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-black text-primary/60 uppercase tracking-widest mb-1">Projected</span>
-                            <span className="text-xl font-black text-primary">→ {result.summary.projected_health_score.toFixed(0)}%</span>
-                          </div>
-                        )}
+                        
+                        <div className="flex items-baseline gap-4">
+                          <span className="text-6xl font-black text-foreground tracking-tighter leading-none">
+                            {result.summary.health_score.toFixed(0)}
+                            <span className="text-3xl text-muted-foreground/50 ml-1">%</span>
+                          </span>
+                          
+                          {result.summary.projected_health_score && (
+                            <div className="flex items-center gap-2 mb-1.5 animate-pulse opacity-80">
+                              <ArrowRight className="w-5 h-5 text-emerald-500" />
+                              <span className="text-2xl font-bold text-emerald-500">
+                                {result.summary.projected_health_score.toFixed(0)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <Progress value={result.summary.health_score} className="h-3 bg-muted rounded-full" indicatorClassName="bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500" />
+
+                      <div className="space-y-2">
+                        <Progress 
+                          value={result.summary.health_score} 
+                          className="h-2.5 bg-muted/50 rounded-full overflow-hidden" 
+                          indicatorClassName={cn(
+                             "bg-gradient-to-r transition-all duration-1000",
+                             result.summary.health_score < 40 ? "from-red-500 to-amber-500" :
+                             result.summary.health_score < 70 ? "from-amber-500 to-emerald-500" :
+                             "from-emerald-500 to-emerald-400"
+                          )} 
+                        />
+                        <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                          <span>Critical</span>
+                          <span>Healthy</span>
+                          <span>Optimal</span>
+                        </div>
+                      </div>
                     </div>
                   )}
 
-                  <div className="space-y-4">
+                  <div className="space-y-4 pt-4 border-t border-border/10">
                     <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
-                      <ListChecks className="w-4 h-4 text-primary" />
+                      <ListChecks className="w-3.5 h-3.5 text-primary" />
                       Strategic Insights
                     </h4>
                     {Array.isArray(result.summary.health_reasons) && result.summary.health_reasons.length > 0 ? (
                       <ul className="space-y-3">
                         {result.summary.health_reasons.slice(0, 3).map((r, idx) => (
-                          <li key={idx} className="flex gap-3 text-sm text-foreground/80 leading-snug items-start">
-                            <div className="w-1 h-1 rounded-full bg-primary mt-2 shrink-0" />
-                            <span className="font-medium">{r}</span>
+                          <li key={idx} className="flex gap-3 text-sm text-foreground/80 leading-snug items-start group">
+                            <div className="w-1.5 h-1.5 rounded-full bg-primary/60 mt-1.5 shrink-0 group-hover:bg-primary transition-colors" />
+                            <span className="font-medium group-hover:text-foreground transition-colors">{r}</span>
                           </li>
                         ))}
                       </ul>
@@ -551,13 +576,13 @@ export default function PortfolioHealthPage() {
               </div>
 
               {result.summary.portfolio_diagnostics && (
-                <div className="p-6 grid gap-4 grid-cols-1 sm:grid-cols-3">
+                <div className="p-4 md:p-6 grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
                   {[
                     { label: "Exposure Value", value: result.summary.portfolio_diagnostics.total_losers_value ? `$${result.summary.portfolio_diagnostics.total_losers_value.toLocaleString()}` : "N/A", icon: Target },
                     { label: "Avoid Risk", value: result.summary.portfolio_diagnostics.avoid_weight_estimate_pct ? `${result.summary.portfolio_diagnostics.avoid_weight_estimate_pct}%` : "0%", icon: ShieldCheck },
                     { label: "Alpha Conviction", value: result.summary.portfolio_diagnostics.investable_weight_estimate_pct ? `${result.summary.portfolio_diagnostics.investable_weight_estimate_pct}%` : "0%", icon: Zap }
                   ].map((stat, i) => (
-                    <div key={i} className="flex items-center gap-4 px-6 py-5 rounded-3xl bg-muted/30 border border-border/40 shadow-sm">
+                    <div key={i} className="flex items-center gap-3 md:gap-4 px-4 py-4 md:px-6 md:py-5 rounded-3xl bg-muted/30 border border-border/40 shadow-sm">
                       <div className="p-3 rounded-2xl bg-primary/10">
                         <stat.icon className="w-5 h-5 text-primary" />
                       </div>
@@ -654,7 +679,7 @@ export default function PortfolioHealthPage() {
                   <ArrowRight className="w-3 h-3" />
                   <span>Optimized Resilience</span>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                    <div className="h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-[10px] font-black text-red-500">
                      HIGH SPECULATIVE RISK
                    </div>
