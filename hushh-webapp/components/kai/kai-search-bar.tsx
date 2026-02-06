@@ -41,7 +41,7 @@ interface Suggestion {
 export function KaiSearchBar({
   onCommand,
   holdings = [],
-  placeholder = "Kai Analysis (Coming Soon)",
+  placeholder = "Hushh Analysis (Coming Soon)",
   disabled = false,
 }: KaiSearchBarProps) {
   const [input, setInput] = useState("");
