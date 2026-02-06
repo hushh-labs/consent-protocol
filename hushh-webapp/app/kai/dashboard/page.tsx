@@ -97,9 +97,9 @@ export default function KaiPage() {
   };
  
   return (
-    <div className="relative min-h-screen">
+    <div className="relative w-full">
       {/* Main Content - KaiFlow handles all states - Added pb-40 for search bar clearance */}
-      <div className="w-full px-4 py-4 pb-40 sm:px-6 sm:py-6">
+      <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
  
         <KaiFlow
           userId={user.uid}
@@ -114,8 +114,13 @@ export default function KaiPage() {
       {/* Search Bar - Only show on dashboard state */}
       {flowState === "dashboard" && (
         <KaiSearchBar
-          onCommand={handleCommand}
-          holdings={holdings}
+          onCommand={(cmd, params) => {
+            if (cmd === "analyze" && params?.symbol) {
+              // Handle analyze command
+              console.log("Analyze:", params.symbol);
+            }
+          }}
+          holdings={[]} // Pass actual holdings if available
           disabled={false}
         />
       )}
