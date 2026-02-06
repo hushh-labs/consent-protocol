@@ -24,6 +24,7 @@ import { useConsentActions, type PendingConsent } from "@/lib/consent";
 import { ApiService } from "@/lib/services/api-service";
 import { useAuth } from "@/hooks/use-auth";
 import { initializeFCM, FCM_MESSAGE_EVENT } from "@/lib/notifications";
+import { Capacitor } from "@capacitor/core";
 
 // ============================================================================
 // Helpers
@@ -224,6 +225,23 @@ export function ConsentNotificationProvider({
     console.log("🔔 [NotificationProvider] Polling for pending (vault unlocked)");
     fetchPendingAndShowToasts(userId);
   }, [isVaultUnlocked, fetchPendingAndShowToasts]);
+
+  // Native fallback polling (iOS Simulator cannot receive APNs push).
+  // Keep this light: refresh pending list periodically while vault is unlocked.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (!isVaultUnlocked) return;
+
+    const userId = sessionStorage.getItem("user_id");
+    if (!userId) return;
+
+    const intervalMs = 10_000;
+    const id = window.setInterval(() => {
+      fetchPendingRef.current(userId);
+    }, intervalMs);
+
+    return () => window.clearInterval(id);
+  }, [isVaultUnlocked]);
 
   return <>{children}</>;
 }

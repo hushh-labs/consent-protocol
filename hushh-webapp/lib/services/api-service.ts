@@ -370,12 +370,27 @@ export class ApiService {
       );
     }
 
+    // Scope is required by backend. On native we enforce + normalize to prevent
+    // silent failures (e.g. sending scope="").
+    const rawScope = (data.scope || "").trim();
+    if (!rawScope) {
+      return new Response(
+        JSON.stringify({ error: "Missing required parameter: scope" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const normalizedScope =
+      rawScope === "VAULT_OWNER" || rawScope === "ConsentScope.VAULT_OWNER"
+        ? "vault.owner"
+        : rawScope;
+
     if (Capacitor.isNativePlatform()) {
       try {
         // Use revokeConsent that calls the backend and returns lockVault flag
         const result = await HushhConsent.revokeConsent({
           userId: data.userId,
-          scope: data.scope || "",
+          scope: normalizedScope,
           vaultOwnerToken,
         });
 
@@ -398,7 +413,7 @@ export class ApiService {
       headers: {
         Authorization: `Bearer ${vaultOwnerToken}`,
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, scope: normalizedScope }),
     });
   }
 
@@ -1049,11 +1064,31 @@ export class ApiService {
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
+            let sawTerminalEvent = false;
             Kai.addListener(
               PORTFOLIO_STREAM_EVENT,
               (event: { data?: Record<string, unknown> }) => {
-                const data = event?.data !== undefined ? event.data : event;
-                controller.enqueue(encoder.encode("data: " + JSON.stringify(data) + "\n"));
+                // Android wrapper shape: { data: { type, ... } }
+                // iOS direct shape: { type, ... , data: <analysis> }
+                // If `type` exists at top-level, it's the SSE event itself.
+                const data =
+                  (event as any)?.type !== undefined
+                    ? (event as any)
+                    : event?.data !== undefined
+                      ? event.data
+                      : (event as any);
+                // Emit standard SSE frame terminator so consumers that split on
+                // double-newlines behave consistently on native.
+                controller.enqueue(
+                  encoder.encode("data: " + JSON.stringify(data) + "\n\n")
+                );
+
+                // Terminal-event gate: only close once the UI has had a chance
+                // to observe a complete/error event.
+                const type = (data as any)?.type;
+                if (type === "complete" || type === "error") {
+                  sawTerminalEvent = true;
+                }
               }
             ).then((listener) => {
               Kai.streamPortfolioImport({
@@ -1064,11 +1099,23 @@ export class ApiService {
                 vaultOwnerToken: params.vaultOwnerToken,
               })
                 .then(() => {
-                  // Wait a tick to ensure all events are processed before closing
-                  setTimeout(() => {
-                    listener.remove();
-                    controller.close();
-                  }, 100);
+                  // Wait until we see a terminal event, otherwise allow a short
+                  // fallback delay (some servers may end stream without explicit complete).
+                  const close = () => {
+                    try {
+                      listener.remove();
+                    } finally {
+                      controller.close();
+                    }
+                  };
+
+                  const fallbackMs = 1500;
+                  if (sawTerminalEvent) {
+                    // Give the reader a tick to drain queued events.
+                    setTimeout(close, 100);
+                  } else {
+                    setTimeout(close, fallbackMs);
+                  }
                 })
                 .catch((e) => {
                   listener.remove();
@@ -1387,11 +1434,24 @@ export class ApiService {
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
+            let sawTerminalEvent = false;
             Kai.addListener(
               PORTFOLIO_STREAM_EVENT,
               (event: { data?: Record<string, unknown> }) => {
-                const payload = event?.data !== undefined ? event.data : event;
-                controller.enqueue(encoder.encode("data: " + JSON.stringify(payload) + "\n"));
+                const payload =
+                  (event as any)?.type !== undefined
+                    ? (event as any)
+                    : event?.data !== undefined
+                      ? event.data
+                      : (event as any);
+                controller.enqueue(
+                  encoder.encode("data: " + JSON.stringify(payload) + "\n\n")
+                );
+
+                const type = (payload as any)?.type;
+                if (type === "complete" || type === "error") {
+                  sawTerminalEvent = true;
+                }
               }
             ).then((listener) => {
               Kai.streamPortfolioAnalyzeLosers({
@@ -1399,11 +1459,20 @@ export class ApiService {
                 vaultOwnerToken,
               })
                 .then(() => {
-                  // Wait a tick to ensure all events are processed before closing
-                  setTimeout(() => {
-                    listener.remove();
-                    controller.close();
-                  }, 100);
+                  const close = () => {
+                    try {
+                      listener.remove();
+                    } finally {
+                      controller.close();
+                    }
+                  };
+
+                  const fallbackMs = 1500;
+                  if (sawTerminalEvent) {
+                    setTimeout(close, 100);
+                  } else {
+                    setTimeout(close, fallbackMs);
+                  }
                 })
                 .catch((e) => {
                   listener.remove();
