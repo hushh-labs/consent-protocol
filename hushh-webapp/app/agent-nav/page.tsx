@@ -114,7 +114,7 @@ export default function AgentNavPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6">
+    <div className="min-h-full flex-1 flex flex-col items-center justify-center px-4 sm:px-6">
       {/* Search Logo - Massive */}
       {/* Search Logo - Massive & Fixed Size */}
       <div className="mb-8 shrink-0 select-none pointer-events-none">
