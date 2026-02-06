@@ -474,7 +474,7 @@ export function DashboardView({
               />
             </DropdownMenuTrigger>
 
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-48" sideOffset={5} avoidCollisions={false}>
               {onReupload && (
                 <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
                   <Upload className="w-4 h-4 mr-2" />
