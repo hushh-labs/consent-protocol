@@ -46,6 +46,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { WorldModelService, DomainSummary } from "@/lib/services/world-model-service";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -171,17 +172,21 @@ export default function ProfilePage() {
     <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6 pb-40">
       {/* Profile Header */}
       <div className="text-center space-y-4">
-        {user?.photoURL ? (
-          <img
-            src={user.photoURL}
-            alt="Profile"
-            className="h-24 w-24 rounded-full mx-auto ring-4 ring-primary/20"
-          />
-        ) : (
-          <div className="h-24 w-24 rounded-full mx-auto bg-muted flex items-center justify-center ring-4 ring-primary/20">
-            <User className="h-12 w-12 text-muted-foreground" />
-          </div>
-        )}
+        <Avatar className="h-24 w-24 mx-auto ring-4 ring-primary/20">
+          <AvatarImage src={user?.photoURL || ""} alt={user?.displayName || "Profile"} />
+          <AvatarFallback className="bg-muted text-2xl font-semibold text-muted-foreground">
+            {user?.displayName ? (
+              user.displayName
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()
+            ) : (
+              <User className="h-12 w-12" />
+            )}
+          </AvatarFallback>
+        </Avatar>
         <div>
           <h1 className="text-2xl font-bold">{user?.displayName || "User"}</h1>
           <p className="text-muted-foreground text-sm">{user?.email}</p>
