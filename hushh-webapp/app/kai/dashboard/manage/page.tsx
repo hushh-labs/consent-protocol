@@ -604,13 +604,14 @@ export default function ManagePortfolioPage() {
       </div>
 
       {/* Save Button - Floating Action Style */}
+      {/* Save Button - Floating Action Style with Safe Area Support */}
       {hasChanges && (
-        <div className="fixed bottom-24 left-0 right-0 px-10 sm:px-16 z-110 pointer-events-none">
+        <div className="fixed bottom-0 left-0 right-0 px-10 sm:px-16 pb-[calc(5rem+env(safe-area-inset-bottom))] z-110 pointer-events-none">
           <div className="max-w-xs mx-auto pointer-events-auto">
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              variant="none"
+              variant="morphy"
               effect="fill"
               className="w-full h-12 text-sm font-black rounded-xl border-none shadow-xl"
               icon={{ 

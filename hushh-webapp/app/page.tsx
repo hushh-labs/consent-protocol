@@ -454,15 +454,36 @@ function LoginScreen() {
 }
 
 export default function Home() {
+  const { user, loading } = useAuth();
   const [showWelcome, setShowWelcome] = useState(true);
+
+  // Auto-dismiss welcome if already logged in (prevents flash of welcome screen)
+  useEffect(() => {
+    if (!loading && user) {
+      setShowWelcome(false);
+    }
+  }, [user, loading]);
 
   const handleGetStarted = () => {
     setShowWelcome(false);
   };
 
+  // 1. Loading: Show spinner to prevent flash
+  if (loading) {
+    return <HushhLoader label="Checking session..." variant="fullscreen" />;
+  }
+
+  // 2. Authenticated: Skip welcome, render LoginScreen (which behaves as redirector)
+  // LoginScreenContent handles the actual router.push
+  if (user) {
+    return <LoginScreen />;
+  }
+
+  // 3. Unauthenticated + First Visit: Show Welcome
   if (showWelcome) {
     return <WelcomeScreen onGetStarted={handleGetStarted} />;
   }
 
+  // 4. Unauthenticated + Clicked Get Started: Show Login
   return <LoginScreen />;
 }
