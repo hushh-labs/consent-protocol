@@ -405,4 +405,21 @@ export class KaiWeb extends WebPlugin implements KaiPlugin {
 
     return response.json();
   }
+
+  async streamPortfolioImport(_options: {
+    userId: string;
+    fileBase64: string;
+    fileName: string;
+    mimeType: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }> {
+    throw new Error("streamPortfolioImport is native-only; use ApiService.importPortfolioStream on web");
+  }
+
+  async streamPortfolioAnalyzeLosers(_options: {
+    body: Record<string, unknown>;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }> {
+    throw new Error("streamPortfolioAnalyzeLosers is native-only; use ApiService.analyzePortfolioLosersStream on web");
+  }
 }
