@@ -274,7 +274,7 @@ export function DashboardView({
       return allocation.map((item, index) => ({
         name: item.category,
         value: item.market_value,
-        color: `var(--chart-${(index % 5) + 1})`,
+        color: `hsl(var(--chart-${(index % 5) + 1}))`,
       }));
     }
     
@@ -287,31 +287,31 @@ export function DashboardView({
       data.push({
         name: "Cash",
         value: cashBalance || (totalValue * (cashPct || 0) / 100),
-        color: "var(--chart-1)",
+        color: "hsl(var(--chart-1))",
       });
     }
     if (equitiesPct || holdingsTotal > 0) {
       data.push({
         name: "Equities",
         value: holdingsTotal || (totalValue * (equitiesPct || 0) / 100),
-        color: "var(--chart-2)",
+        color: "hsl(var(--chart-2))",
       });
     }
     if (bondsPct) {
       data.push({
         name: "Bonds",
         value: totalValue * bondsPct / 100,
-        color: "var(--chart-3)",
+        color: "hsl(var(--chart-3))",
       });
     }
     
     // Fallback: create from holdings + cash
     if (data.length === 0 && totalValue > 0) {
       if (cashBalance > 0) {
-        data.push({ name: "Cash", value: cashBalance, color: "var(--chart-1)" });
+        data.push({ name: "Cash", value: cashBalance, color: "hsl(var(--chart-1))" });
       }
       if (holdingsTotal > 0) {
-        data.push({ name: "Equities", value: holdingsTotal, color: "var(--chart-2)" });
+        data.push({ name: "Equities", value: holdingsTotal, color: "hsl(var(--chart-2))" });
       }
     }
     
@@ -461,7 +461,7 @@ export function DashboardView({
           )}
 
 
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <MorphyButton 
                 variant="muted"
