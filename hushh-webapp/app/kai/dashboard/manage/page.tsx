@@ -112,6 +112,10 @@ function deriveRiskBucket(holdings: Holding[]): string {
   return "conservative";
 }
 
+const SpinningLoader = (props: any) => (
+  <Loader2 {...props} className={cn(props.className, "animate-spin")} />
+);
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -599,17 +603,25 @@ export default function ManagePortfolioPage() {
         </div>
       </div>
 
-      {/* Save Button - Fixed at bottom */}
+      {/* Save Button - Floating Action Style */}
       {hasChanges && (
-        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border z-[110]">
-          <Button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="w-full h-14 rounded-2xl shadow-lg"
-            icon={{ icon: isSaving ? Loader2 : Save, gradient: false }}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </Button>
+        <div className="fixed bottom-24 left-0 right-0 px-10 sm:px-16 z-110 pointer-events-none">
+          <div className="max-w-xs mx-auto pointer-events-auto">
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              variant="none"
+              effect="fill"
+              className="w-full h-12 text-sm font-black rounded-xl border-none shadow-xl"
+              icon={{ 
+                icon: isSaving ? SpinningLoader : Save,
+                gradient: false 
+              }}
+              loading={isSaving}
+            >
+              {isSaving ? "SAVING..." : "SAVE CHANGES"}
+            </Button>
+          </div>
         </div>
       )}
 
