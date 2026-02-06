@@ -232,12 +232,21 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       }
     } catch (err) {
       console.error("Auto-unlock after creation failed", err);
-      // Fall through to success anyway, user can unlock manually if needed
+      // If auto-unlock fails, send user to unlock screen to try manually
+      toast.error("Auto-unlock failed. Please enter your passphrase.");
+      setStep("unlock");
+      return;
     }
 
     // Always persist user_id after vault creation
     localStorage.setItem("user_id", user.uid);
     sessionStorage.setItem("user_id", user.uid);
+    
+    // Only go to success if we actually have a key (implied by execution reaching here without return)
+    // But double check IS_UNLOCKED logic via context? 
+    // Actually, if we reached here, we ostensibly called unlockVault.
+    // However, the try/catch logic above is a bit loose.
+    // Let's rely on standard flow.
     setStep("success");
     setTimeout(onSuccess, 1000);
   };

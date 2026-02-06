@@ -23,6 +23,7 @@ export type ColorVariant =
   | "metallic" // Metallic silver/gray variant for cards and surfaces
   | "mettalic-gradient" // Adaptive metallic gradient (light/dark)
   | "black" // Black variant for metallic gradient sections
+  | "morphy" // High contrast variant (Black on Light, White on Dark)
   | "multi";
 
 // New effect type for component styling
