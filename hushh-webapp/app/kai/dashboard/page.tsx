@@ -98,8 +98,8 @@ export default function KaiPage() {
  
   return (
     <div className="relative min-h-screen">
-      {/* Main Content - KaiFlow handles all states */}
-      <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
+      {/* Main Content - KaiFlow handles all states - Added pb-40 for search bar clearance */}
+      <div className="w-full px-4 py-4 pb-40 sm:px-6 sm:py-6">
  
         <KaiFlow
           userId={user.uid}
