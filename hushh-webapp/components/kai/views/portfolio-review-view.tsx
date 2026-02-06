@@ -841,7 +841,7 @@ export function PortfolioReviewView({
   </div>
 
   {/* Save Button - Refined Floating Action */}
-  <div className="fixed bottom-24 left-0 right-0 px-10 sm:px-16 z-50 pointer-events-none">
+  <div className="fixed bottom-24 left-0 right-0 px-10 sm:px-16 z-110 pointer-events-none">
     <div className="max-w-xs mx-auto pointer-events-auto">
       <MorphyButton
         variant="none"
