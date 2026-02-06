@@ -39,6 +39,7 @@ from mcp_modules.tools import (
     handle_check_consent_status,
     handle_delegate,
     handle_discover_user_domains,
+    handle_get_financial,
     handle_get_food,
     handle_get_professional,
     handle_list_scopes,
@@ -94,6 +95,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     handlers = {
         "request_consent": handle_request_consent,
         "validate_token": handle_validate_token,
+        "get_financial_profile": handle_get_financial,
         "get_food_preferences": handle_get_food,
         "get_professional_profile": handle_get_professional,
         "delegate_to_agent": handle_delegate,

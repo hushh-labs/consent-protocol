@@ -17,10 +17,12 @@ class HushhConsentToken(BaseModel):
     token: str
     user_id: UserID
     agent_id: AgentID
-    scope: ConsentScope
+    scope: ConsentScope  # Resolved enum (fallback to WORLD_MODEL_READ for dynamic scopes)
+    scope_str: str = ""  # Actual scope string from token (e.g., "attr.financial.*")
     issued_at: int  # epoch ms
     expires_at: int  # epoch ms
     signature: str
+
 
 # ==================== TrustLink ====================
 
