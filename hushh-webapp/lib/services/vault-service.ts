@@ -369,7 +369,11 @@ export class VaultService {
       headers,
       body: JSON.stringify({ userId, ...vaultData }),
     });
-    if (!response.ok) throw new Error("Failed to setup vault");
+    if (!response.ok) {
+      console.error("❌ [VaultService] setupVault failed:", response.status);
+      throw new Error("Failed to setup vault");
+    }
+    console.log("🔐 [VaultService] setupVault success");
   }
 
   // ============================================================================

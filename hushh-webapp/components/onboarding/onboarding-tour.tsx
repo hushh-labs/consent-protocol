@@ -189,10 +189,10 @@ export function OnboardingTour({ onComplete, onSkip }: OnboardingTourProps) {
             {/* Actions */}
             <div className="flex items-center justify-between gap-3">
               <Button
-                variant="link"
-                size="sm"
+                variant="muted"
+                size="lg"
                 onClick={handleSkip}
-                className="text-muted-foreground"
+                className="flex-1"
               >
                 Skip Tour
               </Button>
@@ -200,7 +200,7 @@ export function OnboardingTour({ onComplete, onSkip }: OnboardingTourProps) {
                 variant="gradient"
                 size="lg"
                 onClick={handleNext}
-                className="shadow-lg shadow-primary/25"
+                className="flex-1 shadow-lg shadow-primary/25"
                 showRipple
               >
                 {isLastStep ? "Get Started" : "Next"}
