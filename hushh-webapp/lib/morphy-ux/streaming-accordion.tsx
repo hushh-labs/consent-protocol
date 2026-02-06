@@ -128,6 +128,8 @@ export interface StreamingAccordionProps {
 
   /** Show streaming cursor */
   showCursor?: boolean;
+  /** Start expanded by default */
+  defaultExpanded?: boolean;
 }
 
 // ============================================================================
@@ -147,10 +149,11 @@ export function StreamingAccordion({
   icon = "spinner",
   iconClassName,
   showCursor = true,
+  defaultExpanded = false,
 }: StreamingAccordionProps) {
 
   // Accordion open state
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultExpanded);
   const wasStreamingRef = useRef(false);
   const autoCollapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 

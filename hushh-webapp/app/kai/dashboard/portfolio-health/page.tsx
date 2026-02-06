@@ -299,15 +299,15 @@ export default function PortfolioHealthPage() {
         </Button>
       </div>
 
-      {/* Streaming AI Reasoning Accordion */}
-      {(isStreaming || streamingText) && (
+      {/* Streaming AI Reasoning Accordion - hides when complete */}
+      {(isStreaming || (streamingText && !isComplete)) && (
         <StreamingAccordion
           id="ai-reasoning"
           title={`AI Reasoning${currentStage ? ` - ${stageMessages[currentStage] || currentStage}` : ""}`}
           text={streamingText}
           isStreaming={isStreaming}
           isComplete={isComplete}
-          icon="brain"
+          icon={isComplete ? "brain" : "spinner"}
           maxHeight="350px"
         />
       )}
