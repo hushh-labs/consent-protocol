@@ -190,9 +190,11 @@ export default function PortfolioHealthPage() {
         while (true) {
           const { done, value } = await reader.read();
           
-          if (done) break;
+          if (value) {
+            buffer += decoder.decode(value, { stream: true });
+          }
           
-          buffer += decoder.decode(value, { stream: true });
+          // Process events from buffer
           const events = parseSSEEvents(buffer);
           
           for (const event of events) {
@@ -221,6 +223,23 @@ export default function PortfolioHealthPage() {
           const lastNewline = buffer.lastIndexOf("\n\n");
           if (lastNewline !== -1) {
             buffer = buffer.slice(lastNewline + 2);
+          }
+          
+          if (done) {
+            // Process any remaining buffer before exiting
+            if (buffer.trim()) {
+              const finalEvents = parseSSEEvents(buffer);
+              for (const event of finalEvents) {
+                if (event.type === "complete") {
+                  setResult(event.data);
+                  setIsComplete(true);
+                  setIsStreaming(false);
+                } else if (event.type === "error") {
+                  throw new Error(event.message);
+                }
+              }
+            }
+            break;
           }
         }
 

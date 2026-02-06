@@ -125,6 +125,49 @@ static async getData() {
 ❌ **Missing native plugins**
 - Creating `app/api/feature/route.ts` without corresponding iOS/Android plugins
 
+❌ **Missing vaultOwnerToken prop**
+```typescript
+// WRONG: Component doesn't pass vaultOwnerToken
+<PortfolioReviewView
+  userId={userId}
+  vaultKey={vaultKey}
+  // Missing vaultOwnerToken - fails on native!
+/>
+
+// CORRECT: Always pass vaultOwnerToken
+<PortfolioReviewView
+  userId={userId}
+  vaultKey={vaultKey}
+  vaultOwnerToken={vaultOwnerToken}
+/>
+```
+
+❌ **Stream closes before final event**
+```typescript
+// WRONG: Closes immediately
+.then(() => {
+  listener.remove();
+  controller.close(); // Final event may be lost!
+})
+
+// CORRECT: Wait for events to process
+.then(() => {
+  setTimeout(() => {
+    listener.remove();
+    controller.close();
+  }, 100);
+})
+```
+
+❌ **Spinner during extraction**
+```typescript
+// WRONG: Spinner shows during extraction
+isStreaming={stage === "extracting" || stage === "streaming"}
+
+// CORRECT: Spinner only during initial stages
+isStreaming={stage === "uploading" || stage === "analyzing" || stage === "thinking"}
+```
+
 ✅ **Correct implementation**
 ```typescript
 // Component
@@ -233,11 +276,23 @@ For features that handle vault data:
 - [ ] Decryption happens client-side only
 - [ ] Tests use dynamically generated keys (see `testing.md`)
 
+## Streaming Features
+
+For features that use Server-Sent Events (SSE) streaming:
+
+- [ ] Native plugin implements streaming method (emits events via `notifyListeners`)
+- [ ] ApiService creates ReadableStream fed by plugin events
+- [ ] Component processes buffer after `done=true` to catch final events
+- [ ] Stream closes with delay to ensure all events are processed
+- [ ] Loading state (spinner) stops at correct stage (not during extraction)
+- [ ] See [Native Streaming Guide](./native_streaming.md) for detailed patterns
+
 ## See Also
 
 - [Project Context Map](../project_context_map.md) - Tri-flow architecture rules
 - [Component README](../../hushh-webapp/components/README.md) - Component guidelines
 - [Route Contracts](../reference/route_contracts.md) - Endpoint documentation
 - [Architecture](../reference/architecture.md) - System design
+- [Native Streaming Guide](./native_streaming.md) - SSE streaming patterns
 - [Testing Guide](../testing.md) - BYOK-compliant testing
 - [Security Policy](../security.md) - Security guidelines

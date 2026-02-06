@@ -637,6 +637,41 @@ export interface HushhMCPPlugin {
 
 ---
 
+## Authentication Token Passing
+
+**CRITICAL:** When components call services that require `vaultOwnerToken`, always pass it explicitly as a prop. Do not rely on sessionStorage fallback on native platforms.
+
+```typescript
+// Component receives vaultOwnerToken from context
+const { vaultOwnerToken } = useVault();
+
+// Pass to child components
+<PortfolioReviewView
+  vaultOwnerToken={vaultOwnerToken}
+  // ... other props
+/>
+
+// Service call includes token
+await WorldModelService.storeDomainData({
+  userId,
+  domain: "financial",
+  encryptedBlob: { ... },
+  summary: { ... },
+  vaultOwnerToken, // Explicitly passed
+});
+```
+
+**Why:** Native platforms may not have reliable sessionStorage access, and the service layer's fallback (`sessionStorage.getItem("vault_owner_token")`) may return `undefined`, causing authentication failures.
+
+## Streaming Features
+
+For Server-Sent Events (SSE) streaming on native:
+
+- Use native plugins that emit events via `notifyListeners()`
+- ApiService creates ReadableStream fed by plugin events
+- Components process buffer after stream ends to catch final events
+- See [Native Streaming Guide](./native_streaming.md) for complete patterns
+
 ## Testing Checklist
 
 Before releasing mobile updates:
@@ -647,9 +682,11 @@ Before releasing mobile updates:
 - [ ] Vault operations work end-to-end
 - [ ] Consent flow completes successfully
 - [ ] Kai analysis streams correctly
+- [ ] Streaming features complete and show results
+- [ ] Save to vault works (vaultOwnerToken passed correctly)
 - [ ] Backend URLs point to production
 - [ ] Biometric prompts work correctly
 
 ---
 
-_Last verified: January 2026 | Capacitor 8_
+_Last verified: February 2026 | Capacitor 8_
