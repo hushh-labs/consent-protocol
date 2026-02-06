@@ -326,12 +326,9 @@ export function EditHoldingModal({
               </p>
             </div>
           )}
-          
-          {/* Spatial padding for bottom bar */}
-          <div className="h-20" />
         </div>
-
-        <DrawerFooter className="border-t bg-background/80 backdrop-blur-lg">
+ 
+        <DrawerFooter className="border-t bg-background/80 backdrop-blur-lg pb-[calc(5rem+env(safe-area-inset-bottom))]">
           <div className="flex gap-3 w-full">
             <DrawerClose asChild>
               <Button
