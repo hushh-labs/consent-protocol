@@ -453,12 +453,12 @@ export function DashboardView({
           {onAnalyzeLosers && (
             <MorphyButton
               variant="muted"
-              size="sm"
+              size="default"
               onClick={onAnalyzeLosers}
-              className="h-8 cursor-pointer"
+              className="px-6 cursor-pointer rounded-2xl border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all font-bold"
               icon={{ icon: Activity }}
             >
-              <span className="ml-2">Optimize Portfolio</span>
+              <span className="ml-2 text-base">Optimize Portfolio</span>
             </MorphyButton>
           )}
 
@@ -468,7 +468,7 @@ export function DashboardView({
               <MorphyButton 
                 variant="muted"
                 size="icon"
-                className="h-8 w-8 rounded-full"
+                className="rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition-all"
                 aria-label="Portfolio options"
                 icon={{ icon: MoreVertical }}
               />
