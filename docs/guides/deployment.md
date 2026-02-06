@@ -125,6 +125,8 @@ gcloud secrets add-iam-policy-binding SECRET_NAME `
   --role="roles/secretmanager.secretAccessor"
 ```
 
+**Note:** Consent push notifications use **Firebase Cloud Messaging (FCM)**. They cannot be configured or sent using the gcloud CLI alone; Firebase Console is required for VAPID keys and project setup. gcloud is used here only for storing `FIREBASE_SERVICE_ACCOUNT_JSON` and deploying services. See [Consent Push (FCM)](../reference/consent_push_notifications.md).
+
 ---
 
 ## Database (Supabase)

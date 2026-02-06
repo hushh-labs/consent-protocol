@@ -202,39 +202,63 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                     
                     # Handle resolution
                     if resolution.status == "granted":
-                        # Fetch the token from active consents
-                        active_response = await client.get(
-                            f"{FASTAPI_URL}/api/consent/active",
-                            params={"userId": user_id},
-                            timeout=10.0
-                        )
+                        # CRITICAL: Fetch the token with retry logic
+                        # Token may take a moment to propagate to database
+                        import asyncio
                         
-                        if active_response.status_code == 200:
-                            active_list = active_response.json().get("active", [])
-                            # DB now stores dot notation scope
-                            active_token = next(
-                                (t for t in active_list if t.get("scope") == scope_str),
-                                None
+                        consent_token = None
+                        max_retries = 5
+                        retry_delay = 0.5  # 500ms
+                        
+                        for attempt in range(max_retries):
+                            logger.info(f"🔄 Fetching consent token (attempt {attempt + 1}/{max_retries})...")
+                            
+                            active_response = await client.get(
+                                f"{FASTAPI_URL}/api/consent/active",
+                                params={"userId": user_id},
+                                timeout=10.0
                             )
                             
-                            if active_token:
-                                token_id = active_token.get("token_id")
-                                logger.info("🎉 CONSENT GRANTED by user! Token received.")
-                                return [TextContent(type="text", text=json.dumps({
-                                    "status": "granted",
-                                    "consent_token": token_id,
-                                    "user_id": user_id,
-                                    "scope": scope_str,
-                                    "message": "✅ User approved consent!"
-                                }))]
+                            if active_response.status_code == 200:
+                                active_list = active_response.json().get("active", [])
+                                # Match by scope (DB stores dot notation)
+                                active_token = next(
+                                    (t for t in active_list if t.get("scope") == scope_str),
+                                    None
+                                )
+                                
+                                if active_token:
+                                    consent_token = active_token.get("token_id")
+                                    if consent_token:
+                                        logger.info(f"🎉 CONSENT GRANTED by user! Token received: {consent_token[:30]}...")
+                                        break
+                            
+                            # Wait before retrying
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_delay)
                         
-                        # Fallback if token not found
-                        return [TextContent(type="text", text=json.dumps({
-                            "status": "granted",
-                            "user_id": user_id,
-                            "scope": scope_str,
-                            "message": "✅ User approved consent! Token pending retrieval."
-                        }))]
+                        # Return with or without token, but ALWAYS indicate success
+                        if consent_token:
+                            return [TextContent(type="text", text=json.dumps({
+                                "status": "granted",
+                                "consent_token": consent_token,
+                                "user_id": user_id,
+                                "scope": scope_str,
+                                "message": "✅ User approved consent! Use this token with get_financial_profile, get_food_preferences, or get_professional_profile to access data.",
+                                "next_step": f"Call the appropriate data tool with this consent_token to retrieve the user's {scope_str.replace('attr.', '').replace('.*', '')} data."
+                            }))]
+                        else:
+                            # Token still not found - this is unusual but possible
+                            logger.warning("⚠️ Consent granted but token not found after retries")
+                            return [TextContent(type="text", text=json.dumps({
+                                "status": "granted_pending_token",
+                                "user_id": user_id,
+                                "scope": scope_str,
+                                "message": "✅ User approved consent, but token retrieval is pending. This may be a temporary sync issue.",
+                                "next_step": "Wait a moment and call request_consent again - it should return the existing token.",
+                                "retry_recommended": True
+                            }))]
+
                     
                     elif resolution.status == "denied":
                         logger.warning("❌ Consent DENIED by user")
@@ -300,7 +324,12 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
 
 async def handle_check_consent_status(args: dict) -> list[TextContent]:
     """
-    Check if a pending consent request has been approved.
+    Check consent status - returns active token if available, or pending status.
+    
+    Flow:
+    1. First check active consents → return token if found
+    2. Then check pending requests → return pending status
+    3. Otherwise return not_found status
     
     Compliance:
     ✅ Returns token only after user explicitly approves
@@ -309,11 +338,52 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     scope_str = args.get("scope")
     
-    # DB now stores dot notation, so use scope_str directly
+    # Email resolution
+    original_identifier = user_id
+    user_id, user_email, user_display_name = await resolve_email_to_uid(user_id)
+    
+    if user_id is None:
+        return [TextContent(type="text", text=json.dumps({
+            "status": "user_not_found",
+            "email": original_identifier,
+            "message": f"No Hushh account found for {original_identifier}"
+        }))]
+    
     logger.info(f"🔄 Checking consent status: user={user_id}, scope={scope_str}")
     
     try:
         async with httpx.AsyncClient() as client:
+            # Step 1: Check for active consent first
+            active_response = await client.get(
+                f"{FASTAPI_URL}/api/consent/active",
+                params={"userId": user_id},
+                timeout=10.0
+            )
+            
+            if active_response.status_code == 200:
+                active_list = active_response.json().get("active", [])
+                
+                # Check for exact scope match first
+                active_token = next(
+                    (t for t in active_list if t.get("scope") == scope_str),
+                    None
+                )
+                
+                if active_token:
+                    token_id = active_token.get("token_id")
+                    expires_at = active_token.get("expiresAt")
+                    logger.info(f"✅ Found active consent token for {scope_str}")
+                    return [TextContent(type="text", text=json.dumps({
+                        "status": "granted",
+                        "consent_token": token_id,
+                        "user_id": user_id,
+                        "scope": scope_str,
+                        "expires_at": expires_at,
+                        "message": "✅ Consent is active! Use this token to access data.",
+                        "next_step": f"Call get_financial_profile, get_food_preferences, or get_professional_profile with this consent_token."
+                    }))]
+            
+            # Step 2: Check for pending consent
             pending_response = await client.get(
                 f"{FASTAPI_URL}/api/consent/pending",
                 params={"userId": user_id},
@@ -325,30 +395,27 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                 pending_list = pending_data.get("pending", [])
                 
                 for req in pending_list:
-                    # DB now stores dot notation scope
                     if req.get("scope") == scope_str:
                         logger.info(f"⏳ Consent still pending for {scope_str}")
                         return [TextContent(type="text", text=json.dumps({
                             "status": "pending",
                             "user_id": user_id,
                             "scope": scope_str,
-                            "message": "⏳ User has not yet approved this request.",
+                            "message": "⏳ Consent request is pending. User must approve in their Hushh app.",
                             "request_id": req.get("id"),
                             "requested_at": req.get("requestedAt"),
-                            "instructions": [
-                                "The user needs to approve this in their dashboard",
-                                "Call this tool again in a few seconds to check status"
-                            ]
+                            "dashboard_url": f"{FRONTEND_URL}/dashboard/consents"
                         }))]
-                
-                logger.info("✅ Request not pending - may have been approved or denied")
-                return [TextContent(type="text", text=json.dumps({
-                    "status": "not_pending",
-                    "user_id": user_id,
-                    "scope": scope_str,
-                    "message": "Request is no longer pending. It may have been approved or denied.",
-                    "next_step": "Check if you have a valid consent token - if denied, do NOT retry"
-                }))]
+            
+            # Step 3: No active or pending consent found
+            logger.info(f"ℹ️ No consent found for {scope_str}")
+            return [TextContent(type="text", text=json.dumps({
+                "status": "not_found",
+                "user_id": user_id,
+                "scope": scope_str,
+                "message": "No consent found for this scope. Use request_consent to request access.",
+                "next_step": f"Call request_consent with scope='{scope_str}' to request user approval."
+            }))]
                 
     except httpx.ConnectError:
         logger.warning("⚠️ FastAPI not reachable")
@@ -363,3 +430,4 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
             "status": "error",
             "error": str(e)
         }))]
+
