@@ -36,8 +36,16 @@ def issue_token(
     issued_at = int(time.time() * 1000)
     expires_at = issued_at + expires_in_ms
     
-    # Preserve original scope string or convert enum to string
-    scope_str = scope if isinstance(scope, str) else scope.value
+    # Preserve original scope string or convert enum to string.
+    #
+    # IMPORTANT: ConsentScope is declared as `class ConsentScope(str, Enum)`,
+    # which means `isinstance(ConsentScope.VAULT_OWNER, str)` is True.
+    # So we MUST check ConsentScope first, otherwise we accidentally embed the
+    # enum's repr/str (e.g. "ConsentScope.VAULT_OWNER") into the token.
+    if isinstance(scope, ConsentScope):
+        scope_str = scope.value
+    else:
+        scope_str = scope
     
     raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at}|{expires_at}"
     signature = _sign(raw)

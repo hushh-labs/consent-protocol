@@ -19,6 +19,7 @@ def test_issue_and_validate_token():
     assert parsed is not None
     assert parsed.user_id == USER_ID
     assert parsed.scope == VALID_SCOPE
+    assert parsed.scope_str == VALID_SCOPE.value
 
 
 def test_token_scope_mismatch():
