@@ -442,43 +442,51 @@ export default function PortfolioHealthPage() {
       {/* Results - shown after streaming completes */}
       {isComplete && hadBelowThreshold && result && (
         <>
-          {/* 1. High-Level Portfolio Health Summary */}
+          {/* 1. High-Level Portfolio Health Summary - REBUILT LAYOUT */}
           <Card variant="none" effect="glass" showRipple={false} className="border-white/10 overflow-hidden">
-            <CardHeader className="pb-0">
-              <CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <LayoutDashboard className="w-4 h-4 text-primary" />
-                Portfolio Intelligence & Health
-              </CardTitle>
+            <CardHeader className="border-b border-border/5 bg-muted/5 px-6 py-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-primary/10">
+                  <LayoutDashboard className="w-4 h-4 text-primary" />
+                </div>
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-foreground">
+                  Portfolio Intelligence & Health
+                </CardTitle>
+              </div>
             </CardHeader>
+            
             <CardContent className="p-0">
-              <div className="grid md:grid-cols-2 gap-0 border-b border-border/10">
-                {/* Visual Analytics Column */}
-                <div className="p-4 md:p-8 border-b md:border-b-0 md:border-r border-border/10 bg-muted/10 relative">
-                  <div className="absolute top-4 left-6 text-[10px] font-black uppercase tracking-widest text-primary/60">
-                    Health Dimensions
+              <div className="flex flex-col md:grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/10">
+                
+                {/* LEFT COLUMN: Visual Analytics (The Graph) */}
+                <div className="relative p-6 md:p-8 bg-gradient-to-b from-muted/10 to-transparent">
+                  <div className="absolute top-4 left-4 md:top-6 md:left-6 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                    Health Radar
                   </div>
-                  <div className="h-64 w-full mt-4">
+                  
+                  {/* Chart Container - Fixed Height */}
+                  <div className="h-[280px] w-full flex items-center justify-center -mt-2">
                     {radarData.length > 0 ? (
-                      <ChartContainer config={chartConfig} className="h-full w-full" key={theme}>
-                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
-                          <PolarGrid stroke="var(--border)" strokeOpacity={0.3} />
+                      <ChartContainer config={chartConfig} className="h-full w-full max-w-[320px]" key={theme}>
+                        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                          <PolarGrid stroke="var(--border)" strokeOpacity={0.2} />
                           <PolarAngleAxis 
                             dataKey="subject" 
-                            tick={{ fill: "var(--muted-foreground)", fontSize: 9, fontWeight: 700, style: { textTransform: "uppercase" } }} 
+                            tick={{ fill: "var(--muted-foreground)", fontSize: 10, fontWeight: 800, style: { textTransform: "uppercase" } }} 
                           />
                           <Radar
                             name="Current"
                             dataKey="A"
                             stroke="var(--color-current)"
                             fill="var(--color-current)"
-                            fillOpacity={0.3}
+                            fillOpacity={0.4}
                           />
                           <Radar
                             name="Optimized"
                             dataKey="B"
                             stroke="var(--color-optimized)"
                             fill="var(--color-optimized)"
-                            fillOpacity={0.5}
+                            fillOpacity={0.6}
                           />
                           <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                         </RadarChart>
@@ -489,94 +497,101 @@ export default function PortfolioHealthPage() {
                       </div>
                     )}
                   </div>
-                  <div className="flex justify-center gap-6 mt-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full bg-red-500/50 border border-red-500" />
-                      <span className="text-[9px] font-black uppercase tracking-widest text-red-500">Current</span>
+
+                  {/* Chart Legend */}
+                  <div className="flex justify-center gap-6 mt-[-10px]">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/50 border border-border/5 backdrop-blur-sm">
+                      <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Current</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/50 border border-emerald-500" />
-                      <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Optimized</span>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/50 border border-border/5 backdrop-blur-sm">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Optimized</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Score & Reasons Column */}
-                <div className="p-6 md:p-8 flex flex-col justify-center space-y-8">
+                {/* RIGHT COLUMN: Scoring & Insights */}
+                <div className="flex flex-col p-6 md:p-8 space-y-8">
+                  
+                  {/* Primary Score Module */}
                   {typeof result.summary.health_score === "number" && (
                     <div className="space-y-6">
-                      <div className="flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
+                      <div className="space-y-4">
+                         {/* Header Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
                             Alpha Alignment
                           </span>
-                          {result.summary.projected_health_score && (
-                            <Badge variant="outline" className="bg-emerald-500/5 text-[9px] font-black uppercase tracking-widest border-emerald-500/20 text-emerald-600 dark:text-emerald-400 h-6">
-                              Projected: {result.summary.projected_health_score.toFixed(0)}%
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <div className="flex items-baseline gap-4">
-                          <span className="text-6xl font-black text-foreground tracking-tighter leading-none">
-                            {result.summary.health_score.toFixed(0)}
-                            <span className="text-3xl text-muted-foreground/50 ml-1">%</span>
-                          </span>
                           
                           {result.summary.projected_health_score && (
-                            <div className="flex items-center gap-2 mb-1.5 animate-pulse opacity-80">
-                              <ArrowRight className="w-5 h-5 text-emerald-500" />
-                              <span className="text-2xl font-bold text-emerald-500">
-                                {result.summary.projected_health_score.toFixed(0)}%
-                              </span>
+                            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                               <span className="text-[9px] font-black uppercase tracking-wider text-emerald-500">Projected Goal</span>
+                               <span className="text-xs font-black text-emerald-500">{result.summary.projected_health_score.toFixed(0)}%</span>
                             </div>
                           )}
                         </div>
+
+                        {/* Big Score Row */}
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-7xl font-black tracking-tighter text-foreground leading-none">
+                            {result.summary.health_score.toFixed(0)}
+                          </span>
+                          <span className="text-2xl font-bold text-muted-foreground/40">%</span>
+                        </div>
                       </div>
 
+                      {/* Progress Bar & Scale */}
                       <div className="space-y-2">
-                        <Progress 
-                          value={result.summary.health_score} 
-                          className="h-2.5 bg-muted/50 rounded-full overflow-hidden" 
-                          indicatorClassName={cn(
-                             "bg-gradient-to-r transition-all duration-1000",
-                             result.summary.health_score < 40 ? "from-red-500 to-amber-500" :
-                             result.summary.health_score < 70 ? "from-amber-500 to-emerald-500" :
-                             "from-emerald-500 to-emerald-400"
-                          )} 
-                        />
-                        <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                          <span>Critical</span>
-                          <span>Healthy</span>
-                          <span>Optimal</span>
+                        <div className="h-3 w-full bg-muted/30 rounded-full overflow-hidden p-[2px]">
+                          <div 
+                             className={cn(
+                               "h-full rounded-full transition-all duration-1000 ease-out shadow-lg",
+                               result.summary.health_score < 40 ? "bg-gradient-to-r from-red-600 to-red-400" :
+                               result.summary.health_score < 70 ? "bg-gradient-to-r from-amber-500 to-amber-300" :
+                               "bg-gradient-to-r from-emerald-600 to-emerald-400"
+                             )}
+                             style={{ width: `${result.summary.health_score}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between px-1">
+                           <span className="text-[9px] uppercase font-bold text-red-500/70">Critical</span>
+                           <span className="text-[9px] uppercase font-bold text-amber-500/70">Stable</span>
+                           <span className="text-[9px] uppercase font-bold text-emerald-500/70">Optimal</span>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  <div className="space-y-4 pt-4 border-t border-border/10">
-                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
-                      <ListChecks className="w-3.5 h-3.5 text-primary" />
-                      Strategic Insights
+                  {/* Strategic Insights Module */}
+                  <div className="flex-1 flex flex-col justify-end pt-6 border-t border-border/10">
+                    <h4 className="flex items-center gap-2 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4">
+                      <ListChecks className="w-4 h-4 text-primary" />
+                      Key Insights
                     </h4>
+                    
                     {Array.isArray(result.summary.health_reasons) && result.summary.health_reasons.length > 0 ? (
-                      <ul className="space-y-3">
+                      <div className="space-y-3">
                         {result.summary.health_reasons.slice(0, 3).map((r, idx) => (
-                          <li key={idx} className="flex gap-3 text-sm text-foreground/80 leading-snug items-start group">
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary/60 mt-1.5 shrink-0 group-hover:bg-primary transition-colors" />
-                            <span className="font-medium group-hover:text-foreground transition-colors">{r}</span>
-                          </li>
+                          <div key={idx} className="flex gap-3 group">
+                            <div className="w-1 h-1 rounded-full bg-primary mt-2 shrink-0 group-hover:scale-125 transition-transform" />
+                            <p className="text-sm font-medium text-foreground/80 leading-relaxed group-hover:text-foreground transition-colors">
+                              {r}
+                            </p>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground italic">No specific observations noted.</p>
+                      <p className="text-sm text-muted-foreground italic pl-2">No specific observations noted.</p>
                     )}
                   </div>
+
                 </div>
               </div>
-
-              {result.summary.portfolio_diagnostics && (
-                <div className="p-4 md:p-6 grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
+            </CardContent>
+          </Card>
+          {result.summary.portfolio_diagnostics && (
+            <div className="p-4 md:p-6 grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
                   {[
                     { label: "Exposure Value", value: result.summary.portfolio_diagnostics.total_losers_value ? `$${result.summary.portfolio_diagnostics.total_losers_value.toLocaleString()}` : "N/A", icon: Target },
                     { label: "Avoid Risk", value: result.summary.portfolio_diagnostics.avoid_weight_estimate_pct ? `${result.summary.portfolio_diagnostics.avoid_weight_estimate_pct}%` : "0%", icon: ShieldCheck },
@@ -594,8 +609,7 @@ export default function PortfolioHealthPage() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
+
 
           {/* 1.5. Sector Transformation Analytics */}
           {sectorData.length > 0 && (
