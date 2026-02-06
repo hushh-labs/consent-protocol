@@ -88,7 +88,7 @@ export default function KaiLandingPage() {
             onClick={() => router.push("/kai/dashboard")}
             showRipple
           >
-            Open Kai Dashboard
+            Open Hushh Dashboard
             <ArrowRight className="ml-2 h-5 w-5" />
           </Button>
         </div>
