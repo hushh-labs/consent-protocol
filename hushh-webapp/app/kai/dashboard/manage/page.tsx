@@ -601,7 +601,7 @@ export default function ManagePortfolioPage() {
 
       {/* Save Button - Fixed at bottom */}
       {hasChanges && (
-        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border z-40">
+        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-border z-[110]">
           <Button
             onClick={handleSave}
             disabled={isSaving}
