@@ -162,13 +162,16 @@ async def approve_consent(
             "expires_at": existing_token.get("expires_at")
         }
 
-    # Issue token with export key embedded (If no existing found)
+    # CRITICAL FIX: Pass original scope STRING to issue_token, not enum
+    # This ensures token contains 'attr.financial.*' not 'world_model.read'
+    # The enum was validated above, but the token must preserve the exact scope
     token = issue_token(
         user_id=userId,
         agent_id=f"developer:{developer_token}",
-        scope=consent_scope,
+        scope=requested_scope,  # ✅ Pass string, not enum
         expires_in_ms=expiry_hours * 60 * 60 * 1000
     )
+
     
     # Store encrypted export linked to token
     # Persist to database for cross-instance consistency

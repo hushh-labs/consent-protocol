@@ -72,7 +72,32 @@ def get_tool_definitions() -> list[Tool]:
             }
         ),
         
-        # Tool 3: Get Food Preferences
+        # Tool 3: Get Financial Profile
+        Tool(
+            name="get_financial_profile",
+            description=(
+                "💰 Retrieve user's financial profile including portfolio holdings, "
+                "investments, and financial preferences. "
+                "REQUIRES: Valid consent token with attr.financial.* or world_model.read scope. "
+                "Will be DENIED without proper consent. A food token WILL NOT work - scopes are isolated."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The user's unique identifier or Email Address"
+                    },
+                    "consent_token": {
+                        "type": "string",
+                        "description": "Valid consent token with attr.financial.* or world_model.read scope"
+                    }
+                },
+                "required": ["user_id", "consent_token"]
+            }
+        ),
+        
+        # Tool 4: Get Food Preferences
         Tool(
             name="get_food_preferences",
             description=(
@@ -96,6 +121,7 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id", "consent_token"]
             }
         ),
+
         
         # Tool 4: Get Professional Profile
         Tool(

@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import logging
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from hushh_mcp.config import DEFAULT_CONSENT_TOKEN_EXPIRY_MS, SECRET_KEY
 from hushh_mcp.constants import CONSENT_TOKEN_PREFIX, ConsentScope
@@ -23,32 +23,73 @@ _revoked_tokens: set[str] = set()
 def issue_token(
     user_id: UserID,
     agent_id: AgentID,
-    scope: ConsentScope,
+    scope: Union[str, ConsentScope],
     expires_in_ms: int = DEFAULT_CONSENT_TOKEN_EXPIRY_MS
 ) -> HushhConsentToken:
+    """
+    Issue a consent token with the given scope.
+    
+    CRITICAL: Scope can be a string (e.g., 'attr.financial.*') or ConsentScope enum.
+    When a string is provided, it's preserved exactly in the token to maintain domain isolation.
+    This ensures 'attr.financial.*' tokens can ONLY access financial data, not all attr.* domains.
+    """
     issued_at = int(time.time() * 1000)
     expires_at = issued_at + expires_in_ms
-    raw = f"{user_id}|{agent_id}|{scope.value}|{issued_at}|{expires_at}"
+    
+    # Preserve original scope string or convert enum to string
+    scope_str = scope if isinstance(scope, str) else scope.value
+    
+    raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at}|{expires_at}"
     signature = _sign(raw)
 
     token_string = f"{CONSENT_TOKEN_PREFIX}:{base64.urlsafe_b64encode(raw.encode()).decode()}.{signature}"
+
+    # Map dynamic scopes (attr.*) to WORLD_MODEL_READ enum for type compatibility
+    scope_enum = scope if isinstance(scope, ConsentScope) else _scope_str_to_enum(scope_str)
 
     return HushhConsentToken(
         token=token_string,
         user_id=user_id,
         agent_id=agent_id,
-        scope=scope,
+        scope=scope_enum,
+        scope_str=scope_str,  # Preserve actual scope string!
         issued_at=issued_at,
         expires_at=expires_at,
         signature=signature
     )
 
+
+def _scope_str_to_enum(scope_str: str) -> ConsentScope:
+    """
+    Map a scope string to its ConsentScope enum equivalent.
+    Dynamic scopes (attr.*) map to WORLD_MODEL_READ.
+    """
+    try:
+        return ConsentScope(scope_str)
+    except ValueError:
+        # Dynamic scope (e.g., attr.financial.*) - map to WORLD_MODEL_READ
+        if scope_str.startswith("attr."):
+            return ConsentScope.WORLD_MODEL_READ
+        # Unknown scope - default to WORLD_MODEL_READ
+        return ConsentScope.WORLD_MODEL_READ
+
+
 # ========== Token Verifier ==========
 
 def validate_token(
     token_str: str,
-    expected_scope: Optional[ConsentScope] = None
+    expected_scope: Optional[Union[str, ConsentScope]] = None
 ) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
+    """
+    Validate a consent token.
+    
+    Args:
+        token_str: The token string to validate
+        expected_scope: Optional scope to validate against (string or enum)
+    
+    Returns:
+        Tuple of (valid, error_reason, token_object)
+    """
     # Check in-memory revocation first (fastest)
     if token_str in _revoked_tokens:
         return False, "Token has been revoked", None
@@ -62,10 +103,10 @@ def validate_token(
 
         decoded = base64.urlsafe_b64decode(encoded.encode()).decode()
         user_id, agent_id, scope_str, issued_at_str, expires_at_str = decoded.split("|")
-        try:
-            scope = ConsentScope(scope_str)
-        except ValueError:
-            return False, "Invalid scope", None
+        
+        # Map scope string to enum (for type compatibility)
+        # IMPORTANT: Don't fail for dynamic scopes - they're valid!
+        scope_enum = _scope_str_to_enum(scope_str)
 
         raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at_str}|{expires_at_str}"
         expected_sig = _sign(raw)
@@ -73,12 +114,19 @@ def validate_token(
         if not hmac.compare_digest(signature, expected_sig):
             return False, "Invalid signature", None
 
-        # HIERARCHICAL CHECK: VAULT_OWNER satisfies ALL scopes
-        # This is the "Master Key" logic requested by the architecture.
-        is_owner = scope == ConsentScope.VAULT_OWNER
-        
-        if expected_scope and not is_owner and scope != expected_scope:
-            return False, f"Scope mismatch: expected {expected_scope.value}, got {scope.value}", None
+        # SCOPE VALIDATION with domain isolation
+        if expected_scope:
+            # Convert enum to string if needed
+            expected_scope_str = expected_scope.value if isinstance(expected_scope, ConsentScope) else expected_scope
+            
+            # Use the ACTUAL scope string from token, not enum value
+            granted_scope_str = scope_str
+            
+            # Use scope_matches for proper domain isolation
+            from hushh_mcp.consent.scope_helpers import scope_matches
+            
+            if not scope_matches(granted_scope_str, expected_scope_str):
+                return False, f"Scope mismatch: token has '{granted_scope_str}', but '{expected_scope_str}' required", None
 
         if int(time.time() * 1000) > int(expires_at_str):
             return False, "Token expired", None
@@ -87,7 +135,8 @@ def validate_token(
             token=token_str,
             user_id=UserID(user_id),
             agent_id=AgentID(agent_id),
-            scope=scope,
+            scope=scope_enum,
+            scope_str=scope_str,  # CRITICAL: Preserve actual scope string!
             issued_at=int(issued_at_str),
             expires_at=int(expires_at_str),
             signature=signature
@@ -100,7 +149,7 @@ def validate_token(
 
 async def validate_token_with_db(
     token_str: str,
-    expected_scope: Optional[ConsentScope] = None
+    expected_scope: Optional[Union[str, ConsentScope]] = None
 ) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
     """
     Validate token with additional database revocation check.
@@ -121,9 +170,11 @@ async def validate_token_with_db(
             from hushh_mcp.services.consent_db import ConsentDBService
 
             service = ConsentDBService()
+            # CRITICAL FIX: Use scope_str (actual scope) for DB lookup, not enum value!
+            scope_for_lookup = token_obj.scope_str if token_obj.scope_str else token_obj.scope.value
             is_active = await service.is_token_active(
                 str(token_obj.user_id),
-                token_obj.scope.value
+                scope_for_lookup
             )
             if not is_active:
                 # Add to in-memory set for future fast checks

@@ -134,10 +134,18 @@ class TableQuery:
         self._upsert_data: Optional[Union[dict, list[dict]]] = None
         self._on_conflict: Optional[str] = None
         self._operation = "select"
+        self._count_preference: Optional[str] = None
     
-    def select(self, columns: str = "*") -> "TableQuery":
-        """Select columns to return."""
+    def select(self, columns: str = "*", count: Optional[str] = None) -> "TableQuery":
+        """
+        Select columns to return.
+        
+        Args:
+            columns: Comma-separated list of columns
+            count: Count algorithm (e.g., 'exact')
+        """
         self._columns = columns
+        self._count_preference = count
         self._operation = "select"
         return self
     
@@ -286,6 +294,7 @@ class TableQuery:
     def _execute_select(self, conn) -> QueryResult:
         """Execute SELECT query."""
         params: dict[str, Any] = {}
+        where_clause = self._build_where_clause(params)
         
         # Build column list
         if self._columns == "*":
@@ -293,8 +302,17 @@ class TableQuery:
         else:
             columns = ", ".join(f'"{c.strip()}"' for c in self._columns.split(","))
         
+        total_count = None
+        if self._count_preference == "exact":
+            count_sql = f'SELECT COUNT(*) FROM "{self.table_name}"' + where_clause
+            total_count = conn.execute(text(count_sql), params).scalar()
+        
+        # Skip select if limit is 0 but count was requested
+        if self._limit_val == 0:
+            return QueryResult(data=[], count=total_count)
+            
         sql = f'SELECT {columns} FROM "{self.table_name}"'
-        sql += self._build_where_clause(params)
+        sql += where_clause
         
         if self._order_by:
             col, desc = self._order_by
@@ -308,7 +326,12 @@ class TableQuery:
         
         result = conn.execute(text(sql), params)
         rows = [dict(row._mapping) for row in result]
-        return QueryResult(data=rows, count=len(rows))
+        
+        # If count was not requested, use row count
+        if total_count is None:
+            total_count = len(rows)
+            
+        return QueryResult(data=rows, count=total_count)
     
     def _execute_insert(self, conn) -> QueryResult:
         """Execute INSERT query."""

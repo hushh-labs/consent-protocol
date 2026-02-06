@@ -4,170 +4,178 @@
 
 ---
 
-## 1. Vault Flows
+## 🎨 Core Design Principles
 
-### 1.1 Vault Creation / Unlock Screen
+### 1. **Morphy UX First**
 
-- **Goal**: Focus user attention on a single primary action (create/unlock vault).
-- **Layout**:
-  - Single-column stack.
-  - Use a central `Card` with `variant="muted"` and `effect="glass"`.
-  - Primary CTA as a `Button` with `variant="gradient"` and `fullWidth`.
+- Always use Morphy UX components (`Button`, `Card`, `Input`) as the foundation
+- Prioritize component **props** over manual `className` overrides
+- Use `variant`, `effect`, `size` props instead of custom Tailwind classes
 
-**Example composition (conceptual):**
+### 2. **Glass Morphism**
 
-```tsx
-<Card variant="muted" effect="glass" fullHeight={false}>
-  <CardHeader>
-    <CardTitle>Create your vault</CardTitle>
-    <CardDescription>
-      Your data is encrypted on-device. We never see your key.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    {/* Passphrase fields, hints, recovery info */}
-  </CardContent>
-  <CardFooter>
-    <Button
-      variant="gradient"
-      effect="glass"
-      size="lg"
-      fullWidth
-      loading={isSubmitting}
-      showRipple
-    >
-      Continue
-    </Button>
-  </CardFooter>
-</Card>
-```
+- Default effect: `effect="glass"` for cards and overlays
+- Backdrop blur: `backdrop-blur-3xl` or `backdrop-blur-md`
+- Transparency: `bg-muted/80` or `bg-background/95`
 
-**UX Notes**
-- Do not crowd the surface with extra links or secondary CTAs.
-- Make errors explicit using `morphyToast.error` with actionable messaging.
+### 3. **Consistent Sizing**
+
+- **Buttons**: `size="xl"` (h-16) for primary actions
+- **Inputs**: `h-14 text-lg px-4` for form fields
+- **Icons**: `h-12 w-12` for headers, `h-5 w-5` for inline
+- **Labels**: `text-base` for form labels
 
 ---
 
-## 2. Consent Review
+## 🧩 Component Patterns
 
-### 2.1 Pending Consent List
+### 1. Vault Flows
 
-- **Goal**: Let users quickly understand and act on each consent.
-- **Layout**:
-  - Stack of `Card` components in a single column on mobile.
-  - Each card shows:
-    - Requester (who)
-    - Data category (what)
-    - Purpose and duration (why/for how long)
-  - Approve / Reject actions as Morphy-UX `Button`s.
+#### 1.1 Vault Creation / Unlock Pattern
 
-**Composition sketch:**
+- **Goal**: Focus user attention on a single primary action.
+- **Key Rules**:
+  - Icon size: `h-12 w-12`
+  - Input: `h-14` with `text-lg`
+  - Button: `size="xl"` (h-16)
+
+**Composition:**
 
 ```tsx
-<Card variant="muted" effect="glass">
-  <CardHeader>
-    <CardTitle>Share professional profile</CardTitle>
-    <CardDescription>
-      Kai wants to access your work history and skills to personalize analysis.
-    </CardDescription>
-  </CardHeader>
-  <CardContent>
-    {/* Scope, duration, and data summary */}
-  </CardContent>
-  <CardFooter>
-    <div className="flex gap-3 w-full">
-      <Button variant="muted" effect="fill" className="flex-1">
-        Not now
+<Card variant="none" effect="glass">
+  <CardContent className="p-6 space-y-4">
+    {/* Header */}
+    <div className="text-center">
+      <Icon className="h-12 w-12 mx-auto text-primary mb-4" />
+      <h3 className="font-semibold text-xl">{title}</h3>
+      <p className="text-base text-muted-foreground mt-2">{description}</p>
+    </div>
+
+    {/* Form Fields */}
+    <div className="space-y-3">
+      <Label htmlFor="field" className="text-base">
+        {label}
+      </Label>
+      <Input
+        id="field"
+        type="password"
+        className="h-14 text-lg px-4"
+        autoFocus
+      />
+    </div>
+
+    {/* Actions */}
+    <div className="flex gap-3 pt-2">
+      <Button variant="none" effect="glass" size="xl" className="flex-1">
+        Secondary
       </Button>
-      <Button
-        variant="gradient"
-        effect="glass"
-        className="flex-1"
-        showRipple
-      >
-        Allow
+      <Button variant="gradient" effect="glass" size="xl" className="flex-1">
+        Primary
       </Button>
     </div>
-  </CardFooter>
+  </CardContent>
 </Card>
 ```
 
-**UX Notes**
-- Treat revoke as a first-class action in history views.
-- Keep copy neutral and factual; avoid dark patterns.
+### 2. Pill Navigation (Bottom Nav & Theme Toggle)
 
----
+- **Goal**: Floating, glass-morphic navigation elements.
+- **Key Rules**:
+  - ✅ Use native `<button>` or `<Link>`, NOT `<Button>` component
+  - ✅ Only active item has background + shadow + ring
+  - ✅ Smooth cubic-bezier easing: `ease-[cubic-bezier(0.25,1,0.5,1)]`
 
-## 3. Kai Portfolio & Dashboards
-
-### 3.1 KPI Tile Grid
-
-- **Goal**: Surface 3–6 key metrics without overwhelming.
-- **Layout**:
-  - Responsive grid:
-    - 1 column on small screens.
-    - 2–3 columns on larger breakpoints.
-  - Use `Card` with `interactive` and optional `selected` for tiles that can be drilled into.
-
-**Composition sketch:**
+**Structure:**
 
 ```tsx
-<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-  {kpis.map((kpi) => (
-    <Card
-      key={kpi.id}
-      variant="muted"
-      effect="glass"
-      interactive
-      fullHeight
-      selected={kpi.id === activeKpiId}
-    >
-      <CardHeader>
-        <CardTitle>{kpi.label}</CardTitle>
-        <CardDescription>{kpi.subtitle}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {/* Metric value and sparkline */}
-      </CardContent>
-    </Card>
-  ))}
+<div className="flex items-center p-1 bg-muted/80 backdrop-blur-3xl rounded-full shadow-2xl ring-1 ring-black/5">
+  {items.map((item) => {
+    const isActive = /* condition */;
+    return (
+      <button
+        className={cn(
+          "relative flex items-center justify-center gap-2 px-4 py-2.5 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+          isActive
+            ? "bg-background text-foreground shadow-sm ring-1 ring-black/5 min-w-[120px]"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50 min-w-[44px]"
+        )}
+      >
+        <Icon className={cn("h-5 w-5", isActive && "scale-105")} />
+        <div className={cn(
+          "overflow-hidden transition-all duration-500",
+          isActive ? "w-auto opacity-100 ml-1" : "w-0 opacity-0"
+        )}>
+          <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+        </div>
+      </button>
+    );
+  })}
 </div>
 ```
 
-**UX Notes**
-- Avoid hover-only scale effects; use subtle opacity/shadow shifts for hover.
-- Keep typography readable; let layout wrap rather than shrinking text too far.
+### 3. Onboarding Tour
+
+- **Goal**: Highlight UI elements with tooltips and focused overlay.
+- **Key Rules**:
+  - Z-index layers: overlay (9998) → highlight (9999) → popover (10001)
+  - Box-shadow cutout technique
+  - Glass effect tooltip
 
 ---
 
-## 4. Motion Patterns (GSAP-friendly)
+## 🎯 Button Variants
 
-- For page-level sections (hero, dashboard header, main content):
-  - Use a simple **fade + small vertical offset** on initial load.
-  - Avoid complex chained animations on mobile; keep sequences short.
-- For lists and grids (consent cards, KPI tiles):
-  - Use small staggered entrances when content first appears.
-  - Use hover/focus styles (shadow/opacity) instead of transform scale.
-- For charts:
-  - Let charts fade/slide in once; avoid looping animations.
-  - Use Morphy-UX chart colors and keep animation durations short.
+### Primary Actions
+
+```tsx
+<Button variant="gradient" effect="glass" size="xl" showRipple>
+  Continue
+</Button>
+```
+
+### Secondary Actions
+
+```tsx
+<Button variant="none" effect="glass" size="xl">
+  Cancel
+</Button>
+```
+
+### Destructive Actions
+
+```tsx
+<Button
+  variant="none"
+  size="lg"
+  className="border border-destructive/30 text-destructive hover:bg-destructive/10"
+>
+  Sign Out
+</Button>
+```
 
 ---
 
-## 5. Pattern Checklist
+## 📏 Design Tokens
 
-For any new user-facing flow:
+| Scale       | Value        | Usage               |
+| ----------- | ------------ | ------------------- |
+| **Spacing** | `space-y-6`  | Section gaps        |
+|             | `p-6`        | Card content        |
+|             | `space-y-4`  | Form sections       |
+|             | `gap-3`      | Standard gaps       |
+| **Opacity** | `/80`, `/95` | Background overlays |
+|             | `/50`        | Hover states        |
+|             | `/10`        | Borders/Shadows     |
 
-- **Layout**
-  - Mobile-first, single-column by default.
-  - Respect safe areas and `100dvh` rules from the design system.
-- **Primitives**
-  - Prefer Morphy-UX `Button` and `Card` for primary UX surfaces.
-  - Use `showRipple` on primary interactive elements.
-- **Feedback**
-  - Use `morphyToast` helpers for success/error/warning/info.
-  - Keep messages short, clear, and action-oriented.
-- **Accessibility**
-  - Ensure touch targets are at least 44×44px.
-  - Preserve focus outlines and keyboard interactions.
+---
 
+## ✅ Checklist for New Components
+
+Before creating a new component, ensure:
+
+- [ ] Uses Morphy UX components as foundation
+- [ ] Follows established sizing patterns (xl buttons, h-14 inputs)
+- [ ] Implements glass morphism where appropriate
+- [ ] Uses semantic color tokens, not hardcoded colors
+- [ ] Matches transition timing (500ms cubic-bezier)
+- [ ] Responsive on mobile (tested at 375px width)

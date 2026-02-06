@@ -72,11 +72,11 @@ class ConsentDBService:
         now_ms = int(datetime.now().timestamp() * 1000)
         
         # Fetch all relevant rows (we'll filter in Python)
-        # Note: Using neq() instead of not_.is_() for Supabase Python client compatibility
+        # Note: Cannot use .neq("request_id", None) - SQL "!= NULL" is always NULL (not true)
+        # Instead, fetch all rows and filter request_id IS NOT NULL in Python
         response = supabase.table("consent_audit")\
             .select("*")\
             .eq("user_id", user_id)\
-            .neq("request_id", None)\
             .order("issued_at", desc=True)\
             .execute()
         
@@ -268,30 +268,22 @@ class ConsentDBService:
         offset = (page - 1) * limit
         now_ms = int(datetime.now().timestamp() * 1000)
         
-        # Get paginated results with count
+        # Get paginated results (TableQuery uses .limit/.offset, not .range)
         response = supabase.table("consent_audit")\
-            .select("*", count="exact")\
+            .select("*")\
             .eq("user_id", user_id)\
             .order("issued_at", desc=True)\
-            .range(offset, offset + limit - 1)\
+            .limit(limit)\
+            .offset(offset)\
             .execute()
         
-        # Get total count
-        total = 0
-        if hasattr(response, 'count') and response.count is not None:
-            total = response.count
-        else:
-            # Fallback: fetch count separately
-            count_response = supabase.table("consent_audit")\
-                .select("id", count="exact")\
-                .eq("user_id", user_id)\
-                .limit(0)\
-                .execute()
-            if hasattr(count_response, 'count') and count_response.count is not None:
-                total = count_response.count
-            else:
-                # Last resort: count data length (not accurate for pagination)
-                total = len(response.data) if response.data else 0
+        # Get total count via separate query (capped at 5000 for display)
+        count_response = supabase.table("consent_audit")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .limit(5000)\
+            .execute()
+        total = len(count_response.data or [])
         
         items = []
         for row in response.data or []:
@@ -391,6 +383,59 @@ class ConsentDBService:
             # Fallback: return issued_at as ID if response doesn't have id
             logger.warning(f"Inserted {action} event but no ID returned, using issued_at: {issued_at}")
             return issued_at
+
+    async def get_timed_out_requests(self) -> List[Dict]:
+        """
+        Return REQUESTED rows that have passed poll_timeout_at and do not yet have a TIMEOUT event.
+        Used by the optional timeout job to emit TIMEOUT events over SSE.
+        """
+        supabase = self._get_supabase()
+        now_ms = int(datetime.now().timestamp() * 1000)
+        # poll_timeout_at < now_ms excludes null (SQL: null < x is false)
+        response = supabase.table("consent_audit").select(
+            "request_id, user_id, scope, agent_id, scope_description, issued_at"
+        ).eq("action", "REQUESTED").lt("poll_timeout_at", now_ms).execute()
+        if not response.data:
+            return []
+        # Dedupe by request_id (keep latest by issued_at)
+        by_req: Dict[str, Dict] = {}
+        for row in response.data:
+            rid = row.get("request_id")
+            if not rid:
+                continue
+            if rid not in by_req or (row.get("issued_at") or 0) > (by_req[rid].get("issued_at") or 0):
+                by_req[rid] = row
+        request_ids = list(by_req.keys())
+        if not request_ids:
+            return []
+        # Which of these already have a TIMEOUT?
+        timeout_resp = supabase.table("consent_audit").select("request_id").eq(
+            "action", "TIMEOUT"
+        ).in_("request_id", request_ids).execute()
+        already = {r.get("request_id") for r in (timeout_resp.data or []) if r.get("request_id")}
+        return [by_req[rid] for rid in request_ids if rid not in already]
+
+    async def emit_timeout_events(self) -> int:
+        """
+        Find REQUESTED rows that have timed out, insert TIMEOUT events (triggers NOTIFY → SSE).
+        Returns the number of TIMEOUT events inserted.
+        """
+        rows = await self.get_timed_out_requests()
+        count = 0
+        for row in rows:
+            try:
+                await self.insert_event(
+                    user_id=row["user_id"],
+                    agent_id=row.get("agent_id") or "system",
+                    scope=row.get("scope") or "",
+                    action="TIMEOUT",
+                    request_id=row.get("request_id"),
+                    scope_description=row.get("scope_description"),
+                )
+                count += 1
+            except Exception as e:
+                logger.warning("Emit TIMEOUT event failed for request_id=%s: %s", row.get("request_id"), e)
+        return count
     
     async def log_operation(
         self,

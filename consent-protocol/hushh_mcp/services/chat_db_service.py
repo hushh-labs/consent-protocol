@@ -191,7 +191,7 @@ class ChatDBService:
                 "user_id", user_id
             ).order(
                 "updated_at", desc=True
-            ).range(offset, offset + limit - 1).execute()
+            ).limit(limit).offset(offset).execute()
             
             return [
                 Conversation(
