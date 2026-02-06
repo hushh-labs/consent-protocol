@@ -135,6 +135,8 @@ export interface PortfolioReviewViewProps {
   userId: string;
   /** Vault key for encryption */
   vaultKey: string;
+  /** VAULT_OWNER token for authentication (required on native) */
+  vaultOwnerToken?: string;
   /** Callback when save completes successfully */
   onSaveComplete: (data: PortfolioData) => void;
   /** Callback to re-import */
@@ -194,6 +196,7 @@ export function PortfolioReviewView({
   portfolioData: initialData,
   userId,
   vaultKey,
+  vaultOwnerToken,
   onSaveComplete,
   onReimport,
   onBack,
@@ -340,6 +343,7 @@ export function PortfolioReviewView({
           algorithm: "aes-256-gcm",
         },
         summary,
+        vaultOwnerToken,
       });
 
       // 4. Cache in session storage for immediate use

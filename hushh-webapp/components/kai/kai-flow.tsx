@@ -1060,7 +1060,7 @@ export function KaiFlow({
         <ImportProgressView
           stage={streaming.stage}
           streamedText={streaming.streamedText}
-          isStreaming={streaming.stage === "extracting" || streaming.stage === "streaming" || streaming.stage === "thinking"}
+          isStreaming={streaming.stage === "uploading" || streaming.stage === "analyzing" || streaming.stage === "thinking"}
           totalChars={streaming.totalChars}
           chunkCount={streaming.chunkCount}
           thoughts={streaming.thoughts}
@@ -1075,6 +1075,7 @@ export function KaiFlow({
           portfolioData={flowData.parsedPortfolio}
           userId={userId}
           vaultKey={vaultKey}
+          vaultOwnerToken={vaultOwnerToken}
           onSaveComplete={handleSaveComplete}
           onReimport={handleReimport}
           onBack={() => setState("import_required")}

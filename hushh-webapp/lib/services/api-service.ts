@@ -22,7 +22,7 @@
 
 import { Capacitor } from "@capacitor/core";
 import { HushhVault, HushhAuth, HushhConsent } from "@/lib/capacitor";
-import { Kai } from "@/lib/capacitor/kai";
+import { Kai, PORTFOLIO_STREAM_EVENT } from "@/lib/capacitor/kai";
 import { AuthService } from "@/lib/services/auth-service";
 
 // API Base URL configuration
@@ -1034,16 +1034,53 @@ export class ApiService {
       Authorization: `Bearer ${params.vaultOwnerToken}`,
     };
 
-    // For native platforms, call backend directly (bypass Next.js proxy)
+    // Native: use Kai plugin for real-time SSE (WKWebView buffers fetch() response body)
     if (Capacitor.isNativePlatform()) {
       try {
-        const response = await fetch(`${API_BASE}/api/kai/portfolio/import/stream`, {
-          method: "POST",
-          body: params.formData,
-          headers,
-          signal: params.signal,
+        const file = params.formData.get("file") as File;
+        const userId = params.formData.get("user_id") as string;
+        if (!file || !userId) {
+          return new Response(
+            JSON.stringify({ error: "Missing file or user_id in formData" }),
+            { status: 400 }
+          );
+        }
+        const fileBase64 = await this.fileToBase64(file);
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            Kai.addListener(
+              PORTFOLIO_STREAM_EVENT,
+              (event: { data?: Record<string, unknown> }) => {
+                const data = event?.data !== undefined ? event.data : event;
+                controller.enqueue(encoder.encode("data: " + JSON.stringify(data) + "\n"));
+              }
+            ).then((listener) => {
+              Kai.streamPortfolioImport({
+                userId,
+                fileBase64,
+                fileName: file.name,
+                mimeType: file.type || "application/octet-stream",
+                vaultOwnerToken: params.vaultOwnerToken,
+              })
+                .then(() => {
+                  // Wait a tick to ensure all events are processed before closing
+                  setTimeout(() => {
+                    listener.remove();
+                    controller.close();
+                  }, 100);
+                })
+                .catch((e) => {
+                  listener.remove();
+                  controller.error(e);
+                });
+            });
+          },
         });
-        return response;
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
       } catch (error) {
         console.error("[ApiService] Native importPortfolioStream error:", error);
         throw error;
@@ -1336,7 +1373,7 @@ export class ApiService {
       force_optimize: data.forceOptimize,
     };
 
-    // For native platforms, use direct API call
+    // Native: use Kai plugin for real-time SSE (WKWebView buffers fetch() response body)
     if (Capacitor.isNativePlatform()) {
       try {
         const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
@@ -1347,16 +1384,38 @@ export class ApiService {
           );
         }
 
-        const response = await fetch(`${API_BASE}/api/kai/portfolio/analyze-losers/stream`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${vaultOwnerToken}`,
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            Kai.addListener(
+              PORTFOLIO_STREAM_EVENT,
+              (event: { data?: Record<string, unknown> }) => {
+                const payload = event?.data !== undefined ? event.data : event;
+                controller.enqueue(encoder.encode("data: " + JSON.stringify(payload) + "\n"));
+              }
+            ).then((listener) => {
+              Kai.streamPortfolioAnalyzeLosers({
+                body: body as Record<string, unknown>,
+                vaultOwnerToken,
+              })
+                .then(() => {
+                  // Wait a tick to ensure all events are processed before closing
+                  setTimeout(() => {
+                    listener.remove();
+                    controller.close();
+                  }, 100);
+                })
+                .catch((e) => {
+                  listener.remove();
+                  controller.error(e);
+                });
+            });
           },
-          body: JSON.stringify(body),
         });
-
-        return response;
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
       } catch (error) {
         console.error("[ApiService] Native analyzePortfolioLosersStream error:", error);
         return new Response(JSON.stringify({ error: (error as Error).message }), {
