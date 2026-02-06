@@ -105,6 +105,31 @@ CREATE INDEX IF NOT EXISTS idx_consent_audit_user_action ON consent_audit(user_i
 CREATE INDEX IF NOT EXISTS idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
 
+-- NOTIFY on consent_audit INSERT (for event-driven SSE/push; see db/migrations/011_consent_audit_notify_trigger.sql)
+CREATE OR REPLACE FUNCTION consent_audit_notify()
+RETURNS TRIGGER AS $$
+DECLARE payload TEXT;
+BEGIN
+  payload := json_build_object('user_id', NEW.user_id, 'request_id', COALESCE(NEW.request_id, ''), 'action', NEW.action, 'scope', COALESCE(NEW.scope, ''), 'agent_id', COALESCE(NEW.agent_id, ''), 'issued_at', NEW.issued_at)::TEXT;
+  PERFORM pg_notify('consent_audit_new', payload);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS consent_audit_after_insert ON consent_audit;
+CREATE TRIGGER consent_audit_after_insert AFTER INSERT ON consent_audit FOR EACH ROW EXECUTE FUNCTION consent_audit_notify();
+
+-- 4b. user_push_tokens (FCM/APNs for consent push notifications)
+CREATE TABLE IF NOT EXISTS user_push_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK (platform IN ('web', 'ios', 'android')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id, platform)
+);
+CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_id ON user_push_tokens(user_id);
+
 -- 5. user_investor_profiles (private vault layer)
 CREATE TABLE IF NOT EXISTS user_investor_profiles (
     id SERIAL PRIMARY KEY,

@@ -29,79 +29,80 @@ async def consent_event_generator(
 ) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for consent notifications.
-    
-    Checks for consent updates every 500ms and yields events
-    when a pending request is approved/denied.
-    Sends heartbeat every 30s to keep connection alive.
+
+    Event-driven: waits on per-user queue (NOTIFY pushes here). No DB polling.
+    Backfills once on connect, then only yields when NOTIFY delivers an event.
+    Heartbeat every 30s to keep connection alive.
     """
-    logger.info(f"SSE connection opened for user: {user_id}")
-    
-    # Track connection start time - only send events AFTER this
-    # This prevents re-sending old events on reconnect
     from datetime import datetime
+    from api.consent_listener import get_consent_queue
+
+    logger.info(f"SSE connection opened for user: {user_id}")
     connection_start_ms = int(datetime.now().timestamp() * 1000)
-    
-    # Track which events we've already notified about this session
-    # Use request_id as primary key since token_id can be auto-generated
+    # Backfill window: last 2 minutes so events that just happened are sent on connect
+    BACKFILL_WINDOW_MS = 2 * 60 * 1000
+    after_timestamp_ms = connection_start_ms - BACKFILL_WINDOW_MS
     notified_event_ids = set()
-    
-    # Heartbeat tracking
-    last_heartbeat: float = 0.0
-    HEARTBEAT_INTERVAL = 30  # seconds
-    
+    HEARTBEAT_INTERVAL = 30
+    queue = get_consent_queue(user_id)
+
     try:
+        # Backfill once: any events in the last 2 minutes (so late-connecting clients get recent NOTIFYs)
+        from hushh_mcp.services.consent_db import ConsentDBService
+        service = ConsentDBService()
+        recent_events = await service.get_recent_consent_events(
+            user_id=user_id,
+            after_timestamp_ms=after_timestamp_ms,
+            limit=10
+        )
+        for event in recent_events:
+            event_id = event.get("request_id") or event.get("token_id")
+            request_id = event.get("request_id")
+            if event_id and event_id not in notified_event_ids:
+                notified_event_ids.add(event_id)
+                yield {
+                    "event": "consent_update",
+                    "id": event_id,
+                    "data": json.dumps({
+                        "request_id": request_id,
+                        "action": event["action"],
+                        "scope": event["scope"],
+                        "agent_id": event["agent_id"],
+                        "timestamp": event["issued_at"]
+                    })
+                }
+                logger.info(f"SSE event sent (backfill): {event['action']} for {request_id}")
+
+        # Event-driven loop: wait on queue (heartbeat on timeout)
         while True:
-            # Check if client disconnected
             if await request.is_disconnected():
                 logger.info(f"SSE client disconnected: {user_id}")
                 break
-            
-            from hushh_mcp.services.consent_db import ConsentDBService
-            service = ConsentDBService()
-            
-            # Use service method for consent event retrieval
-            recent_events = await service.get_recent_consent_events(
-                user_id=user_id,
-                after_timestamp_ms=connection_start_ms,
-                limit=10
-            )
-            
-            for event in recent_events:
-                # Use request_id as primary event key (more stable than auto-generated token_id)
-                # Fall back to token_id if request_id is not available
-                event_id = event.get("request_id") or event.get("token_id")
-                request_id = event.get("request_id")
-                
-                if event_id and event_id not in notified_event_ids:
-                    notified_event_ids.add(event_id)
-                    
-                    yield {
-                        "event": "consent_update",
-                        "id": event_id,
-                        "data": json.dumps({
-                            "request_id": request_id,
-                            "action": event["action"],
-                            "scope": event["scope"],
-                            "agent_id": event["agent_id"],
-                            "timestamp": event["issued_at"]
-                        })
-                    }
-                    logger.info(f"SSE event sent: {event['action']} for {request_id}")
-            
-            # Send heartbeat every 30 seconds to keep connection alive
-            import time
-            current_time = time.time()
-            if current_time - last_heartbeat >= HEARTBEAT_INTERVAL:
+            try:
+                data = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL)
+            except asyncio.TimeoutError:
+                import time
                 yield {
                     "event": "heartbeat",
-                    "data": json.dumps({"timestamp": int(current_time * 1000)})
+                    "data": json.dumps({"timestamp": int(time.time() * 1000)})
                 }
-                last_heartbeat = current_time
-                logger.debug(f"SSE heartbeat sent for user: {user_id}")
-            
-            # Check every 500ms
-            await asyncio.sleep(0.5)
-            
+                continue
+            request_id = data.get("request_id") or ""
+            event_id = request_id
+            if event_id and event_id not in notified_event_ids:
+                notified_event_ids.add(event_id)
+                yield {
+                    "event": "consent_update",
+                    "id": event_id,
+                    "data": json.dumps({
+                        "request_id": request_id,
+                        "action": data.get("action", "REQUESTED"),
+                        "scope": data.get("scope", ""),
+                        "agent_id": data.get("agent_id", ""),
+                        "timestamp": data.get("issued_at", 0)
+                    })
+                }
+                logger.info(f"SSE event sent: {data.get('action')} for {request_id}")
     except asyncio.CancelledError:
         logger.info(f"SSE connection cancelled for user: {user_id}")
     except Exception as e:

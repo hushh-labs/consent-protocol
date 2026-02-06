@@ -3,7 +3,7 @@
 > Single source of truth for env vars and **strict parity** with code and GCP Secret Manager.  
 > **Rule:** What is in `.env` / Secret Manager must match exactly what the code reads — no extra keys, no missing keys.
 
-See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.example](../../consent-protocol/.env.example), [hushh-webapp/.env.example](../../hushh-webapp/.env.example), [deploy/.env.backend.example](../../deploy/.env.backend.example), [deploy/.env.frontend.example](../../deploy/.env.frontend.example).
+See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.example](../../consent-protocol/.env.example), [hushh-webapp/.env.example](../../hushh-webapp/.env.example), [deploy/.env.backend.example](../../deploy/.env.backend.example), [deploy/.env.frontend.example](../../deploy/.env.frontend.example). For consent push (FCM) and why it cannot be done with gcloud CLI alone, see [consent_push_notifications.md](consent_push_notifications.md).
 
 ---
 
@@ -47,6 +47,7 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 |----------|------------|----------|--------|
 | `NEXT_PUBLIC_BACKEND_URL` | `lib/api/consent.ts`, `lib/config.ts`, api routes, etc. | Yes | Prod build: from Secret Manager `BACKEND_URL` |
 | `NEXT_PUBLIC_FIREBASE_*` (6 keys) | `lib/firebase/config.ts` | Yes | API key, auth domain, project ID, storage bucket, messaging sender ID, app ID |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | `lib/notifications/register-push.ts` | No (for push) | Web FCM token registration; from Firebase Console. See [consent_push_notifications.md](consent_push_notifications.md). |
 | `NEXT_PUBLIC_APP_REVIEW_MODE` | `lib/config.ts` | No | |
 | `NEXT_PUBLIC_REVIEWER_EMAIL` | `lib/config.ts` | If app review | |
 | `NEXT_PUBLIC_REVIEWER_PASSWORD` | `lib/config.ts` | If app review | |
@@ -109,6 +110,7 @@ These are used by MCP modules (`mcp_modules/`) for MCP server functionality, not
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | No (recommended) | No | `.env.local` / CI / Prod build-arg | Optional but recommended for full Firebase features |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | No (recommended) | No | Same | Optional but recommended for full Firebase features |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | No (recommended) | No | Same | Optional but recommended for full Firebase features |
+| `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | No (for push) | No | Same | **Web push (FCM)**: VAPID key from Firebase Console → Cloud Messaging → Web configuration → Key pair. Required for consent push on web. See [consent_push_notifications.md](consent_push_notifications.md). |
 | `NEXT_PUBLIC_APP_REVIEW_MODE` | No | No | Prod build: Secret Manager | true/false |
 | `NEXT_PUBLIC_REVIEWER_EMAIL` | If app review | Yes (prod) | Prod build: Secret Manager | |
 | `NEXT_PUBLIC_REVIEWER_PASSWORD` | If app review | Yes (prod) | Prod build: Secret Manager | |
@@ -176,7 +178,9 @@ echo -n "https://your-backend.run.app" | gcloud secrets versions add BACKEND_URL
 ```
 
 **Required backend 7:** `SECRET_KEY`, `VAULT_ENCRYPTION_KEY`, `GOOGLE_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `FRONTEND_URL`, `DB_USER`, `DB_PASSWORD`.  
-**Required frontend 4:** `BACKEND_URL`, `APP_REVIEW_MODE`, `REVIEWER_EMAIL`, `REVIEWER_PASSWORD`.
+**Required frontend 4:** `BACKEND_URL`, `APP_REVIEW_MODE`, `REVIEWER_EMAIL`, `REVIEWER_PASSWORD`.  
+
+**Note:** Consent push on web uses FCM and requires `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (from Firebase Console, not Secret Manager). See [consent_push_notifications.md](consent_push_notifications.md).
 
 **Delete if present (strict parity):** `DATABASE_URL` is not used anywhere. To remove:
 ```bash

@@ -15,7 +15,7 @@ import { Capacitor } from "@capacitor/core";
 import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
 import { HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
-import { getDirectBackendUrl } from "@/lib/services/api-service";
+import { ApiService, getDirectBackendUrl } from "@/lib/services/api-service";
 import { AuthService } from "@/lib/services/auth-service";
 
 // ============================================================================
@@ -268,20 +268,15 @@ export async function streamKaiAnalysis(params: {
   userContext?: string;
   vaultOwnerToken: string;
 }): Promise<Response> {
-  if (Capacitor.isNativePlatform()) {
-    // Capacitor WebViews are not a reliable SSE client across iOS/Android.
-    // Prefer non-streaming endpoints / native plugin calls on mobile.
-    throw new Error("Streaming (SSE) Kai analysis is only supported on web.");
-  }
+  // SSE streaming is now supported via ApiService.apiFetchStream
   const baseUrl = getDirectBackendUrl();
   const url = `${baseUrl}/api/kai/analyze/stream`;
 
-  const response = await fetch(url, {
+  const response = await ApiService.apiFetchStream("/api/kai/analyze/stream", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${params.vaultOwnerToken}`,
       "Content-Type": "application/json",
-      Accept: "text/event-stream",
     },
     body: JSON.stringify({
       ticker: params.ticker,

@@ -1,12 +1,5 @@
-/**
- * Onboarding Service
- * ==================
- * 
- * Client-side service for managing user onboarding tour completion status.
- * Communicates with backend API to check and mark onboarding completion.
- */
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { HushhOnboarding } from "@/lib/capacitor";
+import { AuthService } from "@/lib/services/auth-service";
 
 export class OnboardingService {
   /**
@@ -17,24 +10,12 @@ export class OnboardingService {
    */
   static async checkOnboardingStatus(userId: string): Promise<boolean> {
     try {
-      const url = `${API_BASE}/api/onboarding/status?userId=${encodeURIComponent(userId)}`;
-      console.log("[OnboardingService] Checking status at:", url);
-
-      const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error("Failed to check onboarding status:", response.statusText);
-        return false;
-      }
-
-      const data = await response.json();
-      return data.completed || false;
+      const authToken = (await AuthService.getIdToken()) ?? undefined;
+      const result = await HushhOnboarding.checkOnboardingStatus({
+        userId,
+        authToken,
+      });
+      return result.completed;
     } catch (error) {
       console.error("Error checking onboarding status:", error);
       return false;
@@ -49,21 +30,12 @@ export class OnboardingService {
    */
   static async completeOnboarding(userId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/api/onboarding/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId }),
+      const authToken = (await AuthService.getIdToken()) ?? undefined;
+      const result = await HushhOnboarding.completeOnboarding({
+        userId,
+        authToken,
       });
-
-      if (!response.ok) {
-        console.error("Failed to complete onboarding:", response.statusText);
-        return false;
-      }
-
-      const data = await response.json();
-      return data.success || false;
+      return result.success;
     } catch (error) {
       console.error("Error completing onboarding:", error);
       return false;
@@ -72,7 +44,6 @@ export class OnboardingService {
 
   /**
    * Reset onboarding status (for testing/debugging).
-   * Note: This would require a backend endpoint to be implemented.
    * 
    * @param userId - The user ID
    */

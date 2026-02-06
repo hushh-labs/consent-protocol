@@ -221,3 +221,50 @@ class VaultKeysService:
             "totalActive": total_active,
             "total": total
         }
+    
+    async def get_onboarding_status(self, user_id: str) -> bool:
+        """
+        Check if user has completed onboarding tour.
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            True if onboarding completed, False otherwise
+        """
+        supabase = self._get_supabase()
+        
+        response = supabase.table("vault_keys")\
+            .select("onboarding_completed")\
+            .eq("user_id", user_id)\
+            .limit(1)\
+            .execute()
+        
+        if not response.data or len(response.data) == 0:
+            return False
+        
+        return response.data[0].get("onboarding_completed", False)
+    
+    async def complete_onboarding(self, user_id: str) -> bool:
+        """
+        Mark user's onboarding as complete.
+        
+        Args:
+            user_id: The user ID
+            
+        Returns:
+            True if successful
+        """
+        supabase = self._get_supabase()
+        
+        result = supabase.table("vault_keys")\
+            .update({"onboarding_completed": True})\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        if result.count == 0:
+            logger.warning(f"⚠️ Onboarding complete attempted for {user_id} but NO ROW UPDATED. User ID mismatch?")
+            return False
+            
+        logger.info(f"✅ Onboarding marked complete for user {user_id[:8]} (Rows updated: {result.count})")
+        return True
