@@ -128,6 +128,14 @@ async function initializeWebFCM(
     );
     const { app } = await import("@/lib/firebase/config");
 
+    // Check for required Firebase config values before initializing messaging
+    // The Firebase Web SDK requires appId for the Installations service (used by getToken)
+    if (!app.options.appId || !app.options.apiKey) {
+      console.warn("[FCM] Missing 'appId' or 'apiKey' in Firebase config. Skipping FCM initialization to prevent crash.");
+      console.warn("[FCM] Please add NEXT_PUBLIC_FIREBASE_APP_ID to your .env.local if you wish to use Push Notifications.");
+      return;
+    }
+
     const messaging = getMessaging(app);
     const token = await getToken(messaging, { vapidKey });
 
