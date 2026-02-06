@@ -138,9 +138,10 @@ async def request_consent(request: ConsentRequest):
     # Generate a request ID
     request_id = str(uuid.uuid4())[:8]
     
-    # Calculate MCP poll timeout from env var
+    # Pending request lifetime: use expiry_hours (capped at 24) so request stays pending for long timeouts
     now_ms = int(time.time() * 1000)
-    poll_timeout_at = now_ms + (CONSENT_TIMEOUT_SECONDS * 1000)
+    pending_hours = min(max(1, request.expiry_hours), 24)
+    poll_timeout_at = now_ms + int(pending_hours * 3600 * 1000)
     
     # Store in database with dot notation scope (mandatory)
     service = ConsentDBService()

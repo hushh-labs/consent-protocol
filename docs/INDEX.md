@@ -43,6 +43,7 @@ All consent management endpoints use VAULT_OWNER token (not Firebase auth):
 | [Project Context Map](project_context_map.md) | **Start here** - Repo topology, invariants, tri-flow rules |
 | [Architecture](reference/architecture.md) | System design, ADK agents, service layer |
 | [Consent Protocol](reference/consent_protocol.md) | VAULT_OWNER tokens, security model, compliance |
+| [Consent Push (FCM)](reference/consent_push_notifications.md) | FCM vs gcloud: what cannot be done with gcloud CLI alone; setup and test |
 
 ### Building Features
 
@@ -69,6 +70,7 @@ All consent management endpoints use VAULT_OWNER token (not Firebase auth):
 |-------|----------|
 | **CI configuration** | [ci.md](reference/ci.md) |
 | Env vars and secrets | [env_and_secrets.md](reference/env_and_secrets.md) |
+| Consent push (FCM) | [consent_push_notifications.md](reference/consent_push_notifications.md) |
 | Database Schema | [database_schema.md](reference/database_schema.md) |
 | Service Layer | [database_service_layer.md](reference/database_service_layer.md) |
 | Developer API | [developer_api.md](reference/developer_api.md) |
@@ -112,6 +114,7 @@ docs/
 ├── reference/                  # Technical reference
 │   ├── architecture.md         # System architecture
 │   ├── consent_protocol.md     # Security & consent
+│   ├── consent_push_notifications.md  # FCM vs gcloud, push setup
 │   ├── database_schema.md      # Database tables
 │   ├── database_service_layer.md
 │   ├── route_contracts.md      # API contracts

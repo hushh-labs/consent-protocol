@@ -707,6 +707,42 @@ export const HushhIdentity = registerPlugin<HushhIdentityPlugin>(
   }
 );
 
+// ==================== HushhOnboardingPlugin ====================
+// Tracking onboarding tour completion status
+
+export interface OnboardingStatusResult {
+  completed: boolean;
+  completedAt: string | null;
+}
+
+export interface HushhOnboardingPlugin {
+  /**
+   * Check if user has completed onboarding tour.
+   * Calls /api/onboarding/status on backend.
+   */
+  checkOnboardingStatus(options: {
+    userId: string;
+    authToken?: string; // Firebase ID token
+  }): Promise<OnboardingStatusResult>;
+
+  /**
+   * Mark user's onboarding as complete.
+   * Calls /api/onboarding/complete on backend.
+   */
+  completeOnboarding(options: {
+    userId: string;
+    authToken?: string; // Firebase ID token
+  }): Promise<{ success: boolean }>;
+}
+
+export const HushhOnboarding = registerPlugin<HushhOnboardingPlugin>(
+  "HushhOnboarding",
+  {
+    web: () =>
+      import("./plugins/onboarding-web").then((m) => new m.HushhOnboardingWeb()),
+  }
+);
+
 // ==================== HushhWorldModelPlugin ====================
 // World Model operations for dynamic domain/attribute management
 

@@ -48,3 +48,28 @@ service-principal-credentials.json
 
 testcode.html
 
+# iOS
+/ios/App/Pods/
+/ios/App/.xcworkspace/
+/ios/App/Podfile.lock
+/ios/App/App/build/
+/ios/build/
+/ios/DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+
+# Capacitor
+/www/
+/dist/
+!/dist/.gitkeep
+
+
