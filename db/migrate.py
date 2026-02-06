@@ -55,6 +55,7 @@ async def create_vault_keys(pool: asyncpg.Pool):
             recovery_encrypted_vault_key TEXT NOT NULL,
             recovery_salt TEXT NOT NULL,
             recovery_iv TEXT NOT NULL,
+            onboarding_completed BOOLEAN DEFAULT FALSE,
             created_at BIGINT NOT NULL,
             updated_at BIGINT
         )
