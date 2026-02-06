@@ -111,4 +111,4 @@ Before providing a solution, strictly follow this cognitive sequence:
 2. **Token usage (when available):** If the environment provides token counts, add:
    `Tokens used: [input/output or total as provided]`
 
-After using Build mode or Agent mode, always include the sign-off at the end of the response; include token usage when the environment supplies it.
+After using Build mode or Agent mode, always include the sign-off at the end of the response with the exact AI model and version(always)

@@ -7,7 +7,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
+import java.io.BufferedReader
 import java.io.IOException
+import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 /**
@@ -571,6 +573,145 @@ class KaiPlugin : Plugin() {
                 }
             }
         })
+    }
+
+    companion object {
+        private const val PORTFOLIO_STREAM_EVENT = "portfolioStreamEvent"
+    }
+
+    /** Emit one SSE event to JS (same shape as iOS: event.data = parsed object). */
+    private fun emitPortfolioStreamEvent(parsed: JSObject) {
+        val wrap = JSObject()
+        wrap.put("data", parsed)
+        notifyListeners(PORTFOLIO_STREAM_EVENT, wrap)
+    }
+
+    @PluginMethod
+    fun streamPortfolioImport(call: PluginCall) {
+        val userId = call.getString("userId") ?: run {
+            call.reject("Missing userId")
+            return
+        }
+        val fileName = call.getString("fileName") ?: run {
+            call.reject("Missing fileName")
+            return
+        }
+        val mimeType = call.getString("mimeType") ?: run {
+            call.reject("Missing mimeType")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        val fileBase64 = call.getString("fileBase64") ?: run {
+            call.reject("Missing fileBase64")
+            return
+        }
+        val fileData: ByteArray
+        try {
+            fileData = android.util.Base64.decode(fileBase64, android.util.Base64.DEFAULT)
+        } catch (e: Exception) {
+            call.reject("Invalid base64 file content")
+            return
+        }
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/portfolio/import/stream"
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("user_id", userId)
+            .addFormDataPart("file", fileName, fileData.toRequestBody(mimeType.toMediaType()))
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+        val pluginCall = call
+        Thread {
+            try {
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    bridge.runOnUiThread { pluginCall.reject("HTTP ${response.code}") }
+                    return@Thread
+                }
+                val body = response.body ?: run {
+                    bridge.runOnUiThread { pluginCall.reject("No response body") }
+                    return@Thread
+                }
+                body.byteStream().use { stream ->
+                    BufferedReader(InputStreamReader(stream)).use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            val l = line!!
+                            if (l.startsWith("data: ")) {
+                                try {
+                                    val jsonStr = l.substring(6)
+                                    emitPortfolioStreamEvent(JSObject(jsonStr))
+                                } catch (_: Exception) { /* skip parse error */ }
+                            }
+                        }
+                    }
+                }
+                bridge.runOnUiThread { pluginCall.resolve(JSObject().put("success", true)) }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "streamPortfolioImport error", e)
+                bridge.runOnUiThread { pluginCall.reject("Stream error: ${e.message}") }
+            }
+        }.start()
+    }
+
+    @PluginMethod
+    fun streamPortfolioAnalyzeLosers(call: PluginCall) {
+        val bodyObj = call.getObject("body") ?: run {
+            call.reject("Missing body")
+            return
+        }
+        val vaultOwnerToken = call.getString("vaultOwnerToken") ?: run {
+            call.reject("Missing vaultOwnerToken")
+            return
+        }
+        val backendUrl = getBackendUrl(call)
+        val url = "$backendUrl/api/kai/portfolio/analyze-losers/stream"
+        val bodyStr = bodyObj.toString()
+        val requestBody = bodyStr.toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $vaultOwnerToken")
+            .build()
+        val pluginCall = call
+        Thread {
+            try {
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    bridge.runOnUiThread { pluginCall.reject("HTTP ${response.code}") }
+                    return@Thread
+                }
+                val body = response.body ?: run {
+                    bridge.runOnUiThread { pluginCall.reject("No response body") }
+                    return@Thread
+                }
+                body.byteStream().use { stream ->
+                    BufferedReader(InputStreamReader(stream)).use { reader ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            val l = line!!
+                            if (l.startsWith("data: ")) {
+                                try {
+                                    val jsonStr = l.substring(6)
+                                    emitPortfolioStreamEvent(JSObject(jsonStr))
+                                } catch (_: Exception) { /* skip */ }
+                            }
+                        }
+                    }
+                }
+                bridge.runOnUiThread { pluginCall.resolve(JSObject().put("success", true)) }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "streamPortfolioAnalyzeLosers error", e)
+                bridge.runOnUiThread { pluginCall.reject("Stream error: ${e.message}") }
+            }
+        }.start()
     }
 
     @PluginMethod
