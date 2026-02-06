@@ -102,7 +102,25 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
+// Hook to force re-render on theme change
+function useThemeAware() {
+  const [theme, setTheme] = useState("dark");
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === "class") {
+          setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+        }
+      });
+    });
+    observer.observe(document.documentElement, { attributes: true });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
+
 export default function PortfolioHealthPage() {
+  const theme = useThemeAware();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { vaultOwnerToken } = useVault();
@@ -354,7 +372,7 @@ export default function PortfolioHealthPage() {
   };
 
   return (
-    <div className="w-full mx-auto space-y-4 px-4 py-4 pb-40 sm:px-6 sm:py-6 md:max-w-5xl">
+    <div className="w-full mx-auto space-y-4 px-4 py-4 sm:px-6 sm:py-6 md:max-w-5xl">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-emerald-500" />
@@ -449,7 +467,7 @@ export default function PortfolioHealthPage() {
                   </div>
                   <div className="h-64 w-full mt-4">
                     {radarData.length > 0 ? (
-                      <ChartContainer config={chartConfig} className="h-full w-full">
+                      <ChartContainer config={chartConfig} className="h-full w-full" key={theme}>
                         <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
                           <PolarGrid stroke="var(--border)" strokeOpacity={0.3} />
                           <PolarAngleAxis 

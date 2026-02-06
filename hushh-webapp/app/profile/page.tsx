@@ -169,7 +169,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6 pb-40">
+    <div className="w-full mx-auto px-4 sm:px-6 py-6 md:py-8 md:max-w-2xl space-y-6">
       {/* Profile Header */}
       <div className="text-center space-y-4">
         <Avatar className="h-24 w-24 mx-auto ring-4 ring-primary/20">
@@ -357,6 +357,7 @@ export default function ProfilePage() {
         Your data is encrypted end-to-end and never leaves your device
         unencrypted.
       </p>
+      
     </div>
   );
 }

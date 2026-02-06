@@ -396,7 +396,7 @@ export default function ManagePortfolioPage() {
   }
 
   return (
-    <div className="min-h-screen pb-40">
+    <div className="w-full">
       <div className="p-4 space-y-4">
         {/* Account Info */}
         {(accountInfo.account_number || accountInfo.brokerage_name) && (
