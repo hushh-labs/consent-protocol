@@ -206,7 +206,41 @@ export interface KaiPlugin {
     losers: Array<Record<string, unknown>>;
     portfolio_level_takeaways: string[];
   }>;
+
+  /**
+   * Stream portfolio import (SSE) from native to avoid WKWebView fetch buffering.
+   * Subscribe to events via Kai.addListener('portfolioStreamEvent', handler).
+   * Resolves when stream ends.
+   */
+  streamPortfolioImport(options: {
+    userId: string;
+    fileBase64: string;
+    fileName: string;
+    mimeType: string;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
+   * Stream portfolio analyze-losers (SSE) from native.
+   * Subscribe to events via Kai.addListener('portfolioStreamEvent', handler).
+   * Resolves when stream ends.
+   */
+  streamPortfolioAnalyzeLosers(options: {
+    body: Record<string, unknown>;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
+   * Subscribe to plugin events (e.g. portfolioStreamEvent). Provided by Capacitor at runtime.
+   */
+  addListener(
+    eventName: string,
+    listenerFunc: (event: { data?: Record<string, unknown> }) => void
+  ): Promise<{ remove: () => void }>;
 }
+
+/** Event name for native portfolio SSE events (import + analyze-losers). */
+export const PORTFOLIO_STREAM_EVENT = "portfolioStreamEvent";
 
 export const Kai = registerPlugin<KaiPlugin>("Kai", {
   web: () => import("./plugins/kai-web").then((m) => new m.KaiWeb()),

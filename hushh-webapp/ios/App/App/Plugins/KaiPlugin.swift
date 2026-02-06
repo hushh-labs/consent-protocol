@@ -16,7 +16,7 @@ import Capacitor
  */
 
 @objc(KaiPlugin)
-public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
+public class KaiPlugin: CAPPlugin, CAPBridgedPlugin, URLSessionDataDelegate {
     
     private let TAG = "KaiPlugin"
     
@@ -31,6 +31,8 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "resetPreferences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "importPortfolio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "analyzePortfolioLosers", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "streamPortfolioImport", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "streamPortfolioAnalyzeLosers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "chat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getInitialChatState", returnType: CAPPluginReturnPromise)
     ]
@@ -42,6 +44,12 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
         config.timeoutIntervalForResource = 170 // Match Android callTimeout
         return URLSession(configuration: config)
     }()
+    
+    // Streaming: session with delegate to receive incremental SSE data (WKWebView buffers fetch otherwise)
+    private var streamSession: URLSession?
+    private var streamCall: CAPPluginCall?
+    private var streamBuffer = ""
+    private var streamTask: URLSessionDataTask?
     
     // MARK: - Configuration
     
@@ -674,6 +682,157 @@ public class KaiPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("JSON parsing error: \(error.localizedDescription)")
             }
         }.resume()
+    }
+    
+    // MARK: - Portfolio streaming (real-time SSE on iOS; avoids WKWebView fetch buffering)
+    
+    private static let kPortfolioStreamEvent = "portfolioStreamEvent"
+    
+    private func makeStreamSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 150
+        config.timeoutIntervalForResource = 300
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+    
+    private func emitSSEEvent(_ data: [String: Any]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.notifyListeners(KaiPlugin.kPortfolioStreamEvent, data: data)
+        }
+    }
+    
+    private func parseSSELinesAndEmit() {
+        let lines = streamBuffer.split(separator: "\n", omittingEmptySubsequences: false)
+        guard !lines.isEmpty else { return }
+        let fullLines = lines.dropLast(1).map { String($0) }
+        let last = String(lines.last ?? "")
+        streamBuffer = last
+        
+        for line in fullLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("data: ") else { continue }
+            let jsonStr = String(trimmed.dropFirst(6))
+            guard let jsonData = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else { continue }
+            emitSSEEvent(obj)
+        }
+    }
+    
+    public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        if let str = String(data: data, encoding: .utf8) {
+            streamBuffer += str
+            parseSSELinesAndEmit()
+        }
+    }
+    
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let call = streamCall
+        streamCall = nil
+        streamTask = nil
+        
+        // Process any remaining buffer before clearing
+        if !streamBuffer.isEmpty {
+            parseSSELinesAndEmit()
+        }
+        streamBuffer = ""
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if let error = error {
+                call?.reject("Stream error: \(error.localizedDescription)")
+                return
+            }
+            if let httpResponse = task.response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                call?.reject("HTTP \(httpResponse.statusCode)")
+                return
+            }
+            call?.resolve(["success": true])
+        }
+    }
+    
+    @objc func streamPortfolioImport(_ call: CAPPluginCall) {
+        guard let userId = call.getString("userId"),
+              let fileName = call.getString("fileName"),
+              let mimeType = call.getString("mimeType"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken"),
+              let fileBase64 = call.getString("fileBase64") else {
+            call.reject("Missing required parameters: userId, fileName, mimeType, vaultOwnerToken, fileBase64")
+            return
+        }
+        guard let fileData = Data(base64Encoded: fileBase64) else {
+            call.reject("Invalid base64 file content")
+            return
+        }
+        if streamCall != nil {
+            call.reject("A stream is already in progress")
+            return
+        }
+        
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/portfolio/import/stream"
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"user_id\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+        
+        streamCall = call
+        streamBuffer = ""
+        streamSession = makeStreamSession()
+        streamTask = streamSession?.dataTask(with: request)
+        streamTask?.resume()
+    }
+    
+    @objc func streamPortfolioAnalyzeLosers(_ call: CAPPluginCall) {
+        guard let bodyJson = call.getObject("body"),
+              let vaultOwnerToken = call.getString("vaultOwnerToken") else {
+            call.reject("Missing required parameters: body, vaultOwnerToken")
+            return
+        }
+        if streamCall != nil {
+            call.reject("A stream is already in progress")
+            return
+        }
+        
+        let backendUrl = getBackendUrl(call)
+        let urlStr = "\(backendUrl)/api/kai/portfolio/analyze-losers/stream"
+        guard let url = URL(string: urlStr) else {
+            call.reject("Invalid URL: \(urlStr)")
+            return
+        }
+        
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyJson) else {
+            call.reject("Invalid body JSON")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(vaultOwnerToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+        
+        streamCall = call
+        streamBuffer = ""
+        streamSession = makeStreamSession()
+        streamTask = streamSession?.dataTask(with: request)
+        streamTask?.resume()
     }
     
     // MARK: - Chat Methods
