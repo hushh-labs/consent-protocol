@@ -14,6 +14,7 @@ import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
 import { isAndroid } from "@/lib/capacitor/platform";
+import { KaiOnboardingFlow } from "@/components/kai/kai-onboarding-flow";
 
 // Global utility for resetting welcome screen (accessible from browser console)
 if (typeof window !== "undefined") {
@@ -27,9 +28,9 @@ if (typeof window !== "undefined") {
 // --- Shared Components ---
 function SharedHeader() {
   return (
-    <div className="text-center space-y-6">
+    <div className="text-center space-y-5">
       <h1
-        className="text-4xl font-bold tracking-tight bg-clip-text text-transparent mb-6"
+        className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent"
         style={{
           backgroundImage: "linear-gradient(to right, #e91e63, #9c27b0)",
         }}
@@ -37,7 +38,7 @@ function SharedHeader() {
         Welcome to
       </h1>
 
-      <div className="mx-auto h-24 w-auto flex items-center justify-center mb-2">
+      <div className="mx-auto h-24 w-auto flex items-center justify-center">
         <img
           src="/hushh-logo-new.svg"
           alt="Hushh Logo"
@@ -45,9 +46,9 @@ function SharedHeader() {
         />
       </div>
 
-      <p className="text-lg text-muted-foreground leading-relaxed text-balance">
+      <p className="text-xl font-bold text-muted-foreground leading-tight">
         Your Personal Agent. <br />
-        Private. Secure. Yours.
+        <span className="text-base font-medium opacity-70">Private. Secure. Yours.</span>
       </p>
     </div>
   );
@@ -56,74 +57,64 @@ function SharedHeader() {
 // --- Welcome Component for First-Time Users ---
 function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Standard App Background inherited from layout */}
-
-      <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        {/* Header / Logo */}
+    <main className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <div className="w-full max-w-lg space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        {/* Unified Header */}
         <SharedHeader />
 
-        {/* Feature Cards Carousel / Stack */}
-        <div className="space-y-3">
+        {/* Feature Information - Refining Scale */}
+        <div className="space-y-6 px-10 py-2">
           {/* Kai Feature */}
-          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm mb-1">Meet Kai</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Your AI Investment Advisor. Analyzes your portfolio and markets privately.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-5">
+            <div className="p-3.5 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0 shadow-lg shadow-purple-500/5">
+              <TrendingUp className="h-6 w-6" />
+            </div>
+            <div className="space-y-0.5">
+              <h3 className="font-extrabold text-lg tracking-tight">Meet Kai</h3>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+                Your AI Investment Advisor. Analyzes your portfolio privately.
+              </p>
+            </div>
+          </div>
 
           {/* E2EE Feature */}
-          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400 shrink-0">
-                <Shield className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm mb-1">
-                  End-to-End Encrypted
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Your data is encrypted on your device. Only you hold the keys.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-5">
+            <div className="p-3.5 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 shadow-lg shadow-emerald-500/5">
+              <Shield className="h-6 w-6" />
+            </div>
+            <div className="space-y-0.5">
+              <h3 className="font-extrabold text-lg tracking-tight">End-to-End Encrypted</h3>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+                Your data is encrypted on your device. Only you hold the keys.
+              </p>
+            </div>
+          </div>
 
           {/* Control Feature */}
-          <Card variant="none" effect="glass" className="border-white/20 dark:border-white/10">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">
-                <Lock className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm mb-1">Total Control</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Grant and revoke access to your data with granular precision.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-5">
+            <div className="p-3.5 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0 shadow-lg shadow-blue-500/5">
+              <Lock className="h-6 w-6" />
+            </div>
+            <div className="space-y-0.5">
+              <h3 className="font-extrabold text-lg tracking-tight">Total Control</h3>
+              <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+                Grant and revoke access to your data with granular precision.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Action */}
-        <div className="pt-4">
+        <div className="pt-2 px-2">
           <Button
             variant="gradient"
-            size="xl"
-            className="w-full h-14 text-lg shadow-lg shadow-blue-500/25 rounded-2xl"
+            size="lg"
+            className="w-full h-12 text-base shadow-lg shadow-blue-500/20 rounded-xl"
             onClick={onGetStarted}
             showRipple
           >
             Get Started
-            <ArrowRight className="ml-2 h-5 w-5" />
+            <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -293,8 +284,8 @@ function LoginScreenContent() {
   };
 
   return (
-    <main className="flex-1 flex items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <main className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <div className="w-full max-w-lg space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
         {/* Header - Shared for seamless transition */}
         <SharedHeader />
 
