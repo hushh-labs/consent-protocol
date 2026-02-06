@@ -171,12 +171,12 @@ export function PortfolioHistoryChart({
   const chartConfig = useMemo<ChartConfig>(() => ({
     value: {
       label: "Portfolio Value",
-      color: isPositive ? "hsl(var(--chart-2))" : "hsl(var(--destructive))",
+      color: isPositive ? "var(--chart-2)" : "var(--destructive)",
     },
   }), [isPositive]);
 
   // Use CSS variables for theme-aware colors
-  const chartColor = isPositive ? "hsl(var(--chart-2))" : "hsl(var(--destructive))";
+  const chartColor = isPositive ? "var(--chart-2)" : "var(--destructive)";
 
   // If no historical data, show period summary fallback (only when not inline)
   if (!hasChartData) {
@@ -249,9 +249,13 @@ export function PortfolioHistoryChart({
             type="monotone"
             fill="url(#portfolioHistoryGradient)"
             stroke={chartColor}
-            strokeWidth={2}
-            animationDuration={1000}
-            animationEasing="ease-out"
+            strokeWidth={3}
+            activeDot={{
+              r: 6,
+              style: { fill: chartColor, opacity: 0.9, stroke: "var(--background)", strokeWidth: 2 }
+            }}
+            animationDuration={1500}
+            animationEasing="ease-in-out"
           />
         </AreaChart>
       </ChartContainer>

@@ -572,7 +572,7 @@ export default function KaiPreferencesPage() {
 
 
   return (
-    <div className="p-4 max-w-lg mx-auto space-y-4">
+    <div className="p-4 pb-40 max-w-lg mx-auto space-y-4">
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-bold">Preferences</h1>
 

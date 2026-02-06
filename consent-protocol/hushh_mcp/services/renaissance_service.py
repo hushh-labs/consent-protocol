@@ -107,6 +107,28 @@ class RenaissanceService:
             return TIER_WEIGHTS.get(stock.tier, 0.0)
         return 0.0
     
+    async def get_all_investable(self) -> list[RenaissanceStock]:
+        """Get all stocks in the Renaissance investable universe."""
+        try:
+            response = self.db.table("renaissance_universe").select("*").order("tier_rank").execute()
+            
+            return [
+                RenaissanceStock(
+                    ticker=row["ticker"],
+                    company_name=row["company_name"],
+                    sector=row["sector"],
+                    tier=row["tier"],
+                    fcf_billions=row.get("fcf_billions"),
+                    investment_thesis=row.get("investment_thesis", ""),
+                    tier_rank=row.get("tier_rank", 0),
+                )
+                for row in response.data
+            ]
+            
+        except Exception as e:
+            logger.error(f"Error getting all investable stocks: {e}")
+            return []
+
     async def get_by_tier(self, tier: str) -> list[RenaissanceStock]:
         """Get all stocks in a specific tier."""
         try:
@@ -252,9 +274,9 @@ class RenaissanceService:
         return (
             "RENAISSANCE SCREENING RUBRIC\n"
             "INVESTABLE REQUIREMENTS (all must be met):\n"
-            f"{fmt_rules(investable, 6)}\n\n"
+            f"{fmt_rules(investable, 12)}\n\n"
             "AUTOMATIC AVOID TRIGGERS (any one disqualifies):\n"
-            f"{fmt_rules(avoid, 10)}\n\n"
+            f"{fmt_rules(avoid, 20)}\n\n"
             "THE MATH:\n"
             f"{chr(10).join(math_lines)}\n"
         ).strip()
