@@ -77,33 +77,30 @@ export default function KaiPage() {
     console.log("[Kai] Command:", command, params);
 
     if (command === "analyze" && params?.symbol) {
-      // Trigger analysis via KaiFlow
-      if (analyzeStockRef.current) {
-        analyzeStockRef.current(params.symbol as string);
-      } else {
-        toast.info(`Analyzing ${params.symbol}...`);
-      }
+      toast.info(`Stock analysis for ${params.symbol} is coming soon!`, {
+        description: "We are currently refining our debate engine for more precise insights."
+      });
     } else if (command === "open_settings") {
       router.push("/kai/dashboard/preferences");
     }
   };
-
+ 
   // Update holdings when KaiFlow loads portfolio data
   const handleHoldingsUpdate = (newHoldings: string[]) => {
     setHoldings(newHoldings);
   };
-
+ 
   // Track flow state changes
   const handleStateChange = (state: FlowState) => {
     console.log("[Kai] Flow state:", state);
     setFlowState(state);
   };
-
+ 
   return (
     <div className="relative min-h-screen">
       {/* Main Content - KaiFlow handles all states */}
       <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
-
+ 
         <KaiFlow
           userId={user.uid}
           // Prefer in-memory token, but allow empty string as fallback.
@@ -113,13 +110,13 @@ export default function KaiPage() {
           onHoldingsLoaded={handleHoldingsUpdate}
         />
       </div>
-
+ 
       {/* Search Bar - Only show on dashboard state */}
       {flowState === "dashboard" && (
         <KaiSearchBar
           onCommand={handleCommand}
           holdings={holdings}
-          disabled={true}
+          disabled={false}
         />
       )}
     </div>

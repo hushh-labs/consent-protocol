@@ -936,69 +936,11 @@ export function KaiFlow({
       return;
     }
     
-    console.log("[KaiFlow] Analyze stock:", symbol);
-    toast.info(`Analyzing ${symbol}...`);
-    
-    // Set analyzing state
-    setFlowData(prev => ({
-      ...prev,
-      analysisResult: undefined,
-    }));
-    setState("analysis");
-    
-    try {
-      // Call debate engine API
-      const ApiService = (await import("@/lib/services/api-service")).ApiService;
-      const response = await ApiService.analyzeStock({
-        ticker: symbol,
-        userId,
-        vaultOwnerToken,
-        context: {
-          holdings: flowData.holdings || [],
-        },
-      });
-      
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Map backend response fields to frontend expected format
-        // Backend returns: decision (lowercase), headline, confidence, raw_card
-        // Frontend expects: decision (uppercase), summary, confidence, insights at top level
-        setFlowData(prev => ({
-          ...prev,
-          analysisResult: {
-            symbol,
-            // Convert decision to uppercase (backend returns lowercase)
-            decision: ((result.decision || "hold").toUpperCase() as "BUY" | "HOLD" | "REDUCE"),
-            confidence: result.confidence || 0.5,
-            // Backend uses "headline" instead of "summary"
-            summary: result.headline || result.summary || "Analysis complete.",
-            // Extract insights from raw_card if available, otherwise use top-level
-            fundamentalInsights: result.raw_card?.fundamental_insights || result.fundamental_insights,
-            sentimentInsights: result.raw_card?.sentiment_insights || result.sentiment_insights,
-            valuationInsights: result.raw_card?.valuation_insights || result.valuation_insights,
-          },
-        }));
-      } else {
-        throw new Error("Failed to analyze stock");
-      }
-    } catch (err) {
-      console.error("[KaiFlow] Analysis error:", err);
-      // Show placeholder result for now
-      setFlowData(prev => ({
-        ...prev,
-        analysisResult: {
-          symbol,
-          decision: "HOLD",
-          confidence: 0.65,
-          summary: `Analysis for ${symbol} is being processed. The debate engine is evaluating fundamental, sentiment, and valuation factors.`,
-          fundamentalInsights: "Fundamental analysis pending...",
-          sentimentInsights: "Sentiment analysis pending...",
-          valuationInsights: "Valuation analysis pending...",
-        },
-      }));
-    }
-  }, [userId, vaultOwnerToken, flowData.holdings]);
+    console.log("[KaiFlow] Analyze stock (coming soon):", symbol);
+    toast.info(`Stock analysis for ${symbol} is coming soon!`, {
+      description: "We are currently refining our debate engine for more precise insights.",
+    });
+  }, []);
 
   // Handle back to dashboard from analysis
   const handleBackToDashboard = useCallback(() => {
