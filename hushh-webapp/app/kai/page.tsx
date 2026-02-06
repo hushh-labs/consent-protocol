@@ -57,7 +57,7 @@ export default function KaiLandingPage() {
 
 
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-0">
+    <main className="flex-1 flex flex-col items-center justify-center p-6 pb-24 min-h-0">
       <div className="w-full max-w-md space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000">
         {/* Hero Section - Restored Original Style */}
         <div className="text-center space-y-8">

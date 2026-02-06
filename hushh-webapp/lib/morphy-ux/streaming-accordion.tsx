@@ -26,7 +26,7 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
-import { ChevronDownIcon, Sparkles, Loader2, Database } from "lucide-react";
+import { ChevronDownIcon, Sparkles, Loader2, Database, CheckCircle2 } from "lucide-react";
 
 import { cn } from "./cn";
 import { StreamingCursor } from "./streaming-cursor";
@@ -71,7 +71,7 @@ function formatThinkingText(text: string) {
     }
 
     // Match pattern: **Header text** (with or without trailing content)
-    // Be more aggressive in stripping stars from the start of lines
+    // Be more aggressive in stripping stars from the start and end
     const boldHeaderMatch = trimmedLine.match(/^\*\*(.+?)\*\*$/) || trimmedLine.match(/^\*\*(.+)$/);
     if (boldHeaderMatch && boldHeaderMatch[1]) {
       const title = boldHeaderMatch[1].replace(/\*\*$/, "").trim();
@@ -83,9 +83,22 @@ function formatThinkingText(text: string) {
         </div>
       );
     }
+
+    // Match bullet points: - Item or * Item
+    const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch && bulletMatch[1]) {
+      // Also strip inner bold if user doesn't want to see them
+      const content = bulletMatch[1].replace(/\*\*/g, "");
+      return (
+        <div key={i} className="flex gap-2 mb-1 pl-2">
+          <span className="text-primary mt-1">•</span>
+          <span className="text-sm">{content}</span>
+        </div>
+      );
+    }
     
-    // Regular line - remove leading ** if it's there but didn't match the header pattern
-    const cleanLine = trimmedLine.replace(/^\*\*(.+?)\*\*$/, '$1');
+    // Regular line - remove ALL instances of ** as requested
+    const cleanLine = trimmedLine.replace(/\*\*/g, "");
 
     return (
       <div key={i} className="mb-1 last:mb-0">
@@ -121,7 +134,7 @@ export interface StreamingAccordionProps {
   /** Callback when user manually toggles */
   onToggle?: (isOpen: boolean) => void;
   /** Icon to show in header (default: spinner) */
-  icon?: "brain" | "sparkles" | "spinner" | "database" | "none";
+  icon?: "brain" | "sparkles" | "spinner" | "database" | "none" | "check";
   /** Custom class for the icon */
   iconClassName?: string;
 
@@ -351,10 +364,11 @@ export function StreamingAccordion({
   // Render
   // ============================================================================
   const IconComponent = 
-    icon === "brain" ? Loader2 : 
+    icon === "brain" ? (isComplete ? CheckCircle2 : Loader2) : 
     icon === "sparkles" ? Sparkles : 
-    icon === "database" ? Database :
-    icon === "spinner" ? Loader2 : 
+    icon === "database" ? (isComplete ? CheckCircle2 : Database) :
+    icon === "spinner" ? (isComplete ? CheckCircle2 : Loader2) : 
+    icon === "check" ? CheckCircle2 :
     null;
 
 
