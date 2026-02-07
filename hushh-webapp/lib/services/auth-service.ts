@@ -53,6 +53,63 @@ export class AuthService {
   }
 
   /**
+   * Sign in with Email and Password using appropriate method for platform.
+   * On Native: Uses @capacitor-firebase/authentication for Keychain persistence.
+   * On Web: Uses Firebase JS SDK directly.
+   */
+  static async signInWithEmailAndPassword(email: string, password: string): Promise<AuthResult> {
+    if (Capacitor.isNativePlatform()) {
+      console.log("🍎 [AuthService] Starting native Email/Password Sign-In");
+      const toastId = toast.loading("Signing in as reviewer...");
+
+      try {
+        const result = await FirebaseAuthentication.signInWithEmailAndPassword({
+          email,
+          password,
+        });
+
+        if (!result.user) {
+          throw new Error("No user returned from native email/password login");
+        }
+
+        const idTokenResult = await FirebaseAuthentication.getIdToken();
+        const idToken = idTokenResult.token || "";
+
+        console.log("✅ [AuthService] Native email/password complete:", result.user.uid);
+        
+        // Wait for JS SDK to see the change (usually happens automatically but we can force)
+        let firebaseUser = auth.currentUser;
+        if (!firebaseUser) {
+           // Small delay to let sync happen
+           await new Promise(resolve => setTimeout(resolve, 500));
+           firebaseUser = auth.currentUser;
+        }
+
+        const user = firebaseUser || this.createUserFromNative(result.user, idToken, "password");
+        toast.success("Signed in successfully", { id: toastId });
+
+        return {
+          user,
+          idToken,
+        };
+      } catch (error: any) {
+        console.error("❌ [AuthService] Native email/password failed:", error);
+        toast.error(error.message || "Failed to sign in", { id: toastId });
+        throw error;
+      }
+    } else {
+      // WEB FLOW
+      const { signInWithEmailAndPassword: webSignIn } = await import("firebase/auth");
+      const result = await webSignIn(auth, email, password);
+      const idToken = await result.user.getIdToken();
+      return {
+        user: result.user,
+        idToken,
+      };
+    }
+  }
+
+  /**
    * Native iOS/Android Google Sign-In flow using @capacitor-firebase/authentication
    * 1. FirebaseAuthentication.signInWithGoogle() presents native Google UI
    * 2. Automatically syncs with Firebase
@@ -169,7 +226,11 @@ export class AuthService {
   /**
    * Create a User-like object from native Firebase user data
    */
-  private static createUserFromNative(nativeUser: any, idToken: string): User {
+  private static createUserFromNative(
+    nativeUser: any,
+    idToken: string,
+    providerId: string = "google.com"
+  ): User {
     return {
       uid: nativeUser.uid,
       email: nativeUser.email,
@@ -183,7 +244,7 @@ export class AuthService {
       },
       providerData: [
         {
-          providerId: "google.com",
+          providerId,
           uid: nativeUser.uid,
           displayName: nativeUser.displayName,
           email: nativeUser.email,
@@ -201,13 +262,13 @@ export class AuthService {
         authTime: "",
         issuedAtTime: "",
         expirationTime: "",
-        signInProvider: "google.com",
+        signInProvider: providerId,
         signInSecondFactor: null,
       }),
       reload: async () => {},
       toJSON: () => ({}),
       phoneNumber: null,
-      providerId: "google.com",
+      providerId,
     } as unknown as User;
   }
 
@@ -594,7 +655,13 @@ export class AuthService {
       }
 
       // Construct User object from native data
-      const restoredUser = this.createUserFromNative(result.user, idToken);
+      // If the user has an email, assume password provider for restoration if not google/apple
+      // Usually getCurrentUser() result.user contains providerId in some plugins, 
+      // but @capacitor-firebase/authentication might not expose it clearly in result.user
+      // We'll check email presence.
+      const providerId = result.user.email ? "password" : "google.com"; 
+
+      const restoredUser = this.createUserFromNative(result.user, idToken, providerId);
 
       console.log("🍎 [AuthService] Session restored! UID:", restoredUser.uid);
       return restoredUser;
