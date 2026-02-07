@@ -11,7 +11,7 @@ const APP_URL =
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://localhost:8000";
+  "https://consent-protocol-1006304528804.us-central1.run.app";
 
 const config: CapacitorConfig = {
   appId: "com.hushh.app",
