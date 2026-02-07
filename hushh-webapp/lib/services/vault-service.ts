@@ -445,14 +445,16 @@ export class VaultService {
    */
   private static async getFirebaseToken(): Promise<string | undefined> {
     try {
-      if (Capacitor.isNativePlatform()) {
-        const result = await HushhAuth.getIdToken();
-        return result.idToken || undefined;
-      }
-
+      // Check Firebase JS SDK first (consistent across all platforms)
       const user = auth.currentUser;
       if (user) {
         return await user.getIdToken();
+      }
+
+      // Fallback to native plugin if on native platform
+      if (Capacitor.isNativePlatform()) {
+        const result = await HushhAuth.getIdToken();
+        return result.idToken || undefined;
       }
     } catch (e) {
       console.warn("[VaultService] Failed to get Firebase token:", e);
