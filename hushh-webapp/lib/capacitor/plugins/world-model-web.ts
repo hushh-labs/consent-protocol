@@ -3,6 +3,9 @@
  *
  * Fallback for web platform - uses standard fetch to Next.js API routes.
  * This plugin provides the web implementation for HushhWorldModel.
+ * 
+ * SECURITY: Token must be passed explicitly via vaultOwnerToken parameter.
+ * Never reads from sessionStorage (XSS protection).
  */
 
 import { WebPlugin } from "@capacitor/core";
@@ -13,8 +16,8 @@ export class HushhWorldModelWeb
   implements HushhWorldModelPlugin
 {
   private async getAuthHeader(overrideToken?: string): Promise<string> {
-    const token = overrideToken || sessionStorage.getItem("vault_owner_token");
-    return token ? `Bearer ${token}` : "";
+    // SECURITY: Only use explicitly passed token, no sessionStorage fallback
+    return overrideToken ? `Bearer ${overrideToken}` : "";
   }
 
   async getMetadata(options: {
