@@ -241,7 +241,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       localStorage.removeItem("user_id");
       sessionStorage.clear();
 
-      router.push("/login");
+      router.push("/");
     } catch (e) {
       console.error("Sign out error", e);
     }

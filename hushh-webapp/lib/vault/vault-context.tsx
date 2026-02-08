@@ -1,18 +1,17 @@
 /**
- * Vault Context - Memory-Only Vault Key Storage
- * =============================================
+ * Vault Context - Memory-Only Vault Key & Token Storage
+ * =====================================================
  *
- * SECURITY MODEL:
+ * SECURITY MODEL (BYOK - Bring Your Own Key):
  * - Vault Key: Stored in React state (memory only) - XSS cannot access
- * - VAULT_OWNER Token: Stored in memory AND synced to sessionStorage
- *   - Synced to sessionStorage so service layer (ApiService, WorldModelService) can access
- *   - Token is time-limited (24h) and scope-restricted, so less sensitive than vault key
- *   - Cleared on logout/lock
+ * - VAULT_OWNER Token: Stored in React state (memory only) - XSS cannot access
  *
- * This follows the BYOK (Bring Your Own Key) security model:
- * - Firebase Auth = Identity (who you are)
- * - Vault Key = Access (unlock encrypted data) - NEVER leaves memory
- * - VAULT_OWNER Token = Consent gate (authorize API calls) - synced for service access
+ * CRITICAL: Neither vault key NOR token are stored in sessionStorage/localStorage.
+ * This prevents XSS attacks from stealing credentials.
+ *
+ * Services that need the token MUST receive it as a parameter from components
+ * that have access to useVault() hook. This ensures the token never leaves
+ * the React component tree's memory space.
  *
  * PERFORMANCE:
  * - Prefetches common data (world model, vault status, consents) on vault unlock
@@ -104,11 +103,10 @@ export function VaultProvider({ children }: VaultProviderProps) {
     setVaultKey(null);
     setVaultOwnerToken(null);
     setTokenExpiresAt(null);
+    
+    // SECURITY: Only clear the unlock status flag
+    // Token was never in sessionStorage (memory-only for XSS protection)
     removeSessionItem("vault_unlocked");
-    // Clear token from sessionStorage so services can detect locked state
-    // Note: The vault key is NEVER stored in sessionStorage (XSS protection)
-    removeSessionItem("vault_owner_token");
-    removeSessionItem("vault_owner_token_expires_at");
 
     if (userId) {
       CacheService.getInstance().invalidate(CACHE_KEYS.VAULT_CHECK(userId));
@@ -200,15 +198,15 @@ export function VaultProvider({ children }: VaultProviderProps) {
   const unlockVault = useCallback(
     (key: string, token: string, expiresAt: number) => {
       console.log(
-        "🔓 Vault unlocked (key in memory, token synced to sessionStorage)"
+        "🔓 Vault unlocked (key + token in memory only - XSS protected)"
       );
       setVaultKey(key);
       setVaultOwnerToken(token);
       setTokenExpiresAt(expiresAt);
 
+      // SECURITY: Only store unlock status flag, NOT the actual token
+      // Token stays in React state (memory) only - XSS cannot access
       setSessionItem("vault_unlocked", "true");
-      setSessionItem("vault_owner_token", token);
-      setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
 
       if (user?.uid) {
         prefetchDashboardData(user.uid, token);
