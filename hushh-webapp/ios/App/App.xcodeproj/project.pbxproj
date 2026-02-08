@@ -27,6 +27,7 @@
 		E8B31D0870530F4CFA77B50B /* HushhSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695EAEF496545F6564EEC117 /* HushhSettingsPlugin.swift */; };
 		F368A19E68607FCBA9D2DD32 /* HushhSyncPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */; };
 		FC968756EFA54153BC098D3D /* HushhVaultPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */; };
+		FACADE000000000000000002 /* HushhAccountPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = FACADE000000000000000001 /* HushhAccountPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		E1F2A3B52F0E966A009FC3FE /* HushhProxyClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhProxyClient.swift; path = Plugins/HushhProxyClient.swift; sourceTree = "<group>"; };
 		EB0840347A0D3490156D1D16 /* HushhVaultPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhVaultPlugin.swift; path = Plugins/HushhVaultPlugin.swift; sourceTree = "<group>"; };
 		EE27DFB8DCD94B9C5C0516DD /* HushhSyncPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhSyncPlugin.swift; path = Plugins/HushhSyncPlugin.swift; sourceTree = "<group>"; };
+		FACADE000000000000000001 /* HushhAccountPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HushhAccountPlugin.swift; path = Plugins/HushhAccountPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -116,6 +118,7 @@
 				B8D1F9192F0E967A009FC3FC /* HushhIdentityPlugin.swift */,
 				A1B2C3D52F0E966A009FC3FD /* WorldModelPlugin.swift */,
 				E1F2A3B52F0E966A009FC3FE /* HushhProxyClient.swift */,
+				FACADE000000000000000001 /* HushhAccountPlugin.swift */,
 			);
 			name = Plugins;
 			sourceTree = "<group>";
@@ -214,6 +217,7 @@
 				B8D1F91A2F0E967A009FC3FC /* HushhIdentityPlugin.swift in Sources */,
 				A1B2C3D42F0E966A009FC3FD /* WorldModelPlugin.swift in Sources */,
 				E1F2A3B42F0E966A009FC3FE /* HushhProxyClient.swift in Sources */,
+				FACADE000000000000000002 /* HushhAccountPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

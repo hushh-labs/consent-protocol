@@ -29,6 +29,8 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from api.middlewares.rate_limit import limiter  # noqa: E402
 from api.routes import (  # noqa: E402
+    account,
+    sync,
     agents,
     consent,
     db_proxy,
@@ -141,6 +143,12 @@ app.include_router(world_model.router)
 from api.routes import onboarding  # noqa: E402
 
 app.include_router(onboarding.router)
+
+# Account deletion and management
+app.include_router(account.router)
+
+# Data synchronization
+app.include_router(sync.router)
 
 # Force reload check - onboarding registered
 
