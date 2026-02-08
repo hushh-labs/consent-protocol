@@ -197,6 +197,17 @@ export const getVariantStyles = (
 
       return `${baseLinkStyles} bg-transparent border-none shadow-none`;
 
+
+    case "destructive":
+      if (effect === "fill") {
+        return "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-md transition-all duration-200 border border-transparent";
+      } else if (effect === "fade") {
+        return "bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-all duration-200";
+      } else {
+        // glass
+        return "bg-destructive/10 text-destructive border border-destructive/20 shadow-sm backdrop-blur-md hover:bg-destructive/20 transition-all duration-200";
+      }
+
     case "none":
     default:
       if (effect === "fill") {
@@ -374,6 +385,11 @@ export const getIconColor = (
     case "morphy":
       return "text-background";
 
+    case "destructive":
+      return effect === "fill" ? "text-destructive-foreground" : "text-destructive";
+
+
+
     case "none":
     default:
       if (effect === "fill") {
@@ -422,6 +438,9 @@ export const getRippleColor = (
         return "bg-black/20 dark:bg-[#c0c0c0]/20";
       case "morphy":
         return "bg-background/20";
+      case "destructive":
+        return "bg-red-500/20";
+
       case "none":
       default:
         return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
@@ -452,6 +471,9 @@ export const getRippleColor = (
       return "bg-black/10 dark:bg-white/20";
     case "morphy":
       return "bg-background/20";
+    case "destructive":
+      return "bg-red-500/20";
+
     case "none":
     default:
       return "bg-foreground/10 dark:bg-[#c0c0c0]/10";
@@ -552,8 +574,11 @@ export const getHoverBorderColor = (variant: ColorVariant): string => {
       return "hover:border-gray-800 dark:hover:border-[#c0c0c0]";
     case "morphy":
       return "hover:border-foreground/80";
+    case "destructive":
+      return "hover:border-destructive";
     case "link":
       return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
+
     case "none":
     default:
       return "hover:border-[var(--morphy-primary-start)] dark:hover:border-[#c0c0c0]";
@@ -631,6 +656,9 @@ export const getRippleGradient = (variant: ColorVariant): string => {
       return "from-white/20 to-white/10";
     case "morphy":
       return "from-background/20 to-background/5";
+    case "destructive":
+      return "from-red-500/20 to-red-500/10";
+
     default:
       return "from-foreground/10 to-foreground/5";
   }

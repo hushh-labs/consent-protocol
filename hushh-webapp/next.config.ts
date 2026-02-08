@@ -26,6 +26,8 @@ const config: NextConfig = {
     ];
   },
 
+
+
   // Dynamic output mode
   // 'standalone' is REQUIRED for Docker/Cloud Run builds to reduce image size
   output: isCapacitorBuild ? "export" : "standalone",
