@@ -752,3 +752,4 @@ export type { HushhWorldModelPlugin } from "./world-model";
 // ==================== Export all ====================
 
 export * from "./types";
+export * from "./account";

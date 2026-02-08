@@ -118,30 +118,27 @@ export class ApiService {
   /**
    * Get auth headers for API requests.
    * 
-   * Returns headers object with Authorization if vault_owner_token is available.
-   * This is the centralized method for getting auth headers - use this instead
-   * of manually constructing Authorization headers.
+   * SECURITY: Token must be passed explicitly from useVault() hook.
+   * Never reads from sessionStorage (XSS protection).
    * 
-   * @returns HeadersInit object with Authorization header if token exists
+   * @param vaultOwnerToken - The VAULT_OWNER token (optional, for protected routes)
+   * @returns HeadersInit object with Authorization header if token provided
    */
-  static getAuthHeaders(): HeadersInit {
-    if (typeof window === "undefined") {
-      return {};
-    }
-    const token = sessionStorage.getItem("vault_owner_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  static getAuthHeaders(vaultOwnerToken?: string): HeadersInit {
+    return vaultOwnerToken ? { Authorization: `Bearer ${vaultOwnerToken}` } : {};
   }
 
   /**
-   * Get the vault owner token from session storage.
+   * Get the vault owner token.
    * 
-   * @returns The vault owner token or null if not available
+   * DEPRECATED: Use useVault() hook directly in components.
+   * This method exists only for backward compatibility.
+   * 
+   * @returns null - Token should be passed explicitly from useVault()
    */
   static getVaultOwnerToken(): string | null {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    return sessionStorage.getItem("vault_owner_token");
+    console.warn("[ApiService] getVaultOwnerToken() is deprecated. Use useVault() hook and pass token explicitly.");
+    return null;
   }
 
   /**

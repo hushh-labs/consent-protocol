@@ -187,31 +187,58 @@ def validate_token(token_str, expected_scope=None):
     return True, None, token_obj
 ```
 
-### Frontend Token Storage
+### Frontend Token Storage (Memory-Only)
+
+**CRITICAL SECURITY MODEL**: Both vault key AND VAULT_OWNER token are stored in React state (memory only). This prevents XSS attacks from stealing credentials via `sessionStorage` or `localStorage`.
 
 ```typescript
 // hushh-webapp/lib/vault/vault-context.tsx
 const unlockVault = useCallback(
   (key: string, token: string, expiresAt: number) => {
-    // Store vault key in memory only (BYOK)
+    // SECURITY: Both key and token stored in React state (memory only)
+    // XSS attacks cannot access React component state
     setVaultKey(key);
+    setVaultOwnerToken(token);
+    setTokenExpiresAt(expiresAt);
 
-    // Sync VAULT_OWNER token to sessionStorage for service layer access
-    setSessionItem("vault_owner_token", token);
-    setSessionItem("vault_owner_token_expires_at", expiresAt.toString());
+    // Only store unlock STATUS flag (not sensitive)
+    setSessionItem("vault_unlocked", "true");
+    
+    // NEVER store vault_owner_token in sessionStorage!
   },
   [],
 );
 ```
 
+**What IS stored in sessionStorage (non-sensitive only)**:
+- `vault_unlocked` - Boolean flag ("true")
+- `user_id` - Firebase UID (public identifier)
+
+**What is NEVER stored in sessionStorage**:
+- `vault_key` - Encryption key
+- `vault_owner_token` - Consent token
+
 ### Service Layer Token Access
 
+Services MUST receive the token as an explicit parameter from components that have access to `useVault()` hook:
+
 ```typescript
-// hushh-webapp/lib/services/api-service.ts
+// ❌ WRONG - Never read token from sessionStorage
 static getVaultOwnerToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("vault_owner_token");
+  return sessionStorage.getItem("vault_owner_token"); // SECURITY VIOLATION!
 }
+
+// ✅ CORRECT - Token passed explicitly from useVault() hook
+async deleteAccount(vaultOwnerToken: string): Promise<Result> {
+  if (!vaultOwnerToken) {
+    throw new Error("VAULT_OWNER token required");
+  }
+  // Use token...
+}
+
+// ✅ CORRECT - Component passes token from context
+const { vaultOwnerToken } = useVault();
+await AccountService.deleteAccount(vaultOwnerToken);
 ```
 
 ---
@@ -401,6 +428,34 @@ CREATE TABLE consent_audit (
 - VAULT_OWNER scope satisfies ALL other scopes
 - Scoped tokens for delegated access
 - Time-limited tokens with expiration
+
+### 5. XSS Protection (Memory-Only Storage)
+
+**CRITICAL**: Both vault key AND VAULT_OWNER token are stored ONLY in React state (memory). This prevents XSS attacks from stealing credentials.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MEMORY ONLY (XSS Protected)              │
+├─────────────────────────────────────────────────────────────┤
+│  Vault Key        → React State (VaultContext)              │
+│  VAULT_OWNER Token → React State (VaultContext)             │
+├─────────────────────────────────────────────────────────────┤
+│                    sessionStorage (Non-Sensitive Only)      │
+├─────────────────────────────────────────────────────────────┤
+│  vault_unlocked   → "true" flag only                        │
+│  user_id          → Firebase UID (public identifier)        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters**:
+- XSS attacks can read `sessionStorage` and `localStorage`
+- XSS attacks CANNOT read React component state
+- Token theft via XSS is impossible with memory-only storage
+
+**Service layer pattern**:
+- Services MUST receive token as explicit parameter
+- Services MUST NOT read from sessionStorage
+- Components with `useVault()` access pass token to services
 
 ---
 

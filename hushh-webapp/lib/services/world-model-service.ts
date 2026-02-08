@@ -103,22 +103,17 @@ export interface ScopeDisplayInfo {
 export class WorldModelService {
   /**
    * Get auth headers for API requests.
-   * Returns headers object with Authorization if vault_owner_token is available.
+   * 
+   * SECURITY: Token must be passed explicitly from useVault() hook.
+   * Never reads from sessionStorage (XSS protection).
    */
   private static getAuthHeaders(vaultOwnerToken?: string): HeadersInit {
-    const token =
-      vaultOwnerToken ??
-      (typeof window !== "undefined"
-        ? sessionStorage.getItem("vault_owner_token")
-        : null);
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    return vaultOwnerToken ? { Authorization: `Bearer ${vaultOwnerToken}` } : {};
   }
 
   private static getVaultOwnerToken(vaultOwnerToken?: string): string | undefined {
-    if (typeof window === "undefined") {
-      return vaultOwnerToken;
-    }
-    return vaultOwnerToken || sessionStorage.getItem("vault_owner_token") || undefined;
+    // SECURITY: Only use explicitly passed token, no sessionStorage fallback
+    return vaultOwnerToken;
   }
 
   /**
