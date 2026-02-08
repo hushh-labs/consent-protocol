@@ -24,6 +24,7 @@ export type ColorVariant =
   | "mettalic-gradient" // Adaptive metallic gradient (light/dark)
   | "black" // Black variant for metallic gradient sections
   | "morphy" // High contrast variant (Black on Light, White on Dark)
+  | "destructive" // Red/Danger variant
   | "multi";
 
 // New effect type for component styling

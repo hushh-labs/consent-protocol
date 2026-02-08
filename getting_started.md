@@ -173,11 +173,24 @@ with get_db_connection() as conn:
 
 ## 4. Start Development Servers
 
+**⚠️ Important: Backend MUST run first!**
+
+The FastAPI backend is the core of Hushh - it handles:
+- Consent Protocol (VAULT_OWNER tokens)
+- Modular Agents (Food, Professional, Kai)
+- MCP Server (AI agent integration)
+
+**Always start with `.venv` - never use global Python.**
+
 ### Terminal 1: Backend (FastAPI)
 
 ```bash
 cd consent-protocol
-source .venv/bin/activate  # Activate virtual environment
+
+# Step 1: Activate virtual environment (NEVER skip this step)
+source .venv/bin/activate
+
+# Step 2: Start the backend server
 python -m uvicorn server:app --reload --port 8000
 
 # Expected output:
@@ -185,6 +198,11 @@ python -m uvicorn server:app --reload --port 8000
 # 🚀 Hushh Consent Protocol server initialized - KAI V2 + PHASE 2 + WORLD MODEL ENABLED
 # INFO: Uvicorn running on http://0.0.0.0:8000
 ```
+
+**Validation Steps:**
+1. Check `.venv` directory exists (don't use `venv`)
+2. If both exist, delete `venv` and keep only `.venv`
+3. Run commands above - backend must be running before frontend
 
 ### Terminal 2: Frontend (Next.js)
 
