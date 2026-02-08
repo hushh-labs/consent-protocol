@@ -43,6 +43,7 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(HushhKeystorePlugin())
         bridge?.registerPluginInstance(WorldModelPlugin())
         bridge?.registerPluginInstance(HushhOnboardingPlugin())
+        bridge?.registerPluginInstance(HushhAccountPlugin())
         
         print("✅ [MyViewController] All 10 plugins registered successfully:")
         print("   - HushhAuth (Google Sign-In)")
@@ -55,6 +56,7 @@ class MyViewController: CAPBridgeViewController {
         print("   - HushhKeystore (Secure Storage)")
         print("   - WorldModel (World Model / Domain Data)")
         print("   - HushhOnboarding (Onboarding Tour Status)")
+        print("   - HushhAccount (Account Management)")
         
         // Verify plugins are actually accessible by the bridge
         verifyPluginRegistration()
@@ -74,7 +76,8 @@ class MyViewController: CAPBridgeViewController {
             "HushhSettings",
             "HushhKeychain",  // Note: jsName is HushhKeychain (not HushhKeystore)
             "WorldModel",
-            "HushhOnboarding"
+            "HushhOnboarding",
+            "HushhAccount"
         ]
         
         for name in pluginNames {

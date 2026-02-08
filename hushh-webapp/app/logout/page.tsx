@@ -63,14 +63,14 @@ export default function LogoutPage() {
         completeStep();
 
         console.log("✅ Logged out successfully");
-        router.push("/login");
+        router.push("/");
       } catch (error) {
         console.error("Logout failed:", error);
         completeStep(); // Complete step on error
         // Still clear storage and redirect even if Firebase logout fails
         localStorage.clear();
         sessionStorage.clear();
-        router.push("/login");
+        router.push("/");
       }
     };
 
