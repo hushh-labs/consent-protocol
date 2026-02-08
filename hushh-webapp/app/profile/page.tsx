@@ -43,10 +43,26 @@ import {
   Folder,
   Loader2,
   MessageSquare,
-  ChevronRight
+  ChevronRight,
+  Trash2,
+  AlertTriangle
 } from "lucide-react";
 import { WorldModelService, DomainSummary } from "@/lib/services/world-model-service";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { VaultFlow } from "@/components/vault/vault-flow";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { AccountService } from "@/lib/services/account-service";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -72,8 +88,11 @@ export default function ProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
-  const { vaultOwnerToken } = useVault();
+  const { vaultOwnerToken, isVaultUnlocked } = useVault();
   const { registerSteps, completeStep, reset } = useStepProgress();
+  const [showVaultUnlock, setShowVaultUnlock] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [totalAttributes, setTotalAttributes] = useState(0);
   const [loadingDomains, setLoadingDomains] = useState(true);
@@ -138,6 +157,42 @@ export default function ProfilePage() {
       router.push("/");
     } catch (err) {
       console.error("Sign out error:", err);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    
+    // Ensure we have the vault owner token
+    if (!vaultOwnerToken) {
+      toast.error("Please unlock your vault first to delete your account.");
+      setShowVaultUnlock(true);
+      return;
+    }
+    
+    setIsDeleting(true);
+    try {
+      await AccountService.deleteAccount(vaultOwnerToken);
+      toast.success("Account deleted successfully. Redirecting...", {
+        duration: 3000,
+      });
+      // Small delay to let user see the toast
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await signOut(); // This will auto-redirect to /
+    } catch (error) {
+      console.error("Delete account error:", error);
+      toast.error("Failed to delete account. Please try again.");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleDeleteClick = () => {
+    if (isVaultUnlocked) {
+      setShowDeleteConfirm(true);
+    } else {
+      setShowVaultUnlock(true);
     }
   };
 
@@ -341,11 +396,99 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Danger Zone */}
+      <Card variant="none" className="border-destructive/20 bg-destructive/5 dark:bg-destructive/10">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-3 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            <span>Danger Zone</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2 pb-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            Deleting your account is permanent. All your data, including your vault and identity, will be erased.
+          </p>
+          <Button
+             variant="destructive"
+             effect="fade"
+             size="default"
+             onClick={handleDeleteClick}
+             disabled={isDeleting}
+             className="w-full sm:w-auto"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isVaultUnlocked ? "Delete Account" : "Unlock to Delete Account"}
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Unlock Dialog */}
+      <Dialog open={showVaultUnlock} onOpenChange={setShowVaultUnlock}>
+        <DialogContent className="sm:max-w-md p-0 border-none bg-transparent shadow-none">
+           {user && (
+             <div className="bg-background/95 backdrop-blur-xl border rounded-xl overflow-hidden shadow-2xl">
+               <div className="p-4 border-b">
+                 <h2 className="font-semibold text-center">Unlock Vault to Delete Account</h2>
+               </div>
+               <div className="p-4">
+                 <VaultFlow 
+                   user={user} 
+                   onSuccess={() => {
+                     setShowVaultUnlock(false);
+                     // Small delay to let closing animation finish before showing confirm
+                     setTimeout(() => setShowDeleteConfirm(true), 300);
+                   }} 
+                 />
+               </div>
+             </div>
+           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Account?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete your account
+              and remove your data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault(); // Prevent auto-closing
+                handleDeleteAccount();
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Yes, Delete Everything"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Sign Out Button */}
       <Button
-        variant="none"
+        variant="destructive"
+        effect="fade"
         size="lg"
-        className="w-full border border-destructive/30 text-destructive hover:bg-destructive/10"
+        className="w-full"
         onClick={handleSignOut}
       >
         <LogOut className="h-5 w-5 mr-2" />

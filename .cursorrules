@@ -50,6 +50,59 @@ ALL 7 must exist or feature is incomplete.
 - Using fetch() directly in React components
 - Not checking platform in service methods
 
+## CRITICAL: XSS Protection (Memory-Only Token Storage)
+
+**SECURITY RULE**: Vault key AND VAULT_OWNER token are stored ONLY in React state (memory).
+
+### BANNED PATTERNS
+
+❌ NEVER store sensitive tokens in sessionStorage:
+```typescript
+// WRONG - XSS vulnerability!
+sessionStorage.setItem("vault_owner_token", token);
+const token = sessionStorage.getItem("vault_owner_token");
+```
+
+❌ NEVER read token from sessionStorage in services:
+```typescript
+// WRONG - Services should receive token as parameter
+static getVaultOwnerToken(): string | null {
+  return sessionStorage.getItem("vault_owner_token");
+}
+```
+
+### REQUIRED PATTERNS
+
+✅ Store tokens in React state only:
+```typescript
+// In VaultContext - memory only
+const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
+```
+
+✅ Pass token explicitly from useVault() hook:
+```typescript
+// In component
+const { vaultOwnerToken } = useVault();
+await AccountService.deleteAccount(vaultOwnerToken);
+
+// In service - token is REQUIRED parameter
+async deleteAccount(vaultOwnerToken: string): Promise<Result> {
+  if (!vaultOwnerToken) throw new Error("Token required");
+  // Use token...
+}
+```
+
+### WHAT CAN BE IN sessionStorage (non-sensitive only)
+
+- `vault_unlocked` - Boolean flag ("true")
+- `user_id` - Firebase UID (public identifier)
+
+### WHAT MUST NEVER BE IN sessionStorage
+
+- `vault_key` - Encryption key
+- `vault_owner_token` - Consent token
+- Any cryptographic material
+
 ### DOCUMENTATION REFERENCES
 
 - Tri-flow rules: `docs/project_context_map.md`
