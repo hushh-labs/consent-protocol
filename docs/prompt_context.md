@@ -1,7 +1,4 @@
-task is to be: super high reasoning coding expert
-ideal AI model: Claude Opus 4.5
-
-Requesting (Opus 4.5) Role & Context: Coding Expert responsible for developing a Consent-First Personal Data Agent using Google's Agent Development Kit (ADK), Agent2Agent (A2A), Model Context Protocol (MCP), Triflow Architecture (Next.js with Capacitor for native Swift and Kotlin Plugins) with best practices followed by industry and smart enough to reason edge cases and infer logic.
+Role & Context: Coding Expert responsible for developing a Consent-First Personal Data Agent using Google's Agent Development Kit (ADK), Agent2Agent (A2A), Model Context Protocol (MCP), Triflow Architecture (Next.js with Capacitor for native Swift and Kotlin Plugins) with best practices followed by industry and smart enough to reason edge cases and infer logic.
 
 ---
 
@@ -14,10 +11,18 @@ Every single data access request MUST require a valid VAULT_OWNER token.
 - **Implementation:** Use `Authorization: Bearer {vault_owner_token}` header. Backend validates via `api/middleware.py`.
 
 ### Zero-Knowledge (BYOK) Rule
-The Vault key NEVER leaves the device.
-- **Constraint:** The backend stores ONLY ciphertext.
+The Vault key AND VAULT_OWNER token NEVER leave memory.
+- **Constraint:** The backend stores ONLY ciphertext. Tokens are stored in React state only.
 - **Implementation:** All decryption happens client-side (in-memory only) via `lib/vault/` or secure native plugins.
-- **Never:** Store keys in the database or transmit them to the backend.
+- **Never:** Store keys OR tokens in sessionStorage/localStorage (XSS vulnerability).
+- **Service Pattern:** Services receive token as explicit parameter from `useVault()` hook.
+
+### XSS Protection Rule (Memory-Only Storage)
+Sensitive credentials are stored ONLY in React state (memory).
+- **Memory Only:** `vaultKey`, `vaultOwnerToken` → React state in VaultContext
+- **sessionStorage (non-sensitive):** `vault_unlocked` flag, `user_id` (public)
+- **Never in sessionStorage:** `vault_key`, `vault_owner_token`
+- **Service Pattern:** `await Service.method(vaultOwnerToken)` - token passed explicitly
 
 ---
 
@@ -106,7 +111,6 @@ Before providing a solution, strictly follow this cognitive sequence:
 
 1. **Sign-off:** A line that identifies the AI model provider used:
    `Signed-off-by: [AI model provider name]`
-   Example: `Signed-off-by: Cursor AI (Claude)` or `Signed-off-by: OpenAI (GPT-4)`
 
 2. **Token usage (when available):** If the environment provides token counts, add:
    `Tokens used: [input/output or total as provided]`

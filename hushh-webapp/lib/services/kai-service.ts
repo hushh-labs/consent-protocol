@@ -7,8 +7,10 @@
  *
  * Authentication:
  * - All consent-gated operations use VAULT_OWNER token
- * - Token is retrieved from sessionStorage (synced from VaultContext)
+ * - Token MUST be passed explicitly from useVault() hook (memory-only, XSS protected)
  * - Firebase token is only used for bootstrap (issuing VAULT_OWNER token)
+ * 
+ * SECURITY: Token is NEVER read from sessionStorage (XSS protection).
  */
 
 import { Capacitor } from "@capacitor/core";
@@ -41,17 +43,27 @@ export interface AnalyzeResponse {
 // HELPER - VAULT_OWNER TOKEN (Consent-First)
 // ============================================================================
 
+// Token storage for kai-service (set by callers who have access to useVault())
+let _cachedVaultOwnerToken: string | undefined;
+
 /**
- * Get VAULT_OWNER token from sessionStorage.
- * This is the primary authentication token for all consent-gated operations.
- * Returns undefined if vault is not unlocked.
+ * Set the VAULT_OWNER token for kai-service operations.
+ * Called by components that have access to useVault() hook.
+ * 
+ * SECURITY: This is memory-only storage, not sessionStorage.
+ */
+export function setKaiVaultOwnerToken(token: string | undefined): void {
+  _cachedVaultOwnerToken = token;
+}
+
+/**
+ * Get VAULT_OWNER token from memory cache.
+ * 
+ * SECURITY: Never reads from sessionStorage (XSS protection).
+ * Token must be set via setKaiVaultOwnerToken() by components with useVault() access.
  */
 function getVaultOwnerToken(): string | undefined {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-  const token = sessionStorage.getItem("vault_owner_token");
-  return token || undefined;
+  return _cachedVaultOwnerToken;
 }
 
 /**
@@ -61,7 +73,7 @@ function getVaultOwnerToken(): string | undefined {
 function requireVaultOwnerToken(): string {
   const token = getVaultOwnerToken();
   if (!token) {
-    throw new Error("Vault must be unlocked to perform this operation");
+    throw new Error("Vault must be unlocked to perform this operation. Call setKaiVaultOwnerToken() first.");
   }
   return token;
 }
