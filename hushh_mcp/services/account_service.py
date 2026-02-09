@@ -1,4 +1,4 @@
-# consent-protocol/hushh_mcp/services/account_service.py
+# hushh_mcp/services/account_service.py
 """
 Account Service
 ===============
@@ -13,16 +13,15 @@ Key Responsibilities:
 Architecture:
 - Coordinates between VaultKeysService, WorldModelService, UserInvestorProfileService, etc.
 - Ensures atomic-like cleanup (best effort)
+
+IMPORTANT: This is a SYSTEM-LEVEL operation that bypasses consent validation
+since it's deleting the entire user account including their vault.
 """
 
 import logging
-import asyncio
 from typing import Dict, Any
 
-from hushh_mcp.services.vault_keys_service import VaultKeysService
 from hushh_mcp.services.world_model_service import WorldModelService
-from hushh_mcp.services.user_investor_profile_db import UserInvestorProfileService
-from hushh_mcp.services.chat_db_service import ChatDBService
 from db.db_client import get_db
 
 logger = logging.getLogger(__name__)
@@ -30,26 +29,49 @@ logger = logging.getLogger(__name__)
 class AccountService:
     """
     Service for account-level operations.
+    
+    WARNING: This service performs SYSTEM-LEVEL cleanup that bypasses
+    normal consent flows since the user is deleting their entire account.
+    
+    DEPRECATED TABLES REMOVED:
+    - user_investor_profiles (identity confirmation via external services)
+    - chat_conversations / chat_messages (chat functionality removed)
+    - kai_sessions (session tracking removed)
     """
     
     def __init__(self):
-        self.vault_service = VaultKeysService()
-        self.world_model_service = WorldModelService()
-        self.profile_service = UserInvestorProfileService()
-        self.chat_service = ChatDBService()
-        self.supabase = get_db()
+        self._supabase = None
+        self._world_model_service = None
+    
+    @property
+    def supabase(self):
+        """Get database client."""
+        if self._supabase is None:
+            self._supabase = get_db()
+        return self._supabase
+
+    @property
+    def world_model_service(self) -> WorldModelService:
+        """Get world model service (singleton)."""
+        if self._world_model_service is None:
+            from hushh_mcp.services.world_model_service import WorldModelService
+            self._world_model_service = WorldModelService()
+        return self._world_model_service
         
     async def delete_account(self, user_id: str) -> Dict[str, Any]:
         """
         Delete all user data across the system.
         
-        Steps:
-        1. Delete World Model Data (Encrypted blob + Index)
-        2. Delete Identity (User Investor Profile)
-        3. Delete Chat History
-        4. Delete Vault Keys (The cryptographic erase)
-        5. Revoke all tokens (via consent_tokens table)
-        6. Clean up audit logs (optional, usually kept for compliance but anonymized)
+        This is a SYSTEM-LEVEL operation that deletes ALL user data including:
+        1. World Model Data (Encrypted blob + Index)
+        2. Encrypted Domain Attributes
+        3. Vault Keys (The cryptographic erase - makes remaining data unrecoverable)
+        4. FCM Push Tokens (if exists)
+        
+        DEPRECATED TABLES REMOVED:
+        - user_investor_profiles (identity confirmation via external services)
+        - chat_conversations / chat_messages (chat functionality removed)
+        - kai_sessions (session tracking removed)
         
         Args:
             user_id: The user ID to delete
@@ -60,49 +82,88 @@ class AccountService:
         logger.info(f"🚨 STARTING ACCOUNT DELETION for {user_id}")
         
         results = {
-            "world_model": False,
-            "identity": False,
-            "chat": False,
-            "tokens": False,
-            "vault": False
+            "world_model_data": False,
+            "world_model_index": False,
+            "domain_attributes": False,
+            "identity": True,  # Table removed - nothing to clean up
+            "chat_messages": True,  # Tables removed - nothing to clean up
+            "chat_conversations": True,  # Tables removed - nothing to clean up
+            "kai_sessions": True,  # Table removed - nothing to clean up
+            "vault_keys": False,
+            "push_tokens": False,  # May not exist - handled gracefully
         }
         
         try:
-            # 1. World Model
-            results["world_model"] = await self.world_model_service.delete_user_data(user_id)
+            # 1. Delete world_model_data (encrypted blob)
+            try:
+                self.supabase.table("world_model_data").delete().eq(
+                    "user_id", user_id
+                ).execute()
+                results["world_model_data"] = True
+                logger.info(f"✓ Deleted world_model_data for {user_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ world_model_data delete skipped or failed: {e}")
             
-            # 2. Identity
-            # We don't have a direct delete method in profile service that accepts user_id only (usually needs token)
-            # But we can use direct DB access here as this is a system-level cleanup
+            # 2. Delete world_model_index_v2 (index/metadata)
             try:
-                self.supabase.table("user_investor_profiles").delete().eq("user_id", user_id).execute()
-                results["identity"] = True
+                self.supabase.table("world_model_index_v2").delete().eq(
+                    "user_id", user_id
+                ).execute()
+                results["world_model_index"] = True
+                logger.info(f"✓ Deleted world_model_index_v2 for {user_id}")
             except Exception as e:
-                logger.error(f"Failed to delete identity: {e}")
+                logger.warning(f"⚠️ world_model_index_v2 delete skipped or failed: {e}")
             
-            # 3. Chat History
-            # Similarly, direct cleanup if service doesn't expose it
+            # 3. Delete domain attributes (from world_model_attributes table)
             try:
-                self.supabase.table("chat_messages").delete().eq("user_id", user_id).execute()
-                self.supabase.table("chat_conversations").delete().eq("user_id", user_id).execute()
-                results["chat"] = True
+                self.supabase.table("world_model_attributes").delete().eq(
+                    "user_id", user_id
+                ).execute()
+                results["domain_attributes"] = True
+                logger.info(f"✓ Deleted world_model_attributes for {user_id}")
             except Exception as e:
-                logger.error(f"Failed to delete chat: {e}")
-                
-            # 4. Tokens (Revoke all)
+                logger.warning(f"⚠️ world_model_attributes delete skipped or failed: {e}")
+            
+            # 4. DELETE IDENTITY - REMOVED (no longer in use)
+            # The user_investor_profiles table has been deprecated and removed.
+            # Identity confirmation is now handled via external services.
+            results["identity"] = True  # Mark as complete (nothing to clean up)
+            
+            # 5. CHAT & SESSION TABLES REMOVED - nothing to delete
+            logger.info(f"ℹ️ Chat/Session tables already removed from database")
+            
+            # 6. Revoke all consent tokens (mark as revoked in audit log)
             try:
-                self.supabase.table("consent_tokens").delete().eq("user_id", user_id).execute()
-                results["tokens"] = True
+                self.supabase.table("consent_audit").update({
+                    "revoked_at": "EXTRACT(EPOCH FROM NOW())::BIGINT",
+                    "metadata": '{"revoked_reason": "account_deletion"}'
+                }).eq("user_id", user_id).eq("revoked_at", None).execute()
+                results["tokens_revoked"] = True
+                logger.info(f"✓ Revoked consent tokens for {user_id}")
             except Exception as e:
-                logger.error(f"Failed to delete tokens: {e}")
-                
-            # 5. Vault Keys (CRITICAL: This makes any remaining data unrecoverable)
+                logger.warning(f"⚠️ consent_audit update skipped or failed: {e}")
+            
+            # 7. Delete vault keys (CRITICAL: Makes any remaining data unrecoverable)
             try:
-                self.supabase.table("vault_keys").delete().eq("user_id", user_id).execute()
-                results["vault"] = True
+                self.supabase.table("vault_keys").delete().eq(
+                    "user_id", user_id
+                ).execute()
+                results["vault_keys"] = True
+                logger.info(f"✓ Deleted vault_keys for {user_id}")
             except Exception as e:
-                logger.error(f"Failed to delete vault keys: {e}")
-                
+                logger.error(f"❌ vault_keys deletion failed: {e}")
+            
+            # 8. Delete FCM push tokens (if table exists - gracefully handle if not)
+            try:
+                self.supabase.table("user_push_tokens").delete().eq(
+                    "user_id", user_id
+                ).execute()
+                results["push_tokens"] = True
+                logger.info(f"✓ Deleted user_push_tokens for {user_id}")
+            except Exception as e:
+                # This is expected if table doesn't exist - FCM not implemented yet
+                logger.info(f"ℹ️ FCM push tokens cleanup skipped (table may not exist): {e}")
+            
             logger.info(f"✅ ACCOUNT DELETED for {user_id}. Results: {results}")
             return {"success": True, "details": results}
             
