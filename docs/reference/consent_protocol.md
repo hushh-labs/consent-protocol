@@ -367,38 +367,36 @@ vault.owner (Master)
 
 ## Database Tables
 
-### consent_tokens
+### consent_audit (PRIMARY TABLE)
 
-```sql
-CREATE TABLE consent_tokens (
-  id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,  -- 'self' for VAULT_OWNER
-  scope TEXT NOT NULL,      -- 'vault.owner' for VAULT_OWNER
-  token_string TEXT NOT NULL,
-  issued_at BIGINT NOT NULL,
-  expires_at BIGINT NOT NULL,
-  revoked BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### consent_audit
+The `consent_audit` table is the **single source of truth** for all consent token operations. It uses an event-sourcing pattern where each action (REQUESTED, CONSENT_GRANTED, CONSENT_DENIED, REVOKED) creates a new row, and the latest row per scope determines current state.
 
 ```sql
 CREATE TABLE consent_audit (
   id SERIAL PRIMARY KEY,
   token_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  agent_id TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  action TEXT NOT NULL,
+  agent_id TEXT NOT NULL,          -- 'self' for VAULT_OWNER, agent name otherwise
+  scope TEXT NOT NULL,             -- 'vault.owner', 'agent.kai.analyze', etc.
+  action TEXT NOT NULL,            -- 'REQUESTED', 'CONSENT_GRANTED', 'CONSENT_DENIED', 'REVOKED'
   issued_at BIGINT NOT NULL,
   expires_at BIGINT,
+  revoked_at BIGINT,
   metadata JSONB,
+  token_type VARCHAR(20) DEFAULT 'consent',
   ip_address VARCHAR(45),
-  user_agent TEXT
+  user_agent TEXT,
+  request_id VARCHAR(32),          -- For consent request tracking
+  scope_description TEXT,
+  poll_timeout_at BIGINT           -- For pending consent requests
 );
+
+CREATE INDEX idx_consent_user ON consent_audit(user_id);
+CREATE INDEX idx_consent_token ON consent_audit(token_id);
+CREATE INDEX idx_consent_audit_created ON consent_audit(issued_at DESC);
+CREATE INDEX idx_consent_audit_user_action ON consent_audit(user_id, action);
+CREATE INDEX idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
 ```
 
 ---
