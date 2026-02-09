@@ -4,8 +4,6 @@ Database Migration Script - Modular Per-Table
 
 Usage:
     python db/migrate.py --table vault_keys        # Create vault_keys table
-    python db/migrate.py --table vault_food        # Create vault_food table
-    python db/migrate.py --table vault_professional # Create vault_professional table
     python db/migrate.py --table consent_audit     # Create consent_audit table
     python db/migrate.py --consent                 # Create all consent-related tables
     python db/migrate.py --full                    # Drop and recreate ALL tables (DESTRUCTIVE!)
@@ -63,50 +61,6 @@ async def create_vault_keys(pool: asyncpg.Pool):
     print("✅ vault_keys ready!")
 
 
-async def create_vault_food(pool: asyncpg.Pool):
-    """Create vault_food table (food & dining domain data)."""
-    print("🍽️  Creating vault_food table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS vault_food (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-            field_name TEXT NOT NULL,
-            ciphertext TEXT NOT NULL,
-            iv TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            algorithm TEXT DEFAULT 'aes-256-gcm',
-            created_at BIGINT NOT NULL,
-            updated_at BIGINT,
-            consent_token_id TEXT,
-            UNIQUE(user_id, field_name)
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_food_user ON vault_food(user_id)")
-    print("✅ vault_food ready!")
-
-
-async def create_vault_professional(pool: asyncpg.Pool):
-    """Create vault_professional table (professional profile domain data)."""
-    print("💼 Creating vault_professional table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS vault_professional (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-            field_name TEXT NOT NULL,
-            ciphertext TEXT NOT NULL,
-            iv TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            algorithm TEXT DEFAULT 'aes-256-gcm',
-            created_at BIGINT NOT NULL,
-            updated_at BIGINT,
-            consent_token_id TEXT,
-            UNIQUE(user_id, field_name)
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_professional_user ON vault_professional(user_id)")
-    print("✅ vault_professional ready!")
-
-
 async def create_consent_audit(pool: asyncpg.Pool):
     """Create consent_audit table (consent token audit trail)."""
     print("📋 Creating consent_audit table...")
@@ -139,116 +93,37 @@ async def create_consent_audit(pool: asyncpg.Pool):
     print("✅ consent_audit ready!")
 
 
-
-# Note: Revocation is tracked in consent_audit table with action='REVOKED'
-# No separate revoked_tokens table needed.
-
-
-async def create_vault_kai(pool: asyncpg.Pool):
-    """Create vault_kai table (encrypted investment decision history)."""
-    print("📊 Creating vault_kai table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS vault_kai (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-            session_id TEXT REFERENCES kai_sessions(session_id),
-            ticker TEXT NOT NULL,
-            decision_type TEXT CHECK (decision_type IN ('buy', 'hold', 'reduce')),
-            decision_ciphertext TEXT NOT NULL,
-            iv TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            algorithm TEXT DEFAULT 'aes-256-gcm',
-            confidence_score DECIMAL(3,2),
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_user ON vault_kai(user_id)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_ticker ON vault_kai(ticker)")
-    print("✅ vault_kai ready!")
+# INVESTOR PROFILES - REMOVED
+# These tables are no longer used and have been replaced by world_model_data + domain key approach.
+# Keeping only the function stubs for backward compatibility (they raise NotImplementedError).
 
 
-async def create_vault_kai_preferences(pool: asyncpg.Pool):
-    """Create vault_kai_preferences table (encrypted user settings)."""
-    print("⚙️ Creating vault_kai_preferences table...")
-    await pool.execute("""
-        CREATE TABLE IF NOT EXISTS vault_kai_preferences (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-            field_name TEXT NOT NULL,
-            ciphertext TEXT NOT NULL,
-            iv TEXT NOT NULL,
-            tag TEXT NOT NULL,
-            algorithm TEXT DEFAULT 'aes-256-gcm',
-            created_at BIGINT NOT NULL,
-            updated_at BIGINT,
-            UNIQUE(user_id, field_name)
-        )
-    """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vault_kai_prefs_user ON vault_kai_preferences(user_id)")
-    print("✅ vault_kai_preferences ready!")
-
-
-async def create_investor_profiles(pool: asyncpg.Pool):
+async def create_world_model_data(pool: asyncpg.Pool):
     """
-    Create investor_profiles table (PUBLIC DISCOVERY LAYER).
+    Create world_model_data table (PRIVATE, E2E ENCRYPTED USER DATA).
     
-    This stores publicly available investor information for identity resolution.
-    NOT encrypted - server can read this (it's all public data from SEC filings).
+    This is the PRIMARY storage for ALL user data using BYOK encryption.
+    Single encrypted blob containing all domain data (financial, food, professional, etc.).
     
-    Used during onboarding to show: "Is this you?"
+    DEPRECATED TABLES (use this instead):
+    - vault_food
+    - vault_professional
+    - world_model_attributes
     """
-    print("📈 Creating investor_profiles table...")
-    
-    # Enable pg_trgm extension for fuzzy text search
-    await pool.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+    print("🔐 Creating world_model_data table...")
     
     await pool.execute("""
-        CREATE TABLE IF NOT EXISTS investor_profiles (
-            id SERIAL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS world_model_data (
+            user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
             
-            -- Identity (for name-based matching)
-            name TEXT NOT NULL,
-            name_normalized TEXT,
-            cik TEXT UNIQUE,
+            -- Encrypted data blob (BYOK - client encrypts, server stores only ciphertext)
+            encrypted_data_ciphertext TEXT NOT NULL,
+            encrypted_data_iv TEXT NOT NULL,
+            encrypted_data_tag TEXT NOT NULL,
+            algorithm TEXT DEFAULT 'aes-256-gcm',
             
-            -- Profile
-            firm TEXT,
-            title TEXT,
-            investor_type TEXT,
-            photo_url TEXT,
-            
-            -- Holdings Summary (from 13F/Form4)
-            aum_billions NUMERIC,
-            top_holdings JSONB,
-            sector_exposure JSONB,
-            
-            -- Inferred Profile
-            investment_style TEXT[],
-            risk_tolerance TEXT,
-            time_horizon TEXT,
-            portfolio_turnover TEXT,
-            
-            -- Activity Signals
-            recent_buys TEXT[],
-            recent_sells TEXT[],
-            
-            -- Enrichment
-            public_quotes JSONB,
-            biography TEXT,
-            education TEXT[],
-            board_memberships TEXT[],
-            
-            -- Peer Network
-            peer_investors TEXT[],
-            
-            -- Insider-specific (Form 4)
-            is_insider BOOLEAN DEFAULT FALSE,
-            insider_company_ticker TEXT,
-            
-            -- Data Source Tracking
-            data_sources TEXT[],
-            last_13f_date DATE,
-            last_form4_date DATE,
+            -- Version tracking
+            data_version INTEGER DEFAULT 1,
             
             -- Timestamps
             created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -256,86 +131,147 @@ async def create_investor_profiles(pool: asyncpg.Pool):
         )
     """)
     
-    # Indexes for efficient searching
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_name ON investor_profiles(name)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_firm ON investor_profiles(firm)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_type ON investor_profiles(investor_type)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_style ON investor_profiles USING GIN (investment_style)")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL")
-    
-    print("✅ investor_profiles ready!")
+    print("✅ world_model_data ready!")
 
 
 async def create_user_investor_profiles(pool: asyncpg.Pool):
     """
-    Create user_investor_profiles table (PRIVATE VAULT LAYER).
+    DEPRECATED - This table is no longer used.
     
-    This stores user-confirmed investor profile data (encrypted copy).
-    E2E encrypted - server CANNOT read this.
-    
-    Created when user confirms: "Yes, this is me"
-    Agents ONLY access this table, never investor_profiles directly.
+    Investor profile storage has been moved to world_model_data with domain-based keys.
+    User identity confirmation is handled via external services.
     """
-    print("🔐 Creating user_investor_profiles table...")
+    raise NotImplementedError("user_investor_profiles is deprecated and no longer supported")
+
+
+async def create_world_model_index_v2(pool: asyncpg.Pool):
+    """
+    Create world_model_index_v2 table (QUERYABLE INDEX FOR WORLD MODEL).
+    
+    This is the queryable metadata layer for the world model.
+    Non-encrypted, used for UI display and MCP scope generation.
+    """
+    print("📊 Creating world_model_index_v2 table...")
     
     await pool.execute("""
-        CREATE TABLE IF NOT EXISTS user_investor_profiles (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+        CREATE TABLE IF NOT EXISTS world_model_index_v2 (
+            user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
             
-            -- Link to public profile (optional, for reference only)
-            confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
+            -- Domain summaries (JSONB - { domain_key: { summary_data } })
+            domain_summaries JSONB DEFAULT '{}',
             
-            -- Encrypted profile data (E2E encrypted copy from public)
-            profile_data_ciphertext TEXT,
-            profile_data_iv TEXT,
-            profile_data_tag TEXT,
+            -- List of available domains
+            available_domains TEXT[] DEFAULT '{}',
             
-            -- Encrypted holdings (user's actual holdings, not public)
-            custom_holdings_ciphertext TEXT,
-            custom_holdings_iv TEXT,
-            custom_holdings_tag TEXT,
+            -- Computed tags for search/filtering
+            computed_tags TEXT[] DEFAULT '{}',
             
-            -- Encrypted preferences (user's adjusted preferences)
-            preferences_ciphertext TEXT,
-            preferences_iv TEXT,
-            preferences_tag TEXT,
+            -- Activity signals
+            activity_score DECIMAL(3,2),
+            last_active_at TIMESTAMPTZ,
+            total_attributes INTEGER DEFAULT 0,
             
-            -- Consent tracking
-            confirmed_at TIMESTAMPTZ,
-            consent_scope TEXT,
-            
-            -- Algorithm
-            algorithm TEXT DEFAULT 'aes-256-gcm',
+            -- Model version
+            model_version INTEGER DEFAULT 2,
             
             -- Timestamps
             created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
-            
-            -- One profile per user
-            UNIQUE(user_id)
+            updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
     
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_user_investor_user ON user_investor_profiles(user_id)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_wmi2_domains ON world_model_index_v2 USING GIN(domain_summaries)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_wmi2_available ON world_model_index_v2 USING GIN(available_domains)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_wmi2_tags ON world_model_index_v2 USING GIN(computed_tags)")
     
-    print("✅ user_investor_profiles ready!")
+    print("✅ world_model_index_v2 ready!")
+
+
+async def create_consent_exports(pool: asyncpg.Pool):
+    """
+    Create consent_exports table (MCP zero-knowledge export data storage).
+    
+    Stores encrypted export data for MCP zero-knowledge flow.
+    Data survives server restarts and is available across all instances.
+    """
+    print("🔐 Creating consent_exports table...")
+    
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS consent_exports (
+            consent_token TEXT PRIMARY KEY,
+            
+            -- User reference
+            user_id TEXT REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+            
+            -- Encrypted export data (MCP decrypts with export_key)
+            encrypted_data TEXT NOT NULL,
+            iv TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            export_key TEXT NOT NULL,
+            
+            -- Scope this export is for
+            scope TEXT NOT NULL,
+            
+            -- Expiry
+            expires_at TIMESTAMPTZ NOT NULL,
+            
+            -- Timestamps
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_consent_exports_user ON consent_exports(user_id)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_consent_exports_expires ON consent_exports(expires_at)")
+    
+    print("✅ consent_exports ready!")
+
+
+async def create_domain_registry(pool: asyncpg.Pool):
+    """
+    Create domain_registry table (DYNAMIC DOMAIN REGISTRY).
+    
+    Registry of all available domains in the world model.
+    Used for UI display and scope generation.
+    """
+    print("📂 Creating domain_registry table...")
+    
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS domain_registry (
+            domain_key TEXT PRIMARY KEY,
+            
+            -- Display information
+            display_name TEXT NOT NULL,
+            description TEXT,
+            icon_name TEXT DEFAULT 'folder',
+            color_hex TEXT DEFAULT '#6B7280',
+            
+            -- Hierarchy
+            parent_domain TEXT REFERENCES domain_registry(domain_key),
+            
+            -- Statistics
+            attribute_count INTEGER DEFAULT 0,
+            user_count INTEGER DEFAULT 0,
+            
+            -- Timestamps
+            first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+            last_updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_domain_parent ON domain_registry(parent_domain)")
+    
+    print("✅ domain_registry ready!")
 
 
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
-    "vault_food": create_vault_food,
-    "vault_professional": create_vault_professional,
     "consent_audit": create_consent_audit,
-    "vault_kai": create_vault_kai,
-    "vault_kai_preferences": create_vault_kai_preferences,
-    "investor_profiles": create_investor_profiles,
-    "user_investor_profiles": create_user_investor_profiles,
+    "world_model_data": create_world_model_data,
+    "world_model_index_v2": create_world_model_index_v2,
+    "domain_registry": create_domain_registry,
+    "consent_exports": create_consent_exports,
 }
-
-
 
 
 # ============================================================================
@@ -347,24 +283,38 @@ async def run_full_migration(pool: asyncpg.Pool):
     print("⚠️  FULL MIGRATION - This will DROP all tables!")
     print("🗑️  Dropping existing tables...")
     
-    for table in ["vault_keys", "vault_food", "vault_professional", "consent_audit",
-                  "vault_kai", "vault_kai_preferences",
-                  "user_investor_profiles", "investor_profiles"]:
+    # Drop legacy tables first
+    for table in ["vault_food", "vault_professional", "vault_kai", "vault_kai_preferences",
+                  "investor_profiles", "user_investor_profiles",
+                  "chat_conversations", "chat_messages", "kai_sessions"]:
+        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+        print(f"   ✅ Dropped legacy table: {table}")
+    
+    # Then drop current tables
+    for table in ["vault_keys", "consent_audit",
+                  "world_model_data", "world_model_index_v2", "domain_registry", "vault_portfolios"]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     
     # Create in dependency order
+    print("\n[1/7] Creating vault_keys (user authentication)...")
     await create_vault_keys(pool)
-    await create_vault_food(pool)
-    await create_vault_professional(pool)
+    
+    print("[2/7] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
     
-    # Kai & Investor Layer
-    await create_investor_profiles(pool)
-    await create_user_investor_profiles(pool)
-    await create_vault_kai(pool)
-    await create_vault_kai_preferences(pool)
+    print("[3/7] Creating world_model_data (encrypted user data blob)...")
+    await create_world_model_data(pool)
     
-    print("✅ Full migration complete!")
+    print("[4/7] Creating world_model_index_v2 (queryable metadata index)...")
+    await create_world_model_index_v2(pool)
+    
+    print("[5/7] Creating domain_registry (dynamic domain registry)...")
+    await create_domain_registry(pool)
+    
+    print("[6/7] Creating consent_exports (MCP zero-knowledge export)...")
+    await create_consent_exports(pool)
+    
+    print("\n✅ Full migration complete!")
 
 
 async def run_consent_migration(pool: asyncpg.Pool):
@@ -383,31 +333,72 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
     
     # Create in dependency order
-    print("\n[1/8] Creating vault_keys (user authentication)...")
+    print("\n[1/5] Creating vault_keys (user authentication)...")
     await create_vault_keys(pool)
     
-    print("[2/8] Creating vault_food (food preferences domain)...")
-    await create_vault_food(pool)
-    
-    print("[3/8] Creating vault_professional (professional profile domain)...")
-    await create_vault_professional(pool)
-    
-    print("[4/8] Creating consent_audit (consent tracking)...")
+    print("[2/5] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
     
-    print("[5/8] Creating investor_profiles (public discovery layer)...")
-    await create_investor_profiles(pool)
+    print("[3/5] Creating world_model_data (encrypted user data blob)...")
+    await create_world_model_data(pool)
     
-    print("[6/8] Creating user_investor_profiles (private vault layer)...")
-    await create_user_investor_profiles(pool)
+    print("[4/5] Creating world_model_index_v2 (queryable metadata index)...")
+    await create_world_model_index_v2(pool)
     
-    print("[7/8] Creating vault_kai (encrypted decisions)...")
-    await create_vault_kai(pool)
+    print("[5/5] Creating domain_registry (dynamic domain registry)...")
+    await create_domain_registry(pool)
     
-    print("[8/8] Creating vault_kai_preferences (user settings)...")
-    await create_vault_kai_preferences(pool)
+    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
+    await create_consent_exports(pool)
     
     print("\nAll tables initialized successfully!")
+
+
+async def run_cleanup_legacy_tables(pool: asyncpg.Pool):
+    """
+    Remove legacy domain-specific tables that are no longer used.
+    
+    These tables were replaced by world_model_data and domain key approach:
+    - vault_food (replaced by world_model_data + domain key)
+    - vault_professional (replaced by world_model_data + domain key)
+    - vault_kai (replaced by world_model_data + domain key)
+    - vault_kai_preferences (replaced by world_model_data + domain key)
+    
+    DEPRECATED identity tables:
+    - investor_profiles (public SEC data - no longer in use)
+    - user_investor_profiles (encrypted profiles - no longer in use)
+    
+    DEPRECATED chat/session tables:
+    - chat_conversations (chat functionality removed)
+    - chat_messages (individual messages - removed with conversations)
+    - kai_sessions (session tracking removed)
+    """
+    print("🧹 Cleaning up legacy tables...")
+    
+    legacy_tables = [
+        "vault_food",
+        "vault_professional", 
+        "vault_kai",
+        "vault_kai_preferences",
+        "investor_profiles",
+        "user_investor_profiles",
+        "chat_conversations",
+        "chat_messages",
+        "kai_sessions"
+    ]
+    
+    for table in legacy_tables:
+        try:
+            await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+            print(f"   ✅ Dropped legacy table: {table}")
+        except Exception as e:
+            # If table doesn't exist, that's fine
+            if "does not exist" in str(e).lower():
+                print(f"   ⚠️  Table already exists or was never created: {table}")
+            else:
+                print(f"   ❌ Error dropping {table}: {e}")
+    
+    print("\n✅ Legacy table cleanup complete!")
 
 
 async def clear_table(pool: asyncpg.Pool, table_name: str):
@@ -427,12 +418,19 @@ async def show_status(pool: asyncpg.Pool):
     """)
     print(f"   Tables: {', '.join(r['table_name'] for r in tables)}")
     
-    for table in TABLE_CREATORS.keys():
-        try:
-            count = await pool.fetchval(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
-            print(f"   {table}: {count} rows")
-        except Exception:
-            print(f"   {table}: (not exists)")
+    # Check all tables, not just those in TABLE_CREATORS
+    all_tables = [r['table_name'] for r in tables]
+    
+    for table in ["vault_keys", "consent_audit",
+                  "world_model_data", "world_model_index_v2", "domain_registry", "consent_exports"]:
+        if table in all_tables:
+            try:
+                count = await pool.fetchval(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+                print(f"   {table}: {count} rows")
+            except Exception as e:
+                print(f"   {table}: error counting ({e})")
+        else:
+            print(f"   {table}: (not found)")
 
 
 # ============================================================================
@@ -446,9 +444,9 @@ async def main():
         epilog="""
 Examples:
   python db/migrate.py --init                    # First-time setup (RECOMMENDED)
-  python db/migrate.py --table consent_audit     # Create single table
+  python db/migrate.py --table world_model_data  # Create single table
   python db/migrate.py --consent                 # Create all consent tables
-  python db/migrate.py --clear consent_audit     # Clear consent history
+  python db/migrate.py --cleanup-legacy          # Remove deprecated tables
   python db/migrate.py --full                    # Full reset (WARNING: DESTRUCTIVE!)
   python db/migrate.py --status                  # Show table summary
         """
@@ -456,9 +454,11 @@ Examples:
     parser.add_argument("--init", action="store_true",
                         help="Initialize all tables in correct order (non-destructive, recommended for first-time setup)")
     parser.add_argument("--table", choices=list(TABLE_CREATORS.keys()), 
-                        help="Create a specific table")
+                        help="Create a specific table (vault_keys, consent_audit, world_model_data, world_model_index_v2, domain_registry)")
     parser.add_argument("--consent", action="store_true", 
                         help="Create all consent-related tables")
+    parser.add_argument("--cleanup-legacy", action="store_true",
+                        help="Remove legacy domain-specific tables (vault_food, vault_professional, etc.)")
     parser.add_argument("--full", action="store_true", 
                         help="Drop and recreate ALL tables (DESTRUCTIVE!)")
     parser.add_argument("--clear", choices=list(TABLE_CREATORS.keys()),
@@ -468,7 +468,7 @@ Examples:
     
     args = parser.parse_args()
     
-    if not any([args.init, args.table, args.consent, args.full, args.clear, args.status]):
+    if not any([args.init, args.table, args.consent, args.cleanup_legacy, args.full, args.clear, args.status]):
         parser.print_help()
         return
     
@@ -484,6 +484,7 @@ Examples:
     print(f"   URL: {display_url}")
     if _ssl_config:
         print("   SSL: enabled (Supabase)")
+    
     pool = await asyncpg.create_pool(
         _database_url,
         min_size=1,
@@ -500,8 +501,15 @@ Examples:
         if args.full:
             await run_full_migration(pool)
         
+        if args.cleanup_legacy:
+            await run_cleanup_legacy_tables(pool)
+        
         if args.table:
-            await TABLE_CREATORS[args.table](pool)
+            table_func = TABLE_CREATORS.get(args.table)
+            if table_func:
+                await table_func(pool)
+            else:
+                print(f"Unknown table: {args.table}")
         
         if args.consent:
             await run_consent_migration(pool)

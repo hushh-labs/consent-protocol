@@ -78,11 +78,11 @@ FastApi-->>KaiPage: {preferences:[...]}
 
 | Web Route | Backend Route | Method | Token Required | Validation Function | Platform Support |
 |-----------|---------------|--------|---------------|---------------------|------------------|
-| `/api/vault/status` | `/db/vault/status` | GET (web) / POST (backend) | ✅ Yes | Session token | Web, iOS, Android |
-| `/api/kai/preferences/:userId` | `/api/kai/preferences/:userId` | GET | ✅ Yes | Firebase verify | Web, iOS, Android |
+| `/api/vault/status` | `/db/vault/status` | GET (web) / POST (backend) | ✅ Yes | VAULT_OWNER token | Web, iOS, Android |
+| `/api/kai/preferences/:userId` | `/api/kai/preferences/:userId` | GET | ✅ Yes | VAULT_OWNER token | Web, iOS, Android |
 | `/api/world-model/[...path]` | `/api/world-model/*` | Various | ✅ Yes | `require_vault_owner_token` | Web, iOS, Android |
 
-> Vault domain data (e.g. financial, health) is served via **world-model** API; legacy food/professional routes were removed.
+> Vault domain data (e.g. financial, health) is served via **world-model** API.
 
 > Note: Web routes use GET with query params; backend routes use POST with JSON body.
 > Native plugins call backend routes directly.

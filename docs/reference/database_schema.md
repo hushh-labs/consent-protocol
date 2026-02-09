@@ -1,6 +1,6 @@
 # Database Schema
 
-> PostgreSQL schema for the Hushh encrypted vault, investor profiles, world model, and consent audit system.
+> PostgreSQL schema for the Hushh encrypted vault, world model, and consent audit system.
 
 ---
 
@@ -19,22 +19,6 @@ DB_PORT=5432
 DB_NAME=postgres
 ```
 
-### Running Migrations
-
-```bash
-cd consent-protocol
-python -c "
-from db.db_client import get_db_connection
-from sqlalchemy import text
-
-with get_db_connection() as conn:
-    with open('db/migrations/007_renaissance_universe.sql', 'r') as f:
-        conn.execute(text(f.read()))
-    conn.commit()
-    print('Migration complete!')
-"
-```
-
 ---
 
 ## 🎯 Design Principles
@@ -43,10 +27,8 @@ with get_db_connection() as conn:
 | --------------------- | -------------------------------------------------- |
 | **Zero-Knowledge**    | All user data stored as AES-256-GCM ciphertext     |
 | **Dynamic Domains**   | World model supports any domain without schema changes |
-| **Field-Based Storage** | Each encrypted field stored as separate row      |
 | **Audit Trail**       | `consent_audit` logs all token operations          |
 | **No Plaintext**      | Server cannot decrypt any user data                |
-| **Investor Layer**    | Public profiles for discovery, encrypted for vault |
 | **Vector Search**     | pgvector embeddings for similarity matching        |
 
 ---
@@ -56,16 +38,11 @@ with get_db_connection() as conn:
 ```mermaid
 erDiagram
     vault_keys ||--o{ world_model_index_v2 : has
+    vault_keys ||--o{ world_model_data : has
     vault_keys ||--o{ world_model_attributes : has
-    vault_keys ||--o{ world_model_embeddings : has
-    vault_keys ||--o{ chat_conversations : has
-    vault_keys ||--o{ vault_portfolios : has
     vault_keys ||--o{ consent_audit : has
-    vault_keys ||--o| user_investor_profiles : has
     
     domain_registry ||--o{ world_model_attributes : categorizes
-    chat_conversations ||--o{ chat_messages : contains
-    user_investor_profiles }o--|| investor_profiles : references
     
     vault_keys {
         text user_id PK
@@ -99,6 +76,15 @@ erDiagram
         int model_version
     }
     
+    world_model_data {
+        text user_id PK FK
+        text encrypted_data_ciphertext
+        text encrypted_data_iv
+        text encrypted_data_tag
+        text algorithm
+        bigint data_version
+    }
+    
     world_model_attributes {
         serial id PK
         text user_id FK
@@ -114,41 +100,23 @@ erDiagram
         decimal confidence
     }
     
-    world_model_embeddings {
+    consent_audit {
         serial id PK
+        text token_id
         text user_id FK
-        text embedding_type
-        vector embedding_vector
-        text model_name
-    }
-    
-    chat_conversations {
-        uuid id PK
-        text user_id FK
-        text title
-        jsonb agent_context
-    }
-    
-    chat_messages {
-        uuid id PK
-        uuid conversation_id FK
-        text role
-        text content
-        text content_type
-        text component_type
-        jsonb component_data
-    }
-    
-    vault_portfolios {
-        serial id PK
-        text user_id FK
-        text portfolio_name
-        text holdings_ciphertext
-        text holdings_iv
-        text holdings_tag
-        numeric total_value_usd
-        int holdings_count
-        text source
+        text agent_id
+        text scope
+        text action
+        bigint issued_at
+        bigint expires_at
+        bigint revoked_at
+        jsonb metadata
+        varchar token_type
+        varchar ip_address
+        text user_agent
+        varchar request_id
+        text scope_description
+        bigint poll_timeout_at
     }
 ```
 
@@ -175,6 +143,7 @@ CREATE TABLE vault_keys (
     recovery_salt TEXT NOT NULL,
     recovery_iv TEXT NOT NULL,
     
+    onboarding_completed BOOLEAN DEFAULT FALSE,
     created_at BIGINT NOT NULL,
     updated_at BIGINT
 );
@@ -213,21 +182,70 @@ CREATE INDEX idx_domain_parent ON domain_registry(parent_domain);
 |------------|--------------|-----------|-----------|
 | financial | Financial | wallet | #D4AF37 |
 | food | Food & Dining | utensils | #F97316 |
-| professional | Professional | briefcase | #8B5CF6 |
 | health | Health & Wellness | heart | #EF4444 |
 | travel | Travel | plane | #0EA5E9 |
-| entertainment | Entertainment | tv | #EC4899 |
-| shopping | Shopping | shopping-bag | #14B8A6 |
 | subscriptions | Subscriptions | credit-card | #6366F1 |
-| general | General | folder | #6B7280 |
-| kai_decisions | Kai Decisions | brain | #D4AF37 |
-| kai_preferences | Kai Preferences | settings | #D4AF37 |
+
+---
+
+### world_model_data
+
+**Primary encrypted storage** for all user data using BYOK (Bring Your Own Key) encryption. Contains a single encrypted JSONB blob that holds ALL domain data.
+
+```sql
+CREATE TABLE world_model_data (
+    user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    
+    -- Encrypted data blob (BYOK - client encrypts, server stores only ciphertext)
+    encrypted_data_ciphertext TEXT NOT NULL,
+    encrypted_data_iv TEXT NOT NULL,
+    encrypted_data_tag TEXT NOT NULL,
+    algorithm TEXT DEFAULT 'aes-256-gcm',
+    
+    -- Version tracking
+    data_version INTEGER DEFAULT 1,
+    
+    -- Timestamps
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Notes:**
+- The decrypted blob contains all domains: `{ financial: {...}, food: {...}, health: {...} }`
+- Server NEVER decrypts - only the client has the vault key
+- Client filters by scope at approval time to limit what MCP receives
+
+---
+
+### world_model_index_v2
+
+Queryable index layer for user world models. Updated automatically via triggers when attributes change.
+
+```sql
+CREATE TABLE world_model_index_v2 (
+    user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    domain_summaries JSONB DEFAULT '{}',
+    available_domains TEXT[] DEFAULT '{}',
+    computed_tags TEXT[] DEFAULT '{}',
+    activity_score DECIMAL(3,2),
+    last_active_at TIMESTAMPTZ,
+    total_attributes INTEGER DEFAULT 0,
+    model_version INTEGER DEFAULT 2,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_wmi2_domains ON world_model_index_v2 USING GIN(domain_summaries);
+CREATE INDEX idx_wmi2_available ON world_model_index_v2 USING GIN(available_domains);
+CREATE INDEX idx_wmi2_tags ON world_model_index_v2 USING GIN(computed_tags);
+```
 
 ---
 
 ### world_model_attributes
 
-**Primary encrypted storage** for all user data using BYOK (Bring Your Own Key) encryption. Replaces legacy domain-specific tables (`vault_food`, `vault_professional`, etc.).
+Encrypted attribute storage (legacy field-based approach, being phased out in favor of world_model_data blob).
 
 ```sql
 CREATE TABLE world_model_attributes (
@@ -257,276 +275,6 @@ CREATE TABLE world_model_attributes (
 
 CREATE INDEX idx_wma_user ON world_model_attributes(user_id);
 CREATE INDEX idx_wma_domain ON world_model_attributes(domain);
-```
-
-**Example Data:**
-| user_id | domain | attribute_key | source | data_type |
-|---------|--------|---------------|--------|-----------|
-| UWHGe... | financial | holdings_count | imported | number |
-| UWHGe... | financial | risk_bucket | computed | string |
-| UWHGe... | kai_decisions | AAPL_decision | computed | string |
-| UWHGe... | food | dietary_restrictions | explicit | array |
-
----
-
-### world_model_index_v2
-
-Queryable index layer for user world models. Updated automatically via triggers when attributes change.
-
-```sql
-CREATE TABLE world_model_index_v2 (
-    user_id TEXT PRIMARY KEY REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    domain_summaries JSONB DEFAULT '{}',
-    available_domains TEXT[] DEFAULT '{}',
-    computed_tags TEXT[] DEFAULT '{}',
-    activity_score DECIMAL(3,2),
-    last_active_at TIMESTAMPTZ,
-    total_attributes INTEGER DEFAULT 0,
-    model_version INTEGER DEFAULT 2,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_wmi2_domains ON world_model_index_v2 USING GIN(domain_summaries);
-CREATE INDEX idx_wmi2_available ON world_model_index_v2 USING GIN(available_domains);
-CREATE INDEX idx_wmi2_tags ON world_model_index_v2 USING GIN(computed_tags);
-```
-
----
-
-### world_model_embeddings
-
-Vector embeddings for similarity search using pgvector.
-
-```sql
-CREATE TABLE world_model_embeddings (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    embedding_type embedding_type NOT NULL,  -- 'financial_profile', 'lifestyle_profile', etc.
-    embedding_vector vector(384),            -- all-MiniLM-L6-v2 dimension
-    model_name TEXT DEFAULT 'all-MiniLM-L6-v2',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id, embedding_type)
-);
-
--- HNSW Index for fast similarity search
-CREATE INDEX idx_wme_vector ON world_model_embeddings 
-USING hnsw (embedding_vector vector_cosine_ops);
-```
-
----
-
-### chat_conversations
-
-Persistent chat history for Kai conversations.
-
-```sql
-CREATE TABLE chat_conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    title TEXT,
-    agent_context JSONB,             -- Current session state
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_chat_conv_user ON chat_conversations(user_id);
-```
-
----
-
-### chat_messages
-
-Individual messages within conversations, supporting insertable components.
-
-```sql
-CREATE TABLE chat_messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
-    content TEXT NOT NULL,
-    content_type TEXT DEFAULT 'text',  -- 'text', 'component', 'tool_use'
-    
-    -- For insertable components
-    component_type TEXT,               -- 'analysis', 'portfolio_import', 'loser_report', etc.
-    component_data JSONB,
-    
-    -- Metadata
-    tokens_used INTEGER,
-    model_used TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_chat_msg_conv ON chat_messages(conversation_id);
-CREATE INDEX idx_chat_msg_created ON chat_messages(created_at DESC);
-```
-
----
-
-### vault_portfolios
-
-Encrypted portfolio holdings imported from brokerage statements.
-
-```sql
-CREATE TABLE vault_portfolios (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    portfolio_name TEXT DEFAULT 'Main Portfolio',
-    
-    -- Encrypted holdings array
-    holdings_ciphertext TEXT NOT NULL,
-    holdings_iv TEXT NOT NULL,
-    holdings_tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    
-    -- Metadata (unencrypted for display)
-    total_value_usd NUMERIC,
-    holdings_count INTEGER,
-    source TEXT,                     -- 'manual', 'csv', 'pdf_schwab', 'plaid'
-    
-    last_imported_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    UNIQUE(user_id, portfolio_name)
-);
-
-CREATE INDEX idx_portfolio_user ON vault_portfolios(user_id);
-```
-
----
-
-### investor_profiles (PUBLIC)
-
-**Public discovery layer** - stores publicly available investor information from SEC filings.
-**NOT encrypted** - server can read this (it's all public data).
-
-Used during Kai onboarding to show: "Is this you?"
-
-```sql
-CREATE TABLE investor_profiles (
-    id SERIAL PRIMARY KEY,
-    
-    -- Identity (for name-based matching)
-    name TEXT NOT NULL,
-    name_normalized TEXT,            -- Lowercase, no spaces (for fuzzy search)
-    cik TEXT UNIQUE,                 -- SEC CIK number
-    
-    -- Profile
-    firm TEXT,
-    title TEXT,
-    investor_type TEXT,              -- 'institutional', 'insider', etc.
-    photo_url TEXT,
-    
-    -- Holdings Summary (from 13F/Form4)
-    aum_billions NUMERIC,
-    top_holdings JSONB,              -- [{ticker, weight}, ...]
-    sector_exposure JSONB,           -- {Technology: 40, Healthcare: 20, ...}
-    
-    -- Inferred Profile
-    investment_style TEXT[],         -- ['Value', 'Growth', ...]
-    risk_tolerance TEXT,
-    time_horizon TEXT,
-    portfolio_turnover TEXT,
-    
-    -- Activity Signals
-    recent_buys TEXT[],
-    recent_sells TEXT[],
-    
-    -- Enrichment
-    public_quotes JSONB,
-    biography TEXT,
-    education TEXT[],
-    board_memberships TEXT[],
-    peer_investors TEXT[],
-    
-    -- Insider-specific (Form 4)
-    is_insider BOOLEAN DEFAULT FALSE,
-    insider_company_ticker TEXT,
-    
-    -- Data Source Tracking
-    data_sources TEXT[],
-    last_13f_date DATE,
-    last_form4_date DATE,
-    
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes for efficient searching
-CREATE INDEX idx_investor_name ON investor_profiles(name);
-CREATE INDEX idx_investor_name_trgm ON investor_profiles USING GIN (name gin_trgm_ops);
-CREATE INDEX idx_investor_firm ON investor_profiles(firm);
-CREATE INDEX idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
-CREATE INDEX idx_investor_type ON investor_profiles(investor_type);
-CREATE INDEX idx_investor_style ON investor_profiles USING GIN (investment_style);
-```
-
-**Example `top_holdings` JSONB:**
-```json
-[
-  {"ticker": "NVDA", "weight": 20.0},
-  {"ticker": "MSFT", "weight": 15.0},
-  {"ticker": "GOOGL", "weight": 10.0}
-]
-```
-
----
-
-### user_investor_profiles (PRIVATE)
-
-**Private vault layer** - stores user-confirmed investor profile data.
-**E2E encrypted** - server CANNOT read this.
-
-Created when user confirms: "Yes, this is me"
-
-```sql
-CREATE TABLE user_investor_profiles (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    
-    -- Link to public profile (optional, for reference only)
-    confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
-    
-    -- Encrypted profile data (E2E encrypted copy from public)
-    profile_data_ciphertext TEXT,
-    profile_data_iv TEXT,
-    profile_data_tag TEXT,
-    
-    -- Encrypted holdings (user's actual holdings, not public)
-    custom_holdings_ciphertext TEXT,
-    custom_holdings_iv TEXT,
-    custom_holdings_tag TEXT,
-    
-    -- Encrypted preferences (user's adjusted preferences)
-    preferences_ciphertext TEXT,
-    preferences_iv TEXT,
-    preferences_tag TEXT,
-    
-    -- Consent tracking
-    confirmed_at TIMESTAMPTZ,
-    consent_scope TEXT,
-    
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    UNIQUE(user_id)                  -- One profile per user
-);
-
-CREATE INDEX idx_user_investor_user ON user_investor_profiles(user_id);
-```
-
-**Data Flow:**
-```
-investor_profiles (PUBLIC)     user_investor_profiles (PRIVATE)
-┌─────────────────────────┐    ┌─────────────────────────────────┐
-│ id: 21                  │◄───│ confirmed_investor_id: 21       │
-│ name: "Kushal Mehta"    │    │ user_id: "UWHGeUyf..."          │
-│ top_holdings: [...]     │    │ profile_data_ciphertext: "..."  │
-│ ...all public fields... │    │ (encrypted copy of public data) │
-└─────────────────────────┘    └─────────────────────────────────┘
 ```
 
 ---
@@ -561,6 +309,39 @@ CREATE INDEX idx_consent_audit_created ON consent_audit(issued_at DESC);
 CREATE INDEX idx_consent_audit_user_action ON consent_audit(user_id, action);
 CREATE INDEX idx_consent_audit_request_id ON consent_audit(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED';
+```
+
+---
+
+### consent_exports
+
+MCP zero-knowledge export data storage. Stores encrypted export data that MCP can decrypt with the export key.
+
+```sql
+CREATE TABLE consent_exports (
+    consent_token TEXT PRIMARY KEY,
+    
+    -- User reference
+    user_id TEXT REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    
+    -- Encrypted export data (MCP decrypts with export_key)
+    encrypted_data TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    export_key TEXT NOT NULL,
+    
+    -- Scope this export is for
+    scope TEXT NOT NULL,
+    
+    -- Expiry
+    expires_at TIMESTAMPTZ NOT NULL,
+    
+    -- Timestamps
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_consent_exports_user ON consent_exports(user_id);
+CREATE INDEX idx_consent_exports_expires ON consent_exports(expires_at);
 ```
 
 ---
@@ -640,76 +421,6 @@ SELECT get_user_world_model_metadata('UWHGeUyfUAbmEl5xwIPoWJ7Cyft2');
 
 ---
 
-### Auto-Register Domain (RPC Function)
-
-Automatically registers new domains when discovered:
-
-```sql
-CREATE OR REPLACE FUNCTION auto_register_domain(
-    p_domain_key TEXT,
-    p_display_name TEXT DEFAULT NULL,
-    p_icon_name TEXT DEFAULT 'folder',
-    p_color_hex TEXT DEFAULT '#6B7280'
-)
-RETURNS JSONB
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_display_name TEXT;
-    v_result JSONB;
-BEGIN
-    v_display_name := COALESCE(p_display_name, INITCAP(REPLACE(p_domain_key, '_', ' ')));
-    
-    INSERT INTO domain_registry (domain_key, display_name, icon_name, color_hex)
-    VALUES (p_domain_key, v_display_name, p_icon_name, p_color_hex)
-    ON CONFLICT (domain_key) DO NOTHING;
-    
-    SELECT jsonb_build_object(
-        'domain_key', domain_key,
-        'display_name', display_name,
-        'icon_name', icon_name,
-        'color_hex', color_hex
-    ) INTO v_result
-    FROM domain_registry
-    WHERE domain_key = p_domain_key;
-    
-    RETURN v_result;
-END;
-$$;
-```
-
----
-
-### Similarity Search (RPC Function)
-
-Find similar user profiles using vector embeddings:
-
-```sql
-CREATE OR REPLACE FUNCTION match_user_profiles(
-    query_embedding vector(384),
-    embedding_type_filter embedding_type,
-    match_threshold float DEFAULT 0.7,
-    match_count int DEFAULT 10
-)
-RETURNS TABLE (
-    user_id text,
-    similarity float
-)
-LANGUAGE sql STABLE
-AS $$
-    SELECT
-        user_id,
-        1 - (embedding_vector <=> query_embedding) as similarity
-    FROM world_model_embeddings
-    WHERE embedding_type = embedding_type_filter
-      AND 1 - (embedding_vector <=> query_embedding) > match_threshold
-    ORDER BY embedding_vector <=> query_embedding
-    LIMIT match_count;
-$$;
-```
-
----
-
 ### Get World Model Status
 
 Used by dashboard to show domain counts:
@@ -719,28 +430,9 @@ SELECT
     wmi.total_attributes,
     wmi.available_domains,
     wmi.last_active_at,
-    (SELECT COUNT(*) FROM vault_portfolios WHERE user_id = $1) as portfolio_count
+    (SELECT COUNT(*) FROM world_model_data WHERE user_id = $1) as data_exists
 FROM world_model_index_v2 wmi
 WHERE wmi.user_id = $1;
-```
-
-### Get Investor Stock Count
-
-To display stock count on dashboard, the **client** must decrypt `profile_data_ciphertext`:
-
-```typescript
-// Dashboard fetches encrypted profile
-const encrypted = await HushhIdentity.getEncryptedProfile({ vaultOwnerToken });
-
-// Client decrypts with vault key
-const plaintext = await HushhVault.decryptData({
-  keyHex: vaultKey,
-  payload: encrypted.profile_data,
-});
-
-// Parse and count holdings
-const profile = JSON.parse(plaintext);
-const stockCount = profile.top_holdings?.length || 0;
 ```
 
 ### Audit Trail for User
@@ -768,41 +460,20 @@ LIMIT 50;
 | Key Storage       | Vault keys encrypted with derived keys        |
 | Audit Integrity   | Append-only design, no UPDATE/DELETE on audit |
 | Token Exposure    | Token ID stored, not full token               |
-| Public vs Private | `investor_profiles` public, `user_investor_profiles` encrypted |
 
 ---
 
-## 🔄 Migrations
+## 🔄 Deprecated Tables
 
-### Migration Files
+The following tables have been removed and replaced by the unified world model architecture:
 
-| File | Description |
-|------|-------------|
-| `COMBINED_MIGRATION.sql` | Creates all world model tables, chat tables, and portfolio tables |
-| `005_encrypt_chat_tables.sql` | Adds encryption columns to chat tables |
-
-### Run Migration
-
-Execute in Supabase SQL Editor:
-
-```sql
--- Run COMBINED_MIGRATION.sql first
--- Then run 005_encrypt_chat_tables.sql
-```
-
-### Table Creation Order (Dependencies)
-
-1. `vault_keys` (root)
-2. `domain_registry` (standalone)
-3. `world_model_attributes` (depends on vault_keys)
-4. `world_model_index_v2` (depends on vault_keys)
-5. `world_model_embeddings` (depends on vault_keys)
-6. `chat_conversations` (depends on vault_keys)
-7. `chat_messages` (depends on chat_conversations)
-8. `vault_portfolios` (depends on vault_keys)
-9. `consent_audit` (references vault_keys)
-10. `investor_profiles` (standalone public table)
-11. `user_investor_profiles` (depends on vault_keys, references investor_profiles)
+| Old Table | Replacement |
+|-----------|-------------|
+| `vault_portfolios` | Merged into `world_model_data` with domain key |
+| `chat_conversations` | Not used (replaced by in-memory chat state) |
+| `chat_messages` | Not used (replaced by in-memory chat state) |
+| `investor_profiles` | Not used (removed) |
+| `user_investor_profiles` | Not used (removed) |
 
 ---
 
@@ -810,74 +481,27 @@ Execute in Supabase SQL Editor:
 
 | Domain | Table | Storage Pattern | Privacy |
 |--------|-------|-----------------|---------|
-| **All User Data** | `world_model_attributes` | Field-based (N rows per user per domain) | E2E Encrypted |
+| **All User Data** | `world_model_data` | Single encrypted blob per user | E2E Encrypted |
 | **User Index** | `world_model_index_v2` | Single row per user | Non-sensitive metadata |
 | **Domain Registry** | `domain_registry` | One row per domain | Public |
-| **Embeddings** | `world_model_embeddings` | One row per user per type | Computed vectors |
-| **Chat History** | `chat_conversations` + `chat_messages` | Conversation-based | E2E Encrypted |
-| **Portfolios** | `vault_portfolios` | Single row per portfolio | E2E Encrypted |
-| **Investor (Public)** | `investor_profiles` | Single row per investor | **Public** (SEC data) |
-| **Investor (Private)** | `user_investor_profiles` | Single row per user | E2E Encrypted |
 | **Consent Audit** | `consent_audit` | Append-only log | Token IDs only |
+| **Consent Exports** | `consent_exports` | MCP zero-knowledge exports | E2E Encrypted (client-side) |
 
 ---
 
-## 🔄 Triggers
+## 🔄 Migrations
 
-### Auto-Update Domain Counts
+### Migration Script Location
 
-When attributes are inserted/deleted, domain registry counts are automatically updated:
+- `consent-protocol/db/migrate.py` - Modular per-table migration script
 
-```sql
-CREATE OR REPLACE FUNCTION update_domain_registry_counts()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        UPDATE domain_registry 
-        SET attribute_count = attribute_count + 1,
-            last_updated_at = NOW()
-        WHERE domain_key = NEW.domain;
-    ELSIF TG_OP = 'DELETE' THEN
-        UPDATE domain_registry 
-        SET attribute_count = GREATEST(0, attribute_count - 1),
-            last_updated_at = NOW()
-        WHERE domain_key = OLD.domain;
-    END IF;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
+### Run Migration
 
-CREATE TRIGGER trg_update_domain_counts
-    AFTER INSERT OR DELETE ON world_model_attributes
-    FOR EACH ROW EXECUTE FUNCTION update_domain_registry_counts();
-```
-
-### Auto-Update User Index
-
-When attributes change, the user's index is automatically updated:
-
-```sql
-CREATE OR REPLACE FUNCTION update_user_index_on_attribute_change()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO world_model_index_v2 (user_id, available_domains, total_attributes, last_active_at)
-    SELECT 
-        COALESCE(NEW.user_id, OLD.user_id),
-        ARRAY(SELECT DISTINCT domain FROM world_model_attributes WHERE user_id = COALESCE(NEW.user_id, OLD.user_id)),
-        (SELECT COUNT(*) FROM world_model_attributes WHERE user_id = COALESCE(NEW.user_id, OLD.user_id)),
-        NOW()
-    ON CONFLICT (user_id) DO UPDATE SET
-        available_domains = EXCLUDED.available_domains,
-        total_attributes = EXCLUDED.total_attributes,
-        last_active_at = NOW(),
-        updated_at = NOW();
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_update_user_index
-    AFTER INSERT OR UPDATE OR DELETE ON world_model_attributes
-    FOR EACH ROW EXECUTE FUNCTION update_user_index_on_attribute_change();
+```bash
+cd consent-protocol
+python db/migrate.py --init      # Initialize all tables (non-destructive)
+python db/migrate.py --full      # Full reset (WARNING: DESTRUCTIVE!)
+python db/migrate.py --status    # Show table summary
 ```
 
 ---
@@ -912,20 +536,6 @@ CREATE TABLE renaissance_universe (
 | **QUEEN** | Quality companies with solid fundamentals | 36 | $0.8B - $11B |
 | **JACK** | Good companies, smaller FCF but still investable | 44 | $0.3B - $6.5B |
 
-### RPC Functions
-
-**Check if ticker is investable:**
-```sql
-SELECT is_renaissance_investable('AAPL');
--- Returns: {"is_investable": true, "ticker": "AAPL", "tier": "ACE", ...}
-```
-
-**Get stocks by tier:**
-```sql
-SELECT get_renaissance_by_tier('ACE');
--- Returns: JSON array of all ACE tier stocks
-```
-
 ---
 
-_Version: 3.0 | Updated: January 31, 2026 | World Model Architecture_
+_Version: 4.0 | Updated: February 2026 | World Model Architecture_
