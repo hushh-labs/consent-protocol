@@ -165,14 +165,13 @@ Examples:
 When creating or suggesting a commit, **always** append to the commit message body:
 1. **Sign-off line:**
    ```
+   THE REAL AI USED, no fake sign off here
    Signed-off-by: [AI Provider Name] <[identifier]>
    ```
-   Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
-2. **Token usage** (when the environment provides it, e.g. Cursor/IDE):
+2. **Token usage** (when the environment provides it, e.g. IDE used):
    ```
    Tokens used: [input/output or total as provided]
    ```
-   Use the actual provider name (e.g. Cursor AI, Claude, GPT, etc.). If token counts are not available, omit the Tokens used line but always include Signed-off-by.
 
 ### Responses
 When completing a task or finishing a substantive response, **always** include at the end:
