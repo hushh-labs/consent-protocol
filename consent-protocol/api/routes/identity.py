@@ -43,17 +43,14 @@ class IdentityConfirmRequest(BaseModel):
     """Request to confirm identity and create vault copy."""
     investor_id: int  # ID in investor_profiles table
     
-    # Encrypted profile data (client encrypts before sending)
     profile_data_ciphertext: str
     profile_data_iv: str
     profile_data_tag: str
     
-    # Optional: custom holdings (user's actual holdings)
     custom_holdings_ciphertext: str | None = None
     custom_holdings_iv: str | None = None
     custom_holdings_tag: str | None = None
     
-    # Optional: custom preferences
     preferences_ciphertext: str | None = None
     preferences_iv: str | None = None
     preferences_tag: str | None = None
@@ -64,6 +61,11 @@ class IdentityConfirmResponse(BaseModel):
     success: bool
     message: str
     user_investor_profile_id: int
+
+
+class GetProfileRequest(BaseModel):
+    """Request for encrypted profile data."""
+    consent_token: str
 
 
 class IdentityStatus(BaseModel):
@@ -101,12 +103,7 @@ class AutoDetectResponse(BaseModel):
 async def auto_detect_investor(
     authorization: str = Header(..., description="Bearer Firebase ID token")
 ):
-    """
-    Auto-detect investor from Firebase displayName.
-    
-    Used during onboarding to suggest identity match.
-    """
-    # Validate Firebase token
+    """Auto-detect investor from Firebase displayName."""
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
 
@@ -133,7 +130,6 @@ async def auto_detect_investor(
         logger.error(f"Firebase token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid Firebase token")
     
-    # Use service layer for investor search
     service = InvestorDBService()
     search_results = await service.search_investors(name=display_name, limit=5)
     
@@ -141,7 +137,6 @@ async def auto_detect_investor(
         logger.info(f"📭 No investor matches found for: {display_name}")
         return {"detected": False, "display_name": display_name, "matches": []}
     
-    # Convert to match expected format
     matches = []
     for result in search_results:
         profile = await service.get_investor_by_id(result["id"])
@@ -175,8 +170,6 @@ async def confirm_identity(
     """
     Confirm identity and create encrypted vault copy.
     
-    This is the CONSENT BOUNDARY - public data becomes private data.
-    
     Requires VAULT_OWNER token (user must have unlocked vault).
     
     NOTE: user_investor_profiles table has been removed. This endpoint returns 503
@@ -200,14 +193,12 @@ async def confirm_identity(
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # Use service layer to verify investor exists
     investor_service = InvestorDBService()
     investor = await investor_service.get_investor_by_id(request.investor_id)
     
     if not investor:
         raise HTTPException(status_code=404, detail="Investor profile not found")
     
-    # NOTE: user_investor_profiles table has been removed. This functionality needs refactoring.
     raise HTTPException(
         status_code=503, 
         detail="Identity confirmation temporarily unavailable - database schema migration in progress"
@@ -221,8 +212,6 @@ async def get_identity_status(
     """
     Get user's identity resolution status.
     
-    Returns whether user has confirmed an identity and basic info.
-    
     NOTE: user_investor_profiles table has been removed. This endpoint returns 503
     until database migration completes.
     """
@@ -244,33 +233,25 @@ async def get_identity_status(
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # NOTE: user_investor_profiles table has been removed.
     raise HTTPException(
         status_code=503, 
         detail="Identity status temporarily unavailable - database schema migration in progress"
     )
 
 
-@router.post("/profile")
+@router.post("/profile", response_model=dict)
 async def get_encrypted_profile(
-    request: "GetProfileRequest"  # Pydantic model reference
+    request: GetProfileRequest
 ):
     """
     Get user's encrypted investor profile.
     
     Returns encrypted ciphertext for client-side decryption.
-    This is what agents use for personalization.
-    
-    NOTE: Uses POST + Body for robust token transmission (avoids header stripping).
     
     NOTE: user_investor_profiles table has been removed. This endpoint returns 503
     until database migration completes.
     """
-    # Extract token from request body
-    if hasattr(request, "consent_token"):
-        token = getattr(request, "consent_token")
-    else:
-        raise HTTPException(status_code=400, detail="Missing consent_token in request body")
+    token = request.consent_token
     
     try:
         is_valid, error_msg, payload = validate_token(token)
@@ -285,7 +266,6 @@ async def get_encrypted_profile(
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # NOTE: user_investor_profiles table has been removed.
     raise HTTPException(
         status_code=503, 
         detail="Get encrypted profile temporarily unavailable - database schema migration in progress"
@@ -299,8 +279,6 @@ async def delete_identity(
     """
     Delete user's confirmed identity (reset).
     
-    Use when user wants to re-confirm or start fresh.
-    
     NOTE: user_investor_profiles table has been removed. This endpoint returns 503
     until database migration completes.
     """
@@ -322,7 +300,6 @@ async def delete_identity(
         logger.error(f"Token validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
     
-    # NOTE: user_investor_profiles table has been removed.
     raise HTTPException(
         status_code=503, 
         detail="Delete identity temporarily unavailable - database schema migration in progress"
