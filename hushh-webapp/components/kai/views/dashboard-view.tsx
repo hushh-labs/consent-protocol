@@ -22,7 +22,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Settings,
   TrendingUp,
@@ -53,6 +53,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { StockAnalysisDialog } from "@/components/kai/stock-analysis-dialog";
+import { getStockContext } from "@/lib/services/kai-service";
+import { useVault } from "@/lib/vault/vault-context";
 import { PortfolioHistoryChart, type HistoricalDataPoint } from "../charts/portfolio-history-chart";
 import { AssetAllocationDonut } from "../charts/asset-allocation-donut";
 import { SectorAllocationChart } from "../charts/sector-allocation-chart";
@@ -211,6 +214,12 @@ export function DashboardView({
   onReupload,
   onClearData,
 }: DashboardViewProps) {
+  const [showDialog, setShowDialog] = useState(false);
+  const [selectedTicker, setSelectedTicker] = useState("");
+  const [analysisContext, setAnalysisContext] = useState<any>(undefined);
+  
+  const { vaultOwnerToken } = useVault();
+
   // Normalize holdings (support both old and new schema)
   const holdings = useMemo(() => {
     return portfolioData.holdings || portfolioData.detailed_holdings || [];
@@ -817,6 +826,24 @@ export function DashboardView({
           </button>
         </div>
 
+        {/* Confirmation Dialog */}
+        <StockAnalysisDialog
+          ticker={selectedTicker}
+          context={analysisContext}
+          onConfirm={() => {
+            setShowDialog(false);
+            if (selectedTicker) {
+              onAnalyzeStock?.(selectedTicker);
+            }
+          }}
+          onCancel={() => {
+            setShowDialog(false);
+            setSelectedTicker("");
+            setAnalysisContext(undefined);
+          }}
+          isOpen={showDialog}
+        />
+
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-0 divide-y divide-border">
             {primeAssets.length > 0 ? (
@@ -826,10 +853,33 @@ export function DashboardView({
                 const gainLossPct = holding.unrealized_gain_loss_pct ?? 0;
                 const isHoldingPositive = gainLoss >= 0;
 
+                // Handle analyze click - show confirmation dialog
+                const handleAnalyzeClick = async (symbol: string) => {
+                  if (!vaultOwnerToken) {
+                    console.error("Vault must be unlocked for stock analysis");
+                    return;
+                  }
+
+                  setSelectedTicker(symbol);
+                  
+                  // Extract user_id from token format: "user:<firebase_uid>.vault_owner:<timestamp>"
+                  const userId = vaultOwnerToken.split(":")[1]?.split(".")[0] || "unknown";
+                  
+                  try {
+                    setAnalysisContext(
+                      await getStockContext(symbol, userId, vaultOwnerToken)
+                    );
+                  } catch (error) {
+                    console.error("Failed to get context:", error);
+                  }
+                  
+                  setShowDialog(true);
+                };
+
                 return (
                   <button
                     key={`${holding.symbol}-${index}`}
-                    onClick={() => onAnalyzeStock?.(holding.symbol)}
+                    onClick={() => handleAnalyzeClick(holding.symbol)}
                     className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors text-left group"
                   >
                     <div className="flex-1 min-w-0">
