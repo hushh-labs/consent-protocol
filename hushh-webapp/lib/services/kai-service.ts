@@ -337,6 +337,59 @@ export async function getInitialChatState(userId: string): Promise<{
 }
 
 /**
+ * Get stock context for analysis (holdings, decisions, portfolio allocation).
+ * Called before starting analysis to show confirmation dialog.
+ * 
+ * @param ticker Stock ticker symbol
+ * @param userId User ID (must match token user_id)
+ * @param vaultOwnerToken VAULT_OWNER consent token
+ */
+export async function getStockContext(
+  ticker: string,
+  userId: string,
+  vaultOwnerToken: string
+): Promise<{
+  ticker: string;
+  user_risk_profile: string;
+  holdings: Array<{
+    symbol: string;
+    quantity: number;
+    market_value: number;
+    weight_pct: number;
+  }>;
+  recent_decisions: Array<{
+    ticker: string;
+    decision: "BUY" | "HOLD" | "REDUCE";
+    confidence: number;
+    timestamp: string;
+  }>;
+  portfolio_allocation: {
+    equities_pct: number;
+    bonds_pct: number;
+    cash_pct: number;
+  };
+}> {
+  const response = await fetch("/api/world-model/get-context", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${vaultOwnerToken}`,
+    },
+    body: JSON.stringify({
+      ticker: ticker.toUpperCase(),
+      user_id: userId,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to get stock context");
+  }
+
+  return response.json();
+}
+
+/**
  * Send a chat message to Kai.
  * Platform-aware: Uses Kai plugin on native, Next.js API on web.
  * Requires VAULT_OWNER token for consent-gated data access.
