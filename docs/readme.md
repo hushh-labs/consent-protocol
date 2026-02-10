@@ -106,7 +106,7 @@ Hushh uses Capacitor 8 for native iOS and Android apps:
 | **System AI Integration** | Apple Intelligence | Gemini Nano | 🔜 Planned |
 | **Full Offline Mode** | ✅ | ✅ | 🔜 Planned |
 
-See [Mobile Documentation](technical/mobile.md#roadmap-on-device-ai-layer) for detailed on-device AI architecture.
+See [Mobile Development Guide](./guides/mobile_development.md#roadmap-on-device-ai-layer) for detailed on-device AI architecture.
 
 ---
 
@@ -234,7 +234,7 @@ Agent Kai is an **educational tool**. It is NOT part of Hushh Technology Fund L.
 | **SEC Regulations**     | Kai is educational only, clear disclaimers, no trade execution |
 | **Consumer Protection** | Clear pricing (for Food & Dining), receipts, audit trails      |
 
-See [Architecture - Legal Compliance](./technical/architecture.md#legal--compliance-usa) for details.
+See [Architecture - Legal Compliance](./reference/architecture.md#legal--compliance-usa) for details.
 
 ---
 
@@ -396,8 +396,6 @@ hushh-research/
 
 | Plugin | Purpose | iOS | Android |
 |--------|---------|-----|---------|
-| **HushhAuth** | Google/Apple Sign-In, Firebase | ✅ | ✅ |
-| **HushhVault** | Encryption, vault operations | ✅ | ✅ |
 | **HushhConsent** | Token management, consent flow | ✅ | ✅ |
 | **HushhIdentity** | Investor identity resolution | ✅ | ✅ |
 | **Kai** | Investment analysis agent | ✅ | ✅ |
@@ -405,7 +403,7 @@ hushh-research/
 | **HushhSettings** | App preferences | ✅ | ✅ |
 | **HushhKeystore** | Secure key storage | ✅ | ✅ |
 
-See [Mobile Documentation](technical/mobile.md) for full plugin API reference.
+See [Mobile Development Guide](./guides/mobile_development.md) for full plugin API reference.
 
 ---
 
@@ -413,9 +411,9 @@ See [Mobile Documentation](technical/mobile.md) for full plugin API reference.
 
 | Document                                          | Audience    | Description                   |
 | ------------------------------------------------- | ----------- | ----------------------------- |
-| [Architecture](./technical/architecture.md)       | Developers  | On-device + cloud design      |
-| [Mobile Development](./technical/mobile.md)       | Mobile Devs | MLX, Gemma, Capacitor plugins |
-| [Database Schema](./technical/database-schema.md) | Developers  | PostgreSQL + SQLite schema    |
+| [Architecture](./reference/architecture.md)       | Developers  | On-device + cloud design      |
+| [Mobile Development](./guides/mobile_development.md) | Mobile Devs | Capacitor plugins, native code |
+| [Database Schema](./reference/database_schema.md) | Developers  | PostgreSQL + SQLite schema    |
 | [Agent Kai Vision](./vision/kai/)                 | Product     | Investment tools + compliance |
 | [Food & Dining Vision](./vision/food-dining/)     | Product     | Location favorites + AP2      |
 | [Business Overview](./business/overview.md)       | Everyone    | Plain-English explanation     |
@@ -480,7 +478,7 @@ MIT License — see [LICENSE](./LICENSE) for details.
   <strong>🤫 Hushh — Because your data should work for you.</strong>
   <br/><br/>
   <a href="https://hushh.ai">Website</a> •
-  <a href="./technical/architecture.md">Architecture</a> •
+  <a href="./reference/architecture.md">Architecture</a> •
   <a href="./vision/kai/">Agent Kai</a> •
   <a href="./business/overview.md">How It Works</a>
 </p>
