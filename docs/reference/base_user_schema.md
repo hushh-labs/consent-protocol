@@ -136,12 +136,9 @@ Stores encrypted investment decision history:
 | Scope | Domain | Access |
 |-------|--------|--------|
 | `vault.owner` | All | Master scope - full vault access |
-| `vault.read.food` | Food | Read dietary preferences |
-| `vault.write.food` | Food | Write dietary preferences |
-| `vault.read.professional` | Professional | Read career data |
-| `vault.write.professional` | Professional | Write career data |
-| `vault.read.finance` | Kai | Read investment data |
-| `vault.write.finance` | Kai | Write investment data |
+| `attr.food.*` | Food | Read/write dietary preferences |
+| `attr.professional.*` | Professional | Read/write career data |
+| `attr.financial.*` | Kai | Read/write investment data |
 | `agent.kai.analyze` | Kai | Perform investment analysis |
 
 ---

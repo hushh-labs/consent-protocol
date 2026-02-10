@@ -220,9 +220,11 @@ gcloud run services update-traffic consent-protocol \
 ## URLs
 
 ### Production
-- Backend: https://consent-protocol-1006304528804.us-central1.run.app
-- Frontend: https://hushh-webapp-rpphvsc3tq-uc.a.run.app
+- **Backend**: Check Cloud Run console for current URL (e.g., `https://consent-protocol-*.us-central1.run.app`)
+- **Frontend**: Check Cloud Run console for current URL (e.g., `https://hushh-webapp-*.a.run.app`)
+
+> **Note**: URLs are automatically managed by Cloud Run. Check the [Cloud Run Console](https://console.cloud.google.com/run) for the latest URLs.
 
 ---
 
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-02-09
