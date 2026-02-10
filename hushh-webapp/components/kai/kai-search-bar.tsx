@@ -9,6 +9,7 @@
  * - Matches bottom nav glass styling
  * - Typing triggers stock analysis
  * - Auto-complete suggestions based on portfolio holdings
+ * - Confirmation dialog before starting analysis
  * - Only shown on dashboard state
  */
 
@@ -16,7 +17,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Search, BarChart3 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/morphy-ux/cn";
+import { StockAnalysisDialog } from "./stock-analysis-dialog";
+import { getStockContext } from "@/lib/services/kai-service";
+import { useVault } from "@/lib/vault/vault-context";
 
 // =============================================================================
 // TYPES
@@ -49,6 +53,13 @@ export function KaiSearchBar({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Dialog state
+  const [showDialog, setShowDialog] = useState(false);
+  const [selectedTicker, setSelectedTicker] = useState("");
+  const [analysisContext, setAnalysisContext] = useState<any>(undefined);
+  
+  const { vaultOwnerToken } = useVault();
 
   // Generate suggestions based on input
   useEffect(() => {
@@ -99,11 +110,29 @@ export function KaiSearchBar({
     setShowSuggestions(false);
   };
 
-  // Handle suggestion selection
-  const handleSuggestionClick = (suggestion: Suggestion) => {
-    onCommand("analyze", { symbol: suggestion.symbol });
-    setInput("");
-    setShowSuggestions(false);
+  // Handle suggestion click - show confirmation dialog
+  const handleSuggestionClick = async (suggestion: Suggestion) => {
+    setSelectedTicker(suggestion.symbol);
+    
+    // Check vault is unlocked before proceeding
+    if (!vaultOwnerToken) {
+      console.error("Vault must be unlocked for stock analysis");
+      return;
+    }
+
+    // Extract user_id from token format: "user:<firebase_uid>.vault_owner:<timestamp>"
+    const userId = vaultOwnerToken.split(":")[1]?.split(".")[0] || "unknown";
+
+    // Get world model context for this stock
+    try {
+      setAnalysisContext(
+        await getStockContext(suggestion.symbol, userId, vaultOwnerToken)
+      );
+    } catch (error) {
+      console.error("Failed to get context:", error);
+    }
+    
+    setShowDialog(true);
   };
 
   // Handle keyboard navigation
@@ -130,9 +159,36 @@ export function KaiSearchBar({
     }
   };
 
+  // Handle dialog confirmation - start analysis
+  const handleDialogConfirm = async () => {
+    setShowDialog(false);
+    
+    if (selectedTicker) {
+      onCommand("analyze", { symbol: selectedTicker });
+      setInput("");
+      setShowSuggestions(false);
+    }
+  };
+
+  // Handle dialog cancel
+  const handleDialogCancel = () => {
+    setShowDialog(false);
+    setSelectedTicker("");
+    setAnalysisContext(undefined);
+  };
+
   return (
     <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] left-0 right-0 z-40 px-6">
-      <div className="max-w-lg mx-auto">
+      {/* Confirmation Dialog */}
+      <StockAnalysisDialog
+        ticker={selectedTicker}
+        context={analysisContext}
+        onConfirm={handleDialogConfirm}
+        onCancel={handleDialogCancel}
+        isOpen={showDialog}
+      />
+      
+      <div className="max-w-lg mx-auto relative z-50">
         {/* Suggestions Dropdown */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="mb-2 rounded-2xl border overflow-hidden shadow-xl backdrop-blur-xl"
