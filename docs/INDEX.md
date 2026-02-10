@@ -23,7 +23,7 @@ All consent management endpoints use VAULT_OWNER token (not Firebase auth):
 | Endpoint | Auth Type | Notes |
 |----------|-----------|-------|
 | `POST /api/consent/vault-owner-token` | Firebase | Bootstrap - issues VAULT_OWNER token |
-| `GET /api/consent/pending` | VAULT_OWNER | Consent-gated |
+| `GET /api/consent/pending?user_id={id}` | VAULT_OWNER | Consent-gated |
 | `POST /api/consent/pending/approve` | VAULT_OWNER | Consent-gated |
 | `POST /api/consent/pending/deny` | VAULT_OWNER | Consent-gated |
 | `POST /api/consent/cancel` | VAULT_OWNER | Consent-gated |
