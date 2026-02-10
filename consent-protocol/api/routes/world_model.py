@@ -21,6 +21,166 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/world-model", tags=["world-model"])
 
 
+# ============================================================================
+# STOCK CONTEXT ENDPOINT (KAI Analysis)
+# ============================================================================
+
+
+class StockContextRequest(BaseModel):
+    ticker: str
+    user_id: str
+
+
+class PortfolioHolding(BaseModel):
+    """Represents a single stock holding."""
+    symbol: str
+    quantity: float
+    current_price: float
+    market_value: float
+    name: str
+
+
+class DecisionRecord(BaseModel):
+    """Represents a Kai investment decision."""
+    id: int
+    ticker: str
+    decision_type: str
+    confidence: float
+    created_at: str
+    metadata: dict | None
+
+
+class StockContextResponse(BaseModel):
+    ticker: str
+    user_risk_profile: str
+    holdings: list[dict]
+    recent_decisions: list[dict]
+    portfolio_allocation: dict[str, int]
+
+
+def calculate_portfolio_allocation(holdings: list[PortfolioHolding]) -> dict[str, float]:
+    """
+    Calculate allocation percentages from actual holdings.
+    
+    Returns allocation percentages based on market value of equities vs cash.
+    """
+    if not holdings:
+        return {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
+    
+    total_value = sum(h.market_value for h in holdings)
+    if total_value == 0:
+        return {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
+    
+    equities_pct = (total_value / total_value) * 100
+    
+    return {
+        "equities_pct": round(equities_pct, 2),
+        "bonds_pct": round(100 - equities_pct) / 2,
+        "cash_pct": round(100 - equities_pct) / 2
+    }
+
+
+async def get_risk_profile(user_id: str) -> str:
+    """
+    Get user's risk profile from vault_kai_preferences.
+    
+    Returns a string like 'conservative', 'balanced', or 'aggressive'.
+    Falls back to 'balanced' if not found.
+    """
+    try:
+        from db.db_client import get_db
+        supabase = get_db()
+        
+        result = (
+            await supabase.table("vault_kai_preferences")
+            .select("risk_profile")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        
+        if result.data and len(result.data) > 0:
+            profile = result.data[0].get("risk_profile") or "balanced"
+            return profile.lower() if isinstance(profile, str) else "balanced"
+    except Exception as e:
+        logger.warning(f"[World Model Context] Failed to get risk profile: {e}")
+    
+    return "balanced"
+
+
+async def fetch_holdings(user_id: str) -> list[PortfolioHolding]:
+    """
+    Fetch all portfolio holdings for a user.
+    
+    Returns a list of PortfolioHolding objects with calculated market values.
+    """
+    from db.db_client import get_db
+    supabase = get_db()
+    
+    try:
+        response = (
+            await supabase.table("vault_portfolios")
+            .select("*")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        
+        holdings: list[PortfolioHolding] = []
+        
+        for row in response.data or []:
+            if isinstance(row, dict):
+                symbol = (row.get("symbol") or row.get("ticker") or "").upper()
+                quantity = float(row.get("quantity", 0) or 0)
+                current_price = float(row.get("current_price", 0) or 0)
+                
+                holdings.append(PortfolioHolding(
+                    symbol=symbol,
+                    quantity=quantity,
+                    current_price=current_price,
+                    market_value=quantity * current_price,
+                    name=row.get("company_name") or row.get("name") or ""
+                ))
+        
+        return holdings
+    except Exception as e:
+        logger.warning(f"[World Model Context] Failed to fetch holdings: {e}")
+        return []
+
+
+async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]:
+    """
+    Fetch recent decisions for a user.
+    
+    Returns a list of DecisionRecord objects sorted by creation date (newest first).
+    """
+    try:
+        from hushh_mcp.services.kai_decisions_service import KaiDecisionsService
+        kai_service = KaiDecisionsService()
+        
+        decisions = await kai_service.get_decisions(
+            user_id=user_id,
+            consent_token="",
+            limit=limit
+        )
+        
+        records: list[DecisionRecord] = []
+        for d in decisions:
+            records.append(DecisionRecord(
+                id=d.get("id", 0),
+                ticker=(d.get("ticker") or "").upper(),
+                decision_type=d.get("decisionType") or "HOLD",
+                confidence=float(d.get("confidence", 0) or 0),
+                created_at=d.get("createdAt") or "",
+                metadata=d.get("metadata")
+            ))
+        
+        # Sort by created_at, newest first
+        records.sort(key=lambda x: x.created_at if x.created_at else "", reverse=True)
+        return records
+    except Exception as e:
+        logger.warning(f"[World Model Context] Failed to fetch decisions: {e}")
+        return []
+
+
 class EncryptedBlob(BaseModel):
     """Encrypted data blob."""
     ciphertext: str = Field(..., description="AES-256-GCM encrypted data")
@@ -364,3 +524,99 @@ async def get_user_scopes(user_id: str):
         return UserScopesResponse(user_id=user_id, scopes=[])
     scopes = [f"attr.{d}.*" for d in index.available_domains]
     return UserScopesResponse(user_id=user_id, scopes=sorted(scopes))
+
+
+@router.post("/get-context", response_model=StockContextResponse)
+async def get_stock_context(
+    request: StockContextRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Get user's context for stock analysis.
+    
+    This endpoint provides world model context (portfolio holdings, risk profile, 
+    recent decisions) for a specific stock ticker being analyzed by Kai.
+    
+    **Authentication**: Requires valid VAULT_OWNER token.
+    
+    **Request**:
+        POST /api/world-model/get-context
+        Authorization: Bearer {vault_owner_token}
+        Body: {
+            "ticker": "AAPL",
+            "user_id": "firebase_uid"
+        }
+    
+    **Response**:
+        {
+            "ticker": "AAPL",
+            "user_risk_profile": "balanced",
+            "holdings": [...],
+            "recent_decisions": [...],
+            "portfolio_allocation": {
+                "equities_pct": 70,
+                "bonds_pct": 20,
+                "cash_pct": 10
+            }
+        }
+    """
+    ticker = (request.ticker or "").upper().strip()
+    user_id = request.user_id
+    
+    # Validate inputs
+    if not ticker:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ticker symbol is required"
+        )
+    
+    if not ticker.isalpha() or len(ticker) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid ticker symbol format (1-5 uppercase letters)"
+        )
+    
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
+    
+    # Get risk profile from vault_kai_preferences
+    risk_profile = await get_risk_profile(user_id)
+    
+    # Fetch holdings for the user
+    holdings = await fetch_holdings(user_id)
+    
+    # Filter to just the requested ticker if it's in the portfolio
+    ticker_holdings = [h for h in holdings if h.symbol == ticker]
+    
+    # Calculate allocation from ALL holdings
+    portfolio_allocation = calculate_portfolio_allocation(holdings)
+    
+    # Fetch recent decisions (not filtered by ticker - Kai uses these as general context)
+    decisions = await fetch_decisions(user_id, limit=50)
+    recent_decisions = [
+        {
+            "ticker": d.ticker,
+            "decision_type": d.decision_type,
+            "confidence": d.confidence,
+            "created_at": d.created_at,
+            "metadata": d.metadata
+        }
+        for d in decisions[:10]  # Return top 10 most recent
+    ]
+    
+    return StockContextResponse(
+        ticker=ticker,
+        user_risk_profile=risk_profile,
+        holdings=[{
+            "symbol": h.symbol,
+            "quantity": h.quantity,
+            "market_value": h.market_value,
+            "weight_pct": round((h.market_value / sum(h2.market_value for h2 in holdings) * 100) if holdings else 0, 2)
+        } for h in ticker_holdings],
+        recent_decisions=recent_decisions,
+        portfolio_allocation=portfolio_allocation
+    )
