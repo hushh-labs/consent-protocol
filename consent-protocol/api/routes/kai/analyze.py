@@ -11,7 +11,7 @@ No Firebase Auth fallback - consistent with Consent-First Architecture.
 import logging
 from typing import Any, Dict, Literal, Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
