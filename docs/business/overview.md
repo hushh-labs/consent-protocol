@@ -35,7 +35,9 @@ Every app today collects your data - your preferences, habits, investments. But:
 
 ## 🔒 On-Device AI: Your Data Never Leaves
 
-Hushh uses cutting-edge on-device AI that runs entirely on your phone:
+> **⚠️ Roadmap Feature**: On-device AI is a future implementation planned for Phase 1-4. Current architecture uses hybrid cloud model with E2E encryption.
+
+Hushh plans to use cutting-edge on-device AI that runs entirely on your phone:
 
 | Platform    | Technology   | What It Means                 |
 | ----------- | ------------ | ----------------------------- |
@@ -48,6 +50,13 @@ Hushh uses cutting-edge on-device AI that runs entirely on your phone:
 2. **Speed**: No waiting for internet response
 3. **Offline**: Works without connection
 4. **Security**: No cloud servers to hack
+
+**Current Architecture (Hybrid Cloud):**
+
+- Data is encrypted client-side with AES-256-GCM
+- Encrypted data is stored in PostgreSQL (Supabase)
+- Server stores only ciphertext - cannot decrypt user data
+- Token-based consent ensures agents only access what you authorize
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **Role**: Coordinator / Orchestrator
 > **Model**: `gemini-3-flash-preview` (via Vertex AI)
-> **Scopes**: `vault.read.finance`
+> **Scopes**: `attr.financial.*`
 
 ## Overview
 
@@ -66,4 +66,4 @@ graph TD
 ## Data Sources
 
 - **Real Data**: Tools fetch from `sec_payload_*.json` (simulated real/static) or live APIs if configured.
-- **User Context**: Kai reads `vault.read.finance` to tailor advice to the user's risk profile (Balanced, Aggressive, Conservative).
+- **User Context**: Kai reads `attr.financial.*` to tailor advice to the user's risk profile (Balanced, Aggressive, Conservative).
