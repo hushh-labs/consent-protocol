@@ -3,6 +3,9 @@
 Kai Analysis Endpoint (Non-Streaming)
 
 Performs 3-agent investment analysis and returns complete DecisionCard.
+
+SECURITY: This endpoint requires VAULT_OWNER token for all data access.
+No Firebase Auth fallback - consistent with Consent-First Architecture.
 """
 
 import logging
@@ -11,6 +14,7 @@ from typing import Any, Dict, Literal, Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from api.middleware import require_vault_owner_token
 from hushh_mcp.consent.token import issue_token
 from hushh_mcp.constants import ConsentScope
 
@@ -56,15 +60,30 @@ class AnalyzeResponse(BaseModel):
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_ticker(
     request: AnalyzeRequest,
-    authorization: Optional[str] = Header(None)
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
     Step 1: Perform 3-agent investment analysis.
     
     Return PLAINTEXT result.
     Client provides `risk_profile` directly (Stateless).
+    
+    SECURITY: VAULT_OWNER token required. No Firebase Auth fallback.
+    
+    Args:
+        request: API request with user_id, ticker, consent_token
+        token_data: Vault owner token data from middleware (user_id, agent_id, scope)
+    
+    Raises:
+        HTTPException 401 if VAULT_OWNER token is missing or invalid
+        HTTPException 403 if user_id mismatch detected
     """
     from hushh_mcp.agents.kai.orchestrator import KaiOrchestrator
+    
+    # Security: Verify token matches requested user
+    if token_data["user_id"] != request.user_id:
+        logger.warning(f"[Kai] User ID mismatch - token={token_data['user_id']}, request={request.user_id}")
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
     
     try:
         # Initialize orchestrator with Client-provided context
@@ -74,43 +93,8 @@ async def analyze_ticker(
             processing_mode=request.processing_mode,
         )
         
-        # Validate Consent (Explicit or Implicit)
-        token_to_use = request.consent_token
-        
-        if not token_to_use:
-            # Try Implicit Consent (Same-User Session)
-            if not authorization or not authorization.startswith("Bearer "):
-                 raise HTTPException(status_code=401, detail="Missing consent token or valid session")
-            
-            try:
-                import firebase_admin
-                from firebase_admin import auth, credentials
-                try:
-                    firebase_admin.get_app()
-                except ValueError:
-                    firebase_admin.initialize_app(credentials.ApplicationDefault())
-                
-                id_token = authorization.split("Bearer ")[1]
-                decoded = auth.verify_id_token(id_token)
-                
-                if decoded["uid"] != request.user_id:
-                    raise HTTPException(status_code=403, detail="Session user mismatch")
-                
-                logger.info(f"[Kai] Implicit consent granted for owner: {request.user_id}")
-                
-                # ISSUE REAL EPHEMERAL TOKEN (30s)
-                scope = ConsentScope("vault.owner")
-                token_obj = issue_token(
-                    user_id=request.user_id,
-                    agent_id="self",
-                    scope=scope,
-                    expires_in_ms=30000 
-                )
-                token_to_use = token_obj.token
-                
-            except Exception as e:
-                logger.warning(f"[Kai] Implicit auth failed: {e}")
-                raise HTTPException(status_code=401, detail="Invalid session credentials")
+        # Get token from middleware (already validated)
+        token_to_use = request.consent_token or token_data["token"]
 
         # Run analysis (Generates Plaintext)
         decision_card = await orchestrator.analyze(

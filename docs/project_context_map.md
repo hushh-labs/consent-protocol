@@ -6,6 +6,12 @@
 
 ---
 
+## Contact Information
+
+- **Engineering**: eng@hush1one.com
+- **Support**: eng@hush1one.com
+- **GitHub**: https://github.com/hushh-labs/hushh-research
+
 ## Quick Start
 
 ### Development Servers
@@ -102,7 +108,7 @@ ApiService.method()
 
 **Rationale**: Native platforms have no Next.js server.
 
-### Rule 2: Every API Route Needs Native Plugin
+### Rule 2: Every API Route Needs Native Plugin (7-Step Process)
 
 When creating `app/api/{feature}/route.ts`, ALL must exist:
 
@@ -112,6 +118,7 @@ When creating `app/api/{feature}/route.ts`, ALL must exist:
 4. ✅ Service: `lib/services/{feature}-service.ts`
 5. ✅ Interface: `lib/capacitor/{feature}.ts`
 6. ✅ **Plugin Registration**: Register iOS plugin in `ios/App/App/MyViewController.swift` and Android plugin in `android/.../MainActivity.kt`
+7. ✅ **Update route-contracts.json** (`hushh-webapp/route-contracts.json`) - Add contract entry with native block
 
 If you add a new iOS Swift file and edit `project.pbxproj` manually: use **24-character hexadecimal IDs only** (0-9, A-F). Any other character causes Xcode "invalid hex digit" errors. See `docs/guides/feature_checklist.md` and `docs/guides/mobile_development.md` for details.
 
