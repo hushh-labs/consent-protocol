@@ -17,15 +17,18 @@ import { getPythonApiUrl } from "@/app/api/_utils/backend";
  * - Holdings matching the ticker symbol
  * - Recent decisions for the ticker
  * - Portfolio allocation percentages
+ * 
+ * NOTE: user_id is extracted from VAULT_OWNER token (validated by backend middleware).
+ * The frontend no longer sends user_id in the request body.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const consentToken = request.headers.get("authorization")?.replace("Bearer ", "") || "";
 
-  // Validate request body
-  if (!body.ticker || !body.user_id) {
+  // Validate ticker is present
+  if (!body.ticker) {
     return NextResponse.json(
-      { error: "Missing required fields", details: "ticker and user_id are required" },
+      { error: "Missing required fields", details: "ticker is required" },
       { status: 400 }
     );
   }
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         ticker: body.ticker.toUpperCase(),
-        user_id: body.user_id,
+        // user_id is no longer sent - extracted from token by backend
       }),
     });
 

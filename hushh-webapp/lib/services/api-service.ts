@@ -1556,6 +1556,73 @@ export class ApiService {
       body: JSON.stringify(body),
     });
   }
+
+  /**
+   * Stream Kai stock analysis with real-time SSE events
+   * 
+   * Returns a Response with SSE stream that emits:
+   * - 'agent_start' events: Agent begins analysis
+   * - 'agent_token' events: Streaming tokens showing AI thinking
+   * - 'agent_complete' events: Agent finished with summary
+   * - 'debate_round' events: Each round of agent debate
+   * - 'decision' events: Final decision card
+   * - 'error' events: Error messages
+   * 
+   * SSE Format from Backend:
+   * event: agent_start
+   * data: {"event": "agent_start", "data": {"agent": "..."}, "id": "..."}
+   * 
+   * Native Kai plugin uses different format, we normalize to SSE standard.
+   */
+  static async streamKaiAnalysis(data: {
+    userId: string;
+    ticker: string;
+    riskProfile: string;
+    vaultOwnerToken: string;
+  }): Promise<Response> {
+    const body = {
+      user_id: data.userId,
+      ticker: data.ticker.toUpperCase(),
+      risk_profile: data.riskProfile,
+    };
+
+    // Native: use Kai plugin for real-time SSE (WKWebView buffers fetch() response body)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const vaultOwnerToken = data.vaultOwnerToken || this.getVaultOwnerToken();
+        if (!vaultOwnerToken) {
+          return new Response(
+            JSON.stringify({ error: "Vault must be unlocked" }),
+            { status: 401 }
+          );
+        }
+
+        // Stream from Kai plugin directly (no SSE normalization needed)
+        const result = await Kai.streamKaiAnalysis({
+          body: body as Record<string, unknown>,
+          vaultOwnerToken,
+        });
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("[ApiService] Native streamKaiAnalysis error:", error);
+        return new Response(JSON.stringify({ error: (error as Error).message }), {
+          status: 500,
+        });
+      }
+    }
+
+    // For web, use the Next.js proxy
+    return apiFetch("/api/kai/analyze/stream", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.vaultOwnerToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  }
 }
 
 // Re-export for convenience
