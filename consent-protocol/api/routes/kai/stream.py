@@ -43,17 +43,24 @@ class StreamAnalyzeRequest(BaseModel):
 
 
 # ============================================================================
-# SSE EVENT HELPERS
+# SSE EVENT HELPERS (sse_starlette format)
 # ============================================================================
 
 def create_event(event_type: str, data: dict) -> dict:
-    """Create SSE event with consistent format."""
+    """Create SSE event with proper format for sse_starlette.
+    
+    sse_starlette expects: {"event": "...", "data": {...}}
+    where data is a plain dict (NOT JSON-encoded string).
+    
+    NOTE: The 'id' field MUST be a string, not an integer!
+    SSE protocol requires ID to be a string.
+    
+    sse_starlette will automatically encode the dict to JSON and format as SSE.
+    """
     return {
         "event": event_type,
-        "data": json.dumps({
-            **data,
-            "timestamp": int(datetime.now().timestamp() * 1000)
-        })
+        "data": data,  # Plain dict - sse_starlette handles JSON encoding
+        "id": str(int(datetime.now().timestamp() * 1000))
     }
 
 
@@ -61,6 +68,7 @@ async def stream_agent_thinking(
     agent_name: str,
     ticker: str,
     prompt_context: str,
+    request: Request,
 ) -> AsyncGenerator[dict, None]:
     """
     Stream Gemini 3 thinking tokens for an agent analysis.
@@ -89,6 +97,11 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                 logger.error(f"[Kai Stream] Gemini error for {agent_name}: {event.get('message')}")
             elif event.get("type") == "complete":
                 logger.info(f"[Kai Stream] Streaming complete for {agent_name}, total tokens: {token_count}")
+            
+            # Check if client disconnected after each token
+            if await request.is_disconnected():
+                logger.info(f"[Kai Stream] Client disconnected during {agent_name} streaming, stopping...")
+                return
     except Exception as e:
         logger.error(f"[Kai Stream] Streaming error for {agent_name}: {e}", exc_info=True)
         # Non-fatal - analysis will continue without streaming
@@ -119,6 +132,17 @@ async def analyze_stream_generator(
     - error: Any errors
     """
     
+    # Create disconnection event to signal DebateEngine when client disconnects
+    disconnection_event = asyncio.Event()
+    
+    async def check_disconnected() -> bool:
+        """Check if client disconnected and log for debugging."""
+        is_disconnected = await request.is_disconnected()
+        if is_disconnected:
+            logger.info("[Kai Stream] Client disconnected, stopping processing...")
+            disconnection_event.set()  # Signal DebateEngine to stop
+        return is_disconnected
+    
     # Initialize agents
     fundamental_agent = FundamentalAgent(processing_mode="hybrid")
     sentiment_agent = SentimentAgent(processing_mode="hybrid")
@@ -126,7 +150,12 @@ async def analyze_stream_generator(
     
     # Normalize risk_profile to lowercase for DebateEngine config
     normalized_risk_profile = risk_profile.lower() if risk_profile else "balanced"
-    debate_engine = DebateEngine(risk_profile=normalized_risk_profile)
+    
+    # Create DebateEngine with disconnection event to stop LLM when client disconnects
+    debate_engine = DebateEngine(
+        risk_profile=normalized_risk_profile,
+        disconnection_event=disconnection_event
+    )
     
     logger.info(f"[Kai Stream] Starting analysis for {ticker} - user {user_id}")
     
@@ -165,9 +194,15 @@ async def analyze_stream_generator(
         async for token_event in stream_agent_thinking(
             agent_name="Fundamental",
             ticker=ticker,
-            prompt_context="Analyze SEC filings, revenue trends, cash flow, and business moat."
+            prompt_context="Analyze SEC filings, revenue trends, cash flow, and business moat.",
+            request=request
         ):
             yield token_event
+            
+            # Check for disconnection after each token
+            if await check_disconnected():
+                logger.info("[Kai Stream] Client disconnected during fundamental streaming, stopping...")
+                return
         
         # Run actual fundamental analysis (this gets the structured data)
         try:
@@ -218,9 +253,15 @@ async def analyze_stream_generator(
         async for token_event in stream_agent_thinking(
             agent_name="Sentiment",
             ticker=ticker,
-            prompt_context="Analyze news sentiment, market catalysts, and momentum signals."
+            prompt_context="Analyze news sentiment, market catalysts, and momentum signals.",
+            request=request
         ):
             yield token_event
+            
+            # Check for disconnection after each token
+            if await check_disconnected():
+                logger.info("[Kai Stream] Client disconnected during sentiment streaming, stopping...")
+                return
         
         # Run actual sentiment analysis
         try:
@@ -261,9 +302,15 @@ async def analyze_stream_generator(
         async for token_event in stream_agent_thinking(
             agent_name="Valuation",
             ticker=ticker,
-            prompt_context="Analyze P/E multiples, DCF valuation, and peer comparisons."
+            prompt_context="Analyze P/E multiples, DCF valuation, and peer comparisons.",
+            request=request
         ):
             yield token_event
+            
+            # Check for disconnection after each token
+            if await check_disconnected():
+                logger.info("[Kai Stream] Client disconnected during valuation streaming, stopping...")
+                return
         
         # Run actual valuation analysis
         try:
@@ -314,22 +361,13 @@ async def analyze_stream_generator(
             sentiment_insight=sentiment_insight,
             valuation_insight=valuation_insight
         ):
-            # Capture the result when returned (Python 3.13+ generator return value trick won't work easily here 
-            # with iteration, so we expect the engine to return the object at the end or we reconstruct it)
-            # Actually, the generator yields dicts. The DebateResult is returned if we await it, but we are iterating.
-            # So we need to handle the flow differently.
-            # Refactoring DebateEngine to NOT return the value but to have it accessible or yield it as a special event.
-            # Wait, the best pattern for Python generators is to yield everything.
+            # DebateEngine yields flat events with "type" field, pass directly to frontend
+            yield event
             
-            # Let's adjust: The generator yields events. The last thing it does is return the result.
-            # But "async for" does not give access to return value easily.
-            # Correction: We will rely on the DebateEngine state or modify it to yield the decision as a final event.
-            # However, looking at my implementation of DebateEngine, I made it return the result.
-            # Let's fix loop to capture the result. 
-            pass # We process events below
-            
-            # Passthrough event to frontend
-            yield create_event(event["event"], event["data"])
+            # Check for disconnection after each event
+            if await check_disconnected():
+                logger.info("[Kai Stream] Client disconnected during debate streaming, stopping...")
+                return
 
         # Access the final result from the engine state (cleaner than return value hacking)
         # We need to reconstruct it or expose it.

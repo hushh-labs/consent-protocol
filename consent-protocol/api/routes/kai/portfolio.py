@@ -19,7 +19,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -214,6 +214,7 @@ async def get_portfolio_summary(
 
 @router.post("/portfolio/import/stream")
 async def import_portfolio_stream(
+    request: Request,
     file: UploadFile,
     user_id: str = Form(..., description="User's ID"),
     token_data: dict = Depends(require_vault_owner_token),
@@ -232,16 +233,10 @@ async def import_portfolio_stream(
     - `complete`: Final parsed portfolio data
     - `error`: Error message if parsing fails
     
-    **Example SSE Events**:
-    ```
-    data: {"stage": "thinking", "thought": "I can see this is a Schwab brokerage statement..."}
-    
-    data: {"stage": "extracting", "text": "{\n  \"account_info\":", "total_chars": 20}
-    
-    data: {"stage": "complete", "portfolio_data": {...}}
-    ```
-    
     **Authentication**: Requires valid VAULT_OWNER token.
+    
+    **Disconnection Optimization**: 
+    - Client disconnects → event.set() → LLM stops processing
     """
     # Verify user_id matches token
     if token_data["user_id"] != user_id:
@@ -262,6 +257,9 @@ async def import_portfolio_stream(
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
+    # Create disconnection event to stop streaming when client disconnects
+    disconnection_event = asyncio.Event()
+    
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import base64
@@ -451,17 +449,16 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             ]
             
             # Configure with thinking enabled for Gemini 3 Flash
-            # Using LOW thinking level for better reasoning during document parsing
             try:
                 config = types.GenerateContentConfig(
                     temperature=1,
                     max_output_tokens=32768,
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_level=types.ThinkingLevel.MEDIUM,  # Better reasoning for document parsing
+                        thinking_level=types.ThinkingLevel.MEDIUM,
                     )
                 )
-                logger.info("SSE: Thinking mode enabled with level=LOW")
+                logger.info("SSE: Thinking mode enabled with level=MEDIUM")
             except Exception as thinking_error:
                 # Fallback if thinking config not supported
                 logger.warning(f"SSE: Thinking config not supported, falling back: {thinking_error}")
@@ -490,6 +487,11 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             )
             
             async for chunk in stream:
+                # Check for disconnection after each chunk
+                if await request.is_disconnected():
+                    logger.info("[Portfolio Import] Client disconnected, stopping streaming...")
+                    return
+                
                 # Handle chunks with thinking support
                 if hasattr(chunk, 'candidates') and chunk.candidates:
                     candidate = chunk.candidates[0]
@@ -544,9 +546,6 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 parsed_data = json.loads(json_text)
                 
                 # Transform Gemini response to match frontend expected structure
-                # Gemini uses different field names than our frontend expects
-                
-                # Map account_metadata -> account_info
                 account_metadata = parsed_data.get("account_metadata", {})
                 account_info = {
                     "holder_name": account_metadata.get("account_holder"),
@@ -557,7 +556,6 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     "statement_period_end": account_metadata.get("statement_period_end"),
                 }
                 
-                # Map portfolio_summary -> account_summary
                 portfolio_summary = parsed_data.get("portfolio_summary", {})
                 account_summary = {
                     "beginning_value": portfolio_summary.get("beginning_value"),
@@ -568,7 +566,6 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
                 }
                 
-                # Map detailed_holdings -> holdings with field name normalization
                 detailed_holdings = parsed_data.get("detailed_holdings", [])
                 holdings = []
                 for h in detailed_holdings:

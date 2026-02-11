@@ -1,4 +1,4 @@
-# Hushh Frontend Design System (v4.1)
+# Hushh Frontend Design System (v6.0)
 
 > Comprehensive design rules for the Hushh Agent Platform
 > Based on hushh.ai official branding + Morphy-UX physics
@@ -369,7 +369,7 @@ Design every flow as if you are **personally using your own data agent on a smal
   - Desktop: center the content, but preserve the same step order and wording.
 - **Feedback**
   - Use `morphyToast.success` for **unlocked vault** events with short copy (“Vault unlocked, VAULT_OWNER token issued”).
-  - Use `morphyToast.error` for failures with a clear next step (“Check your passphrase and try again”).
+  - Use `morphyToast.error` for failures with a clear next step ("Check your passphrase and try again").
 
 ### 14.2 Consent review & history
 
@@ -623,16 +623,16 @@ body (h-screen, overflow-hidden)
 
 ---
 
-## 19. Background Styling
+## 18. Background Styling
 
-### 16.1 App Background Classes
+### 18.1 App Background Classes
 
 | Class                   | Description                         |
 | ----------------------- | ----------------------------------- |
 | `.morphy-app-bg`        | Main app background gradient        |
 | `.morphy-app-bg-radial` | Subtle radial glow overlay from top |
 
-### 16.2 Light Mode Background
+### 18.2 Light Mode Background
 
 Clean white to subtle blue gradient:
 
@@ -648,7 +648,7 @@ Clean white to subtle blue gradient:
 }
 ```
 
-### 16.3 Dark Mode Background
+### 18.3 Dark Mode Background
 
 Deep dark gradient without gold tones:
 
@@ -667,7 +667,7 @@ Deep dark gradient without gold tones:
 }
 ```
 
-### 16.4 Brand Colors
+### 18.4 Brand Colors
 
 | Token                      | Light Mode         | Dark Mode          |
 | -------------------------- | ------------------ | ------------------ |
@@ -678,15 +678,11 @@ Deep dark gradient without gold tones:
 
 ---
 
-_Version: 5.3 | Updated February 2026 | Added Root Loader and Background documentation_
-
----
-
-## 20. Kai Dashboard Components
+## 19. Kai Dashboard Components
 
 The Kai investment dashboard uses specialized components for displaying portfolio data.
 
-### 17.1 Component Architecture
+### 19.1 Component Architecture
 
 | Component               | Location                                            | Purpose                            |
 | ----------------------- | --------------------------------------------------- | ---------------------------------- |
@@ -696,7 +692,7 @@ The Kai investment dashboard uses specialized components for displaying portfoli
 | `CashFlowCard`          | `components/kai/cards/cash-flow-card.tsx`           | Cash flow summary                  |
 | `AssetAllocationDonut`  | `components/kai/charts/asset-allocation-donut.tsx`  | Asset allocation pie chart         |
 
-### 17.2 Data Integrity Principle
+### 19.2 Data Integrity Principle
 
 **Charts should only display real data.** Never use `Math.random()` or mock data in production charts.
 
@@ -710,7 +706,7 @@ Available data from brokerage statements:
 
 If historical data is unavailable, show a **Period Summary** fallback instead of fake charts.
 
-### 17.3 PortfolioHistoryChart Usage
+### 19.3 PortfolioHistoryChart Usage
 
 ```tsx
 import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history-chart";
@@ -727,7 +723,7 @@ import { PortfolioHistoryChart } from "@/components/kai/charts/portfolio-history
 // Falls back to period summary if data.length < 2
 ```
 
-### 17.4 TransactionActivity Usage
+### 19.4 TransactionActivity Usage
 
 ```tsx
 import { TransactionActivity } from "@/components/kai/cards/transaction-activity";
@@ -737,9 +733,9 @@ import { TransactionActivity } from "@/components/kai/cards/transaction-activity
 
 ---
 
-## 21. Tabs and Segmented Controls
+## 20. Tabs and Segmented Controls
 
-### 18.1 Component Selection
+### 20.1 Component Selection
 
 | Use Case                   | Component          | Import                                 |
 | -------------------------- | ------------------ | -------------------------------------- |
@@ -748,7 +744,7 @@ import { TransactionActivity } from "@/components/kai/cards/transaction-activity
 
 **NEVER** import tabs from `@/components/ui/tabs` - always use Morphy-UX tabs for Material 3 ripple effects.
 
-### 18.2 Morphy-UX Tabs
+### 20.2 Morphy-UX Tabs
 
 ```tsx
 import {
@@ -768,7 +764,7 @@ import {
 </Tabs>;
 ```
 
-### 18.3 SegmentedControl
+### 20.3 SegmentedControl
 
 For single-value selection (theme toggle, period selectors):
 
@@ -802,4 +798,155 @@ import { SegmentedControl } from "@/lib/morphy-ux/ui/segmented-control";
 
 ---
 
-_Version: 5.5 | Updated February 2026 | Updated to Step-Based Progress System, added Caching System and Page Transitions documentation_
+## 📚 Quick Reference
+
+### Core Design Principles
+
+| Principle | Description |
+| --------- | ----------- |
+| **Morphy UX First** | Always use Morphy UX components (`Button`, `Card`, `Input`) as the foundation. Prioritize component **props** over manual `className` overrides. |
+| **Glass Morphism** | Default effect: `effect="glass"` for cards and overlays. Use `backdrop-blur-3xl` or `backdrop-blur-md`. Transparency: `bg-muted/80` or `bg-background/95`. |
+| **Consistent Sizing** | Buttons: `size="xl"` (h-16) for primary actions. Inputs: `h-14 text-lg px-4` for form fields. Icons: `h-12 w-12` for headers, `h-5 w-5` for inline. |
+
+### Design Tokens
+
+| Scale       | Value        | Usage               |
+| ----------- | ------------ | ------------------- |
+| **Spacing** | `space-y-6`  | Section gaps        |
+|             | `p-6`        | Card content        |
+|             | `space-y-4`  | Form sections       |
+|             | `gap-3`      | Standard gaps       |
+| **Opacity** | `/80`, `/95` | Background overlays |
+|             | `/50`        | Hover states        |
+|             | `/10`        | Borders/Shadows     |
+
+### Component Patterns
+
+#### Vault Flows (Creation / Unlock Pattern)
+
+- **Goal**: Focus user attention on a single primary action.
+- **Key Rules**:
+  - Icon size: `h-12 w-12`
+  - Input: `h-14` with `text-lg`
+  - Button: `size="xl"` (h-16)
+
+**Composition:**
+
+```tsx
+<Card variant="none" effect="glass">
+  <CardContent className="p-6 space-y-4">
+    {/* Header */}
+    <div className="text-center">
+      <Icon className="h-12 w-12 mx-auto text-primary mb-4" />
+      <h3 className="font-semibold text-xl">{title}</h3>
+      <p className="text-base text-muted-foreground mt-2">{description}</p>
+    </div>
+
+    {/* Form Fields */}
+    <div className="space-y-3">
+      <Label htmlFor="field" className="text-base">
+        {label}
+      </Label>
+      <Input
+        id="field"
+        type="password"
+        className="h-14 text-lg px-4"
+        autoFocus
+      />
+    </div>
+
+    {/* Actions */}
+    <div className="flex gap-3 pt-2">
+      <Button variant="none" effect="glass" size="xl" className="flex-1">
+        Secondary
+      </Button>
+      <Button variant="gradient" effect="glass" size="xl" className="flex-1">
+        Primary
+      </Button>
+    </div>
+  </CardContent>
+</Card>
+```
+
+#### Pill Navigation (Bottom Nav & Theme Toggle)
+
+- **Goal**: Floating, glass-morphic navigation elements.
+- **Key Rules**:
+  - ✅ Use native `<button>` or `<Link>`, NOT `<Button>` component
+  - ✅ Only active item has background + shadow + ring
+  - ✅ Smooth cubic-bezier easing: `ease-[cubic-bezier(0.25,1,0.5,1)]`
+
+**Structure:**
+
+```tsx
+<div className="flex items-center p-1 bg-muted/80 backdrop-blur-3xl rounded-full shadow-2xl ring-1 ring-black/5">
+  {items.map((item) => {
+    const isActive = /* condition */;
+    return (
+      <button
+        className={cn(
+          "relative flex items-center justify-center gap-2 px-4 py-2.5 rounded-full transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]",
+          isActive
+            ? "bg-background text-foreground shadow-sm ring-1 ring-black/5 min-w-[120px]"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50 min-w-[44px]"
+        )}
+      >
+        <Icon className={cn("h-5 w-5", isActive && "scale-105")} />
+        <div className={cn(
+          "overflow-hidden transition-all duration-500",
+          isActive ? "w-auto opacity-100 ml-1" : "w-0 opacity-0"
+        )}>
+          <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+        </div>
+      </button>
+    );
+  })}
+</div>
+```
+
+### Button Variants
+
+#### Primary Actions
+
+```tsx
+<Button variant="gradient" effect="glass" size="xl" showRipple>
+  Continue
+</Button>
+```
+
+#### Secondary Actions
+
+```tsx
+<Button variant="none" effect="glass" size="xl">
+  Cancel
+</Button>
+```
+
+#### Destructive Actions
+
+```tsx
+<Button
+  variant="none"
+  size="lg"
+  className="border border-destructive/30 text-destructive hover:bg-destructive/10"
+>
+  Sign Out
+</Button>
+```
+
+---
+
+## ✅ Checklist for New Components
+
+Before creating a new component, ensure:
+
+- [ ] Uses Morphy UX components as foundation
+- [ ] Follows established sizing patterns (xl buttons, h-14 inputs)
+- [ ] Implements glass morphism where appropriate
+- [ ] Uses semantic color tokens, not hardcoded colors
+- [ ] Matches transition timing (500ms cubic-bezier)
+- [ ] Responsive on mobile (tested at 375px width)
+
+---
+
+_Version: 6.0 | Updated February 2026 | Consolidated frontend_ui_patterns.md content_

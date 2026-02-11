@@ -19,6 +19,7 @@ import { HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
 import { ApiService, getDirectBackendUrl } from "@/lib/services/api-service";
 import { AuthService } from "@/lib/services/auth-service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
 // ============================================================================
 // TYPES
@@ -337,16 +338,42 @@ export async function getInitialChatState(userId: string): Promise<{
 }
 
 /**
+ * Extract user ID from VAULT_OWNER token for caching purposes.
+ * Token format: HCT:{base64_user_id}|{agent_info}|{scopes}|{iat}|{exp}.{signature}
+ */
+function extractUserIdFromToken(token: string): string {
+  try {
+    // Split the token and get the payload part (second part)
+    const parts = token.split(".");
+    if (parts.length < 2) return "unknown";
+    
+    // Get the first part safely
+    const firstPart = parts[0];
+    if (!firstPart) return "unknown";
+    
+    // Decode the base64 user_id from the first part
+    const payloadBase64 = firstPart.replace("HCT:", "");
+    const decoded = atob(payloadBase64);
+    // Extract user_id from the JSON-like structure
+    const userIdMatch = decoded.match(/"user_id"\s*:\s*"([^"]+)"/);
+    return userIdMatch && userIdMatch[1] !== undefined ? userIdMatch[1] : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
  * Get stock context for analysis (holdings, decisions, portfolio allocation).
  * Called before starting analysis to show confirmation dialog.
  * 
+ * Uses CacheService (in-memory only) for XSS-safe caching.
+ * Caches result for 15 minutes across page navigations.
+ * 
  * @param ticker Stock ticker symbol
- * @param userId User ID (must match token user_id)
- * @param vaultOwnerToken VAULT_OWNER consent token
+ * @param vaultOwnerToken VAULT_OWNER consent token (user_id is extracted from token)
  */
 export async function getStockContext(
   ticker: string,
-  userId: string,
   vaultOwnerToken: string
 ): Promise<{
   ticker: string;
@@ -369,6 +396,16 @@ export async function getStockContext(
     cash_pct: number;
   };
 }> {
+  // Extract userId from token for cache key
+  const userId = extractUserIdFromToken(vaultOwnerToken);
+  const cacheKey = CACHE_KEYS.STOCK_CONTEXT(userId, ticker.toUpperCase());
+  
+  // Check cache first (in-memory only, XSS-safe)
+  const cached = CacheService.getInstance().get<ReturnType<typeof getStockContext>>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  
   const response = await fetch("/api/world-model/get-context", {
     method: "POST",
     headers: {
@@ -377,7 +414,6 @@ export async function getStockContext(
     },
     body: JSON.stringify({
       ticker: ticker.toUpperCase(),
-      user_id: userId,
     }),
   });
 
@@ -386,7 +422,12 @@ export async function getStockContext(
     throw new Error(error.detail || "Failed to get stock context");
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // Cache for 15 minutes (in-memory only, XSS-safe)
+  CacheService.getInstance().set(cacheKey, data, CACHE_TTL.LONG);
+  
+  return data;
 }
 
 /**

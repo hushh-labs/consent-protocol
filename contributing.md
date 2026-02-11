@@ -66,25 +66,6 @@ Hushh is a cross-platform application. **Every feature** that touches backend da
 
 ---
 
-## AI-Assisted Contributions: Sign-Off and Token Usage
-
-**From now on**, any commit or PR that was produced or assisted by AI must:
-
-1. **Sign-off:** Include in the **commit message body** (not just the subject):
-   ```
-   Signed-off-by: [AI Provider Name] <[identifier]>
-   ```
-   Example: `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`
-
-2. **Token usage (when available):** If your IDE or tool reports token usage (input/output or total), add a line in the commit body or PR description:
-   ```
-   Tokens used: [as provided]
-   ```
-
-This keeps a clear record of which model assisted the change and supports transparency on token usage. See `.cursorrules` (AI Sign-Off and Token Usage) and `docs/prompt_context.md` for the full convention.
-
----
-
 ## ✅ Pull Request Guidelines
 
 When you open a PR, please use this template:
