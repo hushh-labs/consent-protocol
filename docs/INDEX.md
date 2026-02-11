@@ -1,7 +1,7 @@
-# Hushh Documentation Index
+x# Hushh Documentation Index
 
-> **Task-Based Navigation** — Find docs by what you want to do, not by number.  
-> **Last Updated**: January 2026
+> **Embedding-Optimized Navigation** — Search keywords: hushh, personal data agents, consent-first, morphy-ux, capacitor, nextjs, fastapi, ai agent, vault encryption, zero-knowledge  
+> **Last Updated**: February 2026 | Version: v1.5
 
 ---
 
@@ -12,8 +12,6 @@
 | **Set up environment** | [Getting Started](../getting_started.md) |
 | **Understand the system** | [Project Context Map](project_context_map.md) |
 | **Make first contribution** | [Contributor Onboarding](guides/contributor_onboarding.md) |
-| **AI sign-off & token usage** | [Contributing](../contributing.md#ai-assisted-contributions-sign-off-and-token-usage), [Prompt Context](prompt_context.md) |
-
 ---
 
 ## Authentication Patterns
@@ -161,3 +159,72 @@ When AI reads docs, recommended priority order:
 2. `index.md` - Navigation and auth patterns
 3. `reference/consent_protocol.md` - Token model details
 4. `reference/architecture.md` - System design
+
+---
+
+## 📚 Quick Search Index (For Embedding/Retrieval)
+
+### Core Topics
+- **Morphy-UX** - Glass morphism UI system, button variants, card effects, ripple mechanics
+- **Capacitor** - iOS/Android native plugins, 8 plugins, native HTTP calls
+- **Tri-Flow Architecture** - Component → Service → [Web Proxy | Native Plugin] → Backend
+- **BYOK / Zero-Knowledge** - Vault keys never leave device, ciphertext-only storage
+
+### Technology Stack
+- **Backend**: FastAPI, Python, Supabase (PostgreSQL), MCP server
+- **Frontend**: Next.js 16 App Router, React 19, TailwindCSS, GSAP animations
+- **Mobile**: Capacitor 8, iOS Swift, Android Kotlin, FaceID/TouchID biometrics
+- **Security**: AES-256-GCM encryption, VAULT_OWNER tokens, Firebase auth (bootstrap only)
+
+### Key Documentation Keywords
+| Keyword | File(s) |
+|---------|---------|
+| `tri-flow` | `project_context_map.md`, `guides/mobile_development.md` |
+| `vault_flow` | `reference/frontend_design_system.md`, `components/vault/vault-flow.tsx` |
+| `glass_morphism` | `reference/frontend_design_system.md`, `globals.css` |
+| `consent_token` | `reference/consent_protocol.md`, `api/middleware.py` |
+| `kai_agent` | `reference/kai.md`, `agents/kai/` |
+| `mcp_server` | `reference/mcp_integration.md`, `consent-protocol/mcp_server.py` |
+
+### Component Categories
+| Category | Files |
+|----------|-------|
+| **UI Components** | `Button`, `Card`, `Tabs`, `SegmentedControl` (Morphy-UX) |
+| **Vault Components** | `VaultFlow`, `HushhVaultPlugin` |
+| **Agent Components** | `KaiStreamingComponent`, `AgentChat`, `ConsentDialog` |
+| **Charts** | `PortfolioHistoryChart`, `TransactionActivity`, `CashFlowCard` |
+
+### Navigation Patterns
+| Pattern | File(s) |
+|---------|---------|
+| Client-side routing | `next/link`, `BreadcrumbLink asChild` |
+| Bottom navigation | Pill navigation, glass-morphic, smooth cubic-bezier easing |
+| Page transitions | GSAP opacity crossfade, preserve flex layout |
+
+---
+
+## 📖 Quick Navigation by Role
+
+### For AI Agents / Context Understanding
+```
+project_context_map.md → reference/consent_protocol.md → 
+reference/architecture.md → index.md (search keywords above)
+```
+
+### For Frontend Developers
+```
+index.md → reference/frontend_design_system.md → 
+components/kai/ → lib/morphy-ux/
+```
+
+### For Backend Developers
+```
+project_context_map.md → reference/architecture.md → 
+reference/consent_protocol.md → api/routes/
+```
+
+### For Mobile Developers (iOS/Android)
+```
+guides/mobile_development.md → project_context_map.md#tri-flow →
+ios/App/App/Plugins/ / android/.../plugins/
+```

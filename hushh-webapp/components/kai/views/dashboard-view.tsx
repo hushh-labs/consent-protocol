@@ -22,7 +22,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   Settings,
   TrendingUp,
@@ -56,6 +56,7 @@ import {
 import { StockAnalysisDialog } from "@/components/kai/stock-analysis-dialog";
 import { getStockContext } from "@/lib/services/kai-service";
 import { useVault } from "@/lib/vault/vault-context";
+import { toast } from "sonner";
 import { PortfolioHistoryChart, type HistoricalDataPoint } from "../charts/portfolio-history-chart";
 import { AssetAllocationDonut } from "../charts/asset-allocation-donut";
 import { SectorAllocationChart } from "../charts/sector-allocation-chart";
@@ -219,6 +220,57 @@ export function DashboardView({
   const [analysisContext, setAnalysisContext] = useState<any>(undefined);
   
   const { vaultOwnerToken } = useVault();
+  
+  // Generate unique request ID
+  const generateRequestId = useCallback(() => {
+    return `kai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
+  // Handle analyze stock click
+  const handleAnalyzeStock = async (ticker: string) => {
+    setSelectedTicker(ticker);
+    
+    try {
+      if (vaultOwnerToken) {
+        setAnalysisContext(
+          await getStockContext(ticker, vaultOwnerToken)
+        );
+      }
+    } catch (error) {
+      console.error("[DashboardView] Failed to get context:", error);
+      toast.error("Failed to load context", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+    
+    setShowDialog(true);
+  };
+
+  // Handle dialog confirmation
+  const handleDialogConfirm = async () => {
+    console.log("[DashboardView] Dialog confirm clicked for:", selectedTicker);
+    if (!selectedTicker || !vaultOwnerToken) {
+      console.error("Missing ticker or vault token");
+      toast?.error?.("Please unlock your vault first");
+      return;
+    }
+    
+    setShowDialog(false);
+    
+    // Call KaiFlow's handleAnalyzeStock - this will write to sessionStorage and navigate
+    try {
+      const requestId = generateRequestId();
+      console.log(`[DashboardView] Starting analysis for ${selectedTicker} (Request ${requestId})`);
+      
+      await onAnalyzeStock?.(selectedTicker);
+      console.log("[DashboardView] Analysis started successfully");
+    } catch (error) {
+      console.error("[DashboardView] Error starting analysis:", error);
+      toast.error("Analysis failed", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
 
   // Normalize holdings (support both old and new schema)
   const holdings = useMemo(() => {
@@ -667,7 +719,7 @@ export function DashboardView({
             <Wallet className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
             <p className="text-sm font-medium mb-1">No Holdings Data</p>
             <p className="text-xs text-muted-foreground mb-3">
-              Individual holdings weren&apos;t extracted.
+              Individual holdings weren't extracted.
             </p>
             {onReupload && (
               <MorphyButton
@@ -831,10 +883,7 @@ export function DashboardView({
           ticker={selectedTicker}
           context={analysisContext}
           onConfirm={() => {
-            setShowDialog(false);
-            if (selectedTicker) {
-              onAnalyzeStock?.(selectedTicker);
-            }
+            handleDialogConfirm();
           }}
           onCancel={() => {
             setShowDialog(false);
@@ -855,26 +904,33 @@ export function DashboardView({
 
                 // Handle analyze click - show confirmation dialog
                 const handleAnalyzeClick = async (symbol: string) => {
+                  console.log("[DashboardView] handleAnalyzeClick called for:", symbol);
+                  console.log("[DashboardView] vaultOwnerToken present:", !!vaultOwnerToken);
+                  console.log("[DashboardView] onAnalyzeStock prop exists:", typeof onAnalyzeStock);
+
                   if (!vaultOwnerToken) {
                     console.error("Vault must be unlocked for stock analysis");
+                    toast?.error?.("Please unlock your vault first");
                     return;
                   }
 
                   setSelectedTicker(symbol);
                   
-                  // Extract user_id from token format: "user:<firebase_uid>.vault_owner:<timestamp>"
-                  const userId = vaultOwnerToken.split(":")[1]?.split(".")[0] || "unknown";
-                  
+                  // Get world model context for this stock
                   try {
-                    setAnalysisContext(
-                      await getStockContext(symbol, userId, vaultOwnerToken)
-                    );
+                    const context = await getStockContext(symbol, vaultOwnerToken);
+                    console.log("[DashboardView] Context received:", context.ticker || "no ticker");
+                    setAnalysisContext(context);
                   } catch (error) {
                     console.error("Failed to get context:", error);
+                    toast.error("Failed to load context", {
+                      description: error instanceof Error ? error.message : "Unknown error",
+                    });
                   }
                   
                   setShowDialog(true);
                 };
+                
 
                 return (
                   <button
