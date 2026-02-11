@@ -27,8 +27,7 @@ router = APIRouter(prefix="/api/world-model", tags=["world-model"])
 
 
 class StockContextRequest(BaseModel):
-    ticker: str
-    user_id: str
+    ticker: str  # user_id is extracted from VAULT_OWNER token, not request body
 
 
 class PortfolioHolding(BaseModel):
@@ -80,31 +79,44 @@ def calculate_portfolio_allocation(holdings: list[PortfolioHolding]) -> dict[str
     }
 
 
-async def get_risk_profile(user_id: str) -> str:
+async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], dict[str, int]]:
     """
-    Get user's risk profile from vault_kai_preferences.
+    Get user's context from world_model_index_v2 domain_summaries.
     
-    Returns a string like 'conservative', 'balanced', or 'aggressive'.
-    Falls back to 'balanced' if not found.
+    Returns cached data stored when portfolio is uploaded:
+    - risk_bucket: User's risk profile
+    - holdings: List of portfolio holdings
+    - portfolio_allocation: Allocation percentages
+    
+    Falls back to defaults if no cache exists.
     """
     try:
-        from db.db_client import get_db
-        supabase = get_db()
+        world_model = get_world_model_service()
         
-        result = (
-            await supabase.table("vault_kai_preferences")
-            .select("risk_profile")
-            .eq("user_id", user_id)
-            .execute()
-        )
+        # Get index from world_model_index_v2
+        index = await world_model.get_index_v2(user_id)
         
-        if result.data and len(result.data) > 0:
-            profile = result.data[0].get("risk_profile") or "balanced"
-            return profile.lower() if isinstance(profile, str) else "balanced"
+        if index and "financial" in (index.domain_summaries or {}):
+            financial_summary = index.domain_summaries["financial"]
+            
+            risk_profile = financial_summary.get("risk_bucket", "balanced")
+            
+            # Get holdings from cached summary
+            cached_holdings = financial_summary.get("holdings", [])
+            
+            # Build allocation from cached data
+            portfolio_allocation = {
+                "equities_pct": financial_summary.get("equities_pct", 70),
+                "bonds_pct": financial_summary.get("bonds_pct", 20),
+                "cash_pct": financial_summary.get("cash_pct", 10)
+            }
+            
+            return risk_profile, cached_holdings, portfolio_allocation
     except Exception as e:
-        logger.warning(f"[World Model Context] Failed to get risk profile: {e}")
+        logger.warning(f"[World Model Context] Failed to get context from index: {e}")
     
-    return "balanced"
+    # Fallback defaults if no cache exists
+    return "balanced", [], {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
 
 
 async def fetch_holdings(user_id: str) -> list[PortfolioHolding]:
@@ -537,14 +549,14 @@ async def get_stock_context(
     This endpoint provides world model context (portfolio holdings, risk profile, 
     recent decisions) for a specific stock ticker being analyzed by Kai.
     
-    **Authentication**: Requires valid VAULT_OWNER token.
+    **Authentication**: Requires valid VAULT_OWNER token. The token contains the
+    user_id which is validated by require_vault_owner_token middleware.
     
     **Request**:
         POST /api/world-model/get-context
         Authorization: Bearer {vault_owner_token}
         Body: {
-            "ticker": "AAPL",
-            "user_id": "firebase_uid"
+            "ticker": "AAPL"
         }
     
     **Response**:
@@ -561,9 +573,17 @@ async def get_stock_context(
         }
     """
     ticker = (request.ticker or "").upper().strip()
-    user_id = request.user_id
     
-    # Validate inputs
+    # Extract user_id from validated token (not from request body)
+    user_id = token_data.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token missing user_id claim"
+        )
+    
+    # Validate ticker
     if not ticker:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -576,47 +596,21 @@ async def get_stock_context(
             detail="Invalid ticker symbol format (1-5 uppercase letters)"
         )
     
-    # Verify token matches user_id
-    if token_data.get("user_id") != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token user_id does not match request user_id"
-        )
-    
-    # Get risk profile from vault_kai_preferences
-    risk_profile = await get_risk_profile(user_id)
-    
-    # Fetch holdings for the user
-    holdings = await fetch_holdings(user_id)
+    # Get context from world_model_index_v2 cached data
+    risk_profile, holdings, portfolio_allocation = await get_risk_profile_from_index(user_id)
     
     # Filter to just the requested ticker if it's in the portfolio
-    ticker_holdings = [h for h in holdings if h.symbol == ticker]
-    
-    # Calculate allocation from ALL holdings
-    portfolio_allocation = calculate_portfolio_allocation(holdings)
-    
-    # Fetch recent decisions (not filtered by ticker - Kai uses these as general context)
-    decisions = await fetch_decisions(user_id, limit=50)
-    recent_decisions = [
-        {
-            "ticker": d.ticker,
-            "decision_type": d.decision_type,
-            "confidence": d.confidence,
-            "created_at": d.created_at,
-            "metadata": d.metadata
-        }
-        for d in decisions[:10]  # Return top 10 most recent
-    ]
+    ticker_holdings = [h for h in holdings if h.get("symbol") == ticker]
     
     return StockContextResponse(
         ticker=ticker,
         user_risk_profile=risk_profile,
         holdings=[{
-            "symbol": h.symbol,
-            "quantity": h.quantity,
-            "market_value": h.market_value,
-            "weight_pct": round((h.market_value / sum(h2.market_value for h2 in holdings) * 100) if holdings else 0, 2)
+            "symbol": h.get("symbol"),
+            "quantity": float(h.get("quantity", 0)),
+            "market_value": float(h.get("market_value", 0)),
+            "weight_pct": float(h.get("weight_pct", 0))
         } for h in ticker_holdings],
-        recent_decisions=recent_decisions,
+        recent_decisions=[],  # Can add later when decisions are cached
         portfolio_allocation=portfolio_allocation
     )

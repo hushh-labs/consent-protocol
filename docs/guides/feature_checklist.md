@@ -219,7 +219,7 @@ Before marking feature as complete:
 - [ ] Tested on iOS simulator (if available)
 - [ ] No `fetch()` calls in components
 - [ ] Documentation updated
-- [ ] If AI-assisted: commit message includes `Signed-off-by` and `Tokens used` (when available); see [Contributing](../contributing.md#ai-assisted-contributions-sign-off-and-token-usage)
+- [ ] If AI-assisted: commit message includes `Signed-off-by` and `Tokens used` (when available); see [Contributing](../contributing.md)
 
 ## Platform-Specific Features
 
