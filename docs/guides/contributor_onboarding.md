@@ -261,15 +261,13 @@ test: add tests for consent validation
 1. `Signed-off-by: [AI Provider Name] <[identifier]>` (e.g. `Signed-off-by: Cursor AI (Claude) <ai@cursor.com>`).
 2. `Tokens used: [as provided by environment]` when your IDE or tool reports token usage.
 
-See [Contributing - AI-Assisted Contributions](../../contributing.md#ai-assisted-contributions-sign-off-and-token-usage) and `.cursorrules` for the full convention.
-
+See [Contributing - AI-Assisted Contributions](../../contributing.md)
 ### Commit
 
 ```bash
 git commit -m "feat: add movie recommendation agent"
 ```
 
-For AI-assisted work, use a multi-line commit message so you can add sign-off and token usage in the body:
 ```bash
 git commit -m "feat: add movie recommendation agent" -m "Signed-off-by: Cursor AI (Claude) <ai@cursor.com>" -m "Tokens used: 12500 (input) / 800 (output)"
 ```

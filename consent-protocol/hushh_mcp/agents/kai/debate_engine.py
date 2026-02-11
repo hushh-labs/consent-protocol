@@ -8,12 +8,28 @@ Key Responsibilities:
 - Consensus building
 - Dissent capture
 - Confidence aggregation
+
+SSE Event Format (for sse_starlette):
+    yield {
+        "event": "<type>",  # e.g., "agent_start", "agent_token", "debate_round"
+        "data": {           # Plain dict, NOT JSON-encoded string
+            "<field>": "...",
+            ...
+        }
+    }
+
+The sse_starlette library will automatically convert this to SSE format:
+    event: agent_start
+    data: {"agent": "fundamental", ...}
+    
+NOTE: The 'data' field should be a plain dict, not json.dumps()!
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from hushh_mcp.operons.kai.llm import stream_gemini_response
 
@@ -61,15 +77,26 @@ class DebateEngine:
     - Round-robin structured debate
     - Consensus building with dissent capture
     - Weighted voting by risk profile
+    
+    Args:
+        risk_profile: User's risk tolerance ("conservative", "balanced", "aggressive")
+        disconnection_event: Optional asyncio.Event to signal when client disconnects
     """
     
-    def __init__(self, risk_profile: RiskProfile = "balanced"):
+    def __init__(
+        self,
+        risk_profile: RiskProfile = "balanced",
+        disconnection_event: Optional[asyncio.Event] = None
+    ):
         self.risk_profile = risk_profile
         self.agent_weights = AGENT_WEIGHTS[risk_profile]
         self.rounds: List[DebateRound] = []
         
         # Helper to track full text for the final result object
-        self.current_statements: Dict[str, str] = {} 
+        self.current_statements: Dict[str, str] = {}
+        
+        # Disconnection event to signal when client disconnects
+        self._disconnection_event = disconnection_event
         
     async def orchestrate_debate_stream(
         self,
@@ -88,8 +115,10 @@ class DebateEngine:
         - agent_complete
         - debate_round
         
+        NOTE: Data is a plain dict, NOT JSON-encoded. sse_starlette handles encoding.
+        
         Returns:
-        - Final DebateResult object
+        - Final DebateResult object (only in Python 3.13+, currently None)
         """
         logger.info(f"[Debate Stream] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile")
         
@@ -104,7 +133,7 @@ class DebateEngine:
         # ROUND 1: Initial Presentation
         # =========================================================================
         yield {
-            "event": "round_start", 
+            "event": "round_start",
             "data": {
                 "round": 1,
                 "description": "Round 1: Agents present their initial findings.",
@@ -185,7 +214,7 @@ class DebateEngine:
             "data": {
                 "phase": "round2",
                 "message": "Fundamental Agent is reviewing peer arguments...",
-                "tokens": ["Comparing", "intrinsic", "value", "against", "marker", "sentiment."]
+                "tokens": ["Comparing", "intrinsic", "value", "against", "market", "sentiment."]
             }
         }
         async for event in self._stream_agent_turn(2, "fundamental", "challenge_positions", round2_statements):
@@ -252,6 +281,11 @@ class DebateEngine:
         1. Yields 'agent_start'
         2. Streams 'agent_token' from Gemini
         3. Yields 'agent_complete'
+        
+        Checks for client disconnection after each event to stop LLM processing
+        when client disconnects abruptly.
+        
+        NOTE: Data is a plain dict, NOT JSON-encoded. sse_starlette handles encoding.
         """
         
         agent_display_names = {
@@ -286,13 +320,17 @@ class DebateEngine:
                 text = chunk.get("text", "")
                 full_response += text
                 yield {
-                    "event": "agent_token", 
+                    "event": "agent_token",
                     "data": {
                         "agent": agent_name,
                         "text": text,
                         "type": "token"
                     }
                 }
+                # Check for disconnection after each token to stop LLM streaming
+                if self._disconnection_event is not None and self._disconnection_event.is_set():
+                    logger.info(f"[{agent_name}] Client disconnected during streaming, stopping...")
+                    return
             elif chunk.get("type") == "error":
                 logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
         
@@ -300,7 +338,7 @@ class DebateEngine:
         if not full_response:
             full_response = self._get_fallback_statement(agent_name, self.insights[agent_name], round_num)
             yield {
-                "event": "agent_token", 
+                "event": "agent_token",
                 "data": {
                     "agent": agent_name,
                     "text": full_response,
@@ -314,12 +352,16 @@ class DebateEngine:
             "event": "agent_complete",
             "data": {
                 "agent": agent_name,
-                "summary": full_response, # The summary for the card IS the statement
+                "summary": full_response,  # The summary for the card IS the statement
                 "recommendation": self.insights[agent_name].recommendation,
                 "confidence": self.insights[agent_name].confidence,
                 "sentiment_score": getattr(self.insights[agent_name], 'sentiment_score', None),
             }
         }
+        
+        # Final disconnection check
+        if self._disconnection_event is not None and self._disconnection_event.is_set():
+            logger.info(f"[{agent_name}] Client disconnected after completion, stopping...")
 
     def _build_agent_prompt(
         self, 

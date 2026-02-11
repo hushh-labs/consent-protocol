@@ -120,13 +120,11 @@ export function KaiSearchBar({
       return;
     }
 
-    // Extract user_id from token format: "user:<firebase_uid>.vault_owner:<timestamp>"
-    const userId = vaultOwnerToken.split(":")[1]?.split(".")[0] || "unknown";
-
     // Get world model context for this stock
+    // Token user_id is validated by backend via require_vault_owner_token()
     try {
       setAnalysisContext(
-        await getStockContext(suggestion.symbol, userId, vaultOwnerToken)
+        await getStockContext(suggestion.symbol, vaultOwnerToken)
       );
     } catch (error) {
       console.error("Failed to get context:", error);
