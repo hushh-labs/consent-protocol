@@ -8,6 +8,7 @@
  * 2. If no data -> Show portfolio import
  * 3. After import -> Show streaming progress -> Review screen -> Dashboard
  * 4. Dashboard shows KPIs, prime assets, and search bar for analysis
+ * 5. Analysis view shows real-time debate streaming
  *
  * No chat interface - pure UI component flow.
  */
@@ -25,9 +26,11 @@ import { ImportProgressView, ImportStage } from "./views/import-progress-view";
 import { PortfolioReviewView, PortfolioData as ReviewPortfolioData } from "./views/portfolio-review-view";
 import { DashboardView, PortfolioData } from "./views/dashboard-view";
 import { AnalysisView } from "./views/analysis-view";
+import { DebateStreamView } from "./debate-stream-view";
 import { useVault } from "@/lib/vault/vault-context";
 import { toast } from "sonner";
 import { ApiService } from "@/lib/services/api-service";
+import { getStockContext, streamKaiAnalysis } from "@/lib/services/kai-service";
 
 // =============================================================================
 // TYPES
@@ -929,18 +932,50 @@ export function KaiFlow({
     router.push("/kai/dashboard/manage");
   }, [router]);
 
-  // Handle analyze stock
-  const handleAnalyzeStock = useCallback(async (symbol: string) => {
-    if (!symbol) {
-      toast.info("Enter a stock symbol to analyze");
+  // Handle analyze stock - starts streaming analysis
+  const handleAnalyzeStock = useCallback((symbol: string) => {
+    console.log("[KaiFlow] handleAnalyzeStock called with:", symbol);
+    console.log("[KaiFlow] vaultOwnerToken present:", !!vaultOwnerToken);
+    
+    if (!symbol || !vaultOwnerToken) {
+      toast.error("Please unlock your vault first");
       return;
     }
     
-    console.log("[KaiFlow] Analyze stock (coming soon):", symbol);
-    toast.info(`Stock analysis for ${symbol} is coming soon!`, {
-      description: "We are currently refining our debate engine for more precise insights.",
-    });
-  }, []);
+    // Get context for confirmation dialog
+    getStockContext(symbol, vaultOwnerToken)
+      .then((context) => {
+        console.log("[KaiFlow] Context received:", context?.ticker || "no ticker");
+        
+        // Store analysis params in sessionStorage for the analysis page
+        const params = {
+          ticker: symbol.toUpperCase(),
+          userId,
+          riskProfile: context.user_risk_profile || "balanced",
+          userContext: context,
+          vaultOwnerToken,
+        };
+        console.log("[KaiFlow] Params to store:", JSON.stringify(params));
+        
+        sessionStorage.setItem("kai_analysis_params", JSON.stringify(params));
+        const stored = sessionStorage.getItem("kai_analysis_params");
+        console.log("[KaiFlow] SessionStorage after setItem:", stored);
+        
+        // Navigate to analysis view (DebateStreamView will read from sessionStorage)
+        console.log("[KaiFlow] Navigating to /kai/dashboard/analysis");
+        
+        // Small delay to ensure sessionStorage is written before navigation
+        setTimeout(() => {
+          router.push("/kai/dashboard/analysis");
+        }, 100);
+      })
+      .catch((error) => {
+        console.error("[KaiFlow] Error getting context:", error);
+        toast.error("Failed to analyze stock", {
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      });
+  }, [vaultOwnerToken, userId, router]);
 
   // Handle back to dashboard from analysis
   const handleBackToDashboard = useCallback(() => {

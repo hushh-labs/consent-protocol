@@ -231,6 +231,16 @@ export interface KaiPlugin {
   }): Promise<{ success: boolean }>;
 
   /**
+   * Stream Kai stock analysis (SSE) from native.
+   * Subscribe to events via Kai.addListener('portfolioStreamEvent', handler).
+   * Resolves when stream ends.
+   */
+  streamKaiAnalysis(options: {
+    body: Record<string, unknown>;
+    vaultOwnerToken: string;
+  }): Promise<{ success: boolean }>;
+
+  /**
    * Subscribe to plugin events (e.g. portfolioStreamEvent). Provided by Capacitor at runtime.
    */
   addListener(

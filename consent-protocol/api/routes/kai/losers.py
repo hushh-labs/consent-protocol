@@ -15,7 +15,7 @@ import logging
 from decimal import Decimal
 from typing import Any, Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -613,6 +613,7 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
 @router.post("/portfolio/analyze-losers/stream")
 async def analyze_portfolio_losers_stream(
     request: AnalyzeLosersRequest,
+    raw_request: Request,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     """
@@ -623,6 +624,9 @@ async def analyze_portfolio_losers_stream(
     - 'chunk' events: Partial response text
     - 'complete' events: Final parsed JSON result
     - 'error' events: Error messages
+    
+    **Disconnection Optimization**: 
+    - Client disconnects → `raw_request.is_disconnected()` → LLM stops processing
     """
     if token_data["user_id"] != request.user_id:
         raise HTTPException(
@@ -694,6 +698,11 @@ async def analyze_portfolio_losers_stream(
 
             # Then iterate over the stream
             async for chunk in stream:
+                # Check if client disconnected
+                if await raw_request.is_disconnected():
+                    logger.info("[Losers Analysis] Client disconnected, stopping streaming...")
+                    break
+                
                 # Check for thought summaries (Gemini thinking mode)
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:

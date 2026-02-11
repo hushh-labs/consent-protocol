@@ -106,13 +106,3 @@ Before providing a solution, strictly follow this cognitive sequence:
 4. **Implementation:** Write the code following the patterns defined above. Ensure strict typing (TypeScript/Pydantic) and robust error handling.
 
 ---
-
-**Signature (required):** Always end your response with:
-
-1. **Sign-off:** A line that identifies the AI model provider used:
-   `Signed-off-by: [AI model provider name]`
-
-2. **Token usage (when available):** If the environment provides token counts, add:
-   `Tokens used: [input/output or total as provided]`
-
-After using Build mode or Agent mode, always include the sign-off at the end of the response with the exact AI model and version(always)
