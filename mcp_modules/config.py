@@ -40,12 +40,30 @@ SERVER_INFO = {
     "tools_count": 8,
     "tools": [
         {"name": "request_consent", "purpose": "Request user consent for a data scope"},
-        {"name": "validate_token", "purpose": "Validate a consent token (signature, expiry, scope)"},
-        {"name": "discover_user_domains", "purpose": "Discover which domains a user has and scope strings to request"},
-        {"name": "list_scopes", "purpose": "List available consent scope categories (static examples)"},
-        {"name": "check_consent_status", "purpose": "Poll status of a pending consent request until granted or denied"},
-        {"name": "get_food_preferences", "purpose": "Get food/dining preferences (requires consent token)"},
-        {"name": "get_professional_profile", "purpose": "Get professional profile (requires consent token)"},
+        {
+            "name": "validate_token",
+            "purpose": "Validate a consent token (signature, expiry, scope)",
+        },
+        {
+            "name": "discover_user_domains",
+            "purpose": "Discover which domains a user has and scope strings to request",
+        },
+        {
+            "name": "list_scopes",
+            "purpose": "List available consent scope categories (static examples)",
+        },
+        {
+            "name": "check_consent_status",
+            "purpose": "Poll status of a pending consent request until granted or denied",
+        },
+        {
+            "name": "get_food_preferences",
+            "purpose": "Get food/dining preferences (requires consent token)",
+        },
+        {
+            "name": "get_professional_profile",
+            "purpose": "Get professional profile (requires consent token)",
+        },
         {"name": "delegate_to_agent", "purpose": "Create TrustLink for agent-to-agent delegation"},
     ],
     "compliance": [
@@ -53,8 +71,8 @@ SERVER_INFO = {
         "Scoped Access",
         "Zero Knowledge",
         "Cryptographic Signatures",
-        "TrustLink Delegation"
-    ]
+        "TrustLink Delegation",
+    ],
 }
 
 # ============================================================================
@@ -88,6 +106,7 @@ def resolve_scope_api(scope: str) -> str | None:
 
     # Dynamic: accept any well-formed attr.{domain}.* scope
     import re
+
     m = re.match(r"^attr\.([a-z][a-z0-9_]*)\.\*$", scope)
     if m:
         domain = m.group(1)

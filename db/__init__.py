@@ -38,4 +38,3 @@ __all__ = [
     "is_token_active",
     "get_audit_log",
 ]
-
