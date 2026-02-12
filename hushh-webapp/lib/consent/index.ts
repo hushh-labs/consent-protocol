@@ -1,9 +1,0 @@
-/**
- * Consent Module Exports
- * ======================
- *
- * Centralized exports for all consent-related utilities.
- */
-
-// Actions Hook
-export { useConsentActions, type PendingConsent } from "./use-consent-actions";
