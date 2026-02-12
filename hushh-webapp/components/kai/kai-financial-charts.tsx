@@ -8,7 +8,6 @@ import {
   Bar,
   ComposedChart,
   Line,
-  LineChart as RechartsLineChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -17,7 +16,6 @@ import {
   Radar,
   PolarGrid,
   PolarAngleAxis,
-  ResponsiveContainer
 } from "recharts";
 import {
   ChartContainer,
@@ -26,7 +24,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { TrendingUp, DollarSign } from "lucide-react";
 
 interface TrendDataPoint {
   year: string;

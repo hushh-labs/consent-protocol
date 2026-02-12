@@ -31,7 +31,6 @@ flowchart TD
         VDB[VaultDBService]
         CDB[ConsentDBService]
         WMS[WorldModelService]
-        KDS[KaiDecisionsService]
     end
     
     subgraph db [Database Layer]
@@ -46,12 +45,11 @@ flowchart TD
     end
     
     R1 --> VDB
-    R2 --> KDS
+    R2 --> WMS
     R3 --> WMS
     VDB --> DBC
     CDB --> DBC
     WMS --> DBC
-    KDS --> DBC
     DBC --> TQ
     TQ --> ENG
     ENG --> SP
@@ -65,7 +63,7 @@ flowchart TD
 @router.post("/preferences")
 async def get_preferences():
     db = get_db()  # ❌ Direct access
-    response = db.table("vault_food").select("*").execute()
+    response = db.table("world_model_data").select("*").execute()
 ```
 
 ### Required Pattern

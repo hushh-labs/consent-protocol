@@ -6,15 +6,12 @@
  */
 
 import type { HushhDatabasePlugin } from "../index";
-import type { EncryptedPayload } from "../types";
 
 const DB_NAME = 'hushh_vault';
 const DB_VERSION = 1;
 
 const STORES = {
   vaultKeys: 'vault_keys',
-  vaultFood: 'vault_food',
-  vaultProfessional: 'vault_professional',
   consentTokens: 'consent_tokens',
   syncQueue: 'sync_queue',
 };
@@ -47,12 +44,6 @@ export class HushhDatabaseWeb implements HushhDatabasePlugin {
         if (!db.objectStoreNames.contains(STORES.vaultKeys)) {
           const vaultKeys = db.createObjectStore(STORES.vaultKeys, { keyPath: 'userId' });
           vaultKeys.createIndex('authMethod', 'authMethod', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(STORES.vaultFood)) {
-          db.createObjectStore(STORES.vaultFood, { keyPath: 'userId' });
-        }
-        if (!db.objectStoreNames.contains(STORES.vaultProfessional)) {
-          db.createObjectStore(STORES.vaultProfessional, { keyPath: 'userId' });
         }
         if (!db.objectStoreNames.contains(STORES.consentTokens)) {
           const tokens = db.createObjectStore(STORES.consentTokens, { keyPath: 'tokenId' });

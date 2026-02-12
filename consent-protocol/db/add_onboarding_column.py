@@ -8,12 +8,15 @@ Run with: python db/add_onboarding_column.py
 
 import asyncio
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from db.connection import get_database_url, get_database_ssl
-import asyncpg
+import asyncpg  # noqa: E402
+
+from db.connection import get_database_ssl, get_database_url  # noqa: E402
+
 
 async def main():
     try:

@@ -75,7 +75,6 @@ All consent management endpoints use VAULT_OWNER token (not Firebase auth):
 | MCP Integration | [mcp_integration.md](reference/mcp_integration.md) |
 | Frontend Design | [frontend_design_system.md](reference/frontend_design_system.md) |
 | Agent Kai | [kai.md](reference/kai.md) |
-| Base User Schema | [base_user_schema.md](reference/base_user_schema.md) |
 
 ---
 
@@ -119,7 +118,6 @@ docs/
 │   ├── developer_api.md        # External API guide
 │   ├── frontend_design_system.md
 │   ├── mcp_integration.md
-│   ├── base_user_schema.md
 │   └── kai.md                  # Agent Kai reference
 │
 ├── guides/                     # How-to guides
@@ -142,7 +140,6 @@ docs/
 │
 └── vision/                     # Product vision
     ├── readme.md
-    ├── agent_nav/readme.md
     └── kai/
         ├── readme.md           # Comprehensive Kai vision
         ├── data/               # Investor data
@@ -191,7 +188,7 @@ When AI reads docs, recommended priority order:
 |----------|-------|
 | **UI Components** | `Button`, `Card`, `Tabs`, `SegmentedControl` (Morphy-UX) |
 | **Vault Components** | `VaultFlow`, `HushhVaultPlugin` |
-| **Agent Components** | `KaiStreamingComponent`, `AgentChat`, `ConsentDialog` |
+| **Agent Components** | `KaiAgentStreamingView`, `DebateStreamView`, `AgentChat`, `ConsentDialog` |
 | **Charts** | `PortfolioHistoryChart`, `TransactionActivity`, `CashFlowCard` |
 
 ### Navigation Patterns

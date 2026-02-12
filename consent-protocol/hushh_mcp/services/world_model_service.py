@@ -180,10 +180,23 @@ class WorldModelService:
     async def upsert_index_v2(self, index: WorldModelIndexV2) -> bool:
         """Create or update user's world model index (v2)."""
         try:
+            # Defense-in-depth: sanitize every domain summary before persisting.
+            # The primary sanitization lives in update_domain_summary(), but this
+            # guards against callers who build an index object directly.
+            sanitized_summaries = {}
+            for domain, summary in (index.domain_summaries or {}).items():
+                if isinstance(summary, dict):
+                    sanitized_summaries[domain] = {
+                        k: v for k, v in summary.items()
+                        if k not in ("holdings", "total_value", "vault_key", "password")
+                    }
+                else:
+                    sanitized_summaries[domain] = summary
+
             # Serialize dict fields to JSON strings for psycopg2 compatibility
             data = {
                 "user_id": index.user_id,
-                "domain_summaries": json.dumps(index.domain_summaries) if index.domain_summaries else "{}",
+                "domain_summaries": json.dumps(sanitized_summaries) if sanitized_summaries else "{}",
                 "available_domains": index.available_domains,
                 "computed_tags": index.computed_tags,
                 "activity_score": index.activity_score,
@@ -205,27 +218,59 @@ class WorldModelService:
         domain: str,
         summary: dict,
     ) -> bool:
-        """Update a specific domain summary in the index."""
+        """Atomically merge a domain summary using the JSONB merge RPC.
+        
+        Uses the merge_domain_summary Postgres function to atomically update
+        a single domain's summary without overwriting other domains' data.
+        Analogous to MongoDB's $set on nested paths.
+        """
         try:
-            # Get current index
-            index = await self.get_index_v2(user_id)
-            if index is None:
-                index = WorldModelIndexV2(user_id=user_id)
+            # Sanitize: strip any sensitive fields before writing to index
+            sanitized = {k: v for k, v in summary.items()
+                        if k not in ("holdings", "total_value", "vault_key", "password")}
             
-            # Update domain summary
-            index.domain_summaries[domain] = summary
+            result = await self.supabase.rpc(
+                "merge_domain_summary",
+                {
+                    "p_user_id": user_id,
+                    "p_domain": domain,
+                    "p_summary": sanitized,
+                }
+            ).execute()
             
-            # Update available domains
-            if domain not in index.available_domains:
-                index.available_domains.append(domain)
+            if hasattr(result, "error") and result.error:
+                logger.error(f"JSONB merge RPC error: {result.error}")
+                return False
             
-            return await self.upsert_index_v2(index)
+            return True
         except Exception as e:
-            logger.error(f"Error updating domain summary: {e}")
-            return False
+            logger.error(f"Error updating domain summary via RPC: {e}")
+            # Fallback to read-modify-write if RPC not yet deployed
+            try:
+                index = await self.get_index_v2(user_id)
+                if index is None:
+                    index = WorldModelIndexV2(user_id=user_id)
+                
+                index.domain_summaries[domain] = sanitized
+                
+                if domain not in index.available_domains:
+                    index.available_domains.append(domain)
+                
+                return await self.upsert_index_v2(index)
+            except Exception as fallback_err:
+                logger.error(f"Fallback update_domain_summary also failed: {fallback_err}")
+                return False
     
-    # ==================== ATTRIBUTE OPERATIONS (DYNAMIC DOMAINS) ====================
-    
+    # ==================== ATTRIBUTE OPERATIONS (DEPRECATED) ====================
+    # These methods wrote to the now-removed world_model_attributes table.
+    # Signatures are kept temporarily to catch hidden callers at runtime.
+    # New code MUST use store_domain_data / get_domain_data / update_domain_summary.
+
+    _DEPRECATION_MSG = (
+        "Deprecated: world_model_attributes table removed. "
+        "Use store_domain_data()/get_domain_data() or update_domain_summary()."
+    )
+
     async def store_attribute(
         self,
         user_id: str,
@@ -240,171 +285,42 @@ class WorldModelService:
         display_name: Optional[str] = None,
         data_type: str = "string",
     ) -> tuple[bool, str]:
-        """
-        Store an encrypted attribute with auto domain registration.
-        DEPRECATED: use store_domain_data (client encrypts full domain blob).
-        If domain is None, it will be inferred from the attribute_key.
-        Returns:
-            Tuple of (success, generated_scope)
-        """
-        try:
-            # Infer domain if not provided
-            if domain is None or domain == "":
-                domain = self.domain_inferrer.infer(attribute_key)
-            
-            # Normalize domain
-            domain = domain.lower().strip()
-            
-            # Auto-register domain if new
-            domain_metadata = self.domain_inferrer.get_domain_metadata(domain)
-            await self.domain_registry.register_domain(
-                domain_key=domain,
-                display_name=domain_metadata.get("display_name"),
-                icon_name=domain_metadata.get("icon"),
-                color_hex=domain_metadata.get("color"),
-            )
-            
-            # Store attribute
-            data = {
-                "user_id": user_id,
-                "domain": domain,
-                "attribute_key": attribute_key,
-                "ciphertext": ciphertext,
-                "iv": iv,
-                "tag": tag,
-                "algorithm": algorithm,
-                "source": source,
-                "confidence": confidence,
-                "display_name": display_name or attribute_key.replace("_", " ").title(),
-                "data_type": data_type,
-            }
-            
-            self.supabase.table("world_model_attributes").upsert(
-                data,
-                on_conflict="user_id,domain,attribute_key"
-            ).execute()
-            
-            # Generate scope for this attribute
-            scope = self.scope_generator.generate_scope(domain, attribute_key)
-            
-            return (True, scope)
-        except Exception as e:
-            logger.error(f"Error storing attribute: {e}")
-            return (False, "")
-    
+        """DEPRECATED – raises NotImplementedError. Use store_domain_data()."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
+
     async def store_attribute_obj(self, attr: EncryptedAttribute) -> tuple[bool, str]:
-        """Store an encrypted attribute object."""
-        return await self.store_attribute(
-            user_id=attr.user_id,
-            domain=attr.domain,
-            attribute_key=attr.attribute_key,
-            ciphertext=attr.ciphertext,
-            iv=attr.iv,
-            tag=attr.tag,
-            algorithm=attr.algorithm,
-            source=attr.source.value if isinstance(attr.source, AttributeSource) else attr.source,
-            confidence=attr.confidence,
-            display_name=attr.display_name,
-            data_type=attr.data_type,
-        )
-    
+        """DEPRECATED – raises NotImplementedError. Use store_domain_data()."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
+
     async def get_attribute(
         self,
         user_id: str,
         domain: str,
         attribute_key: str,
     ) -> Optional[EncryptedAttribute]:
-        """Get a specific encrypted attribute. DEPRECATED: use get_domain_data + client decrypt."""
-        try:
-            result = self.supabase.table("world_model_attributes").select("*").eq(
-                "user_id", user_id
-            ).eq(
-                "domain", domain.lower()
-            ).eq(
-                "attribute_key", attribute_key
-            ).execute()
-            
-            if not result.data:
-                return None
-            
-            row = result.data[0]
-            return self._row_to_attribute(row)
-        except Exception as e:
-            logger.error(f"Error getting attribute: {e}")
-            return None
-    
+        """DEPRECATED – raises NotImplementedError. Use get_domain_data()."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
+
     async def get_domain_attributes(
         self,
         user_id: str,
         domain: str,
     ) -> list[EncryptedAttribute]:
-        """Get all attributes for a domain. DEPRECATED: use get_domain_data + client decrypt."""
-        try:
-            result = self.supabase.table("world_model_attributes").select("*").eq(
-                "user_id", user_id
-            ).eq(
-                "domain", domain.lower()
-            ).execute()
-            
-            return [self._row_to_attribute(row) for row in (result.data or [])]
-        except Exception as e:
-            logger.error(f"Error getting domain attributes: {e}")
-            return []
-    
+        """DEPRECATED – raises NotImplementedError. Use get_domain_data()."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
+
     async def get_all_attributes(self, user_id: str) -> list[EncryptedAttribute]:
-        """Get all attributes for a user across all domains. DEPRECATED: use get_encrypted_data + client decrypt."""
-        try:
-            result = self.supabase.table("world_model_attributes").select("*").eq(
-                "user_id", user_id
-            ).execute()
-            
-            return [self._row_to_attribute(row) for row in (result.data or [])]
-        except Exception as e:
-            logger.error(f"Error getting all attributes: {e}")
-            return []
-    
+        """DEPRECATED – raises NotImplementedError. Use get_encrypted_data()."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
+
     async def delete_attribute(
         self,
         user_id: str,
         domain: str,
         attribute_key: str,
     ) -> bool:
-        """Delete a specific attribute. DEPRECATED: use client-side blob update (get → remove key → store)."""
-        try:
-            self.supabase.table("world_model_attributes").delete().eq(
-                "user_id", user_id
-            ).eq(
-                "domain", domain.lower()
-            ).eq(
-                "attribute_key", attribute_key
-            ).execute()
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting attribute: {e}")
-            return False
-    
-    def _row_to_attribute(self, row: dict) -> EncryptedAttribute:
-        """Convert database row to EncryptedAttribute."""
-        source_str = row.get("source", "explicit")
-        try:
-            source = AttributeSource(source_str)
-        except ValueError:
-            source = AttributeSource.EXPLICIT
-        
-        return EncryptedAttribute(
-            user_id=row["user_id"],
-            domain=row["domain"],
-            attribute_key=row["attribute_key"],
-            ciphertext=row["ciphertext"],
-            iv=row["iv"],
-            tag=row["tag"],
-            algorithm=row.get("algorithm", "aes-256-gcm"),
-            source=source,
-            confidence=row.get("confidence"),
-            inferred_at=row.get("inferred_at"),
-            display_name=row.get("display_name"),
-            data_type=row.get("data_type", "string"),
-        )
+        """DEPRECATED – raises NotImplementedError."""
+        raise NotImplementedError(self._DEPRECATION_MSG)
     
     # ==================== METADATA OPERATIONS ====================
     
@@ -462,11 +378,10 @@ class WorldModelService:
                     available_scopes=domain_scopes,
                 ))
             
-            # Get total count
-            result = self.supabase.table("world_model_attributes").select(
-                "id", count="exact"
-            ).eq("user_id", user_id).execute()
-            total = result.count or 0
+            # Compute total count from domain summaries (no legacy table query)
+            total = 0
+            for domain in domains:
+                total += domain.attribute_count
             
             # Calculate completeness (based on recommended domains from registry)
             # Query domain registry for domains marked as "recommended" or use top domains by user count
@@ -589,13 +504,17 @@ class WorldModelService:
             
             # 2. Store updated encrypted blob
             # Note: Merging happens on client-side. Backend just stores the new blob.
+            current_version = 0
+            if current_data is not None:
+                current_version = current_data.get("data_version", 0) or 0
+            
             data = {
                 "user_id": user_id,
                 "encrypted_data_ciphertext": encrypted_blob["ciphertext"],
                 "encrypted_data_iv": encrypted_blob["iv"],
                 "encrypted_data_tag": encrypted_blob["tag"],
                 "algorithm": encrypted_blob.get("algorithm", "aes-256-gcm"),
-                "data_version": 1,
+                "data_version": current_version + 1,
                 "updated_at": datetime.utcnow().isoformat(),
             }
             

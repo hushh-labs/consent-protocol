@@ -6,11 +6,11 @@
 import React, { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Card, Button } from "@/lib/morphy-ux/morphy";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Bell, User, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiService } from "@/lib/services/api-service";
+import { useKaiSession } from "@/lib/stores/kai-session-store";
 
 interface NavItem {
   label: string;
@@ -22,20 +22,17 @@ interface NavItem {
 // Hook to get pending consent count
 function usePendingConsents(): number {
   const [count, setCount] = useState(0);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !user?.uid) {
       setCount(0);
       return;
     }
 
     const fetchCount = async () => {
-      const userId = sessionStorage.getItem("user_id");
-      if (!userId) return;
-
       try {
-        const res = await ApiService.getPendingConsents(userId);
+        const res = await ApiService.getPendingConsents(user.uid);
         if (!res.ok) return;
         const data = await res.json().catch(() => ({}));
         setCount(data.pending?.length || 0);
@@ -47,7 +44,7 @@ function usePendingConsents(): number {
     fetchCount();
     const interval = setInterval(fetchCount, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.uid]);
 
   return count;
 }
@@ -62,18 +59,18 @@ export const Navbar = () => {
   const pendingConsents = usePendingConsents();
 
   // Sticky Kai path (last visited /kai or /kai/dashboard/*)
+  const lastKaiPath = useKaiSession((s) => s.lastKaiPath);
   const [kaiHref, setKaiHref] = useState("/kai");
 
   useEffect(() => {
-    const saved = localStorage.getItem("lastKaiPath");
-    if (saved) {
-      setKaiHref(saved);
+    if (lastKaiPath) {
+      setKaiHref(lastKaiPath);
     }
-  }, []);
+  }, [lastKaiPath]);
 
   useEffect(() => {
     if (pathname && pathname.startsWith("/kai")) {
-      localStorage.setItem("lastKaiPath", pathname);
+      useKaiSession.getState().setLastKaiPath(pathname);
       setKaiHref(pathname);
     }
   }, [pathname]);

@@ -190,10 +190,22 @@ _API_FORMAT_TO_DOT = {
     "attr_kai_decisions": "attr.kai_decisions.*",
 }
 
+# Pattern for dynamic API-format attr scopes: attr_{domain}
+_DYNAMIC_API_ATTR_RE = __import__("re").compile(r"^attr_([a-z][a-z0-9_]*)$")
+
 
 def _api_format_to_dot(scope: str) -> str:
-    """Convert API format (e.g. attr_food) to dot notation (attr.food.*)."""
-    return _API_FORMAT_TO_DOT.get(scope, scope)
+    """Convert API format (e.g. attr_food) to dot notation (attr.food.*).
+
+    Supports both the static lookup table and dynamic attr_{domain} patterns.
+    """
+    static = _API_FORMAT_TO_DOT.get(scope)
+    if static:
+        return static
+    m = _DYNAMIC_API_ATTR_RE.match(scope)
+    if m:
+        return f"attr.{m.group(1)}.*"
+    return scope
 
 
 def normalize_scope(scope: str) -> str:

@@ -56,7 +56,7 @@ export function PortfolioOverviewView({
   winnersCount = 0,
   losersCount = 0,
   riskProfile = "balanced",
-  kpis,
+  kpis: _kpis,
   onReviewLosers,
   onImportNew,
   onSettings,

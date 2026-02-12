@@ -44,9 +44,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useVault } from "@/lib/vault/vault-context";
 import { FCM_MESSAGE_EVENT } from "@/lib/notifications";
-import { ApiService, getApiBaseUrl } from "@/lib/services/api-service";
+import { ApiService } from "@/lib/services/api-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
-import { getSessionItem } from "@/lib/utils/session-storage";
 import { useConsentActions } from "@/lib/consent";
 import { DataTable } from "@/components/ui/data-table";
 import {
@@ -65,8 +64,6 @@ import {
 } from "@/components/ui/drawer";
 
 import { useAuth } from "@/hooks/use-auth";
-import { VaultFlow } from "@/components/vault/vault-flow";
-import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 
 interface PendingConsent {
@@ -290,21 +287,6 @@ const formatScopeLocal = (
       icon: "line-chart",
       label: "Investment Analysis",
       description: "Analyze stocks and investment opportunities",
-    },
-    "vault.read.kai_decisions": {
-      icon: "line-chart",
-      label: "View Decisions",
-      description: "Read your investment decisions history",
-    },
-    "vault.write.kai_decisions": {
-      icon: "line-chart",
-      label: "Save Decisions",
-      description: "Store investment decisions to your vault",
-    },
-    "attr.kai_decisions.*": {
-      icon: "line-chart",
-      label: "Investment Decisions",
-      description: "All Kai investment decision data",
     },
     
     // Generic read/write/all scopes
@@ -577,7 +559,7 @@ import * as React from "react";
 
 export default function ConsentsPage() {
   const searchParams = useSearchParams();
-  const { vaultKey, isVaultUnlocked, vaultOwnerToken } = useVault();
+  const { vaultKey: _vaultKey, isVaultUnlocked: _isVaultUnlocked, vaultOwnerToken } = useVault();
   const [pending, setPending] = useState<PendingConsent[]>([]);
   const [auditLog, setAuditLog] = useState<ConsentAuditEntry[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -684,7 +666,7 @@ export default function ConsentsPage() {
     }
   }, []);
 
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { user: _user, isAuthenticated: _isAuthenticated, loading: authLoading } = useAuth();
 
   // Consolidated init effect - cache-first then background refresh
   useEffect(() => {
@@ -703,16 +685,17 @@ export default function ConsentsPage() {
       // Step 1: Auth check
       completeStep();
 
-      // Load session info from platform-aware storage
-      const token = await getSessionItem("session_token");
-      const expiresAt = await getSessionItem("session_token_expires");
-      const uid = await getSessionItem("user_id");
+      // Get user ID from auth context instead of sessionStorage
+      const uid = _user?.uid || null;
+      // Session token/expires are orphaned reads (no writers exist).
+      // Use vaultOwnerToken from vault context as the effective token.
+      const token: string | null = vaultOwnerToken || null;
 
       if (cancelled) return;
 
       if (uid) {
         setUserId(uid);
-        const effectiveToken = token || vaultOwnerToken || "";
+        const effectiveToken = token || "";
 
         // Cache-first: show cached data immediately so UI renders without waiting
         const cache = CacheService.getInstance();
@@ -733,13 +716,12 @@ export default function ConsentsPage() {
           completeStep(); // Step 3
         }
 
-        // Session state from storage
-        if (token && expiresAt) {
-          const expiryTime = parseInt(expiresAt, 10);
+        // Session state derived from vault context
+        if (effectiveToken) {
           setSession({
-            isActive: Date.now() < expiryTime,
-            expiresAt: expiryTime,
-            token,
+            isActive: true,
+            expiresAt: null,
+            token: effectiveToken,
             scope: "vault.owner",
           });
         }
@@ -775,7 +757,7 @@ export default function ConsentsPage() {
       cancelled = true;
   reset();
     };
-  }, [authLoading, vaultOwnerToken]);
+  }, [authLoading, vaultOwnerToken, _user?.uid]);
 
   // =========================================================================
   // FCM: React to consent push notifications (FCM-only architecture)
@@ -872,6 +854,7 @@ export default function ConsentsPage() {
     handleDeny: hookDeny,
     handleRevoke: hookRevoke,
   } = useConsentActions({
+    userId,
     onActionComplete: refreshAll,
   });
 
@@ -916,10 +899,6 @@ export default function ConsentsPage() {
 
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
-  };
-
-  const formatDate = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleString();
   };
 
   // Badge colors with improved dark mode visibility (higher contrast)

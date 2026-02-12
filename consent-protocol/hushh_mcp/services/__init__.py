@@ -13,7 +13,6 @@ CONSENT-FIRST ARCHITECTURE:
 
 from .consent_db import ConsentDBService
 from .investor_db import InvestorDBService
-from .kai_decisions_service import KaiDecisionsService
 from .vault_db import VaultDBService
 from .vault_keys_service import VaultKeysService
 
@@ -22,5 +21,4 @@ __all__ = [
     "ConsentDBService", 
     "InvestorDBService",
     "VaultKeysService",
-    "KaiDecisionsService"
 ]

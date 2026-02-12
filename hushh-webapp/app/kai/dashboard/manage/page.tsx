@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Save, Loader2, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Loader2 } from "lucide-react";
 import { Kbd } from "@/components/ui/kbd";
 
 import { toast } from "sonner";
@@ -24,14 +24,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import {
   Pagination,
   PaginationContent,
-  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Button } from "@/lib/morphy-ux/button";
-import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { useAuth } from "@/lib/firebase";
@@ -91,7 +89,7 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function formatPercent(value: number): string {
+function _formatPercent(value: number): string {
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
@@ -175,20 +173,7 @@ export default function ManagePortfolioPage() {
           // Priority 1: CacheProvider (shared with dashboard)
           let parsed = getPortfolioData(user.uid);
           
-          // Priority 2: sessionStorage
-          if (!parsed) {
-            try {
-              const cachedData = sessionStorage.getItem("kai_portfolio_data");
-              if (cachedData) {
-                parsed = JSON.parse(cachedData);
-                console.log("[ManagePortfolio] Loaded from sessionStorage");
-              }
-            } catch (err) {
-              console.warn("[ManagePortfolio] Failed to parse sessionStorage:", err);
-            }
-          }
-          
-          // Priority 3: Decrypt from World Model (fallback)
+          // Priority 2: Decrypt from World Model (fallback)
           if (!parsed) {
             console.log("[ManagePortfolio] No cache, attempting to decrypt from World Model...");
             try {
@@ -217,7 +202,6 @@ export default function ManagePortfolioPage() {
                 // Update cache for future use
                 if (parsed) {
                   setCachePortfolioData(user.uid, parsed);
-                  sessionStorage.setItem("kai_portfolio_data", JSON.stringify(parsed));
                   console.log("[ManagePortfolio] Decrypted and cached portfolio data");
                 }
               }
@@ -330,7 +314,6 @@ export default function ManagePortfolioPage() {
 
       if (result.success) {
         setCachePortfolioData(user.uid, updatedPortfolioData);
-        sessionStorage.setItem("kai_portfolio_data", JSON.stringify(updatedPortfolioData));
 
         toast.success("Portfolio saved securely");
         setHasChanges(false);

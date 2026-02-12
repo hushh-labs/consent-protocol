@@ -32,6 +32,7 @@ import {
   WorldModelService,
   DomainSummary,
 } from "@/lib/services/world-model-service";
+import { useAuth } from "@/hooks/use-auth";
 
 interface UserData {
   uid: string;
@@ -146,43 +147,39 @@ function EmptyState() {
 
 export function UserProfile() {
   const router = useRouter();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalAttributes, setTotalAttributes] = useState(0);
 
   useEffect(() => {
-    const uid = sessionStorage.getItem("user_uid") || "";
-    const email = sessionStorage.getItem("user_email") || "";
-    const displayName = sessionStorage.getItem("user_displayName") || "";
-    const photoURL = sessionStorage.getItem("user_photo");
-    const emailVerified =
-      sessionStorage.getItem("user_emailVerified") === "true";
-    const phoneNumber = sessionStorage.getItem("user_phoneNumber");
-    const creationTime = sessionStorage.getItem("user_creationTime");
-    const lastSignInTime = sessionStorage.getItem("user_lastSignInTime");
-    const providerDataStr = sessionStorage.getItem("user_providerData");
+    if (authLoading) return;
 
-    if (!uid) {
+    if (!isAuthenticated || !user) {
       router.push("/login");
       return;
     }
+
+    const uid = user.uid;
+    const email = user.email || "";
+    const displayName = user.displayName || "";
 
     setUserData({
       uid,
       email,
       displayName: displayName || email.split("@")[0] || "User",
-      photoURL: photoURL || undefined,
-      emailVerified,
-      phoneNumber: phoneNumber || undefined,
-      creationTime: creationTime || undefined,
-      lastSignInTime: lastSignInTime || undefined,
-      providerData: providerDataStr ? JSON.parse(providerDataStr) : [],
+      photoURL: user.photoURL || undefined,
+      emailVerified: user.emailVerified ?? false,
+      phoneNumber: user.phoneNumber || undefined,
+      creationTime: user.metadata?.creationTime || undefined,
+      lastSignInTime: user.metadata?.lastSignInTime || undefined,
+      providerData: user.providerData as unknown as Record<string, unknown>[] || [],
     });
 
     // Load world model metadata
     loadWorldModelData(uid);
-  }, [router]);
+  }, [router, user, isAuthenticated, authLoading]);
 
   const loadWorldModelData = async (userId: string) => {
     try {

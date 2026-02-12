@@ -19,7 +19,7 @@ Hushh is a **consent-first personal data agent system** with:
 
 ### Required
 
-- **Node.js**: v20+ (for Next.js 15)
+- **Node.js**: v20+ (for Next.js 16)
 - **Python**: 3.13 (for FastAPI backend; grpcio 1.76+ wheels)
 - **PostgreSQL**: Cloud SQL or local instance
 - **Firebase Project**: For authentication
@@ -211,7 +211,7 @@ cd hushh-webapp
 npm run dev
 
 # Expected output:
-# ▲ Next.js 15.1.3
+# ▲ Next.js 16.x.x
 # - Local: http://localhost:3000
 # ✓ Compiled in 2.3s
 ```
@@ -309,7 +309,7 @@ npx cap open android
 │                   HUSHH STACK                        │
 ├─────────────────────────────────────────────────────┤
 │                                                      │
-│  Frontend (Next.js 15 + Capacitor)                  │
+│  Frontend (Next.js 16 + Capacitor)                  │
 │  ├─ Web: http://localhost:3000                      │
 │  ├─ iOS: Native Swift plugins                       │
 │  └─ Android: Native Kotlin plugins                  │

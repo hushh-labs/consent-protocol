@@ -38,20 +38,10 @@ export function ConsentStatusBar({ className = "" }: ConsentStatusBarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>("");
 
-  useEffect(() => {
-    // Load session info from sessionStorage
-    const token = sessionStorage.getItem("session_token");
-    const expiresAt = sessionStorage.getItem("session_token_expires");
-
-    if (token && expiresAt) {
-      const expiryTime = parseInt(expiresAt, 10);
-      setSession({
-        isActive: Date.now() < expiryTime,
-        expiresAt: expiryTime,
-        token,
-      });
-    }
-  }, []);
+  // Session token/expiry are no longer stored in sessionStorage (orphaned reads removed).
+  // This component now only renders when session data is provided externally.
+  // Since no writer exists, session will always be the initial empty state,
+  // and the component will return null below.
 
   useEffect(() => {
     // Update time remaining every minute

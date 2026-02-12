@@ -39,7 +39,7 @@ See also: [deploy/README.md](../../deploy/README.md), [consent-protocol/.env.exa
 | `ROOT_PATH` | `server.py` | No | |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env (Gemini SDK) | No | Set in deploy, not in .env |
 
-**Migrations/scripts:** Use **DB_*** only (same as runtime). `db/migrate.py` and `scripts/clear_kai_decisions.py` use `db.connection.get_database_url()` and `get_database_ssl()`. No `DATABASE_URL` anywhere.
+**Migrations/scripts:** Use **DB_*** only (same as runtime). `db/migrate.py` uses `db.connection.get_database_url()` and `get_database_ssl()`. No `DATABASE_URL` anywhere.
 
 ### Frontend (hushh-webapp)
 
@@ -151,7 +151,7 @@ Secret Manager must hold **exactly** the keys the code uses. No extra secrets; n
 
 **Not in Secret Manager (set as Cloud Run env vars in cloudbuild):** `DB_HOST`, `DB_PORT`, `DB_NAME`, `ENVIRONMENT`, `GOOGLE_GENAI_USE_VERTEXAI`.
 
-**Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) and scripts (e.g. `scripts/clear_kai_decisions.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
+**Strict parity:** `DATABASE_URL` is not used anywhere. Migrations (`db/migrate.py`) use **DB_*** only, via `db.connection.get_database_url()`. Do **not** create or keep `DATABASE_URL` in Secret Manager; delete it if present.
 
 ### Frontend (4 secrets, build-time only) — all used by `deploy/frontend.cloudbuild.yaml`
 
