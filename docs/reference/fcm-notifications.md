@@ -61,7 +61,7 @@ gcloud is used for **GCP resources** that support the FCM-based flow:
 | Task | gcloud usage |
 |------|--------------|
 | **Enable APIs** | `gcloud services enable fcm.googleapis.com` (optional; Firebase/Cloud Messaging may already be enabled with Firebase). |
-| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env-and-secrets.md](env-and-secrets.md)). |
+| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md)). |
 | **Deploy backend/frontend** | Deploy consent-protocol and hushh-webapp to Cloud Run via `gcloud run deploy` or Cloud Build (see [getting-started.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/guides/getting-started.md)). |
 | **Get an OAuth token for FCM HTTP v1 (testing)** | You can obtain an access token (e.g. Application Default Credentials after `gcloud auth application-default login`) and send a **test** message via the FCM HTTP v1 API with `curl`. This does not replace the Firebase Console or the app for normal operation. |
 
@@ -103,10 +103,10 @@ Consent requests reach the user only when the following chain is in place:
    - **Web Push**: Under Project Settings → Cloud Messaging → “Web configuration”, generate a **Key pair** (VAPID key). Use the **Key pair** value as `NEXT_PUBLIC_FIREBASE_VAPID_KEY` in the frontend.
 
 2. **Backend**  
-   - **FIREBASE_SERVICE_ACCOUNT_JSON**: Service account JSON (Firebase Console → Project Settings → Service accounts → Generate new private key). Stored in GCP Secret Manager and injected into consent-protocol (see [env-and-secrets.md](env-and-secrets.md)).
+   - **FIREBASE_SERVICE_ACCOUNT_JSON**: Service account JSON (Firebase Console → Project Settings → Service accounts → Generate new private key). Stored in GCP Secret Manager and injected into consent-protocol (see [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md)).
 
 3. **Frontend**  
-   - **NEXT_PUBLIC_FIREBASE_VAPID_KEY**: VAPID key from step 1. Without it, web FCM token registration is skipped (see [env-and-secrets.md](env-and-secrets.md)).
+   - **NEXT_PUBLIC_FIREBASE_VAPID_KEY**: VAPID key from step 1. Without it, web FCM token registration is skipped (see [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md)).
 
 4. **gcloud**  
    - Create/update secret:  
@@ -157,6 +157,6 @@ The **device registration token** must come from the client (web app’s `getTok
 | Can consent push be done **directly with gcloud CLI**? | **No.** FCM requires Firebase Console (VAPID, project/config) and application code (Firebase Admin SDK + client SDK) for production. |
 | What **is** gcloud used for? | Enabling APIs, storing `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager, deploying services. Optionally getting an OAuth token to send a **test** message via FCM HTTP v1 with `curl`. |
 | Where is the VAPID key set? | **Firebase Console** → Project Settings → Cloud Messaging → Web configuration → Key pair. Set in frontend as `NEXT_PUBLIC_FIREBASE_VAPID_KEY`. |
-| Where is the service account JSON set? | **Firebase Console** → Project Settings → Service accounts → Generate key. Store in **GCP Secret Manager** and inject into the backend (see [env-and-secrets.md](env-and-secrets.md)). |
+| Where is the service account JSON set? | **Firebase Console** → Project Settings → Service accounts → Generate key. Store in **GCP Secret Manager** and inject into the backend (see [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md)). |
 
 See also: [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md), [getting-started.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/guides/getting-started.md), [consent-protocol.md](consent-protocol.md).
