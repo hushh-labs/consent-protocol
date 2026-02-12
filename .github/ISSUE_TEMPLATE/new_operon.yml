@@ -1,0 +1,43 @@
+---
+name: New Operon Proposal
+description: Propose a new reusable operon (business logic module)
+labels: ["operon", "proposal"]
+body:
+  - type: textarea
+    id: operon-name
+    attributes:
+      label: Operon name and purpose
+      description: What does this operon do? Which module would it belong to?
+    validations:
+      required: true
+  - type: dropdown
+    id: purity
+    attributes:
+      label: Purity classification
+      options:
+        - PURE (no side effects, no DB, no network)
+        - IMPURE (network, DB, or LLM calls)
+    validations:
+      required: true
+  - type: textarea
+    id: inputs-outputs
+    attributes:
+      label: Inputs and outputs
+      description: What are the function parameters and return types?
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: What services, APIs, or other operons does this depend on?
+  - type: textarea
+    id: consent
+    attributes:
+      label: Consent requirements
+      description: If impure, what scopes must be validated before execution?
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context or references.
