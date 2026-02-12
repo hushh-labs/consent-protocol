@@ -1,0 +1,11 @@
+# Development Dependencies
+# These are used by CI and local test scripts
+# Linting & Type Checking
+ruff>=0.8.0
+mypy>=1.8.0
+bandit>=1.7.6
+
+# Testing
+pytest>=8.2.2
+pytest-cov>=4.1.0
+pytest-asyncio>=0.23.0

@@ -1,5 +1,0 @@
-# Large data files - do not commit to git
-# These are sample/test data files that can be regenerated via scripts/
-
-*.json
-*.pdf
