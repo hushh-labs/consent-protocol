@@ -1,5 +1,7 @@
 # Investor Profile Schema Analysis
 
+> **Status: Archived** — The `user_investor_profiles` and per-table vault architecture described here have been replaced by the unified `world_model_data` blob model. The `investor_profiles` table remains as a read-only reference. See `docs/reference/database_schema.md` for the current schema.
+
 ## Based on Real Data Collected
 
 After analyzing real 13F filings and public data for 20+ top investors, here's the recommended schema structure.

@@ -29,7 +29,7 @@ export async function GET(
       try {
         const errorJson = JSON.parse(errorText);
         return NextResponse.json(errorJson, { status: response.status });
-      } catch (e) {
+      } catch (_e) {
         return NextResponse.json(
           { error: "Backend error", details: errorText },
           { status: response.status }

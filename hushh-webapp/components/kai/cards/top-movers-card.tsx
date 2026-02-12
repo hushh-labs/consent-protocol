@@ -13,7 +13,6 @@
 
 import { useMemo } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 
 interface Holding {
@@ -28,15 +27,6 @@ interface TopMoversCardProps {
   holdings: Holding[];
   maxItems?: number;
   className?: string;
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 function formatPercent(value: number): string {

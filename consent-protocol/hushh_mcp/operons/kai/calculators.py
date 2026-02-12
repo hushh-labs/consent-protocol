@@ -9,6 +9,7 @@ These are lightweight helpers used by analysis operons.
 No consent validation needed - these are just math!
 """
 
+import math
 from typing import Any, Dict, List, Tuple
 
 # ============================================================================
@@ -255,4 +256,132 @@ def calculate_valuation_metrics(market_data: Dict[str, Any]) -> Dict[str, float]
         "dividend_yield": dividend_yield or 0,
         "enterprise_value_billions": enterprise_value_billions,
         "price_to_fcf": price_to_fcf,
+    }
+
+
+# ============================================================================
+# RETURN & VOLATILITY CALCULATORS (AlphaAgents Paper Section 2.2.3)
+# ============================================================================
+
+TRADING_DAYS_PER_YEAR = 252  # Standard for US equity markets
+
+
+def calculate_annualized_return(prices: List[float]) -> float:
+    """
+    Calculate annualized cumulative return from a price series.
+    
+    Formula from AlphaAgents paper:
+        R_cumulative = (P_T / P_0) - 1
+        R_annualized = (1 + R_cumulative)^(252 / T) - 1
+    
+    where T is the number of trading days, P_0 is the first price, P_T is the last.
+    
+    Args:
+        prices: List of daily closing prices (oldest first).
+        
+    Returns:
+        Annualized return as a decimal (e.g. 0.12 for 12%).
+        Returns 0.0 if insufficient data.
+    """
+    if not prices or len(prices) < 2:
+        return 0.0
+    
+    p0 = prices[0]
+    pt = prices[-1]
+    
+    if p0 <= 0:
+        return 0.0
+    
+    t = len(prices) - 1  # Number of trading day intervals
+    r_cumulative = (pt / p0) - 1.0
+    
+    # Annualize: (1 + R_cum)^(252/T) - 1
+    try:
+        r_annualized = (1.0 + r_cumulative) ** (TRADING_DAYS_PER_YEAR / t) - 1.0
+    except (OverflowError, ZeroDivisionError):
+        return 0.0
+    
+    return r_annualized
+
+
+def calculate_annualized_volatility(prices: List[float]) -> float:
+    """
+    Calculate annualized volatility (standard deviation of daily log returns).
+    
+    Formula from AlphaAgents paper:
+        r_i = ln(P_i / P_{i-1})           (daily log return)
+        sigma_daily = std(r_1 ... r_T)
+        sigma_annualized = sigma_daily * sqrt(252)
+    
+    Args:
+        prices: List of daily closing prices (oldest first).
+        
+    Returns:
+        Annualized volatility as a decimal (e.g. 0.25 for 25%).
+        Returns 0.0 if insufficient data.
+    """
+    if not prices or len(prices) < 3:
+        return 0.0
+    
+    # Compute daily log returns
+    log_returns: List[float] = []
+    for i in range(1, len(prices)):
+        if prices[i] > 0 and prices[i - 1] > 0:
+            log_returns.append(math.log(prices[i] / prices[i - 1]))
+    
+    if len(log_returns) < 2:
+        return 0.0
+    
+    # Standard deviation of log returns
+    mean_r = sum(log_returns) / len(log_returns)
+    variance = sum((r - mean_r) ** 2 for r in log_returns) / (len(log_returns) - 1)
+    sigma_daily = math.sqrt(variance)
+    
+    # Annualize
+    sigma_annualized = sigma_daily * math.sqrt(TRADING_DAYS_PER_YEAR)
+    
+    return sigma_annualized
+
+
+def calculate_sharpe_ratio(
+    prices: List[float],
+    risk_free_rate: float = 0.05,
+) -> float:
+    """
+    Calculate annualized Sharpe ratio from a price series.
+    
+    Formula:
+        Sharpe = (R_annualized - R_f) / sigma_annualized
+    
+    Args:
+        prices: List of daily closing prices (oldest first).
+        risk_free_rate: Annualized risk-free rate (default 5% ~ US T-bill).
+        
+    Returns:
+        Sharpe ratio. Returns 0.0 if volatility is zero or data insufficient.
+    """
+    r_ann = calculate_annualized_return(prices)
+    sigma_ann = calculate_annualized_volatility(prices)
+    
+    if sigma_ann <= 0:
+        return 0.0
+    
+    return (r_ann - risk_free_rate) / sigma_ann
+
+
+def calculate_return_and_risk_metrics(prices: List[float], risk_free_rate: float = 0.05) -> Dict[str, float]:
+    """
+    Convenience wrapper returning all return/risk metrics at once.
+    
+    Args:
+        prices: List of daily closing prices (oldest first).
+        risk_free_rate: Annualized risk-free rate.
+        
+    Returns:
+        Dict with annualized_return, annualized_volatility, sharpe_ratio.
+    """
+    return {
+        "annualized_return": calculate_annualized_return(prices),
+        "annualized_volatility": calculate_annualized_volatility(prices),
+        "sharpe_ratio": calculate_sharpe_ratio(prices, risk_free_rate),
     }

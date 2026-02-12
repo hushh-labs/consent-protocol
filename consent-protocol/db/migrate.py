@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Use same DB_* as runtime (db/connection.py)
-from db.connection import get_database_url, get_database_ssl
+from db.connection import get_database_ssl, get_database_url  # noqa: E402
 
 try:
     _database_url = get_database_url()
@@ -93,22 +93,12 @@ async def create_consent_audit(pool: asyncpg.Pool):
     print("✅ consent_audit ready!")
 
 
-# INVESTOR PROFILES - REMOVED
-# These tables are no longer used and have been replaced by world_model_data + domain key approach.
-# Keeping only the function stubs for backward compatibility (they raise NotImplementedError).
-
-
 async def create_world_model_data(pool: asyncpg.Pool):
     """
     Create world_model_data table (PRIVATE, E2E ENCRYPTED USER DATA).
     
     This is the PRIMARY storage for ALL user data using BYOK encryption.
     Single encrypted blob containing all domain data (financial, food, professional, etc.).
-    
-    DEPRECATED TABLES (use this instead):
-    - vault_food
-    - vault_professional
-    - world_model_attributes
     """
     print("🔐 Creating world_model_data table...")
     
@@ -132,16 +122,6 @@ async def create_world_model_data(pool: asyncpg.Pool):
     """)
     
     print("✅ world_model_data ready!")
-
-
-async def create_user_investor_profiles(pool: asyncpg.Pool):
-    """
-    DEPRECATED - This table is no longer used.
-    
-    Investor profile storage has been moved to world_model_data with domain-based keys.
-    User identity confirmation is handled via external services.
-    """
-    raise NotImplementedError("user_investor_profiles is deprecated and no longer supported")
 
 
 async def create_world_model_index_v2(pool: asyncpg.Pool):
@@ -283,35 +263,29 @@ async def run_full_migration(pool: asyncpg.Pool):
     print("⚠️  FULL MIGRATION - This will DROP all tables!")
     print("🗑️  Dropping existing tables...")
     
-    # Drop legacy tables first
-    for table in ["vault_food", "vault_professional", "vault_kai", "vault_kai_preferences",
-                  "investor_profiles", "user_investor_profiles",
-                  "chat_conversations", "chat_messages", "kai_sessions"]:
-        await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-        print(f"   ✅ Dropped legacy table: {table}")
-    
-    # Then drop current tables
+    # Drop current tables
     for table in ["vault_keys", "consent_audit",
-                  "world_model_data", "world_model_index_v2", "domain_registry", "vault_portfolios"]:
+                  "world_model_data", "world_model_index_v2", "domain_registry",
+                  "consent_exports"]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
     
     # Create in dependency order
-    print("\n[1/7] Creating vault_keys (user authentication)...")
+    print("\n[1/6] Creating vault_keys (user authentication)...")
     await create_vault_keys(pool)
     
-    print("[2/7] Creating consent_audit (consent tracking)...")
+    print("[2/6] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
     
-    print("[3/7] Creating world_model_data (encrypted user data blob)...")
+    print("[3/6] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
     
-    print("[4/7] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
     
-    print("[5/7] Creating domain_registry (dynamic domain registry)...")
+    print("[5/6] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
     
-    print("[6/7] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
     
     print("\n✅ Full migration complete!")
@@ -333,72 +307,25 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
     
     # Create in dependency order
-    print("\n[1/5] Creating vault_keys (user authentication)...")
+    print("\n[1/6] Creating vault_keys (user authentication)...")
     await create_vault_keys(pool)
     
-    print("[2/5] Creating consent_audit (consent tracking)...")
+    print("[2/6] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
     
-    print("[3/5] Creating world_model_data (encrypted user data blob)...")
+    print("[3/6] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
     
-    print("[4/5] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
     
-    print("[5/5] Creating domain_registry (dynamic domain registry)...")
+    print("[5/6] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
     
     print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
     
     print("\nAll tables initialized successfully!")
-
-
-async def run_cleanup_legacy_tables(pool: asyncpg.Pool):
-    """
-    Remove legacy domain-specific tables that are no longer used.
-    
-    These tables were replaced by world_model_data and domain key approach:
-    - vault_food (replaced by world_model_data + domain key)
-    - vault_professional (replaced by world_model_data + domain key)
-    - vault_kai (replaced by world_model_data + domain key)
-    - vault_kai_preferences (replaced by world_model_data + domain key)
-    
-    DEPRECATED identity tables:
-    - investor_profiles (public SEC data - no longer in use)
-    - user_investor_profiles (encrypted profiles - no longer in use)
-    
-    DEPRECATED chat/session tables:
-    - chat_conversations (chat functionality removed)
-    - chat_messages (individual messages - removed with conversations)
-    - kai_sessions (session tracking removed)
-    """
-    print("🧹 Cleaning up legacy tables...")
-    
-    legacy_tables = [
-        "vault_food",
-        "vault_professional", 
-        "vault_kai",
-        "vault_kai_preferences",
-        "investor_profiles",
-        "user_investor_profiles",
-        "chat_conversations",
-        "chat_messages",
-        "kai_sessions"
-    ]
-    
-    for table in legacy_tables:
-        try:
-            await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-            print(f"   ✅ Dropped legacy table: {table}")
-        except Exception as e:
-            # If table doesn't exist, that's fine
-            if "does not exist" in str(e).lower():
-                print(f"   ⚠️  Table already exists or was never created: {table}")
-            else:
-                print(f"   ❌ Error dropping {table}: {e}")
-    
-    print("\n✅ Legacy table cleanup complete!")
 
 
 async def clear_table(pool: asyncpg.Pool, table_name: str):
@@ -446,7 +373,6 @@ Examples:
   python db/migrate.py --init                    # First-time setup (RECOMMENDED)
   python db/migrate.py --table world_model_data  # Create single table
   python db/migrate.py --consent                 # Create all consent tables
-  python db/migrate.py --cleanup-legacy          # Remove deprecated tables
   python db/migrate.py --full                    # Full reset (WARNING: DESTRUCTIVE!)
   python db/migrate.py --status                  # Show table summary
         """
@@ -457,8 +383,6 @@ Examples:
                         help="Create a specific table (vault_keys, consent_audit, world_model_data, world_model_index_v2, domain_registry)")
     parser.add_argument("--consent", action="store_true", 
                         help="Create all consent-related tables")
-    parser.add_argument("--cleanup-legacy", action="store_true",
-                        help="Remove legacy domain-specific tables (vault_food, vault_professional, etc.)")
     parser.add_argument("--full", action="store_true", 
                         help="Drop and recreate ALL tables (DESTRUCTIVE!)")
     parser.add_argument("--clear", choices=list(TABLE_CREATORS.keys()),
@@ -468,7 +392,7 @@ Examples:
     
     args = parser.parse_args()
     
-    if not any([args.init, args.table, args.consent, args.cleanup_legacy, args.full, args.clear, args.status]):
+    if not any([args.init, args.table, args.consent, args.full, args.clear, args.status]):
         parser.print_help()
         return
     
@@ -500,9 +424,6 @@ Examples:
         
         if args.full:
             await run_full_migration(pool)
-        
-        if args.cleanup_legacy:
-            await run_cleanup_legacy_tables(pool)
         
         if args.table:
             table_func = TABLE_CREATORS.get(args.table)

@@ -470,10 +470,14 @@ The following tables have been removed and replaced by the unified world model a
 | Old Table | Replacement |
 |-----------|-------------|
 | `vault_portfolios` | Merged into `world_model_data` with domain key |
-| `chat_conversations` | Not used (replaced by in-memory chat state) |
-| `chat_messages` | Not used (replaced by in-memory chat state) |
-| `investor_profiles` | Not used (removed) |
-| `user_investor_profiles` | Not used (removed) |
+| `vault_food` | Merged into `world_model_data` under `food` domain |
+| `vault_professional` | Merged into `world_model_data` under `professional` domain |
+| `vault_kai` | Removed (investment decisions stored in `world_model_data` under `financial` domain) |
+| `vault_kai_preferences` | Merged into `world_model_data` under `financial` domain |
+| `chat_conversations` | Removed (replaced by in-memory chat state) |
+| `chat_messages` | Removed (replaced by in-memory chat state) |
+| `user_investor_profiles` | Removed |
+| `investor_profiles` | Read-only reference table (not user data) |
 
 ---
 

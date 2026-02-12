@@ -51,7 +51,7 @@ interface DataTableProps<TData, TValue> {
 export function DataTable<TData, TValue>({
   columns,
   data,
-  searchKey,
+  searchKey: _searchKey,
   searchPlaceholder = "Search...",
   filterKey,
   filterOptions,

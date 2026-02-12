@@ -5,20 +5,20 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { ApiService } from "@/lib/services/api-service";
+import { useKaiSession } from "@/lib/stores/kai-session-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { Button } from "@/lib/morphy-ux/button";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
-import { Activity, ArrowLeft, Zap, ArrowRight, TrendingDown, TrendingUp, ShieldCheck, Target, Info, LayoutDashboard, ListChecks, CheckCircle2 } from "lucide-react";
+import { Activity, Zap, ArrowRight, TrendingDown, TrendingUp, ShieldCheck, Target, Info, LayoutDashboard, ListChecks } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { 
-  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, Cell
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Legend
 } from "recharts";
 import {
   ChartConfig,
@@ -121,7 +121,7 @@ function useThemeAware() {
 
 export default function PortfolioHealthPage() {
   const theme = useThemeAware();
-  const router = useRouter();
+  const _router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { vaultOwnerToken } = useVault();
   
@@ -133,8 +133,8 @@ export default function PortfolioHealthPage() {
   // Streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [currentStage, setCurrentStage] = useState<string>("analyzing");
+  const [_streamingText, setStreamingText] = useState("");
+  const [_currentStage, setCurrentStage] = useState<string>("analyzing");
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // New streaming states for granular control
@@ -144,30 +144,21 @@ export default function PortfolioHealthPage() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [streamedText, setStreamedText] = useState(""); // For the extraction phase
 
-  const input = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    const raw = sessionStorage.getItem("kai_losers_analysis_input");
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as {
-        userId: string;
-        thresholdPct?: number;
-        maxPositions?: number;
-        losers: LoserInput[];
-        hadBelowThreshold?: boolean;
-        holdings?: Array<
-          LoserInput & {
-            weight_pct?: number;
-            sector?: string;
-            asset_type?: string;
-          }
-        >;
-        forceOptimize?: boolean;
-      };
-    } catch {
-      return null;
-    }
-  }, []);
+  const input = useKaiSession((s) => s.losersInput) as {
+    userId: string;
+    thresholdPct?: number;
+    maxPositions?: number;
+    losers: LoserInput[];
+    hadBelowThreshold?: boolean;
+    holdings?: Array<
+      LoserInput & {
+        weight_pct?: number;
+        sector?: string;
+        asset_type?: string;
+      }
+    >;
+    forceOptimize?: boolean;
+  } | null;
 
   const thoughtsText = useMemo(() => {
     return thoughts.map((t, i) => `[${i + 1}] ${t.replace(/\*\*/g, "")}`).join("\n");
@@ -365,7 +356,7 @@ export default function PortfolioHealthPage() {
   const hadBelowThreshold = input?.hadBelowThreshold ?? false;
 
   // Stage messages for display
-  const stageMessages: Record<string, string> = {
+  const _stageMessages: Record<string, string> = {
     analyzing: "Analyzing portfolio positions...",
     thinking: "AI reasoning about portfolio health...",
     extracting: "Extracting optimization recommendations...",

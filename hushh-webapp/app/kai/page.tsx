@@ -8,9 +8,8 @@
  */
 
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
-import { TrendingUp, BarChart3, Shield, ArrowRight } from "lucide-react";
+import { Button } from "@/lib/morphy-ux/morphy";
+import { TrendingUp, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";

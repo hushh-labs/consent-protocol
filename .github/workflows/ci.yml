@@ -103,13 +103,11 @@ jobs:
         timeout-minutes: 5
         run: npm ci
 
-      - name: Validate Next.js config
-        run: |
-          npx tsc --noEmit
-          node -e "const fs=require('fs'); const p=require('path'); const f=p.join(process.cwd(),'next.config.ts'); if (!fs.existsSync(f)) process.exit(1); console.log('next.config.ts present and will be validated by build');"
+      - name: Type check
+        run: npm run typecheck
 
       - name: Lint
-        run: npm run check-lint
+        run: npm run lint
 
       - name: Build (web standalone)
         run: npm run build
@@ -136,11 +134,9 @@ jobs:
 
       - name: Security audit
         run: npm audit --audit-level=high
-        continue-on-error: true  # Don't fail on advisories, just warn
 
       - name: Run frontend tests
         run: npm test
-        continue-on-error: true  # Don't fail until tests are stable
 
   # ============================================================================
   # Backend (Python FastAPI)
