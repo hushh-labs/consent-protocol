@@ -27,6 +27,7 @@ router = APIRouter()
 # MODELS
 # ============================================================================
 
+
 class DecisionHistoryResponse(BaseModel):
     decisions: List[Dict]
     total: int
@@ -35,6 +36,7 @@ class DecisionHistoryResponse(BaseModel):
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
+
 
 @router.get("/decisions/{user_id}", response_model=DecisionHistoryResponse)
 async def get_decision_history(

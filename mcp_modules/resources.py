@@ -17,19 +17,19 @@ async def list_resources() -> list[Resource]:
             uri="hushh://info/server",
             name="Server Information",
             description="Hushh MCP Server version and capabilities",
-            mimeType="application/json"
+            mimeType="application/json",
         ),
         Resource(
             uri="hushh://info/protocol",
             name="Protocol Information",
             description="HushhMCP protocol compliance details",
-            mimeType="application/json"
+            mimeType="application/json",
         ),
         Resource(
             uri="hushh://info/connector",
             name="Connector usage and capabilities",
             description="What the Hushh connector does, tool list, recommended flow, and supported scopes",
-            mimeType="application/json"
+            mimeType="application/json",
         ),
     ]
 
@@ -37,6 +37,7 @@ async def list_resources() -> list[Resource]:
 async def read_resource(uri: str) -> str:
     """Read MCP resource content by URI."""
     import logging
+
     logger = logging.getLogger("hushh-mcp-server")
 
     # Normalize: MCP SDK may pass AnyUrl; some hosts add trailing slash
@@ -45,7 +46,7 @@ async def read_resource(uri: str) -> str:
 
     if uri_str == "hushh://info/server":
         return json.dumps(SERVER_INFO, indent=2)
-    
+
     elif uri_str == "hushh://info/protocol":
         protocol_info = {
             "name": "HushhMCP Protocol",
@@ -55,7 +56,7 @@ async def read_resource(uri: str) -> str:
                 "🎯 Scoped Access - Each data category requires separate consent",
                 "✍️ Cryptographic Signatures - Tokens signed with HMAC-SHA256",
                 "⏱️ Time-Limited - Tokens expire after configurable duration",
-                "🔗 TrustLinks - Agent-to-agent delegation with proof"
+                "🔗 TrustLinks - Agent-to-agent delegation with proof",
             ],
             "token_format": "HCT:base64(user|agent|scope|issued|expires).signature",
             "scopes_are_dynamic": True,
@@ -63,10 +64,10 @@ async def read_resource(uri: str) -> str:
             "scope_examples": [
                 "world_model.read - Full world model (all domains)",
                 "world_model.write - Write to world model",
-                "attr.{domain}.* - One domain (domain key from discover_user_domains or metadata; e.g. attr.financial.*, attr.food.*)"
+                "attr.{domain}.* - One domain (domain key from discover_user_domains or metadata; e.g. attr.financial.*, attr.food.*)",
             ],
             "zero_knowledge": True,
-            "server_sees_plaintext": False
+            "server_sees_plaintext": False,
         }
         return json.dumps(protocol_info, indent=2)
 
@@ -74,14 +75,46 @@ async def read_resource(uri: str) -> str:
         connector_info = {
             "what": "The Hushh connector provides consent-first personal data access for AI agents. Data is only returned after explicit user approval. Zero-knowledge and scoped access apply where applicable.",
             "tools": [
-                {"name": "request_consent", "purpose": "Request user consent for a scope", "when_to_use": "Before accessing any user data; pass scope from discover_user_domains or list_scopes"},
-                {"name": "validate_token", "purpose": "Validate a consent token", "when_to_use": "Before using a token with get_* tools or external APIs"},
-                {"name": "discover_user_domains", "purpose": "Discover user domains and scope strings", "when_to_use": "First step to know which scopes to request for a user"},
-                {"name": "list_scopes", "purpose": "List available scope categories", "when_to_use": "Static reference for scope names if not using discover_user_domains"},
-                {"name": "check_consent_status", "purpose": "Poll pending consent until granted/denied", "when_to_use": "After request_consent when status is pending"},
-                {"name": "get_food_preferences", "purpose": "Get food/dining preferences", "when_to_use": "After consent for attr.food.* or world_model.read"},
-                {"name": "get_professional_profile", "purpose": "Get professional profile", "when_to_use": "After consent for attr.professional.* or world_model.read"},
-                {"name": "delegate_to_agent", "purpose": "Create TrustLink for agent delegation", "when_to_use": "When one agent needs to delegate access to another"},
+                {
+                    "name": "request_consent",
+                    "purpose": "Request user consent for a scope",
+                    "when_to_use": "Before accessing any user data; pass scope from discover_user_domains or list_scopes",
+                },
+                {
+                    "name": "validate_token",
+                    "purpose": "Validate a consent token",
+                    "when_to_use": "Before using a token with get_* tools or external APIs",
+                },
+                {
+                    "name": "discover_user_domains",
+                    "purpose": "Discover user domains and scope strings",
+                    "when_to_use": "First step to know which scopes to request for a user",
+                },
+                {
+                    "name": "list_scopes",
+                    "purpose": "List available scope categories",
+                    "when_to_use": "Static reference for scope names if not using discover_user_domains",
+                },
+                {
+                    "name": "check_consent_status",
+                    "purpose": "Poll pending consent until granted/denied",
+                    "when_to_use": "After request_consent when status is pending",
+                },
+                {
+                    "name": "get_food_preferences",
+                    "purpose": "Get food/dining preferences",
+                    "when_to_use": "After consent for attr.food.* or world_model.read",
+                },
+                {
+                    "name": "get_professional_profile",
+                    "purpose": "Get professional profile",
+                    "when_to_use": "After consent for attr.professional.* or world_model.read",
+                },
+                {
+                    "name": "delegate_to_agent",
+                    "purpose": "Create TrustLink for agent delegation",
+                    "when_to_use": "When one agent needs to delegate access to another",
+                },
             ],
             "recommended_flow": [
                 "1. discover_user_domains(user_id) to get domains and scope strings for this user",
@@ -93,7 +126,7 @@ async def read_resource(uri: str) -> str:
             "supported_scopes": "world_model.read, world_model.write, and attr.{domain}.* where {domain} is from the world model (discover_user_domains or GET /api/world-model/scopes/{user_id}). No fixed list - domains come from domain registry and per-user world model index.",
             "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/world-model/scopes/{user_id} (from world_model_index_v2.available_domains).",
             "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
-            "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). The app must be open or polling GET /api/consent/pending so the user sees the request. SSE then notifies the MCP when the user approves or denies."
+            "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). The app must be open or polling GET /api/consent/pending so the user sees the request. SSE then notifies the MCP when the user approves or denies.",
         }
         return json.dumps(connector_info, indent=2)
 

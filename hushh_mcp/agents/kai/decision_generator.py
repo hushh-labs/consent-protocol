@@ -30,42 +30,43 @@ logger = logging.getLogger(__name__)
 class DecisionCard:
     """
     Complete decision card with all analysis details.
-    
+
     This is what the user sees - a comprehensive breakdown
     of the investment committee's decision.
     """
+
     # Decision metadata
     decision_id: str
     ticker: str
     user_id: str
     timestamp: datetime
-    
+
     # Headline recommendation
     decision: DecisionType
     confidence: float
     headline: str
-    
+
     # Specialist insights
     fundamental_insight: Dict[str, Any]
     sentiment_insight: Dict[str, Any]
     valuation_insight: Dict[str, Any]
-    
+
     # Debate details
     debate_digest: str
     debate_rounds: List[Dict[str, Any]]
     consensus_reached: bool
     dissenting_opinions: List[str]
-    
+
     # Supporting data
     all_sources: List[str]
     key_metrics: Dict[str, Any]
     quant_metrics: Dict[str, Any]
     risk_persona_alignment: str
-    
+
     # Compliance
     legal_disclaimer: str
     reliability_badge: str
-    
+
     # Processing metadata
     processing_mode: str
     risk_profile: RiskProfile
@@ -74,11 +75,11 @@ class DecisionCard:
 class DecisionGenerator:
     """
     Decision Generator - Creates formatted decision cards.
-    
+
     Transforms raw agent insights and debate results into
     a user-friendly decision card with full transparency.
     """
-    
+
     LEGAL_DISCLAIMER = """
 ⚠️ IMPORTANT DISCLOSURE
 
@@ -93,10 +94,10 @@ This analysis is provided for EDUCATIONAL PURPOSES ONLY.
 
 By using Kai, you acknowledge that you understand these limitations.
     """.strip()
-    
+
     def __init__(self, risk_profile: RiskProfile = "balanced"):
         self.risk_profile = risk_profile
-    
+
     async def generate(
         self,
         ticker: str,
@@ -109,7 +110,7 @@ By using Kai, you acknowledge that you understand these limitations.
     ) -> DecisionCard:
         """
         Generate a complete decision card.
-        
+
         Args:
             ticker: Stock ticker
             user_id: User ID
@@ -118,36 +119,36 @@ By using Kai, you acknowledge that you understand these limitations.
             sentiment: Sentiment agent's insight
             valuation: Valuation agent's insight
             debate: Debate engine result
-            
+
         Returns:
             Complete DecisionCard
         """
         logger.info(f"[DecisionGen] Generating decision card for {ticker}")
-        
+
         decision_id = f"decision_{datetime.utcnow().timestamp()}"
-        
+
         # Generate headline
         headline = self._generate_headline(ticker, debate.decision, debate.confidence)
-        
+
         # Create debate digest
         debate_digest = self._create_debate_digest(debate)
-        
+
         # Collect all sources
         all_sources = self._collect_sources(fundamental, sentiment, valuation)
-        
+
         # Aggregate key metrics
         key_metrics = self._aggregate_metrics(fundamental, sentiment, valuation)
-        
+
         # Generate risk persona alignment note
         risk_alignment = self._generate_risk_alignment(debate.decision, debate.confidence)
-        
+
         # Determine reliability badge
         reliability_badge = self._calculate_reliability_badge(
             fundamental.confidence,
             sentiment.confidence,
             valuation.confidence,
         )
-        
+
         return DecisionCard(
             decision_id=decision_id,
             ticker=ticker,
@@ -172,39 +173,37 @@ By using Kai, you acknowledge that you understand these limitations.
             processing_mode=processing_mode,
             risk_profile=self.risk_profile,
         )
-    
+
     def _generate_headline(self, ticker: str, decision: DecisionType, confidence: float) -> str:
         """Generate decision headline."""
-        action_word = {
-            "buy": "BUY",
-            "hold": "HOLD",
-            "reduce": "REDUCE"
-        }[decision]
-        
-        confidence_desc = "High" if confidence > 0.75 else "Moderate" if confidence > 0.60 else "Low"
-        
+        action_word = {"buy": "BUY", "hold": "HOLD", "reduce": "REDUCE"}[decision]
+
+        confidence_desc = (
+            "High" if confidence > 0.75 else "Moderate" if confidence > 0.60 else "Low"
+        )
+
         return f"{action_word} {ticker} — {confidence_desc} Confidence ({confidence:.0%})"
-    
+
     def _create_debate_digest(self, debate: DebateResult) -> str:
         """Create human-readable debate summary."""
-        
+
         rounds_summary = []
         for round in debate.rounds:
             round_text = f"**Round {round.round_number}:**\n"
             for agent_id, statement in round.agent_statements.items():
                 round_text += f"- {agent_id.capitalize()}: {statement}\n"
             rounds_summary.append(round_text)
-        
+
         digest = "\n".join(rounds_summary)
         digest += f"\n\n{debate.final_statement}"
-        
+
         if debate.dissenting_opinions:
             digest += "\n\n**Dissenting Opinions:**\n"
             for dissent in debate.dissenting_opinions:
                 digest += f"- {dissent}\n"
-        
+
         return digest
-    
+
     def _collect_sources(
         self,
         fundamental: FundamentalInsight,
@@ -217,7 +216,7 @@ By using Kai, you acknowledge that you understand these limitations.
         sources.extend(sentiment.sources)
         sources.extend(valuation.sources)
         return list(set(sources))  # Deduplicate
-    
+
     def _aggregate_metrics(
         self,
         fundamental: FundamentalInsight,
@@ -233,30 +232,30 @@ By using Kai, you acknowledge that you understand these limitations.
             },
             "valuation": valuation.valuation_metrics,
         }
-    
+
     def _generate_risk_alignment(self, decision: DecisionType, confidence: float) -> str:
         """Generate risk persona alignment note."""
-        
+
         alignment_notes = {
             "conservative": {
                 "buy": "This BUY recommendation aligns with conservative investing if fundamentals are strong and downside is protected.",
                 "hold": "HOLD is appropriate for conservative investors seeking capital preservation.",
-                "reduce": "REDUCE aligns well with conservative risk management."
+                "reduce": "REDUCE aligns well with conservative risk management.",
             },
             "balanced": {
                 "buy": "This BUY recommendation balances growth opportunity with risk considerations.",
                 "hold": "HOLD provides balanced exposure while monitoring developments.",
-                "reduce": "REDUCE helps rebalance portfolio while maintaining diversification."
+                "reduce": "REDUCE helps rebalance portfolio while maintaining diversification.",
             },
             "aggressive": {
                 "buy": "BUY recommendation offers growth potential aligned with aggressive investing.",
                 "hold": "HOLD may be conservative for aggressive investors; consider context.",
-                "reduce": "REDUCE may limit upside for aggressive portfolios; review rationale."
-            }
+                "reduce": "REDUCE may limit upside for aggressive portfolios; review rationale.",
+            },
         }
-        
+
         return alignment_notes[self.risk_profile][decision]
-    
+
     def _calculate_reliability_badge(
         self,
         fund_conf: float,
@@ -264,20 +263,20 @@ By using Kai, you acknowledge that you understand these limitations.
         val_conf: float,
     ) -> str:
         """Calculate reliability badge based on agent confidence."""
-        
+
         avg_confidence = (fund_conf + sent_conf + val_conf) / 3
-        
+
         if avg_confidence >= 0.80:
             return "🟢 High Reliability"
         elif avg_confidence >= 0.65:
             return "🟡 Moderate Reliability"
         else:
             return "🔴 Low Reliability — Review Carefully"
-    
+
     def to_json(self, card: DecisionCard) -> str:
         """Convert decision card to JSON for storage."""
         return json.dumps(asdict(card), default=str, indent=2)
-    
+
     def from_json(self, json_str: str) -> DecisionCard:
         """Parse decision card from JSON."""
         data = json.loads(json_str)

@@ -16,37 +16,43 @@ except ImportError:
     # Fallback/stub for development context where ADK might not be installed yet
     # or for defining the interface before linking
     class LlmAgent:
-        def __init__(self, **kwargs): pass
-        def run(self, **kwargs): pass
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, **kwargs):
+            pass
+
     class ModelClient:
         pass
+
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.hushh_adk.context import HushhContext
 
 logger = logging.getLogger(__name__)
 
+
 class HushhAgent(LlmAgent):
     """
     Secure Wrapper around Google ADK LlmAgent.
-    
+
     Enforces:
     1. Consent Token Validation at Entry
     2. Context Injection for Tools
     3. Structured Logging
     """
-    
+
     def __init__(
         self,
         name: str,
-        model: Any, # ModelClient or string
+        model: Any,  # ModelClient or string
         tools: Optional[List[Any]] = None,
         system_prompt: str = "",
-        required_scopes: Optional[List[str]] = None
+        required_scopes: Optional[List[str]] = None,
     ):
         """
         Initialize Secure Agent.
-        
+
         Args:
             name: Agent identifier
             model: The LLM client (ADK ModelClient)
@@ -57,33 +63,33 @@ class HushhAgent(LlmAgent):
         self.hushh_name = name
         self.required_scopes = required_scopes or []
         tools = tools or []
-        
+
         # Initialize parent ADK agent with correct parameters
         super().__init__(
             model=model,
             tools=tools,
-            system_instruction=system_prompt  # ADK uses 'system_instruction' not 'prompt'
+            system_instruction=system_prompt,  # ADK uses 'system_instruction' not 'prompt'
         )
-        
+
     def run(
-        self, 
-        prompt: str, 
-        user_id: str, 
+        self,
+        prompt: str,
+        user_id: str,
         consent_token: str,
-        vault_keys: Optional[Dict[str, str]] = None
+        vault_keys: Optional[Dict[str, str]] = None,
     ) -> Any:
         """
         Secure Execution Entry Point.
-        
+
         Replaces standard .run() with one that requires Auth.
         """
         logger.info(f"🤖 Agent '{self.hushh_name}' invoked by {user_id}")
-        
+
         # 1. Base Validation
         # Check if token allows accessing THIS agent
         is_valid = False
         last_reason = "No scopes defined"
-        
+
         if not self.required_scopes:
             is_valid = True  # No specific agent-level scope needed, relying on tools
         else:
@@ -93,16 +99,16 @@ class HushhAgent(LlmAgent):
                     is_valid = True
                     break
                 last_reason = reason
-        
+
         if not is_valid:
             error_msg = f"⛔ Agent Access Denied: {last_reason}"
             logger.warning(error_msg)
             raise PermissionError(error_msg)
-            
+
         # 2. Context Injection
         # We start a context block. All tools called by the LLM within super().run()
         # will be able to access this context via HushhContext.current()
-        
+
         with HushhContext(
             user_id=user_id,
             consent_token=consent_token,

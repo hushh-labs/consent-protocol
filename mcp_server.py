@@ -54,8 +54,8 @@ from mcp_modules.tools import (
 
 logging.basicConfig(
     level=logging.INFO,
-    format='[HUSHH-MCP] %(levelname)s: %(message)s',
-    stream=sys.stderr  # CRITICAL: Don't pollute stdout
+    format="[HUSHH-MCP] %(levelname)s: %(message)s",
+    stream=sys.stderr,  # CRITICAL: Don't pollute stdout
 )
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -71,6 +71,7 @@ server = Server("hushh-consent")
 # TOOL DEFINITIONS
 # ============================================================================
 
+
 @server.list_tools()
 async def list_tools():
     """Expose Hushh consent tools to MCP hosts."""
@@ -81,17 +82,18 @@ async def list_tools():
 # TOOL CALL ROUTER
 # ============================================================================
 
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """
     Route tool calls to appropriate handlers.
-    
+
     Compliance: MCP tools/call specification
     Logging: All calls logged for audit trail
     """
     logger.info(f"🔧 Tool called: {name}")
     logger.info(f"   Arguments: {json.dumps(arguments, default=str)}")
-    
+
     handlers = {
         "request_consent": handle_request_consent,
         "validate_token": handle_validate_token,
@@ -103,31 +105,36 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         "discover_user_domains": handle_discover_user_domains,
         "check_consent_status": handle_check_consent_status,
     }
-    
+
     handler = handlers.get(name)
     if not handler:
         logger.warning(f"❌ Unknown tool requested: {name}")
-        return [TextContent(type="text", text=json.dumps({
-            "error": f"Unknown tool: {name}",
-            "available_tools": list(handlers.keys())
-        }))]
-    
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"error": f"Unknown tool: {name}", "available_tools": list(handlers.keys())}
+                ),
+            )
+        ]
+
     try:
         result = await handler(arguments)
         logger.info(f"✅ Tool {name} completed successfully")
         return result
     except Exception as e:
         logger.error(f"❌ Tool {name} failed: {str(e)}")
-        return [TextContent(type="text", text=json.dumps({
-            "error": str(e),
-            "tool": name,
-            "status": "failed"
-        }))]
+        return [
+            TextContent(
+                type="text", text=json.dumps({"error": str(e), "tool": name, "status": "failed"})
+            )
+        ]
 
 
 # ============================================================================
 # MCP RESOURCES
 # ============================================================================
+
 
 @server.list_resources()
 async def list_resources():
@@ -145,10 +152,11 @@ async def read_resource(uri: str):
 # MAIN ENTRY POINT
 # ============================================================================
 
+
 async def main():
     """
     Run the Hushh MCP Server.
-    
+
     Transport: stdio (for Claude Desktop, Cursor, and other MCP hosts)
     Protocol: JSON-RPC 2.0
     Compliance: HushhMCP (consent-first personal data access)
@@ -163,18 +171,14 @@ async def main():
     logger.info(f"   Tools: {SERVER_INFO['tools_count']} consent tools exposed")
     logger.info("")
     logger.info("   Compliance:")
-    for item in SERVER_INFO['compliance']:
+    for item in SERVER_INFO["compliance"]:
         logger.info(f"     ✅ {item}")
     logger.info("")
     logger.info("   Ready to receive connections from MCP hosts...")
     logger.info("=" * 60)
-    
+
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
-        )
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":

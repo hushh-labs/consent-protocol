@@ -45,8 +45,10 @@ logger = logging.getLogger(__name__)
 # INTENT CLASSIFICATION
 # =============================================================================
 
+
 class IntentType(str, Enum):
     """Types of user intents that trigger specific workflows."""
+
     PORTFOLIO_IMPORT = "portfolio_import"
     STOCK_ANALYSIS = "stock_analysis"
     RISK_ASSESSMENT = "risk_assessment"
@@ -58,45 +60,82 @@ class IntentType(str, Enum):
 
 class IntentClassifier:
     """Classifies user intent to trigger appropriate workflows."""
-    
+
     INTENT_PATTERNS = {
         IntentType.PORTFOLIO_IMPORT: [
-            "import", "upload", "brokerage", "statement", "portfolio",
-            "holdings", "positions", "connect my", "add my stocks",
-            "import my", "upload my"
+            "import",
+            "upload",
+            "brokerage",
+            "statement",
+            "portfolio",
+            "holdings",
+            "positions",
+            "connect my",
+            "add my stocks",
+            "import my",
+            "upload my",
         ],
         IntentType.STOCK_ANALYSIS: [
-            "analyze", "what about", "should i buy", "recommendation",
-            "stock", "ticker", "price", "evaluate", "research",
-            "tell me about", "how is", "what do you think of"
+            "analyze",
+            "what about",
+            "should i buy",
+            "recommendation",
+            "stock",
+            "ticker",
+            "price",
+            "evaluate",
+            "research",
+            "tell me about",
+            "how is",
+            "what do you think of",
         ],
         IntentType.RISK_ASSESSMENT: [
-            "risk", "tolerance", "aggressive", "conservative", "profile",
-            "risk profile", "investment style"
+            "risk",
+            "tolerance",
+            "aggressive",
+            "conservative",
+            "profile",
+            "risk profile",
+            "investment style",
         ],
         IntentType.PROFILE_QUERY: [
-            "what do you know", "my profile", "my data", "about me",
-            "what have you learned", "my preferences"
+            "what do you know",
+            "my profile",
+            "my data",
+            "about me",
+            "what have you learned",
+            "my preferences",
         ],
         IntentType.CONSENT_MANAGEMENT: [
-            "consent", "permission", "data sharing", "who has access",
-            "revoke", "manage access"
+            "consent",
+            "permission",
+            "data sharing",
+            "who has access",
+            "revoke",
+            "manage access",
         ],
         IntentType.GREETING: [
-            "hi", "hello", "hey", "good morning", "good afternoon",
-            "good evening", "howdy", "what's up", "sup"
+            "hi",
+            "hello",
+            "hey",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "howdy",
+            "what's up",
+            "sup",
         ],
     }
-    
+
     def classify(self, message: str) -> tuple[IntentType, float]:
         """
         Classify user intent with confidence score.
-        
+
         Returns:
             Tuple of (IntentType, confidence_score)
         """
         message_lower = message.lower().strip()
-        
+
         # Check each intent pattern
         scores = {}
         for intent, patterns in self.INTENT_PATTERNS.items():
@@ -104,18 +143,18 @@ class IntentClassifier:
             if matches > 0:
                 # Score based on number of matches and pattern specificity
                 scores[intent] = min(0.5 + (matches * 0.2), 1.0)
-        
+
         if not scores:
             return (IntentType.GENERAL_CHAT, 0.5)
-        
+
         # Return highest scoring intent
         best_intent = max(scores, key=scores.get)
         return (best_intent, scores[best_intent])
-    
+
     def extract_ticker(self, message: str) -> Optional[str]:
         """Extract stock ticker from message."""
         # Look for uppercase 1-5 letter words that could be tickers
-        ticker_match = re.search(r'\b([A-Z]{1,5})\b', message)
+        ticker_match = re.search(r"\b([A-Z]{1,5})\b", message)
         if ticker_match:
             return ticker_match.group(1)
         return None
@@ -124,6 +163,7 @@ class IntentClassifier:
 @dataclass
 class UIComponent:
     """A UI component to render in the chat."""
+
     type: str
     data: dict = field(default_factory=dict)
 
@@ -131,6 +171,7 @@ class UIComponent:
 @dataclass
 class KaiChatResponse:
     """Response from Kai chat service."""
+
     conversation_id: str
     response: str
     component_type: Optional[str] = None
@@ -178,7 +219,7 @@ Current conversation context:
 class KaiChatService:
     """
     Main service for conversational interaction with Kai.
-    
+
     Integrates:
     - Google Gemini for natural language generation
     - World model for user context
@@ -186,14 +227,14 @@ class KaiChatService:
     - Chat DB for persistent history
     - Intent classifier for workflow triggers
     """
-    
+
     def __init__(self):
         self._client = None
         self._world_model = None
         self._chat_db = None
         self._attribute_learner = None
         self._intent_classifier = IntentClassifier()
-    
+
     @property
     def client(self):
         """Get the google.genai client (from google-adk)."""
@@ -205,25 +246,25 @@ class KaiChatService:
                 logger.error("GOOGLE_API_KEY not set!")
                 raise ValueError("GOOGLE_API_KEY environment variable is required")
         return self._client
-    
+
     @property
     def world_model(self):
         if self._world_model is None:
             self._world_model = get_world_model_service()
         return self._world_model
-    
+
     @property
     def chat_db(self) -> ChatDBService:
         if self._chat_db is None:
             self._chat_db = get_chat_db_service()
         return self._chat_db
-    
+
     @property
     def attribute_learner(self):
         if self._attribute_learner is None:
             self._attribute_learner = get_attribute_learner()
         return self._attribute_learner
-    
+
     async def process_message(
         self,
         user_id: str,
@@ -232,25 +273,25 @@ class KaiChatService:
     ) -> KaiChatResponse:
         """
         Process a user message and generate a response.
-        
+
         Args:
             user_id: The user's ID
             message: The user's message
             conversation_id: Optional existing conversation ID
-            
+
         Returns:
             KaiChatResponse with response text and optional UI component
         """
         try:
             # 1. Get or create conversation
             conversation = await self._get_or_create_conversation(user_id, conversation_id)
-            
+
             # 2. Get chat history for context
             history = await self.chat_db.get_recent_context(conversation.id, max_messages=10)
-            
+
             # 3. Get user's world model context
             user_context = await self.world_model.get_user_metadata(user_id)
-            
+
             # 4. Check if this is a new user who should be prompted for portfolio
             if await self._should_prompt_portfolio(user_id, user_context, history):
                 # Store the user's message first
@@ -259,7 +300,7 @@ class KaiChatService:
                     role=MessageRole.USER,
                     content=message,
                 )
-                
+
                 # Return proactive portfolio import prompt
                 welcome_response = (
                     "Hi! I'm Kai, your personal investment advisor from Hushh. "
@@ -267,27 +308,33 @@ class KaiChatService:
                     "Would you like to import your brokerage statement? "
                     "You can upload a CSV or PDF, or skip for now and we can chat about anything else!"
                 )
-                
+
                 await self.chat_db.add_message(
                     conversation_id=conversation.id,
                     role=MessageRole.ASSISTANT,
                     content=welcome_response,
                     content_type=ContentType.COMPONENT,
                     component_type=ComponentType.PORTFOLIO_IMPORT,
-                    component_data={"prompt": "Import your portfolio for personalized analysis", "show_skip": True},
+                    component_data={
+                        "prompt": "Import your portfolio for personalized analysis",
+                        "show_skip": True,
+                    },
                 )
-                
+
                 return KaiChatResponse(
                     conversation_id=str(conversation.id),
                     response=welcome_response,
                     component_type="portfolio_import",
-                    component_data={"prompt": "Import your portfolio for personalized analysis", "show_skip": True},
+                    component_data={
+                        "prompt": "Import your portfolio for personalized analysis",
+                        "show_skip": True,
+                    },
                     learned_attributes=[],
                 )
-            
+
             # 5. Classify intent for workflow triggers
             intent, confidence = self._intent_classifier.classify(message)
-            
+
             # 6. Handle high-confidence intents with specific workflows
             if confidence > 0.7:
                 component = self._handle_intent(intent, message, user_context)
@@ -298,19 +345,21 @@ class KaiChatService:
                         role=MessageRole.USER,
                         content=message,
                     )
-                    
+
                     # Generate contextual response for the intent
                     response_text = self._get_intent_response(intent, component)
-                    
+
                     await self.chat_db.add_message(
                         conversation_id=conversation.id,
                         role=MessageRole.ASSISTANT,
                         content=response_text,
                         content_type=ContentType.COMPONENT,
-                        component_type=ComponentType(component.type.upper()) if hasattr(ComponentType, component.type.upper()) else None,
+                        component_type=ComponentType(component.type.upper())
+                        if hasattr(ComponentType, component.type.upper())
+                        else None,
                         component_data=component.data,
                     )
-                    
+
                     return KaiChatResponse(
                         conversation_id=str(conversation.id),
                         response=response_text,
@@ -318,42 +367,44 @@ class KaiChatService:
                         component_data=component.data,
                         learned_attributes=[],
                     )
-            
+
             # 7. Build system prompt with context
             system_prompt = self._build_system_prompt(user_context, history)
-            
+
             # 8. Generate response via LLM
             response_text, tokens = await self._generate_response(system_prompt, message)
-            
+
             # 9. Extract and store any learned attributes (async, don't block)
             learned = await self.attribute_learner.extract_and_store(
                 user_id=user_id,
                 user_message=message,
                 assistant_response=response_text,
             )
-            
+
             # 10. Store messages in chat history
             await self.chat_db.add_message(
                 conversation_id=conversation.id,
                 role=MessageRole.USER,
                 content=message,
             )
-            
+
             # 11. Detect if we should show a UI component
             component = self._detect_component(message, response_text)
-            
+
             # 12. Store assistant response with component if any
             await self.chat_db.add_message(
                 conversation_id=conversation.id,
                 role=MessageRole.ASSISTANT,
                 content=response_text,
                 content_type=ContentType.COMPONENT if component else ContentType.TEXT,
-                component_type=ComponentType(component.type.upper()) if component and hasattr(ComponentType, component.type.upper()) else None,
+                component_type=ComponentType(component.type.upper())
+                if component and hasattr(ComponentType, component.type.upper())
+                else None,
                 component_data=component.data if component else None,
                 tokens_used=tokens,
                 model_used="gemini-1.5-flash",
             )
-            
+
             return KaiChatResponse(
                 conversation_id=str(conversation.id),
                 response=response_text,
@@ -362,7 +413,7 @@ class KaiChatService:
                 learned_attributes=learned,
                 tokens_used=tokens,
             )
-            
+
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             # Return a graceful error response
@@ -371,7 +422,7 @@ class KaiChatService:
                 response="I apologize, but I encountered an issue processing your message. Please try again.",
                 learned_attributes=[],
             )
-    
+
     async def _should_prompt_portfolio(
         self,
         user_id: str,
@@ -380,7 +431,7 @@ class KaiChatService:
     ) -> bool:
         """
         Check if we should proactively prompt the user to import their portfolio.
-        
+
         Triggers portfolio import prompt if:
         - User is new (no world model data)
         - User has minimal attributes
@@ -390,29 +441,33 @@ class KaiChatService:
         # Don't prompt if there's already chat history
         if len(history) > 2:
             return False
-        
+
         # Don't prompt if user has significant data
         if user_context and user_context.total_attributes > 5:
             return False
-        
+
         # Check if portfolio already imported
-        user_domain_keys = [d.domain_key for d in user_context.domains] if user_context and user_context.domains else []
+        user_domain_keys = (
+            [d.domain_key for d in user_context.domains]
+            if user_context and user_context.domains
+            else []
+        )
         if user_context and "financial" in user_domain_keys:
             # Portfolio data exists in the financial domain — no need to prompt
             return False
-        
+
         return True
-    
+
     async def _check_data_completeness(self, user_id: str) -> dict:
         """
         Check what financial data is missing for complete analysis.
-        
+
         Returns dictionary with:
         - has_portfolio: bool
         - missing_attributes: list of attribute names
         - completeness_score: float (0-1)
         - total_attributes: int
-        
+
         This enables proactive prompts like:
         "I see you haven't shared your risk tolerance yet. Would you like to take
         a quick quiz so I can give you more personalized advice?"
@@ -420,28 +475,33 @@ class KaiChatService:
         try:
             # Get user's domains
             metadata = await self.world_model.get_user_metadata(user_id)
-            
+
             # Check if financial domain exists
-            user_domain_keys = [d.domain_key for d in metadata.domains] if metadata and metadata.domains else []
+            user_domain_keys = (
+                [d.domain_key for d in metadata.domains] if metadata and metadata.domains else []
+            )
             if not metadata or "financial" not in user_domain_keys:
                 return {
                     "has_portfolio": False,
-                    "missing_attributes": ["portfolio", "risk_tolerance", "investment_horizon", "income_bracket"],
+                    "missing_attributes": [
+                        "portfolio",
+                        "risk_tolerance",
+                        "investment_horizon",
+                        "income_bracket",
+                    ],
                     "completeness_score": 0.0,
                     "total_attributes": 0,
                 }
-            
+
             # Get financial domain summary from world_model_index_v2
             index = await self.world_model.get_index_v2(user_id)
-            domain_summary = (
-                index.domain_summaries.get("financial", {}) if index else {}
-            )
-            
+            domain_summary = index.domain_summaries.get("financial", {}) if index else {}
+
             # Build a set of "known" attribute keys from the domain summary
             # The summary is a dict of non-sensitive metadata written by
             # update_domain_summary(); keys present indicate data has been stored.
             attr_keys = set(domain_summary.keys()) if domain_summary else set()
-            
+
             # Define required attributes for complete profile
             required_attrs = {
                 "portfolio_imported": "Your portfolio holdings",
@@ -453,16 +513,16 @@ class KaiChatService:
                 "liquidity_needs": "Your cash flow needs",
                 "age_bracket": "Your age bracket (for age-appropriate strategies)",
             }
-            
+
             # Check which are missing
             missing = []
             for attr_key, _description in required_attrs.items():
                 if attr_key not in attr_keys:
                     missing.append(attr_key)
-            
+
             # Calculate completeness score
             completeness_score = len(attr_keys & required_attrs.keys()) / len(required_attrs)
-            
+
             return {
                 "has_portfolio": "portfolio_imported" in attr_keys,
                 "missing_attributes": missing,
@@ -470,7 +530,7 @@ class KaiChatService:
                 "total_attributes": len(attr_keys),
                 "required_count": len(required_attrs),
             }
-            
+
         except Exception as e:
             logger.error(f"Error checking data completeness: {e}")
             return {
@@ -479,24 +539,24 @@ class KaiChatService:
                 "completeness_score": 0.0,
                 "total_attributes": 0,
             }
-    
+
     async def get_proactive_data_collection_prompt(self, user_id: str) -> Optional[str]:
         """
         Generate a proactive prompt to collect missing data.
-        
+
         Returns None if data is complete, or a friendly prompt if data is missing.
         """
         completeness = await self._check_data_completeness(user_id)
-        
+
         # If profile is >70% complete, no need to prompt
         if completeness["completeness_score"] > 0.7:
             return None
-        
+
         missing = completeness["missing_attributes"]
-        
+
         if not missing:
             return None
-        
+
         # Prioritize by importance
         priority_order = [
             "portfolio_imported",
@@ -505,17 +565,17 @@ class KaiChatService:
             "investment_goals",
             "age_bracket",
         ]
-        
+
         # Get the highest priority missing attribute
         next_to_collect = None
         for attr in priority_order:
             if attr in missing:
                 next_to_collect = attr
                 break
-        
+
         if not next_to_collect:
             next_to_collect = missing[0]
-        
+
         # Generate appropriate prompt
         prompts = {
             "portfolio_imported": (
@@ -546,9 +606,12 @@ class KaiChatService:
                 "What's your approximate annual income bracket?"
             ),
         }
-        
-        return prompts.get(next_to_collect, "Is there any additional information you'd like to share about your investment profile?")
-    
+
+        return prompts.get(
+            next_to_collect,
+            "Is there any additional information you'd like to share about your investment profile?",
+        )
+
     def _handle_intent(
         self,
         intent: IntentType,
@@ -561,7 +624,7 @@ class KaiChatService:
                 type="portfolio_import",
                 data={"prompt": "Upload your brokerage statement", "show_skip": True},
             )
-        
+
         elif intent == IntentType.STOCK_ANALYSIS:
             ticker = self._intent_classifier.extract_ticker(message)
             if ticker:
@@ -569,21 +632,21 @@ class KaiChatService:
                     type="analysis",
                     data={"ticker": ticker},
                 )
-        
+
         elif intent == IntentType.PROFILE_QUERY:
             return UIComponent(
                 type="world_model_summary",
                 data={"user_context": user_context.__dict__ if user_context else {}},
             )
-        
+
         elif intent == IntentType.CONSENT_MANAGEMENT:
             return UIComponent(
                 type="consent_management",
                 data={},
             )
-        
+
         return None
-    
+
     def _get_intent_response(self, intent: IntentType, component: UIComponent) -> str:
         """Get a contextual response for a specific intent."""
         responses = {
@@ -605,7 +668,7 @@ class KaiChatService:
             ),
         }
         return responses.get(intent, "Let me help you with that.")
-    
+
     async def _get_or_create_conversation(
         self,
         user_id: str,
@@ -616,19 +679,19 @@ class KaiChatService:
             conversation = await self.chat_db.get_conversation(conversation_id)
             if conversation:
                 return conversation
-        
+
         # Create new conversation
         conversation = await self.chat_db.create_conversation(
             user_id=user_id,
             title="Chat with Kai",
             agent_context={"agent": "kai", "version": "2.0"},
         )
-        
+
         if not conversation:
             raise ValueError("Failed to create conversation")
-        
+
         return conversation
-    
+
     def _build_system_prompt(
         self,
         user_context: UserWorldModelMetadata,
@@ -637,33 +700,41 @@ class KaiChatService:
         """Build the system prompt with user context and history."""
         # Format user context
         context_parts = []
-        
+
         if user_context.domains:
             context_parts.append("User's profile includes:")
             for domain in user_context.domains:
-                context_parts.append(f"  - {domain.display_name}: {domain.attribute_count} attributes")
+                context_parts.append(
+                    f"  - {domain.display_name}: {domain.attribute_count} attributes"
+                )
         else:
-            context_parts.append("User is new - no profile data yet. Be welcoming and offer to learn their preferences.")
-        
+            context_parts.append(
+                "User is new - no profile data yet. Be welcoming and offer to learn their preferences."
+            )
+
         if user_context.total_attributes > 0:
             context_parts.append(f"\nTotal data points: {user_context.total_attributes}")
-        
-        user_context_str = "\n".join(context_parts) if context_parts else "No user context available."
-        
+
+        user_context_str = (
+            "\n".join(context_parts) if context_parts else "No user context available."
+        )
+
         # Format chat history
         history_parts = []
         for msg in history[-5:]:  # Last 5 messages for context
             role = msg.get("role", "user")
             content = msg.get("content", "")[:200]  # Truncate long messages
             history_parts.append(f"{role.capitalize()}: {content}")
-        
-        history_str = "\n".join(history_parts) if history_parts else "This is the start of the conversation."
-        
+
+        history_str = (
+            "\n".join(history_parts) if history_parts else "This is the start of the conversation."
+        )
+
         return SYSTEM_PROMPT.format(
             user_context=user_context_str,
             chat_history=history_str,
         )
-    
+
     async def _generate_response(
         self,
         system_prompt: str,
@@ -673,29 +744,29 @@ class KaiChatService:
         try:
             # Combine system prompt and user message
             full_prompt = f"{system_prompt}\n\nUser: {user_message}\n\nKai:"
-            
+
             config = genai_types.GenerateContentConfig(
                 temperature=0.7,
                 max_output_tokens=1024,
             )
-            
+
             response = await self.client.aio.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=full_prompt,
                 config=config,
             )
-            
+
             # Get token count if available
             tokens = None
-            if hasattr(response, 'usage_metadata'):
-                tokens = getattr(response.usage_metadata, 'total_token_count', None)
-            
+            if hasattr(response, "usage_metadata"):
+                tokens = getattr(response.usage_metadata, "total_token_count", None)
+
             return response.text.strip(), tokens
-            
+
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             return "I'm having trouble generating a response right now. Please try again.", None
-    
+
     def _detect_component(
         self,
         user_message: str,
@@ -703,7 +774,7 @@ class KaiChatService:
     ) -> Optional[UIComponent]:
         """Detect if we should show a UI component based on the conversation."""
         message_lower = user_message.lower()
-        
+
         # Portfolio import triggers
         portfolio_triggers = [
             "import portfolio",
@@ -713,32 +784,37 @@ class KaiChatService:
             "analyze my portfolio",
             "import statement",
         ]
-        
+
         if any(trigger in message_lower for trigger in portfolio_triggers):
             return UIComponent(
                 type="portfolio_import",
                 data={"prompt": "Upload your brokerage statement to get personalized insights"},
             )
-        
+
         # Analysis triggers
-        if "analyze" in message_lower and any(word in message_lower for word in ["stock", "ticker", "company"]):
+        if "analyze" in message_lower and any(
+            word in message_lower for word in ["stock", "ticker", "company"]
+        ):
             # Try to extract ticker from message
-            ticker_match = re.search(r'\b([A-Z]{1,5})\b', user_message)
+            ticker_match = re.search(r"\b([A-Z]{1,5})\b", user_message)
             if ticker_match:
                 return UIComponent(
                     type="analysis",
                     data={"ticker": ticker_match.group(1)},
                 )
-        
+
         # World model summary trigger
-        if any(phrase in message_lower for phrase in ["what do you know about me", "my profile", "my data"]):
+        if any(
+            phrase in message_lower
+            for phrase in ["what do you know about me", "my profile", "my data"]
+        ):
             return UIComponent(
                 type="world_model_summary",
                 data={},
             )
-        
+
         return None
-    
+
     async def get_conversation_history(
         self,
         conversation_id: str,
@@ -746,7 +822,7 @@ class KaiChatService:
     ) -> list[dict]:
         """Get conversation history for display."""
         messages = await self.chat_db.get_messages(conversation_id, limit=limit)
-        
+
         return [
             {
                 "id": msg.id,
@@ -758,14 +834,14 @@ class KaiChatService:
             }
             for msg in messages
         ]
-    
+
     async def get_initial_chat_state(self, user_id: str) -> dict:
         """
         Get initial chat state for a user - determines proactive welcome message.
-        
+
         This is called when the chat UI opens to determine what welcome
         message Kai should show proactively (without waiting for user input).
-        
+
         Returns:
             dict with:
             - is_new_user: True if user has no world model data
@@ -778,7 +854,7 @@ class KaiChatService:
         try:
             # Get world model metadata
             metadata = await self.world_model.get_user_metadata(user_id)
-            
+
             # Check portfolio
             has_portfolio = False
             try:
@@ -786,7 +862,7 @@ class KaiChatService:
                 has_portfolio = portfolio is not None
             except Exception:
                 pass
-            
+
             # Check for financial domain
             has_financial_data = False
             available_domains = []
@@ -796,10 +872,10 @@ class KaiChatService:
                     if domain.domain_key == "financial" and domain.attribute_count > 0:
                         has_financial_data = True
                         break
-            
+
             # Determine total attributes
             total_attributes = metadata.total_attributes if metadata else 0
-            
+
             # Determine welcome type
             is_new_user = total_attributes == 0
             if is_new_user:
@@ -808,7 +884,7 @@ class KaiChatService:
                 welcome_type = "returning_no_portfolio"
             else:
                 welcome_type = "returning"
-            
+
             return {
                 "is_new_user": is_new_user,
                 "has_portfolio": has_portfolio,
@@ -817,7 +893,7 @@ class KaiChatService:
                 "total_attributes": total_attributes,
                 "available_domains": available_domains,
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting initial chat state: {e}")
             # Return safe defaults for new user
@@ -829,7 +905,7 @@ class KaiChatService:
                 "total_attributes": 0,
                 "available_domains": [],
             }
-    
+
     async def analyze_portfolio_loser(
         self,
         user_id: str,
@@ -838,41 +914,42 @@ class KaiChatService:
     ) -> dict:
         """
         Analyze a specific portfolio loser and return a compact analysis.
-        
+
         This method:
         1. Checks Renaissance universe for tier/conviction
         2. Generates a quick analysis using the LLM with Renaissance context
         3. Stores the decision in the world model
         4. Returns a compact summary for chat display
-        
+
         Args:
             user_id: The user's ID
             ticker: Stock ticker to analyze
             conversation_id: Optional conversation ID for context
-            
+
         Returns:
             dict with analysis results
         """
         try:
             # Get or create conversation
             conversation = await self._get_or_create_conversation(user_id, conversation_id)
-            
+
             # Get Renaissance context for the ticker
             from hushh_mcp.services.renaissance_service import get_renaissance_service
+
             renaissance = get_renaissance_service()
             ren_context = await renaissance.get_analysis_context(ticker)
-            
+
             # Build Renaissance context string
             ren_context_str = ""
             if ren_context["is_investable"]:
                 ren_context_str = f"""
 RENAISSANCE UNIVERSE CONTEXT:
-- Tier: {ren_context['tier']} ({ren_context['tier_description']})
-- Investment Thesis: {ren_context['investment_thesis']}
-- 2024 FCF: ${ren_context['fcf_billions']}B
-- Conviction Weight: {ren_context['conviction_weight']:.0%}
-- Recommendation Bias: {ren_context['recommendation_bias']}
-- Sector Peers: {', '.join(ren_context['sector_peers'][:3]) if ren_context['sector_peers'] else 'N/A'}
+- Tier: {ren_context["tier"]} ({ren_context["tier_description"]})
+- Investment Thesis: {ren_context["investment_thesis"]}
+- 2024 FCF: ${ren_context["fcf_billions"]}B
+- Conviction Weight: {ren_context["conviction_weight"]:.0%}
+- Recommendation Bias: {ren_context["recommendation_bias"]}
+- Sector Peers: {", ".join(ren_context["sector_peers"][:3]) if ren_context["sector_peers"] else "N/A"}
 
 This stock IS in the Renaissance investable universe. Weight your analysis accordingly.
 """
@@ -883,7 +960,7 @@ This stock is NOT in the Renaissance investable universe.
 This means it may not meet the criteria for strong free cash flow generation.
 Be more cautious in your recommendation.
 """
-            
+
             # Build analysis prompt with Renaissance context
             analysis_prompt = f"""Analyze the stock {ticker} for a user who currently holds it at a loss.
 {ren_context_str}
@@ -906,34 +983,40 @@ CONFIDENCE: [0.0-1.0]
 SUMMARY: [one sentence]
 REASONING: [2-3 sentences]
 """
-            
+
             # Generate analysis using new SDK
             config = genai_types.GenerateContentConfig(
                 temperature=0.3,  # Lower temperature for more consistent analysis
                 max_output_tokens=500,
             )
-            
+
             response = await self.client.aio.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=analysis_prompt,
                 config=config,
             )
-            
+
             # Parse response
             response_text = response.text.strip()
-            
+
             # Extract fields using regex
-            decision_match = re.search(r'DECISION:\s*(BUY|HOLD|REDUCE)', response_text, re.IGNORECASE)
-            confidence_match = re.search(r'CONFIDENCE:\s*([\d.]+)', response_text)
-            summary_match = re.search(r'SUMMARY:\s*(.+?)(?=REASONING:|$)', response_text, re.DOTALL)
-            reasoning_match = re.search(r'REASONING:\s*(.+)', response_text, re.DOTALL)
-            
+            decision_match = re.search(
+                r"DECISION:\s*(BUY|HOLD|REDUCE)", response_text, re.IGNORECASE
+            )
+            confidence_match = re.search(r"CONFIDENCE:\s*([\d.]+)", response_text)
+            summary_match = re.search(r"SUMMARY:\s*(.+?)(?=REASONING:|$)", response_text, re.DOTALL)
+            reasoning_match = re.search(r"REASONING:\s*(.+)", response_text, re.DOTALL)
+
             decision = decision_match.group(1).upper() if decision_match else "HOLD"
             confidence = float(confidence_match.group(1)) if confidence_match else 0.5
             confidence = min(max(confidence, 0.0), 1.0)  # Clamp to 0-1
-            summary = summary_match.group(1).strip() if summary_match else f"Analysis complete for {ticker}"
+            summary = (
+                summary_match.group(1).strip()
+                if summary_match
+                else f"Analysis complete for {ticker}"
+            )
             reasoning = reasoning_match.group(1).strip() if reasoning_match else ""
-            
+
             # Store decision as a non-sensitive summary in world_model_index_v2
             saved = False
             try:
@@ -947,10 +1030,10 @@ REASONING: [2-3 sentences]
                     },
                 )
                 saved = True
-                
+
             except Exception as e:
                 logger.warning(f"Failed to save analysis to world model: {e}")
-            
+
             # Store in chat history
             await self.chat_db.add_message(
                 conversation_id=conversation.id,
@@ -968,7 +1051,7 @@ REASONING: [2-3 sentences]
                     "is_renaissance_investable": ren_context.get("is_investable", False),
                 },
             )
-            
+
             return {
                 "conversation_id": str(conversation.id),
                 "decision": decision,
@@ -985,7 +1068,7 @@ REASONING: [2-3 sentences]
                     "investment_thesis": ren_context.get("investment_thesis", ""),
                 },
             }
-            
+
         except Exception as e:
             logger.error(f"Error analyzing loser {ticker}: {e}")
             raise

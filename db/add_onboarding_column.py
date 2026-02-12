@@ -28,7 +28,7 @@ async def main():
 
     print("Connecting to database...")
     print(f"   SSL: {'enabled' if ssl_config else 'disabled'}")
-    
+
     pool = await asyncpg.create_pool(
         database_url,
         min_size=1,
@@ -38,7 +38,7 @@ async def main():
 
     try:
         print("Connected successfully!")
-        
+
         # Check if column already exists
         result = await pool.fetchval("""
             SELECT COUNT(*)
@@ -46,38 +46,41 @@ async def main():
             WHERE table_name = 'vault_keys'
             AND column_name = 'onboarding_completed'
         """)
-        
+
         if result > 0:
             print("✅ Column 'onboarding_completed' already exists!")
         else:
             print("📦 Adding 'onboarding_completed' column to vault_keys...")
-            
+
             await pool.execute("""
                 ALTER TABLE vault_keys
                 ADD COLUMN onboarding_completed BOOLEAN DEFAULT FALSE
             """)
-            
+
             print("✅ Column added successfully!")
-        
+
         # Verify
         count = await pool.fetchval("SELECT COUNT(*) FROM vault_keys")
         print(f"\n📊 vault_keys table: {count} rows")
-        
+
         # Show sample
         sample = await pool.fetch("""
             SELECT user_id, onboarding_completed
             FROM vault_keys
             LIMIT 3
         """)
-        
+
         print("\nSample rows:")
         for row in sample:
-            print(f"   {row['user_id'][:8]}... → onboarding_completed: {row['onboarding_completed']}")
-        
+            print(
+                f"   {row['user_id'][:8]}... → onboarding_completed: {row['onboarding_completed']}"
+            )
+
         print("\n✅ Migration complete!")
-        
+
     finally:
         await pool.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

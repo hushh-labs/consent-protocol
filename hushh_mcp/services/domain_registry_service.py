@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DomainInfo:
     """Information about a registered domain."""
+
     domain_key: str
     display_name: str
     description: Optional[str] = None
@@ -93,35 +94,35 @@ DEFAULT_DOMAIN_METADATA = {
 class DomainRegistryService:
     """
     Service for managing dynamic domain discovery and registration.
-    
+
     Domains are auto-registered on first use, with metadata inferred
     from the domain key or provided explicitly.
     """
-    
+
     def __init__(self):
         self._supabase = None
         self._cache: dict[str, DomainInfo] = {}
         self._cache_ttl = 300  # 5 minutes
         self._cache_time: Optional[datetime] = None
-    
+
     @property
     def supabase(self):
         if self._supabase is None:
             self._supabase = get_db()
         return self._supabase
-    
+
     def _is_cache_valid(self) -> bool:
         """Check if cache is still valid."""
         if self._cache_time is None:
             return False
         elapsed = (datetime.utcnow() - self._cache_time).total_seconds()
         return elapsed < self._cache_ttl
-    
+
     def _invalidate_cache(self):
         """Invalidate the domain cache."""
         self._cache.clear()
         self._cache_time = None
-    
+
     async def register_domain(
         self,
         domain_key: str,
@@ -133,26 +134,28 @@ class DomainRegistryService:
     ) -> DomainInfo:
         """
         Register a new domain or return existing one.
-        
+
         If the domain already exists, returns the existing info.
         If not, creates it with provided or inferred metadata.
         """
         # Normalize domain key
         domain_key = domain_key.lower().strip().replace(" ", "_")
-        
+
         # Check cache first
         if domain_key in self._cache and self._is_cache_valid():
             return self._cache[domain_key]
-        
+
         # Get default metadata if available
         defaults = DEFAULT_DOMAIN_METADATA.get(domain_key, {})
-        
+
         # Build metadata with fallbacks
-        final_display_name = display_name or defaults.get("display_name") or self._generate_display_name(domain_key)
+        final_display_name = (
+            display_name or defaults.get("display_name") or self._generate_display_name(domain_key)
+        )
         final_icon = icon_name or defaults.get("icon_name", "folder")
         final_color = color_hex or defaults.get("color_hex", "#6B7280")
         final_description = description or defaults.get("description")
-        
+
         try:
             # Use RPC function for atomic upsert
             result = self.supabase.rpc(
@@ -162,9 +165,9 @@ class DomainRegistryService:
                     "p_display_name": final_display_name,
                     "p_icon_name": final_icon,
                     "p_color_hex": final_color,
-                }
+                },
             ).execute()
-            
+
             if result.data:
                 domain_info = DomainInfo(
                     domain_key=result.data.get("domain_key", domain_key),
@@ -180,7 +183,7 @@ class DomainRegistryService:
                 return domain_info
         except Exception as e:
             logger.warning(f"RPC auto_register_domain failed, falling back to direct insert: {e}")
-        
+
         # Fallback: Direct upsert
         try:
             data = {
@@ -191,17 +194,17 @@ class DomainRegistryService:
                 "description": final_description,
                 "parent_domain": parent_domain,
             }
-            
-            self.supabase.table("domain_registry").upsert(
-                data,
-                on_conflict="domain_key"
-            ).execute()
-            
+
+            self.supabase.table("domain_registry").upsert(data, on_conflict="domain_key").execute()
+
             # Fetch the result
-            result = self.supabase.table("domain_registry").select("*").eq(
-                "domain_key", domain_key
-            ).execute()
-            
+            result = (
+                self.supabase.table("domain_registry")
+                .select("*")
+                .eq("domain_key", domain_key)
+                .execute()
+            )
+
             if result.data:
                 row = result.data[0]
                 domain_info = self._row_to_domain_info(row)
@@ -210,7 +213,7 @@ class DomainRegistryService:
                 return domain_info
         except Exception as e:
             logger.error(f"Error registering domain {domain_key}: {e}")
-        
+
         # Return minimal info if all else fails
         return DomainInfo(
             domain_key=domain_key,
@@ -218,63 +221,70 @@ class DomainRegistryService:
             icon_name=final_icon,
             color_hex=final_color,
         )
-    
+
     async def get_domain(self, domain_key: str) -> Optional[DomainInfo]:
         """Get domain metadata by key."""
         domain_key = domain_key.lower().strip()
-        
+
         # Check cache
         if domain_key in self._cache and self._is_cache_valid():
             return self._cache[domain_key]
-        
+
         try:
-            result = self.supabase.table("domain_registry").select("*").eq(
-                "domain_key", domain_key
-            ).execute()
-            
+            result = (
+                self.supabase.table("domain_registry")
+                .select("*")
+                .eq("domain_key", domain_key)
+                .execute()
+            )
+
             if not result.data:
                 return None
-            
+
             domain_info = self._row_to_domain_info(result.data[0])
             self._cache[domain_key] = domain_info
             return domain_info
         except Exception as e:
             logger.error(f"Error getting domain {domain_key}: {e}")
             return None
-    
+
     async def list_domains(self, include_empty: bool = False) -> list[DomainInfo]:
         """
         List all registered domains.
-        
+
         Args:
             include_empty: If True, include domains with no attributes
         """
         try:
             query = self.supabase.table("domain_registry").select("*").order("display_name")
-            
+
             if not include_empty:
                 query = query.gt("attribute_count", 0)
-            
+
             result = query.execute()
-            
+
             domains = [self._row_to_domain_info(row) for row in (result.data or [])]
-            
+
             # Update cache
             for domain in domains:
                 self._cache[domain.domain_key] = domain
             self._cache_time = datetime.utcnow()
-            
+
             return domains
         except Exception as e:
             logger.error(f"Error listing domains: {e}")
             return []
-    
+
     async def get_user_domains(self, user_id: str) -> list[DomainInfo]:
         """Get domains that have data for a specific user from world_model_index_v2."""
         try:
-            result = self.supabase.table("world_model_index_v2").select(
-                "available_domains", "domain_summaries"
-            ).eq("user_id", user_id).limit(1).execute()
+            result = (
+                self.supabase.table("world_model_index_v2")
+                .select("available_domains", "domain_summaries")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
             if not result.data:
                 return []
             row = result.data[0]
@@ -297,7 +307,7 @@ class DomainRegistryService:
         except Exception as e:
             logger.error(f"Error getting user domains for {user_id}: {e}")
             return []
-    
+
     async def update_domain(
         self,
         domain_key: str,
@@ -317,39 +327,37 @@ class DomainRegistryService:
                 data["icon_name"] = icon_name
             if color_hex is not None:
                 data["color_hex"] = color_hex
-            
+
             if not data:
                 return True
-            
+
             self.supabase.table("domain_registry").update(data).eq(
                 "domain_key", domain_key
             ).execute()
-            
+
             # Invalidate cache
             self._invalidate_cache()
             return True
         except Exception as e:
             logger.error(f"Error updating domain {domain_key}: {e}")
             return False
-    
+
     async def delete_domain(self, domain_key: str) -> bool:
         """
         Delete a domain from the registry.
-        
+
         Note: This does NOT delete associated attributes.
         """
         try:
-            self.supabase.table("domain_registry").delete().eq(
-                "domain_key", domain_key
-            ).execute()
-            
+            self.supabase.table("domain_registry").delete().eq("domain_key", domain_key).execute()
+
             # Invalidate cache
             self._invalidate_cache()
             return True
         except Exception as e:
             logger.error(f"Error deleting domain {domain_key}: {e}")
             return False
-    
+
     def _row_to_domain_info(self, row: dict) -> DomainInfo:
         """Convert database row to DomainInfo."""
         return DomainInfo(
@@ -364,7 +372,7 @@ class DomainRegistryService:
             first_seen_at=row.get("first_seen_at"),
             last_updated_at=row.get("last_updated_at"),
         )
-    
+
     def _generate_display_name(self, domain_key: str) -> str:
         """Generate a display name from domain key."""
         # Replace underscores with spaces and title case
