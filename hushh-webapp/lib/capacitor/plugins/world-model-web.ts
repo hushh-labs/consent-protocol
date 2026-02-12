@@ -159,49 +159,6 @@ export class HushhWorldModelWeb
     };
   }
 
-  async storeAttribute(options: {
-    userId: string;
-    attributeKey: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-    domain?: string;
-    displayName?: string;
-    dataType?: string;
-    source?: string;
-    vaultOwnerToken?: string;
-  }): Promise<{ success: boolean; scope: string }> {
-    const response = await fetch("/api/world-model/attributes", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: await this.getAuthHeader(options.vaultOwnerToken),
-      },
-      body: JSON.stringify({
-        user_id: options.userId,
-        domain: options.domain,
-        attribute_key: options.attributeKey,
-        ciphertext: options.ciphertext,
-        iv: options.iv,
-        tag: options.tag,
-        algorithm: "aes-256-gcm",
-        source: options.source || "explicit",
-        display_name: options.displayName,
-        data_type: options.dataType || "string",
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to store attribute: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      success: data.success,
-      scope: data.scope,
-    };
-  }
-
   async deleteAttribute(options: {
     userId: string;
     domain: string;

@@ -5,7 +5,6 @@
  * DEVELOPMENT: Sync enabled by default for web parity.
  */
 
-import { Capacitor } from "@capacitor/core";
 import { HushhDatabase } from "../capacitor";
 import { SettingsService } from "./settings-service";
 import { apiJson } from "@/lib/services/api-client";

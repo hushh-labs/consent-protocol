@@ -11,9 +11,8 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 
-import { Shield, Scale, TrendingUp, ArrowRight } from "lucide-react";
+import { Shield, Scale, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 
 
 // =============================================================================

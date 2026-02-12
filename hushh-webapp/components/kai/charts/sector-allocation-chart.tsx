@@ -21,7 +21,6 @@ import {
   YAxis,
   Cell,
 } from "recharts";
-import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 import { PieChart as PieChartIcon } from "lucide-react";
 import {
@@ -67,7 +66,7 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-function formatPercent(value: number): string {
+function _formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
 }
 

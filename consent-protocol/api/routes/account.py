@@ -13,7 +13,8 @@ Security:
 """
 
 import logging
-from fastapi import APIRouter, Header, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.account_service import AccountService

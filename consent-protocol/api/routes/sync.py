@@ -16,8 +16,9 @@ Security:
 """
 
 import logging
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Header, HTTPException, Depends, Query, Body
+from typing import List
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token

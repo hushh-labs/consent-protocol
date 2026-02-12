@@ -30,7 +30,6 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 from api.middlewares.rate_limit import limiter  # noqa: E402
 from api.routes import (  # noqa: E402
     account,
-    sync,
     agents,
     consent,
     db_proxy,
@@ -40,6 +39,7 @@ from api.routes import (  # noqa: E402
     notifications,
     session,
     sse,
+    sync,
 )
 
 # Dynamic root_path for Swagger docs in production
@@ -163,6 +163,7 @@ logger.info("🚀 Hushh Consent Protocol server initialized with modular routes 
 async def startup_consent_listener():
     """Start background task that LISTENs to consent_audit_new (NOTIFY)."""
     import asyncio
+
     from api.consent_listener import run_consent_listener
     asyncio.create_task(run_consent_listener())
 

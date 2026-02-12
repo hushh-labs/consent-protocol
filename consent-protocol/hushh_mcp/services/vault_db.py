@@ -46,33 +46,15 @@ from hushh_mcp.types import EncryptedPayload
 
 logger = logging.getLogger(__name__)
 
-# DEPRECATED: Domain to table mapping
-# New code should use world_model_data + world_model_index_v2 via WorldModelService
-# These are kept for backward compatibility only - DO NOT add new domains here
-DOMAIN_TABLES = {
-    "food": "vault_food",
-    "professional": "vault_professional",
-    "kai_preferences": "vault_kai_preferences",
-    "kai_decisions": "vault_kai",  # Note: vault_kai stores decisions with metadata
-}
+# DEPRECATED: Domain to table mapping — EMPTY.
+# All legacy vault_* tables (vault_food, vault_professional, vault_kai_preferences,
+# vault_kai) have been removed.  Use WorldModelService for all domain data.
+DOMAIN_TABLES: dict[str, str] = {}
 
-# DEPRECATED: Domain to scope mapping
-# All domains now use WORLD_MODEL_READ/WORLD_MODEL_WRITE via dynamic attr.{domain}.* scopes
-# VAULT_OWNER grants full access to all domains.
-# These mappings are kept for backward compatibility with legacy vault_* tables
-DOMAIN_READ_SCOPES = {
-    "food": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
-    "professional": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
-    "kai_preferences": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
-    "kai_decisions": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_READ],
-}
+# DEPRECATED: Domain to scope mapping — EMPTY.
+DOMAIN_READ_SCOPES: dict[str, list] = {}
 
-DOMAIN_WRITE_SCOPES = {
-    "food": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
-    "professional": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
-    "kai_preferences": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
-    "kai_decisions": [ConsentScope.VAULT_OWNER, ConsentScope.WORLD_MODEL_WRITE],
-}
+DOMAIN_WRITE_SCOPES: dict[str, list] = {}
 
 
 class ConsentValidationError(Exception):
@@ -480,7 +462,7 @@ class VaultDBService:
         """
         Check if user has any data in the specified vault domain.
         
-        NOTE: This method is DEPRECATED. Use WorldModelService.get_domain_attributes() instead.
+        NOTE: This method is DEPRECATED. Use WorldModelService.get_domain_data() or check world_model_index_v2 instead.
         
         This does NOT require consent as it only checks existence,
         not the actual encrypted data.

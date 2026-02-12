@@ -16,15 +16,9 @@
 
 import {
   createMockGET,
-  createMockPOST,
   expectError,
   mockFetch,
 } from "../../utils/test-helpers";
-import {
-  INVALID_TOKENS,
-  mockValidationResponse,
-  mockFirebaseHeader,
-} from "../../utils/mock-tokens";
 
 // Dynamic imports for route handlers (food/professional routes removed; use world-model)
 let vaultGetRoute: { GET: Function };

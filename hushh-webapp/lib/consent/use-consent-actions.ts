@@ -32,6 +32,8 @@ export interface PendingConsent {
 type RequestStatus = "pending" | "handling" | "handled";
 
 interface UseConsentActionsOptions {
+  /** User ID from auth context (replaces sessionStorage lookup) */
+  userId?: string | null;
   /** Called after approve/deny/revoke completes successfully */
   onActionComplete?: () => void;
 }
@@ -72,7 +74,7 @@ function getScopeDataEndpoint(scope: string): string | null {
 
 export function useConsentActions(options: UseConsentActionsOptions = {}) {
   const { vaultKey, getVaultOwnerToken } = useVault();
-  const { onActionComplete } = options;
+  const { userId, onActionComplete } = options;
 
   // Track request status: ID -> "pending" | "handling" | "handled"
   // Using ref to persist across renders without causing re-renders
@@ -139,7 +141,6 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
    */
   const handleApprove = useCallback(
     async (consent: PendingConsent): Promise<void> => {
-      const userId = sessionStorage.getItem("user_id");
       const toastId = consent.id;
 
       // Mark as handling immediately to block re-showing
@@ -393,7 +394,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         markAsPending(consent.id);
       }
     },
-    [vaultKey, markAsHandling, markAsHandled, markAsPending, onActionComplete]
+    [userId, vaultKey, markAsHandling, markAsHandled, markAsPending, onActionComplete]
   );
 
   /**
@@ -401,7 +402,6 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
    */
   const handleDeny = useCallback(
     async (requestId: string): Promise<void> => {
-      const userId = sessionStorage.getItem("user_id");
       const toastId = requestId;
 
       if (!userId) return;
@@ -446,7 +446,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         markAsPending(requestId);
       }
     },
-    [markAsHandling, markAsHandled, markAsPending, onActionComplete]
+    [userId, markAsHandling, markAsHandled, markAsPending, onActionComplete]
   );
 
   /**
@@ -455,8 +455,6 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
    */
   const handleRevoke = useCallback(
     async (scope: string): Promise<void> => {
-      const userId = sessionStorage.getItem("user_id");
-
       if (!userId) return;
 
       const promise = (async () => {
@@ -490,12 +488,6 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         
         // If VAULT_OWNER was revoked, lock the vault
         if (result.lockVault) {
-          // Import lockVault dynamically to avoid circular deps
-          const { removeSessionItem } = await import("@/lib/utils/session-storage");
-          
-          // Clear vault session flag
-          removeSessionItem("vault_unlocked");
-          
           // Dispatch event so VaultContext can react
           window.dispatchEvent(new CustomEvent("vault-lock-requested", {
             detail: { reason: "VAULT_OWNER token revoked" }
@@ -512,7 +504,7 @@ export function useConsentActions(options: UseConsentActionsOptions = {}) {
         console.error("Error revoking consent:", err);
       }
     },
-    [getVaultOwnerToken, onActionComplete]
+    [userId, getVaultOwnerToken, onActionComplete]
   );
 
   return {

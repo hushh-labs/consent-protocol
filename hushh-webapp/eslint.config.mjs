@@ -1,6 +1,7 @@
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import nextConfig from "eslint-config-next/core-web-vitals";
+import tseslint from "typescript-eslint";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,17 +26,35 @@ export default [
     ],
   },
   ...nextConfig,
+  // TypeScript rules -- must reference the plugin from the same object
+  {
+    files: ["**/*.ts", "**/*.tsx"],
+    plugins: {
+      "@typescript-eslint": tseslint.plugin,
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/ban-ts-comment": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+        },
+      ],
+      "@typescript-eslint/triple-slash-reference": "off", // Next.js uses triple-slash references
+    },
+  },
+  // General rules
   {
     rules: {
       "react/no-unescaped-entities": "off",
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/purity": "off",
       "react-hooks/incompatible-library": "off",
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/ban-ts-comment": "warn",
-      "@typescript-eslint/no-unused-vars": "warn",
-      "@typescript-eslint/triple-slash-reference": "off", // Next.js uses triple-slash references
-      // Custom BYOK/Tri-Flow rules preserved from .eslintrc.json
+      // BYOK rules + storage ban
       "no-restricted-syntax": [
         "error",
         {
@@ -68,16 +87,30 @@ export default [
             "BYOK VIOLATION: Storing vault_key in sessionStorage is insecure. Use VaultContext.unlockVault() instead.",
         },
       ],
+      // Ban all sessionStorage/localStorage usage for security
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "sessionStorage",
+          message:
+            "sessionStorage is banned. Use React state/context or Zustand store. No browser storage for sensitive data.",
+        },
+        {
+          name: "localStorage",
+          message:
+            "localStorage is banned. Use React state/context or Zustand store. No browser storage for sensitive data.",
+        },
+      ],
     },
   },
   // Override for config files
   {
     files: ["*.config.ts", "*.config.js", "*.config.mjs"],
     rules: {
-      "@typescript-eslint/no-require-imports": "off", // Config files use require()
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
-  // Override for API routes, services, and plugins (fetch allowed)
+  // Override for API routes, services, and plugins (fetch allowed, storage allowed)
   {
     files: [
       "app/api/**/*.ts",
@@ -87,20 +120,26 @@ export default [
       "lib/services/**/*",
       "lib/api/**/*",
       "lib/auth/**/*",
+      // SSE streaming components use fetch() for EventSource polyfill
+      "components/kai/debate-stream-view.tsx",
+      "components/kai/kai-agent-streaming-view.tsx",
     ],
     rules: {
       "no-restricted-syntax": "off",
-      "@typescript-eslint/no-unsafe-function-type": "off", // Test files use Function for mocks
+      "no-restricted-globals": "off",
+      "@typescript-eslint/no-unsafe-function-type": "off",
     },
   },
-  // Special override for auth and vault contexts (limited fetch ban)
+  // Override: auth/vault contexts + logout/exit (limited fetch ban, storage allowed for cleanup)
   {
     files: [
       "lib/firebase/auth-context.tsx",
       "lib/vault/vault-context.tsx",
       "app/logout/**/*",
+      "components/exit-dialog.tsx",
     ],
     rules: {
+      "no-restricted-globals": "off", // These files handle defensive storage cleanup on logout/exit
       "no-restricted-syntax": [
         "error",
         {
@@ -109,6 +148,20 @@ export default [
             "Direct fetch() is banned in components. Use ApiService or VaultService instead.",
         },
       ],
+    },
+  },
+  // Override: Capacitor web plugins need storage access for platform abstraction
+  {
+    files: ["lib/capacitor/plugins/**/*"],
+    rules: {
+      "no-restricted-globals": "off",
+    },
+  },
+  // Override: session-storage utility (will be deleted in zero-storage phase)
+  {
+    files: ["lib/utils/session-storage.ts"],
+    rules: {
+      "no-restricted-globals": "off",
     },
   },
 ];

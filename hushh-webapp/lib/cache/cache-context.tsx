@@ -151,10 +151,6 @@ export function CacheProvider({ children }: CacheProviderProps) {
   const setPortfolioData = useCallback(
     (userId: string, data: PortfolioData) => {
       cache.set(CACHE_KEYS.PORTFOLIO_DATA(userId), data, CACHE_TTL.MEDIUM);
-      // Also update sessionStorage for persistence across refreshes
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("kai_portfolio_data", JSON.stringify(data));
-      }
       setPortfolioDataState(data);
     },
     [cache]
@@ -162,37 +158,16 @@ export function CacheProvider({ children }: CacheProviderProps) {
 
   const getPortfolioData = useCallback(
     (userId: string): PortfolioData | null => {
-      // Always check CacheService first (synchronous, always up-to-date)
-      let cached = cache.get<PortfolioData>(CACHE_KEYS.PORTFOLIO_DATA(userId));
-
-      // Fall back to sessionStorage if not in CacheService
-      if (!cached && typeof window !== "undefined") {
-        const stored = sessionStorage.getItem("kai_portfolio_data");
-        if (stored) {
-          try {
-            cached = JSON.parse(stored);
-            // Re-populate in-memory cache for future lookups
-            if (cached) {
-              cache.set(
-                CACHE_KEYS.PORTFOLIO_DATA(userId),
-                cached,
-                CACHE_TTL.MEDIUM
-              );
-            }
-          } catch {
-            // Invalid JSON, ignore
-          }
-        }
-      }
+      // Check CacheService (synchronous, always up-to-date)
+      const cached = cache.get<PortfolioData>(CACHE_KEYS.PORTFOLIO_DATA(userId));
 
       // Update React state if we found data (for reactivity in consuming components)
-      // Always update state to ensure it's in sync with the cache
       if (cached) {
         setPortfolioDataState(cached);
       }
       return cached;
     },
-    [cache] // Remove portfolioData dependency to avoid stale closures
+    [cache]
   );
 
   // Vault Status
@@ -244,10 +219,6 @@ export function CacheProvider({ children }: CacheProviderProps) {
     setPortfolioDataState(null);
     setVaultStatusState(null);
     setActiveConsentsState([]);
-    // Clear sessionStorage cache too
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("kai_portfolio_data");
-    }
   }, [cache]);
 
   const invalidateUser = useCallback(
@@ -260,10 +231,6 @@ export function CacheProvider({ children }: CacheProviderProps) {
       setPortfolioDataState(null);
       setVaultStatusState(null);
       setActiveConsentsState([]);
-      // Clear sessionStorage cache too
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("kai_portfolio_data");
-      }
     },
     [cache]
   );
@@ -277,9 +244,6 @@ export function CacheProvider({ children }: CacheProviderProps) {
       if (domain === "financial") {
         cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
         setPortfolioDataState(null);
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("kai_portfolio_data");
-        }
       }
     },
     [cache]

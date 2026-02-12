@@ -133,8 +133,8 @@ export interface StreamingAccordionProps {
   maxHeight?: string;
   /** Callback when user manually toggles */
   onToggle?: (isOpen: boolean) => void;
-  /** Icon to show in header (default: spinner) */
-  icon?: "brain" | "sparkles" | "spinner" | "database" | "none" | "check";
+  /** Icon to show in header (default: spinner) - can be string or React component */
+  icon?: "brain" | "sparkles" | "spinner" | "database" | "none" | "check" | React.ReactNode;
   /** Custom class for the icon */
   iconClassName?: string;
 
@@ -363,14 +363,16 @@ export function StreamingAccordion({
   // ============================================================================
   // Render
   // ============================================================================
+  // Determine icon component - handle both string literals and React components
   const IconComponent = 
-    icon === "brain" ? (isComplete ? CheckCircle2 : Loader2) : 
-    icon === "sparkles" ? Sparkles : 
-    icon === "database" ? (isComplete ? CheckCircle2 : Database) :
-    icon === "spinner" ? (isComplete ? CheckCircle2 : Loader2) : 
-    icon === "check" ? CheckCircle2 :
-    null;
-
+    typeof icon === 'string' ? (
+      icon === "brain" ? (isComplete ? CheckCircle2 : Loader2) : 
+      icon === "sparkles" ? Sparkles : 
+      icon === "database" ? (isComplete ? CheckCircle2 : Database) :
+      icon === "spinner" ? (isComplete ? CheckCircle2 : Loader2) : 
+      icon === "check" ? CheckCircle2 :
+      null
+    ) : icon as any;
 
   const isEmpty = !displayText || displayText.length === 0;
 
@@ -397,8 +399,8 @@ export function StreamingAccordion({
                 <IconComponent
                   className={cn(
                     "w-4 h-4",
-                    isStreaming && (icon === "spinner" || icon === "brain") ? "animate-spin" : "",
-                    isStreaming && "text-primary",
+                    isStreaming && typeof icon === 'string' && (icon === "spinner" || icon === "brain") ? "animate-spin" : "",
+                    isStreaming && typeof icon === 'string' && "text-primary",
                     iconClassName
                   )}
                 />
@@ -406,12 +408,6 @@ export function StreamingAccordion({
               )}
 
               <span>{title}</span>
-              {isStreaming && (
-                <span className="text-xs text-muted-foreground animate-pulse ml-1">
-                  (thinking...)
-                </span>
-              )}
-
             </div>
             <ChevronDownIcon className="chevron text-muted-foreground size-4 shrink-0 transition-transform duration-200" />
           </AccordionPrimitive.Trigger>

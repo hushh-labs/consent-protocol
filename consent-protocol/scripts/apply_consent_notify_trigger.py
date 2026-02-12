@@ -25,6 +25,7 @@ def main() -> int:
 
     try:
         from sqlalchemy import text
+
         from db.db_client import get_db_connection
     except ImportError as e:
         print("Error: could not import db_client.", e, file=sys.stderr)
@@ -44,7 +45,7 @@ def main() -> int:
     statements = []
     current = []
     in_body = False
-    dollar_quote = None
+    _dollar_quote = None
     for line in sql_content.split("\n"):
         stripped = line.strip()
         if stripped.startswith("--"):

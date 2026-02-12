@@ -59,7 +59,7 @@ def create_event(event_type: str, data: dict) -> dict:
     """
     return {
         "event": event_type,
-        "data": data,  # Plain dict - sse_starlette handles JSON encoding
+        "data": json.dumps(data),  # Explicitly dump to string to avoid single-quote issues
         "id": str(int(datetime.now().timestamp() * 1000))
     }
 
@@ -268,7 +268,8 @@ async def analyze_stream_generator(
             sentiment_insight = await sentiment_agent.analyze(
                 ticker=ticker,
                 user_id=user_id,
-                consent_token=consent_token
+                consent_token=consent_token,
+                context=context
             )
             yield create_event("agent_complete", {
                 "agent": "sentiment",
@@ -317,7 +318,8 @@ async def analyze_stream_generator(
             valuation_insight = await valuation_agent.analyze(
                 ticker=ticker,
                 user_id=user_id,
-                consent_token=consent_token
+                consent_token=consent_token,
+                context=context
             )
             yield create_event("agent_complete", {
                 "agent": "valuation",
@@ -361,9 +363,13 @@ async def analyze_stream_generator(
             sentiment_insight=sentiment_insight,
             valuation_insight=valuation_insight
         ):
-            # DebateEngine yields flat events with "type" field, pass directly to frontend
-            yield event
-            
+            # DebateEngine yields dicts with 'event' and 'data'.
+            # We need to ensure 'data' is JSON stringified if we are enforcing strict mode.
+            if "data" in event and not isinstance(event["data"], str):
+                 yield create_event(event["event"], event["data"])
+            else:
+                 yield event
+             
             # Check for disconnection after each event
             if await check_disconnected():
                 logger.info("[Kai Stream] Client disconnected during debate streaming, stopping...")

@@ -3,8 +3,6 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import {
-  type ColorVariant,
-  type ComponentEffect,
   type MorphyButtonBaseProps,
 } from "@/lib/morphy-ux/types";
 import { getVariantStyles } from "@/lib/morphy-ux/utils";

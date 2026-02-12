@@ -19,13 +19,7 @@ import {
 } from "@/lib/morphy-ux/morphy";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "next-themes";
-import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault/vault-context";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
@@ -64,8 +58,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type ThemeOption = "light" | "dark" | "system";
-
 // Icon mapping for domains
 const DOMAIN_ICONS: Record<string, React.ElementType> = {
   financial: Wallet,
@@ -87,7 +79,7 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
 export default function ProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, signOut } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme: _theme, setTheme: _setTheme } = useTheme();
   const { vaultOwnerToken, isVaultUnlocked } = useVault();
   const { registerSteps, completeStep, reset } = useStepProgress();
   const [showVaultUnlock, setShowVaultUnlock] = useState(false);
