@@ -205,6 +205,6 @@ The SSE stream always terminates cleanly with either a `decision` event or an `e
 
 ## See Also
 
-- [Architecture](./architecture.md) -- System overview
+- [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) -- System overview
 - [Agent Development](./agent-development.md) -- Building new agents
-- [API Contracts](./api-contracts.md) -- Streaming endpoints
+- [API Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) -- Streaming endpoints
