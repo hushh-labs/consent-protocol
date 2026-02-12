@@ -110,6 +110,9 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
         from firebase_admin import messaging
         request_id = data.get("request_id", "")
         action = data.get("action", "REQUESTED")
+        scope = data.get("scope", "")
+        agent_id = data.get("agent_id", "")
+        scope_description = data.get("scope_description", "")
         for row in result.data:
             token = row.get("token")
             if not token:
@@ -120,16 +123,31 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
                     "request_id": request_id,
                     "action": action,
                     "user_id": user_id,
+                    "scope": scope,
+                    "agent_id": agent_id,
+                    "scope_description": scope_description,
                     "deep_link": "/consents?tab=pending",
                 },
                 token=token,
                 notification=messaging.Notification(
                     title="Consent request" if action == "REQUESTED" else "Consent updated",
-                    body=f"Request {request_id}: {action}" if action != "REQUESTED" else "New consent request waiting for your approval.",
+                    body=f"{agent_id or 'An agent'} is requesting access to your {scope_description or scope or 'data'}."
+                    if action == "REQUESTED"
+                    else f"Request {request_id}: {action}",
                 ) if action == "REQUESTED" else None,
             )
             try:
                 messaging.send(message)
+            except (messaging.UnregisteredError, messaging.SenderIdMismatchError):
+                # Token is stale/invalid -- remove it
+                logger.warning("FCM stale token for user %s, deleting", user_id)
+                try:
+                    db.execute_raw(
+                        "DELETE FROM user_push_tokens WHERE token = :token",
+                        {"token": token},
+                    )
+                except Exception as del_err:
+                    logger.warning("Failed to delete stale token: %s", del_err)
             except Exception as e:
                 logger.warning("FCM send failed for user %s: %s", user_id, e)
     except Exception as e:

@@ -1,0 +1,177 @@
+# Contributing to Consent Protocol
+
+Thank you for your interest in contributing to the Hushh Consent Protocol. This document explains how to contribute code, agents, operons, and documentation.
+
+---
+
+## Prerequisites
+
+- Python 3.13+
+- A virtual environment (`python -m venv .venv`)
+- Dependencies installed: `pip install -r requirements.txt -r requirements-dev.txt`
+
+---
+
+## Development Workflow
+
+### 1. Fork and Clone
+
+```bash
+git clone https://github.com/<your-username>/consent-protocol.git
+cd consent-protocol
+```
+
+### 2. Create a Branch
+
+```bash
+git checkout -b feat/my-new-operon
+```
+
+### 3. Make Your Changes
+
+Follow the architecture and coding standards below.
+
+### 4. Run All Checks
+
+Every PR must pass these before merge:
+
+```bash
+ruff check .                                    # Lint
+ruff format --check .                           # Format
+mypy --config-file pyproject.toml --ignore-missing-imports  # Type check
+pytest tests/ -v                                # Tests
+bandit -r hushh_mcp/ api/ -c pyproject.toml     # Security
+```
+
+### 5. Open a Pull Request
+
+- Target: `main`
+- Fill out the PR template (tests, ruff, mypy, consent validation, docs)
+- One approval required
+
+---
+
+## Coding Standards
+
+### Python
+
+- **Formatter**: ruff format (double quotes, 100 char line length)
+- **Linter**: ruff check (E, F, B, I, S rules)
+- **Type checker**: mypy (gradual adoption; new code should be typed)
+- **Security**: bandit scans `hushh_mcp/` and `api/`
+
+### Architecture Rules
+
+1. **API routes never access the database directly.** All DB operations go through service classes in `hushh_mcp/services/`.
+2. **Agents never call services directly.** The stack is: Agent > Tool > Operon > Service.
+3. **Consent is validated at every layer.** Use `HushhAgent` for agents, `@hushh_tool` for tools.
+4. **No `sessionStorage` or `localStorage` patterns.** The backend is stateless; state management is the frontend's concern.
+
+---
+
+## Adding a New Operon
+
+Operons are the business logic building blocks. See [docs/reference/agent-development.md](docs/reference/agent-development.md) for the full guide.
+
+Quick steps:
+
+1. Choose the right module in `hushh_mcp/operons/kai/`:
+   - `calculators.py` -- pure math, no side effects
+   - `fetchers.py` -- external API calls (SEC, yfinance, news)
+   - `analysis.py` -- orchestration of calculators + fetchers
+   - `llm.py` -- Gemini LLM integration
+   - `storage.py` -- encrypted vault operations
+2. Add your function with full type annotations
+3. Add tests in `tests/`
+4. Update the operon catalog in `docs/reference/agent-development.md`
+
+### Operon Purity Rules
+
+| Type | Side Effects | DB Access | Example |
+| ---- | ------------ | --------- | ------- |
+| **PURE** | None | No | `calculators.py` -- math, ratios |
+| **IMPURE** | Yes | Via service | `fetchers.py` -- API calls, DB reads |
+
+Pure operons are preferred. Impure operons must validate consent if they access user data.
+
+---
+
+## Adding a New Agent
+
+1. Create a directory: `hushh_mcp/agents/<agent_name>/`
+2. Create `agent.py` extending `HushhAgent`:
+
+```python
+from hushh_mcp.hushh_adk.core import HushhAgent
+
+class MyAgent(HushhAgent):
+    REQUIRED_SCOPES = ["attr.domain.*"]
+    
+    async def run(self, context, request):
+        self._validate_consent(context)  # Mandatory
+        # Agent logic here
+```
+
+3. Create `agent.yaml` manifest:
+
+```yaml
+name: my-agent
+version: "1.0.0"
+description: "What this agent does"
+required_scopes:
+  - attr.domain.*
+tools:
+  - name: my_tool
+    function: hushh_mcp.agents.my_agent.tools.my_tool
+```
+
+4. Create `tools.py` with `@hushh_tool` decorated functions
+5. Wire tools to operons (never directly to services)
+6. Add tests
+7. Register in `hushh_mcp/agents/__init__.py`
+
+---
+
+## Adding API Routes
+
+1. Create or extend a router in `api/routes/`
+2. Use service classes for all DB operations
+3. Add the route to `server.py` router registration
+4. Update `docs/reference/consent-protocol.md` if it involves consent
+5. Update the monorepo `docs/reference/api-contracts.md` route table
+
+---
+
+## Documentation
+
+- Backend-specific docs live in `docs/` within this repo
+- Cross-cutting docs (architecture, API contracts, frontend) live in the [monorepo](https://github.com/hushh-labs/hushh-research/tree/main/docs)
+- Every new agent or operon must be documented
+- Internal links use relative paths; links to monorepo docs use GitHub URLs
+
+---
+
+## PR Checklist
+
+Before submitting, verify:
+
+- [ ] `ruff check .` passes
+- [ ] `ruff format --check .` passes
+- [ ] `mypy --config-file pyproject.toml` passes
+- [ ] `pytest tests/ -v` passes
+- [ ] `bandit -r hushh_mcp/ api/ -c pyproject.toml` passes
+- [ ] Consent validation is present at agent entry AND tool invocation
+- [ ] Tests cover the new code
+- [ ] Documentation is updated
+
+---
+
+## Code of Conduct
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+---
+
+## Questions?
+
+Open an issue or check [docs/README.md](docs/README.md) for the full documentation index.
