@@ -4,7 +4,7 @@ import os
 
 from dotenv import load_dotenv
 
-dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")
 
 # Load .env file into environment (override=False means Secret Manager/Cloud Run env vars take precedence)
 load_dotenv(override=False)
@@ -23,8 +23,12 @@ if not VAULT_ENCRYPTION_KEY or len(VAULT_ENCRYPTION_KEY) != 64:
 
 # Default expiry durations (in milliseconds)
 # 7 days
-DEFAULT_CONSENT_TOKEN_EXPIRY_MS = int(os.getenv("DEFAULT_CONSENT_TOKEN_EXPIRY_MS", 1000 * 60 * 60 * 24 * 7))  # 30 days
-DEFAULT_TRUST_LINK_EXPIRY_MS = int(os.getenv("DEFAULT_TRUST_LINK_EXPIRY_MS", 1000 * 60 * 60 * 24 * 30))      
+DEFAULT_CONSENT_TOKEN_EXPIRY_MS = int(
+    os.getenv("DEFAULT_CONSENT_TOKEN_EXPIRY_MS", 1000 * 60 * 60 * 24 * 7)
+)  # 30 days
+DEFAULT_TRUST_LINK_EXPIRY_MS = int(
+    os.getenv("DEFAULT_TRUST_LINK_EXPIRY_MS", 1000 * 60 * 60 * 24 * 30)
+)
 
 # ==================== Environment Info ====================
 
@@ -48,5 +52,5 @@ __all__ = [
     "ENVIRONMENT",
     "AGENT_ID",
     "HUSHH_HACKATHON",
-    "GOOGLE_API_KEY"
+    "GOOGLE_API_KEY",
 ]

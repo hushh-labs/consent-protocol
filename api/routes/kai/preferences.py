@@ -26,6 +26,7 @@ router = APIRouter()
 # MODELS
 # ============================================================================
 
+
 class EncryptedPreference(BaseModel):
     field_name: str
     ciphertext: str
@@ -41,6 +42,7 @@ class StorePreferencesRequest(BaseModel):
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
+
 
 @router.post("/preferences/store")
 async def store_preferences(
@@ -106,9 +108,7 @@ async def store_preferences(
                 detail="Failed to store preferences",
             )
 
-        logger.info(
-            f"[Kai] Stored {len(request.preferences)} preferences for {request.user_id}"
-        )
+        logger.info(f"[Kai] Stored {len(request.preferences)} preferences for {request.user_id}")
         return {"success": True}
 
     except HTTPException:

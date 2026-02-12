@@ -25,6 +25,7 @@ from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
 
+
 async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
     """
     Fast market-data fallback using Yahoo's public quote endpoint.
@@ -72,6 +73,7 @@ async def _fetch_yahoo_quote_fast(ticker: str) -> Dict[str, Any]:
 # OPERON: fetch_sec_filings
 # ============================================================================
 
+
 async def fetch_sec_filings(
     ticker: str,
     user_id: UserID,
@@ -79,17 +81,17 @@ async def fetch_sec_filings(
 ) -> Dict[str, Any]:
     """
     Operon: Fetch SEC filings from EDGAR (free, public API).
-    
+
     TrustLink Required: external.sec.filings
-    
+
     This requires EXPLICIT consent for external data access.
     SEC EDGAR is 100% free and requires no API key.
-    
+
     Args:
         ticker: Stock ticker symbol
         user_id: User ID for audit
         consent_token: Valid consent token with external.sec.filings scope
-        
+
     Returns:
         Dict with SEC filing data:
         - ticker: Stock symbol
@@ -98,7 +100,7 @@ async def fetch_sec_filings(
         - latest_10q: Parsed 10-Q data
         - filing_date: Date of latest filing
         - source: "SEC EDGAR"
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
     """
@@ -106,80 +108,78 @@ async def fetch_sec_filings(
     # Note: agent.kai.analyze scope covers all data fetching needs for Kai
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("agent.kai.analyze")  # Changed from external.sec.filings
+        ConsentScope("agent.kai.analyze"),  # Changed from external.sec.filings
     )
-    
+
     if not valid:
         logger.error(f"[SEC Fetcher] TrustLink validation failed: {reason}")
         raise PermissionError(f"SEC data access denied: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[SEC Fetcher] Fetching filings for {ticker} - user {user_id}")
-    
+
     # SEC EDGAR API Implementation
     # Reference: https://www.sec.gov/edgar/sec-api-documentation
     # Note: Different base URLs for different endpoints
-    
+
     EDGAR_DATA_URL = "https://data.sec.gov"  # For submissions
-    EDGAR_WWW_URL = "https://www.sec.gov"    # For company tickers
+    EDGAR_WWW_URL = "https://www.sec.gov"  # For company tickers
     HEADERS = {
         "User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)",  # Required by SEC
-        "Accept": "application/json"
+        "Accept": "application/json",
     }
-    
+
     # Step 1: Get CIK from ticker
     async with httpx.AsyncClient() as client:
         # Get ticker-to-CIK mapping
         logger.info(f"[SEC Fetcher] Looking up CIK for {ticker}...")
         tickers_response = await client.get(
-            f"{EDGAR_WWW_URL}/files/company_tickers.json",
-            headers=HEADERS,
-            timeout=10.0
+            f"{EDGAR_WWW_URL}/files/company_tickers.json", headers=HEADERS, timeout=10.0
         )
         tickers_response.raise_for_status()
         tickers_data = tickers_response.json()
-        
+
         # Find CIK for ticker
         cik = None
         for entry in tickers_data.values():
             if entry.get("ticker", "").upper() == ticker.upper():
                 cik = str(entry["cik_str"]).zfill(10)
                 break
-        
+
         if not cik:
             raise ValueError(f"CIK not found for ticker: {ticker}")
-        
+
         logger.info(f"[SEC Fetcher] Found CIK {cik} for {ticker}")
-        
+
         # Step 2: Get submissions (filings list)
         logger.info(f"[SEC Fetcher] Fetching submissions for CIK {cik}...")
         submissions_response = await client.get(
-            f"{EDGAR_DATA_URL}/submissions/CIK{cik}.json",
-            headers=HEADERS,
-            timeout=10.0
+            f"{EDGAR_DATA_URL}/submissions/CIK{cik}.json", headers=HEADERS, timeout=10.0
         )
         submissions_response.raise_for_status()
         submissions = submissions_response.json()
-        
+
         # Step 3: Find latest 10-K
         filings = submissions.get("filings", {}).get("recent", {})
         forms = filings.get("form", [])
         accession_numbers = filings.get("accessionNumber", [])
         filing_dates = filings.get("filingDate", [])
-        
+
         latest_10k_idx = None
         for i, form in enumerate(forms):
             if form == "10-K":
                 latest_10k_idx = i
                 break
-        
+
         if latest_10k_idx is None:
             raise ValueError(f"No 10-K filing found for ticker: {ticker} (CIK: {cik})")
-        
-        logger.info(f"[SEC Fetcher] Found 10-K: {accession_numbers[latest_10k_idx]} dated {filing_dates[latest_10k_idx]}")
-        
+
+        logger.info(
+            f"[SEC Fetcher] Found 10-K: {accession_numbers[latest_10k_idx]} dated {filing_dates[latest_10k_idx]}"
+        )
+
         # Step 4: Fetch Company Facts for actual financial data
         logger.info(f"[SEC Fetcher] Fetching company facts (financial metrics) for CIK {cik}...")
         try:
@@ -189,116 +189,151 @@ async def fetch_sec_filings(
             facts_response = None
             for attempt in range(1, 3):
                 try:
-                    facts_response = await client.get(
-                        facts_url,
-                        headers=HEADERS,
-                        timeout=25.0
-                    )
+                    facts_response = await client.get(facts_url, headers=HEADERS, timeout=25.0)
                     facts_response.raise_for_status()
                     break
                 except Exception as e:
                     if attempt >= 2:
                         raise
-                    logger.warning(f"[SEC Fetcher] companyfacts attempt {attempt} failed: {e}; retrying once...")
+                    logger.warning(
+                        f"[SEC Fetcher] companyfacts attempt {attempt} failed: {e}; retrying once..."
+                    )
                     await asyncio.sleep(0.5)
 
             facts_data = (facts_response.json() if facts_response is not None else {}) or {}
-            
+
             # Extract financial metrics from US-GAAP taxonomy
             us_gaap = facts_data.get("facts", {}).get("us-gaap", {})
-            
+
             def get_latest_annual_value(metric_names: List[str]) -> int:
                 """Extract the most recent annual (10-K) value from a prioritized list of tags."""
                 for metric_name in metric_names:
                     if metric_name not in us_gaap:
                         continue
-                    
+
                     metric_data = us_gaap[metric_name]
                     usd_data = metric_data.get("units", {}).get("USD", [])
-                    
+
                     # Filter for 10-K filings only
                     annual_data = [d for d in usd_data if d.get("form") == "10-K"]
-                    
+
                     if not annual_data:
                         continue
-                    
+
                     # Get most recent by end date
                     latest = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)[0]
                     return int(latest.get("val", 0))
                 return 0
 
-            def get_historical_annual_values(metric_names: List[str], years: int = 4) -> List[Dict[str, Any]]:
+            def get_historical_annual_values(
+                metric_names: List[str], years: int = 4
+            ) -> List[Dict[str, Any]]:
                 """Extract historical annual values for a prioritized list of tags."""
                 for metric_name in metric_names:
                     if metric_name not in us_gaap:
                         continue
-                    
+
                     metric_data = us_gaap[metric_name]
                     usd_data = metric_data.get("units", {}).get("USD", [])
-                    
+
                     # Filter for 10-K filings only
                     annual_data = [d for d in usd_data if d.get("form") == "10-K"]
-                    
+
                     if not annual_data:
                         continue
-                    
+
                     # Get most recent years by end date
                     sorted_data = sorted(annual_data, key=lambda x: x.get("end", ""), reverse=True)
-                    
+
                     # Dedup by year (sometimes multiple entries for same year)
                     seen_years = set()
                     historical = []
                     for d in sorted_data:
                         year = d.get("fy") or d.get("end", "")[:4]
                         if year not in seen_years:
-                            historical.append({
-                                "year": year,
-                                "value": int(d.get("val", 0)),
-                                "end": d.get("end")
-                            })
+                            historical.append(
+                                {"year": year, "value": int(d.get("val", 0)), "end": d.get("end")}
+                            )
                             seen_years.add(year)
                         if len(historical) >= years:
                             break
-                    return historical[::-1] # Chronological order
+                    return historical[::-1]  # Chronological order
                 return []
-            
+
             # Extract key financial metrics using prioritized US-GAAP tags
-            revenue = get_latest_annual_value(["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"])
-            net_income = get_latest_annual_value(["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"])
+            revenue = get_latest_annual_value(
+                [
+                    "Revenues",
+                    "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "SalesRevenueNet",
+                ]
+            )
+            net_income = get_latest_annual_value(
+                ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"]
+            )
             total_assets = get_latest_annual_value(["Assets"])
             total_liabilities = get_latest_annual_value(["Liabilities"])
-            
+
             # --- NEW: Expanded Fundamental Metrics ---
             # Cash Flow tags
             ocf = get_latest_annual_value(["NetCashProvidedByUsedInOperatingActivities"])
-            capex = get_latest_annual_value(["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"])
+            capex = get_latest_annual_value(
+                ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"]
+            )
             fcf = ocf - capex if ocf else 0
-            
+
             # Balance Sheet & Efficiency tags
             long_term_debt = get_latest_annual_value(["LongTermDebtNoncurrent", "LongTermDebt"])
-            equity = get_latest_annual_value(["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
+            equity = get_latest_annual_value(
+                [
+                    "StockholdersEquity",
+                    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+                ]
+            )
             op_income = get_latest_annual_value(["OperatingIncomeLoss"])
-            rnd = get_latest_annual_value(["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"])
+            rnd = get_latest_annual_value(
+                [
+                    "ResearchAndDevelopmentExpense",
+                    "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
+                ]
+            )
 
             # --- NEW: Historical Trends for Quant Analysis ---
-            revenue_trend = get_historical_annual_values(["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "SalesRevenueNet"])
-            net_income_trend = get_historical_annual_values(["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"])
+            revenue_trend = get_historical_annual_values(
+                [
+                    "Revenues",
+                    "RevenueFromContractWithCustomerExcludingAssessedTax",
+                    "SalesRevenueNet",
+                ]
+            )
+            net_income_trend = get_historical_annual_values(
+                ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic"]
+            )
             ocf_trend = get_historical_annual_values(["NetCashProvidedByUsedInOperatingActivities"])
-            rnd_trend = get_historical_annual_values(["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"])
-            
-            logger.info(f"[SEC Fetcher] Extracted Deep Metrics for {ticker} - Trends for Revenue, Net Income, OCF, R&D available.")
-            
+            rnd_trend = get_historical_annual_values(
+                [
+                    "ResearchAndDevelopmentExpense",
+                    "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
+                ]
+            )
+
+            logger.info(
+                f"[SEC Fetcher] Extracted Deep Metrics for {ticker} - Trends for Revenue, Net Income, OCF, R&D available."
+            )
+
         except Exception as facts_error:
             logger.warning(f"[SEC Fetcher] Could not fetch company facts: {facts_error}")
             revenue = net_income = total_assets = total_liabilities = 0
             ocf = fcf = long_term_debt = equity = op_income = rnd = 0
             revenue_trend = net_income_trend = ocf_trend = rnd_trend = []
-        
+
         # Return structured filing data with EXPANDED financial metrics
         return {
             "ticker": ticker,
             "cik": cik,
-            "entity_name": facts_data.get("entityName", ticker) if 'facts_data' in locals() else ticker,
+            "entity_name": facts_data.get("entityName", ticker)
+            if "facts_data" in locals()
+            else ticker,
             "latest_10k": {
                 "accession_number": accession_numbers[latest_10k_idx],
                 "filing_date": filing_dates[latest_10k_idx],
@@ -329,6 +364,7 @@ async def fetch_sec_filings(
 # OPERON: fetch_market_news
 # ============================================================================
 
+
 async def fetch_market_news(
     ticker: str,
     user_id: UserID,
@@ -337,19 +373,19 @@ async def fetch_market_news(
 ) -> List[Dict[str, Any]]:
     """
     Operon: Fetch recent news articles.
-    
+
     TrustLink Required: external.news.api
-    
+
     Uses free sources:
     - NewsAPI free tier (100 req/day) if API key available
     - Google News RSS (unlimited) as fallback
-    
+
     Args:
         ticker: Stock ticker symbol
         user_id: User ID for audit
         consent_token: Valid consent token
         days_back: How many days of news to fetch
-        
+
     Returns:
         List of news article dicts with:
         - title: Article headline
@@ -357,28 +393,28 @@ async def fetch_market_news(
         - url: Article URL
         - publishedAt: Publication timestamp
         - source: {"name": "Source Name"}
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
     """
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("agent.kai.analyze")  # Changed from external.news.api
+        ConsentScope("agent.kai.analyze"),  # Changed from external.news.api
     )
-    
+
     if not valid:
         logger.error(f"[News Fetcher] TrustLink validation failed: {reason}")
         raise PermissionError(f"News data access denied: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[News Fetcher] Fetching news for {ticker} - user {user_id}")
-    
+
     # Mock implementation
     # Real implementation would use NewsAPI or Google News RSS
-    
+
     return [
         {
             "title": f"{ticker} reports strong Q4 earnings",
@@ -398,8 +434,9 @@ async def fetch_market_news(
 
 
 # ============================================================================
-# OPERON: fetch_market_data  
+# OPERON: fetch_market_data
 # ============================================================================
+
 
 async def fetch_market_data(
     ticker: str,
@@ -408,18 +445,18 @@ async def fetch_market_data(
 ) -> Dict[str, Any]:
     """
     Operon: Fetch current market data (price, volume, metrics).
-    
+
     TrustLink Required: external.market.data
-    
+
     Uses free sources:
     - yfinance (unlimited) as primary
     - Alpha Vantage free tier (500 req/day) as fallback
-    
+
     Args:
         ticker: Stock ticker symbol
         user_id: User ID for audit
         consent_token: Valid consent token
-        
+
     Returns:
         Dict with market data:
         - ticker: Stock symbol
@@ -429,25 +466,25 @@ async def fetch_market_data(
         - market_cap: Market capitalization
         - pe_ratio: P/E ratio
         - source: Data source name
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
     """
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("agent.kai.analyze")  # Changed from external.market.data
+        ConsentScope("agent.kai.analyze"),  # Changed from external.market.data
     )
-    
+
     if not valid:
         logger.error(f"[Market Data Fetcher] TrustLink validation failed: {reason}")
         raise PermissionError(f"Market data access denied: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[Market Data Fetcher] Fetching market data for {ticker} - user {user_id}")
-    
+
     # Use yfinance for real market data (free, unlimited)
     try:
         import yfinance as yf
@@ -464,9 +501,11 @@ async def fetch_market_data(
         try:
             info = await asyncio.wait_for(_get_info(), timeout=8.0)
         except asyncio.TimeoutError:
-            logger.warning("[Market Data Fetcher] yfinance timed out; returning minimal market data")
+            logger.warning(
+                "[Market Data Fetcher] yfinance timed out; returning minimal market data"
+            )
             info = {}
-        
+
         # If yfinance returned empty (or timed out), try a fast Yahoo quote fallback.
         if not info:
             try:
@@ -493,7 +532,7 @@ async def fetch_market_data(
             "fetched_at": datetime.utcnow().isoformat(),
         }
         # raise ImportError("Temporarily disabled yfinance")
-        
+
     except ImportError:
         logger.warning("[Market Data Fetcher] yfinance not installed, using minimal data")
         # Fallback to minimal data if library not available
@@ -544,6 +583,7 @@ async def fetch_market_data(
 # OPERON: fetch_peer_data
 # ============================================================================
 
+
 async def fetch_peer_data(
     ticker: str,
     user_id: UserID,
@@ -552,38 +592,38 @@ async def fetch_peer_data(
 ) -> List[Dict[str, Any]]:
     """
     Operon: Fetch peer company data for comparison.
-    
+
     TrustLink Required: external.market.data
-    
+
     Args:
         ticker: Stock ticker symbol
         user_id: User ID for audit
         consent_token: Valid consent token
         sector: Industry sector (optional, auto-detected if None)
-        
+
     Returns:
         List of peer company dicts with market data
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
     """
     # Validate TrustLink
     valid, reason, token = validate_token(
         consent_token,
-        ConsentScope("agent.kai.analyze")  # Changed from external.market.data
+        ConsentScope("agent.kai.analyze"),  # Changed from external.market.data
     )
-    
+
     if not valid:
         raise PermissionError(f"Market data access denied: {reason}")
-    
+
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
-    
+
     logger.info(f"[Peer Data Fetcher] Fetching peers for {ticker} - user {user_id}")
-    
+
     # Mock peers
     # Real implementation would fetch from sector/industry database
-    
+
     return [
         {"ticker": "MSFT", "pe_ratio": 32.1, "market_cap": 2_800_000_000_000},
         {"ticker": "GOOGL", "pe_ratio": 24.8, "market_cap": 1_750_000_000_000},
