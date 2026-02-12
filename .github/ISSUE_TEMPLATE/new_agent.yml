@@ -1,0 +1,43 @@
+---
+name: New Agent Proposal
+description: Propose a new Hushh agent
+labels: ["agent", "proposal"]
+body:
+  - type: textarea
+    id: agent-name
+    attributes:
+      label: Agent name and purpose
+      description: What does this agent do? What user need does it serve?
+    validations:
+      required: true
+  - type: textarea
+    id: required-scopes
+    attributes:
+      label: Required consent scopes
+      description: What data scopes does this agent need? (e.g., `attr.financial.*`, `attr.food.*`)
+    validations:
+      required: true
+  - type: textarea
+    id: tools
+    attributes:
+      label: Tools (LLM-callable functions)
+      description: List the tools this agent will expose via `@hushh_tool`.
+    validations:
+      required: true
+  - type: textarea
+    id: operons
+    attributes:
+      label: Operons needed
+      description: Which existing operons will be reused? Which new operons are needed?
+  - type: textarea
+    id: consent-validation
+    attributes:
+      label: Consent validation approach
+      description: How will consent be validated at each layer (agent entry, tool, operon)?
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: References, prior art, research papers, etc.
