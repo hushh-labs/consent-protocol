@@ -36,6 +36,7 @@ test: ## Run tests (pytest)
 	TESTING=true \
 	SECRET_KEY="test_secret_key_for_ci_only_32chars_min" \
 	VAULT_ENCRYPTION_KEY="635ce8d8018dee8b98ec987dc2dbfb79f3658ac7a54d4cb4c6150a21cd60098f" \
+	MCP_DEVELOPER_TOKEN="test_mcp_developer_token_for_ci" \
 	PYTHONPATH=. pytest tests/ -v --tb=short
 
 security: ## Run security scan (bandit, Medium+ severity)
