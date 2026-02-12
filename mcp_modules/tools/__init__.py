@@ -25,4 +25,3 @@ __all__ = [
     "handle_list_scopes",
     "handle_discover_user_domains",
 ]
-

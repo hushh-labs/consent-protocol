@@ -26,18 +26,16 @@ async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:
     ctx = HushhContext.current()
     if not ctx:
         raise PermissionError("No active context")
-        
+
     print(f"🔧 Tool invoked: perform_fundamental_analysis for {ticker}")
-    
+
     # Delegate to the fundamental engine
     # Note: The engine's analyze method is async
     try:
         insight = await fundamental_engine.analyze(
-            ticker=ticker,
-            user_id=ctx.user_id,
-            consent_token=ctx.consent_token
+            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
         )
-        
+
         # Convert dataclass/result to dict
         return {
             "summary": insight.summary,
@@ -45,7 +43,7 @@ async def perform_fundamental_analysis(ticker: str) -> Dict[str, Any]:
             "financial_resilience": insight.financial_resilience,
             "recommendation": insight.recommendation,
             "confidence": insight.confidence,
-            "metrics": insight.quant_metrics
+            "metrics": insight.quant_metrics,
         }
     except Exception as e:
         return {"error": f"Fundamental analysis failed: {str(e)}"}
@@ -61,21 +59,19 @@ async def perform_sentiment_analysis(ticker: str) -> Dict[str, Any]:
         raise PermissionError("No active context")
 
     print(f"🔧 Tool invoked: perform_sentiment_analysis for {ticker}")
-    
+
     try:
         insight = await sentiment_engine.analyze(
-            ticker=ticker,
-            user_id=ctx.user_id,
-            consent_token=ctx.consent_token
+            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
         )
-        
+
         return {
             "summary": insight.summary,
             "sentiment_score": insight.sentiment_score,
             "market_consensus": insight.market_consensus,
             "recommendation": insight.recommendation,
             "confidence": insight.confidence,
-            "news_highlights": insight.key_news[:3] if hasattr(insight, 'key_news') else []
+            "news_highlights": insight.key_news[:3] if hasattr(insight, "key_news") else [],
         }
     except Exception as e:
         return {"error": f"Sentiment analysis failed: {str(e)}"}
@@ -91,21 +87,19 @@ async def perform_valuation_analysis(ticker: str) -> Dict[str, Any]:
         raise PermissionError("No active context")
 
     print(f"🔧 Tool invoked: perform_valuation_analysis for {ticker}")
-    
+
     try:
         insight = await valuation_engine.analyze(
-            ticker=ticker,
-            user_id=ctx.user_id,
-            consent_token=ctx.consent_token
+            ticker=ticker, user_id=ctx.user_id, consent_token=ctx.consent_token
         )
-        
+
         return {
             "summary": insight.summary,
             "fair_value": insight.fair_value,
             "upside_potential": insight.upside_potential,
             "risk_assessment": insight.risk_assessment,
             "recommendation": insight.recommendation,
-            "confidence": insight.confidence
+            "confidence": insight.confidence,
         }
     except Exception as e:
         return {"error": f"Valuation analysis failed: {str(e)}"}

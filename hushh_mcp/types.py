@@ -13,6 +13,7 @@ AgentID = NewType("AgentID", str)
 
 # ==================== HushhConsentToken ====================
 
+
 class HushhConsentToken(BaseModel):
     token: str
     user_id: UserID
@@ -26,6 +27,7 @@ class HushhConsentToken(BaseModel):
 
 # ==================== TrustLink ====================
 
+
 class TrustLink(BaseModel):
     from_agent: AgentID
     to_agent: AgentID
@@ -35,11 +37,14 @@ class TrustLink(BaseModel):
     signed_by_user: UserID
     signature: str
 
+
 # ==================== Vault Structures ====================
+
 
 class VaultKey(BaseModel):
     user_id: UserID
     scope: ConsentScope
+
 
 class EncryptedPayload(BaseModel):
     ciphertext: str
@@ -47,6 +52,7 @@ class EncryptedPayload(BaseModel):
     tag: str
     encoding: Literal["base64", "hex"]
     algorithm: Literal["aes-256-gcm", "chacha20-poly1305"]
+
 
 class VaultRecord(BaseModel):
     key: VaultKey

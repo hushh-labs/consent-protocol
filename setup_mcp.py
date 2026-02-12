@@ -27,10 +27,16 @@ def get_claude_config_path() -> Path:
         if appdata:
             return Path(appdata) / "Claude" / "claude_desktop_config.json"
     elif sys.platform == "darwin":  # macOS
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
     else:  # Linux
         return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
-    
+
     raise RuntimeError("Could not determine Claude Desktop config path")
 
 
@@ -44,22 +50,20 @@ def generate_config() -> dict:
     """Generate the MCP server configuration."""
     consent_dir = get_consent_protocol_dir()
     mcp_server_path = consent_dir / "mcp_server.py"
-    
+
     if not mcp_server_path.exists():
         raise FileNotFoundError(f"MCP server not found at: {mcp_server_path}")
-    
+
     config = {
         "mcpServers": {
             "hushh-consent": {
                 "command": "python",
                 "args": [str(mcp_server_path)],
-                "env": {
-                    "PYTHONPATH": str(consent_dir)
-                }
+                "env": {"PYTHONPATH": str(consent_dir)},
             }
         }
     }
-    
+
     return config
 
 
@@ -75,10 +79,10 @@ def install_config(config: dict) -> bool:
     """Install the config to Claude Desktop's config location."""
     try:
         config_path = get_claude_config_path()
-        
+
         # Create directory if it doesn't exist
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Check if config already exists
         existing_config = {}
         if config_path.exists():
@@ -87,17 +91,17 @@ def install_config(config: dict) -> bool:
                     existing_config = json.load(f)
                 except json.JSONDecodeError:
                     existing_config = {}
-        
+
         # Merge configs (add our server to existing)
         if "mcpServers" not in existing_config:
             existing_config["mcpServers"] = {}
-        
+
         existing_config["mcpServers"]["hushh-consent"] = config["mcpServers"]["hushh-consent"]
-        
+
         # Write merged config
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(existing_config, f, indent=2)
-        
+
         return True
     except Exception as e:
         print(f"❌ Could not install config: {e}")
@@ -109,13 +113,13 @@ def main():
     print("🔐 Hushh MCP Server - Configuration Generator")
     print("=" * 60)
     print()
-    
+
     # Get consent-protocol directory
     consent_dir = get_consent_protocol_dir()
     print("📁 Consent Protocol Directory:")
     print(f"   {consent_dir}")
     print()
-    
+
     # Generate config
     try:
         config = generate_config()
@@ -124,25 +128,25 @@ def main():
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
         sys.exit(1)
-    
+
     # Show the generated config
     print("📋 Generated Configuration:")
     print("-" * 40)
     print(json.dumps(config, indent=2))
     print("-" * 40)
     print()
-    
+
     # Save example config
     example_path = save_example_config(config, consent_dir)
     print(f"💾 Saved to: {example_path}")
     print()
-    
+
     # Ask to install
     claude_config_path = get_claude_config_path()
     print("📍 Claude Desktop config location:")
     print(f"   {claude_config_path}")
     print()
-    
+
     response = input("Install to Claude Desktop? (y/n): ").strip().lower()
     if response == "y":
         if install_config(config):
@@ -166,7 +170,7 @@ def main():
         print(f"   {example_path}")
         print("   To:")
         print(f"   {claude_config_path}")
-    
+
     print()
     print("=" * 60)
 
