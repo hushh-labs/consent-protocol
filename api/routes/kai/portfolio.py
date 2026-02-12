@@ -37,6 +37,7 @@ router = APIRouter()
 
 class PortfolioImportResponse(BaseModel):
     """Response from portfolio import endpoint."""
+
     success: bool
     holdings_count: int = 0
     total_value: float = 0.0
@@ -58,6 +59,7 @@ class PortfolioImportResponse(BaseModel):
 
 class PortfolioSummaryResponse(BaseModel):
     """Response for portfolio summary endpoint."""
+
     user_id: str
     has_portfolio: bool
     holdings_count: Optional[int] = None
@@ -76,22 +78,22 @@ async def import_portfolio(
 ) -> PortfolioImportResponse:
     """
     Import a brokerage statement and analyze the portfolio.
-    
+
     Accepts CSV or PDF files from major brokerages:
     - Charles Schwab
     - Fidelity
     - Robinhood
     - Generic CSV format
-    
+
     **Process**:
     1. Parse the file to extract holdings
     2. Derive KPIs (risk bucket, sector allocation, etc.)
     3. Store KPIs in user's world model
     4. Return summary with losers and winners
-    
+
     **Authentication**: Requires valid VAULT_OWNER token.
     The token proves both identity (user_id) and consent (vault unlocked).
-    
+
     **Example Response**:
     ```json
     {
@@ -111,23 +113,20 @@ async def import_portfolio(
     """
     # Verify user_id matches token (consent-first: token contains user_id)
     if token_data["user_id"] != user_id:
-        logger.warning(
-            f"User ID mismatch: token={token_data['user_id']}, request={user_id}"
-        )
+        logger.warning(f"User ID mismatch: token={token_data['user_id']}, request={user_id}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID does not match token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
-    
+
     # Validate file
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
-    
+
     # Check file size (max 10MB)
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
-    
+
     # Import portfolio
     service = get_portfolio_import_service()
     result: ImportResult = await service.import_file(
@@ -135,7 +134,7 @@ async def import_portfolio(
         file_content=content,
         filename=file.filename,
     )
-    
+
     return PortfolioImportResponse(
         success=result.success,
         holdings_count=result.holdings_count,
@@ -164,18 +163,17 @@ async def get_portfolio_summary(
 ) -> PortfolioSummaryResponse:
     """
     Get portfolio summary from world model (without decrypting holdings).
-    
+
     Returns KPIs derived from the user's imported portfolio.
-    
+
     **Authentication**: Requires valid VAULT_OWNER token matching user_id.
     """
     # Verify user_id matches token (consent-first: token contains user_id)
     if token_data["user_id"] != user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID does not match token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
-    
+
     # Get portfolio summary from world_model_index_v2 (no decryption)
     world_model = get_world_model_service()
     index = await world_model.get_index_v2(user_id)
@@ -221,10 +219,10 @@ async def import_portfolio_stream(
 ):
     """
     SSE streaming endpoint for portfolio import with real-time progress.
-    
+
     Streams Gemini parsing progress as Server-Sent Events (SSE).
     Uses Gemini 2.5 Flash thinking mode for visible AI reasoning.
-    
+
     **Event Types**:
     - `stage`: Current processing stage (uploading, analyzing, thinking, extracting, parsing, complete)
     - `thought`: AI reasoning/thinking summary (visible to user)
@@ -232,26 +230,23 @@ async def import_portfolio_stream(
     - `progress`: Character count and chunk count
     - `complete`: Final parsed portfolio data
     - `error`: Error message if parsing fails
-    
+
     **Authentication**: Requires valid VAULT_OWNER token.
-    
-    **Disconnection Optimization**: 
+
+    **Disconnection Optimization**:
     - Client disconnects → event.set() → LLM stops processing
     """
     # Verify user_id matches token
     if token_data["user_id"] != user_id:
-        logger.warning(
-            f"User ID mismatch: token={token_data['user_id']}, request={user_id}"
-        )
+        logger.warning(f"User ID mismatch: token={token_data['user_id']}, request={user_id}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID does not match token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
-    
+
     # Validate file
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
-    
+
     # Read file content
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
@@ -259,7 +254,7 @@ async def import_portfolio_stream(
 
     # Create disconnection event to stop streaming when client disconnects
     _disconnection_event = asyncio.Event()
-    
+
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import base64
@@ -269,25 +264,25 @@ async def import_portfolio_stream(
         from google.genai.types import HttpOptions
 
         from hushh_mcp.constants import GEMINI_MODEL
-        
+
         thinking_enabled = True  # Flag to track if thinking is available
-        
+
         try:
             # Stage 1: Uploading
             yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
             await asyncio.sleep(0.1)  # Small delay for UI feedback
-            
+
             # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
             client = genai.Client(http_options=HttpOptions(api_version="v1"))
             model_to_use = GEMINI_MODEL
             logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
-            
+
             # Stage 2: Analyzing
             yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
-            
+
             # Encode PDF as base64
-            pdf_base64 = base64.b64encode(content).decode('utf-8')
-            
+            pdf_base64 = base64.b64encode(content).decode("utf-8")
+
             # Build prompt for comprehensive forensic extraction
             prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
 
@@ -436,18 +431,13 @@ Extract data into the following nested objects:
 }
 
 CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no explanation or markdown."""
-            
+
             # Create content with PDF
             contents = [
                 prompt,
-                types.Part(
-                    inline_data=types.Blob(
-                        mime_type="application/pdf",
-                        data=pdf_base64
-                    )
-                )
+                types.Part(inline_data=types.Blob(mime_type="application/pdf", data=pdf_base64)),
             ]
-            
+
             # Configure with thinking enabled for Gemini 3 Flash
             try:
                 config = types.GenerateContentConfig(
@@ -456,53 +446,55 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
                         thinking_level=types.ThinkingLevel.MEDIUM,
-                    )
+                    ),
                 )
                 logger.info("SSE: Thinking mode enabled with level=MEDIUM")
             except Exception as thinking_error:
                 # Fallback if thinking config not supported
-                logger.warning(f"SSE: Thinking config not supported, falling back: {thinking_error}")
+                logger.warning(
+                    f"SSE: Thinking config not supported, falling back: {thinking_error}"
+                )
                 thinking_enabled = False
                 config = types.GenerateContentConfig(
                     temperature=0.1,
                     max_output_tokens=32768,
                 )
-            
+
             # Stage 3: Thinking/Streaming
             if thinking_enabled:
                 yield f"data: {json.dumps({'stage': 'thinking', 'message': 'AI reasoning about document structure...'})}\n\n"
             else:
                 yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting financial data...'})}\n\n"
-            
+
             full_response = ""
             chunk_count = 0
             thought_count = 0
             in_extraction_phase = False
-            
+
             # Use official Gemini streaming API with thinking support
             stream = await client.aio.models.generate_content_stream(
                 model=model_to_use,
                 contents=contents,
                 config=config,
             )
-            
+
             async for chunk in stream:
                 # Check for disconnection after each chunk
                 if await request.is_disconnected():
                     logger.info("[Portfolio Import] Client disconnected, stopping streaming...")
                     return
-                
+
                 # Handle chunks with thinking support
-                if hasattr(chunk, 'candidates') and chunk.candidates:
+                if hasattr(chunk, "candidates") and chunk.candidates:
                     candidate = chunk.candidates[0]
-                    if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate, "content") and candidate.content:
                         for part in candidate.content.parts:
-                            if not hasattr(part, 'text') or not part.text:
+                            if not hasattr(part, "text") or not part.text:
                                 continue
-                            
+
                             # Check if this is a thought (reasoning) or actual response
-                            is_thought = hasattr(part, 'thought') and part.thought
-                            
+                            is_thought = hasattr(part, "thought") and part.thought
+
                             if is_thought:
                                 # Stream thought summary to frontend
                                 thought_count += 1
@@ -512,10 +504,10 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                                 if not in_extraction_phase:
                                     in_extraction_phase = True
                                     yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting structured data...'})}\n\n"
-                                
+
                                 full_response += part.text
                                 chunk_count += 1
-                                
+
                                 # Stream extraction progress
                                 yield f"data: {json.dumps({'stage': 'extracting', 'text': part.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
                 else:
@@ -524,13 +516,13 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                         full_response += chunk.text
                         chunk_count += 1
                         yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
-            
+
             # Final extraction complete
             yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
-            
+
             # Stage 4: Parsing
             yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
-            
+
             # Parse JSON from response
             try:
                 # Clean up response
@@ -542,9 +534,9 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 if json_text.endswith("```"):
                     json_text = json_text[:-3]
                 json_text = json_text.strip()
-                
+
                 parsed_data = json.loads(json_text)
-                
+
                 # Transform Gemini response to match frontend expected structure
                 account_metadata = parsed_data.get("account_metadata", {})
                 account_info = {
@@ -555,7 +547,7 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     "statement_period_start": account_metadata.get("statement_period_start"),
                     "statement_period_end": account_metadata.get("statement_period_end"),
                 }
-                
+
                 portfolio_summary = parsed_data.get("portfolio_summary", {})
                 account_summary = {
                     "beginning_value": portfolio_summary.get("beginning_value"),
@@ -565,7 +557,7 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     "net_deposits_withdrawals": portfolio_summary.get("net_deposits_withdrawals"),
                     "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
                 }
-                
+
                 detailed_holdings = parsed_data.get("detailed_holdings", [])
                 holdings = []
                 for h in detailed_holdings:
@@ -585,14 +577,14 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                         "est_yield": h.get("est_yield"),
                     }
                     holdings.append(holding)
-                
+
                 # Calculate total_value if not provided
                 total_value = parsed_data.get("total_value", 0)
                 if not total_value and account_summary.get("ending_value"):
                     total_value = account_summary["ending_value"]
                 if not total_value and holdings:
                     total_value = sum(h.get("market_value", 0) for h in holdings)
-                
+
                 # Build portfolio_data structure for frontend
                 portfolio_data = {
                     "account_info": account_info,
@@ -612,24 +604,27 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     "kpis": {
                         "holdings_count": len(holdings),
                         "total_value": total_value,
-                    }
+                    },
                 }
-                
-                logger.info(f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}")
-                
+
+                logger.info(
+                    f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}"
+                )
+
                 # Stage 5: Complete
                 yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
-                
+
             except json.JSONDecodeError as e:
                 logger.error(f"JSON parse error: {e}")
                 yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
-                
+
         except Exception as e:
             logger.error(f"SSE streaming error: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             yield f"data: {json.dumps({'stage': 'error', 'message': str(e)})}\n\n"
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -637,5 +632,5 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
+        },
     )

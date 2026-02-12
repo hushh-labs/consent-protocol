@@ -42,4 +42,3 @@ def verify_firebase_bearer(authorization: Optional[str]) -> str:
     except Exception:
         # Do not leak details
         raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
-

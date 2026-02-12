@@ -56,7 +56,7 @@ class TestStaticScopes:
     def test_scope_list(self):
         """Test that list() returns all static scope values."""
         scope_list = ConsentScope.list()
-        
+
         assert isinstance(scope_list, list)
         assert "vault.owner" in scope_list
         assert "portfolio.import" in scope_list
@@ -71,7 +71,7 @@ class TestStaticScopes:
     def test_operation_scopes(self):
         """Test operation_scopes() returns correct scopes."""
         op_scopes = ConsentScope.operation_scopes()
-        
+
         assert ConsentScope.PORTFOLIO_IMPORT in op_scopes
         assert ConsentScope.CHAT_HISTORY_READ in op_scopes
         assert ConsentScope.WORLD_MODEL_READ in op_scopes
@@ -79,14 +79,14 @@ class TestStaticScopes:
     def test_agent_scopes(self):
         """Test agent_scopes() returns correct scopes."""
         agent_scopes = ConsentScope.agent_scopes()
-        
+
         assert ConsentScope.AGENT_KAI_ANALYZE in agent_scopes
         assert ConsentScope.AGENT_KAI_CHAT in agent_scopes
 
     def test_external_scopes(self):
         """Test external_scopes() returns correct scopes."""
         ext_scopes = ConsentScope.external_scopes()
-        
+
         assert ConsentScope.EXTERNAL_SEC_FILINGS in ext_scopes
         assert ConsentScope.EXTERNAL_RENAISSANCE in ext_scopes
 
@@ -124,41 +124,30 @@ class TestDynamicScopes:
 
     def test_check_access_direct_match(self):
         """Test check_access() with direct scope match."""
-        assert ConsentScope.check_access(
-            "portfolio.import",
-            ["portfolio.import", "portfolio.read"]
-        ) is True
-        
-        assert ConsentScope.check_access(
-            "portfolio.analyze",
-            ["portfolio.import", "portfolio.read"]
-        ) is False
+        assert (
+            ConsentScope.check_access("portfolio.import", ["portfolio.import", "portfolio.read"])
+            is True
+        )
+
+        assert (
+            ConsentScope.check_access("portfolio.analyze", ["portfolio.import", "portfolio.read"])
+            is False
+        )
 
     def test_check_access_vault_owner(self):
         """Test check_access() with VAULT_OWNER grants all."""
-        assert ConsentScope.check_access(
-            "portfolio.import",
-            ["vault.owner"]
-        ) is True
-        
-        assert ConsentScope.check_access(
-            "attr.financial.holdings",
-            ["vault.owner"]
-        ) is True
+        assert ConsentScope.check_access("portfolio.import", ["vault.owner"]) is True
+
+        assert ConsentScope.check_access("attr.financial.holdings", ["vault.owner"]) is True
 
     def test_check_access_wildcard(self):
         """Test check_access() with wildcard matching."""
-        assert ConsentScope.check_access(
-            "attr.financial.holdings",
-            ["attr.financial.*"]
-        ) is True
-        
-        assert ConsentScope.check_access(
-            "attr.financial.risk_profile",
-            ["attr.financial.*"]
-        ) is True
-        
-        assert ConsentScope.check_access(
-            "attr.subscriptions.netflix",
-            ["attr.financial.*"]
-        ) is False
+        assert ConsentScope.check_access("attr.financial.holdings", ["attr.financial.*"]) is True
+
+        assert (
+            ConsentScope.check_access("attr.financial.risk_profile", ["attr.financial.*"]) is True
+        )
+
+        assert (
+            ConsentScope.check_access("attr.subscriptions.netflix", ["attr.financial.*"]) is False
+        )

@@ -30,7 +30,7 @@ MSFT,Microsoft Corp,50,12000,14000
 GOOGL,Alphabet Inc,25,30000,32000
 """
         portfolio = parser.parse_csv(csv_content)
-        
+
         assert len(portfolio.holdings) == 3
         assert portfolio.holdings[0].ticker == "AAPL"
         assert portfolio.holdings[0].quantity == 100
@@ -44,7 +44,7 @@ AAPL,100,"$15,000.00","$17,500.00"
 MSFT,50,"$12,000.00","$14,000.00"
 """
         portfolio = parser.parse_csv(csv_content)
-        
+
         assert len(portfolio.holdings) == 2
         assert portfolio.holdings[0].cost_basis == 15000.0
         assert portfolio.holdings[0].current_value == 17500.0
@@ -56,7 +56,7 @@ AAPL,100,15000,17500,2500
 TSLA,50,25000,20000,(5000)
 """
         portfolio = parser.parse_csv(csv_content)
-        
+
         assert len(portfolio.holdings) == 2
         # TSLA should have negative gain/loss
         tsla = next(h for h in portfolio.holdings if h.ticker == "TSLA")
@@ -66,21 +66,21 @@ TSLA,50,25000,20000,(5000)
         """Test broker detection for Schwab."""
         content = "Charles Schwab Brokerage Account\nSymbol,Quantity,Price"
         broker = parser._detect_broker(content)
-        
+
         assert broker == BrokerType.SCHWAB
 
     def test_detect_broker_fidelity(self, parser):
         """Test broker detection for Fidelity."""
         content = "Fidelity Investments\nAccount Summary"
         broker = parser._detect_broker(content)
-        
+
         assert broker == BrokerType.FIDELITY
 
     def test_detect_broker_generic(self, parser):
         """Test broker detection falls back to generic."""
         content = "My Portfolio Export\nSymbol,Quantity"
         broker = parser._detect_broker(content)
-        
+
         assert broker == BrokerType.GENERIC
 
     def test_clean_ticker(self, parser):
@@ -114,9 +114,9 @@ TSLA,50,25000,20000,(5000)
                 Holding(ticker="GOOGL", gain_loss_pct=-12.0),
             ]
         )
-        
+
         losers = parser.identify_losers(portfolio, loss_threshold_pct=-10.0)
-        
+
         assert len(losers) == 2
         # Should be sorted by loss (worst first)
         assert losers[0].ticker == "TSLA"
@@ -131,9 +131,9 @@ TSLA,50,25000,20000,(5000)
                 Holding(ticker="TSLA", current_value=20000, cost_basis=25000, gain_loss_pct=-20.0),
             ]
         )
-        
+
         summary = parser.get_portfolio_summary(portfolio)
-        
+
         assert summary["total_holdings"] == 3
         assert summary["total_value"] == 51500
         assert summary["total_cost_basis"] == 52000
@@ -144,7 +144,7 @@ TSLA,50,25000,20000,(5000)
         """Test parsing empty CSV."""
         csv_content = b""
         portfolio = parser.parse_csv(csv_content)
-        
+
         assert len(portfolio.holdings) == 0
 
     def test_csv_without_ticker_column(self, parser):
@@ -153,7 +153,7 @@ TSLA,50,25000,20000,(5000)
 Apple Inc,100,17500
 """
         portfolio = parser.parse_csv(csv_content)
-        
+
         # Should return empty portfolio if no ticker column found
         assert len(portfolio.holdings) == 0
 
@@ -161,5 +161,5 @@ Apple Inc,100,17500
         """Test that get_portfolio_parser returns singleton."""
         parser1 = get_portfolio_parser()
         parser2 = get_portfolio_parser()
-        
+
         assert parser1 is parser2

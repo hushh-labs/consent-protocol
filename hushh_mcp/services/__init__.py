@@ -18,7 +18,7 @@ from .vault_keys_service import VaultKeysService
 
 __all__ = [
     "VaultDBService",
-    "ConsentDBService", 
+    "ConsentDBService",
     "InvestorDBService",
     "VaultKeysService",
 ]

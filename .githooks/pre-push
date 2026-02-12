@@ -1,0 +1,18 @@
+#!/bin/sh
+# .githooks/pre-push -- Run CI checks before pushing to upstream
+# Install: git config core.hooksPath .githooks
+
+echo "[pre-push] Running CI checks before push..."
+echo ""
+
+make lint && make format-check && make typecheck && make test
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "[pre-push] FAILED. Fix errors before pushing."
+  echo "  Quick fix: make fix  (auto-formats and lint-fixes)"
+  exit 1
+fi
+
+echo ""
+echo "[pre-push] All checks passed. Pushing..."

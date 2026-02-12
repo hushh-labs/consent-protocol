@@ -3,5 +3,5 @@ manifest = {
     "name": "Hushh Orchestrator",
     "description": "Primary interface. Analyzes intent and delegates to domain agents.",
     "scopes": ["trust.delegate", "orchestrate.all"],
-    "version": "0.1.0"
+    "version": "0.1.0",
 }

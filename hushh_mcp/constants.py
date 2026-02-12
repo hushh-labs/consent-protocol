@@ -7,49 +7,50 @@ from typing import Optional
 
 # ==================== Consent Scopes ====================
 
+
 class ConsentScope(str, Enum):
     """
     Consent scopes for MCP-compliant data access.
-    
+
     Design Principles:
     - VAULT_OWNER grants full world model access (user's own data)
     - Dynamic attr.{domain}.{key} scopes are validated via DynamicScopeGenerator
     - Static operation scopes are defined in this enum
-    
+
     Dynamic Scopes (NOT in enum - validated dynamically):
     - attr.{domain}.{attribute} - e.g., attr.financial.holdings
     - attr.{domain}.* - Wildcard for entire domain
     """
-    
+
     # ==================== VAULT OWNER (Full Access) ====================
-    # "Master Scope" granted ONLY via BYOK login. 
+    # "Master Scope" granted ONLY via BYOK login.
     # Never granted to external agents.
     VAULT_OWNER = "vault.owner"
-    
+
     # ==================== PORTFOLIO OPERATIONS ====================
     PORTFOLIO_IMPORT = "portfolio.import"
     PORTFOLIO_ANALYZE = "portfolio.analyze"
     PORTFOLIO_READ = "portfolio.read"
-    
+
     # ==================== CHAT HISTORY ====================
     CHAT_HISTORY_READ = "chat.history.read"
     CHAT_HISTORY_WRITE = "chat.history.write"
-    
+
     # ==================== EMBEDDINGS (Similarity Matching) ====================
     EMBEDDING_PROFILE_READ = "embedding.profile.read"
     EMBEDDING_PROFILE_COMPUTE = "embedding.profile.compute"
-    
+
     # ==================== WORLD MODEL OPERATIONS ====================
     WORLD_MODEL_READ = "world_model.read"
     WORLD_MODEL_WRITE = "world_model.write"
     WORLD_MODEL_METADATA = "world_model.metadata"
-    
+
     # ==================== KAI AGENT OPERATIONS ====================
     AGENT_KAI_ANALYZE = "agent.kai.analyze"
     AGENT_KAI_DEBATE = "agent.kai.debate"
     AGENT_KAI_INFER = "agent.kai.infer"
     AGENT_KAI_CHAT = "agent.kai.chat"
-    
+
     # ==================== EXTERNAL DATA SOURCES ====================
     # Hybrid mode - per-request consent
     EXTERNAL_SEC_FILINGS = "external.sec.filings"
@@ -63,65 +64,65 @@ class ConsentScope(str, Enum):
     def list(cls):
         """List all static scopes."""
         return [scope.value for scope in cls]
-    
+
     @classmethod
     def is_dynamic_scope(cls, scope: str) -> bool:
         """
         Check if a scope is a dynamic attr.* scope.
-        
+
         Dynamic scopes follow the pattern: attr.{domain}.{attribute}
         They are NOT defined in this enum but validated via DynamicScopeGenerator.
         """
         return scope.startswith("attr.")
-    
+
     @classmethod
     def is_wildcard_scope(cls, scope: str) -> bool:
         """Check if a scope is a wildcard pattern (ends with .*)."""
         return scope.endswith(".*")
-    
+
     @classmethod
     def validate(cls, scope: str, user_id: Optional[str] = None) -> bool:
         """
         Validate a scope - static or dynamic.
-        
+
         Args:
             scope: The scope string to validate
             user_id: Optional user ID for dynamic scope validation
-        
+
         Returns:
             True if the scope is valid
         """
         # Check static scopes first
         if scope in [s.value for s in cls]:
             return True
-        
+
         # Check dynamic scopes
         if cls.is_dynamic_scope(scope):
             # Import here to avoid circular dependency
             from hushh_mcp.consent.scope_generator import get_scope_generator
+
             generator = get_scope_generator()
-            
+
             # Parse and validate format
             domain, attr_key, is_wildcard = generator.parse_scope(scope)
             if domain is None:
                 return False
-            
+
             # If user_id provided, validate against stored attributes
             if user_id:
                 import asyncio
+
                 try:
                     loop = asyncio.get_event_loop()
-                    return loop.run_until_complete(
-                        generator.validate_scope(scope, user_id)
-                    )
+                    return loop.run_until_complete(generator.validate_scope(scope, user_id))
                 except RuntimeError:
                     # No event loop, just validate format
                     return True
-            
+
             return True
-        
+
         return False
-    
+
     @classmethod
     def check_access(
         cls,
@@ -130,38 +131,39 @@ class ConsentScope(str, Enum):
     ) -> bool:
         """
         Check if a requested scope is covered by granted scopes.
-        
+
         Handles:
         - Direct matches
         - Wildcard matches (attr.financial.* covers attr.financial.holdings)
         - VAULT_OWNER grants all access
-        
+
         Args:
             requested_scope: The scope being requested
             granted_scopes: List of scopes that have been granted
-        
+
         Returns:
             True if access should be granted
         """
         # VAULT_OWNER grants everything
         if cls.VAULT_OWNER.value in granted_scopes:
             return True
-        
+
         # Direct match
         if requested_scope in granted_scopes:
             return True
-        
+
         # Check wildcard matches for dynamic scopes
         if cls.is_dynamic_scope(requested_scope):
             from hushh_mcp.consent.scope_generator import get_scope_generator
+
             generator = get_scope_generator()
-            
+
             for granted in granted_scopes:
                 if generator.matches_wildcard(requested_scope, granted):
                     return True
-        
+
         return False
-    
+
     @classmethod
     def operation_scopes(cls):
         """Return all operation scopes (non-attribute)."""
@@ -177,7 +179,7 @@ class ConsentScope(str, Enum):
             cls.WORLD_MODEL_WRITE,
             cls.WORLD_MODEL_METADATA,
         ]
-    
+
     @classmethod
     def agent_scopes(cls):
         """Return all agent operation scopes."""
@@ -187,7 +189,7 @@ class ConsentScope(str, Enum):
             cls.AGENT_KAI_INFER,
             cls.AGENT_KAI_CHAT,
         ]
-    
+
     @classmethod
     def external_scopes(cls):
         """Return all external data source scopes."""
@@ -217,8 +219,8 @@ USER_ID_PREFIX = "user_"
 # ==================== Defaults (used if .env fails to load) ====================
 
 # These are fallbacks — real defaults should come from config.py which loads from .env
-DEFAULT_CONSENT_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7     # 7 days
-DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30        # 30 days
+DEFAULT_CONSENT_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7  # 7 days
+DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30  # 30 days
 
 # ==================== Gemini Model Configuration ====================
 
