@@ -14,6 +14,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 try:
     from google import genai
     from google.genai import types
+
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -54,31 +55,25 @@ async def analyze_stock_with_gemini(
 ) -> Dict[str, Any]:
     """
     Operon: Deep financial analysis using Gemini-2.0-flash.
-    
+
     Validates: agent.kai.analyze
     Context: All available specialist data (SEC, Market, Sentiment, Quant Trends)
     """
     # 1. Validate Consent
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope("agent.kai.analyze")
-    )
-    
+    valid, reason, token = validate_token(consent_token, ConsentScope("agent.kai.analyze"))
+
     if not valid:
         logger.error(f"[Gemini Operon] Permission denied: {reason}")
         raise PermissionError(f"Gemini analysis denied: {reason}")
-    
+
     if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        return {
-            "error": "Gemini unavailable (Missing API Key or SDK)",
-            "fallback": True
-        }
+        return {"error": "Gemini unavailable (Missing API Key or SDK)", "fallback": True}
 
     logger.info(f"[Gemini Operon] Starting deep analyst session for {ticker}")
 
     # 2. Build Rich Context (Trends + Fundamentals)
-    latest_10k = sec_data.get('latest_10k', {})
-    
+    latest_10k = sec_data.get("latest_10k", {})
+
     # Extract User Context (Personalization) — tolerant to missing keys (backward compatible).
     user_context = user_context or {}
 
@@ -126,18 +121,18 @@ async def analyze_stock_with_gemini(
 
     personalization = f"""
     --- INVESTOR PROFILE (AUDIENCE) ---
-    Name: {user_context.get('name', '—')}
+    Name: {user_context.get("name", "—")}
     Firm/Title: {firm} / {title}
     Investor Type: {investor_type}
     Risk Tolerance: {risk}
     Time Horizon: {time_horizon}
     Portfolio Turnover: {turnover}
-    AUM (B): {aum_b if aum_b is not None else '—'}
+    AUM (B): {aum_b if aum_b is not None else "—"}
 
-    Investment Style: {style if style else '—'}
-    Current Holdings (tickers): {holdings_tickers if holdings_tickers else '—'}
-    Sector Exposure (if provided): {sector_exposure if sector_exposure else '—'}
-    Recent Buys/Sells: {recent_buys if recent_buys else '—'} / {recent_sells if recent_sells else '—'}
+    Investment Style: {style if style else "—"}
+    Current Holdings (tickers): {holdings_tickers if holdings_tickers else "—"}
+    Sector Exposure (if provided): {sector_exposure if sector_exposure else "—"}
+    Recent Buys/Sells: {recent_buys if recent_buys else "—"} / {recent_sells if recent_sells else "—"}
 
     Insider: {is_insider} (company: {insider_ticker})
     Data Freshness (optional): last_13F={last_13f_date}, last_Form4={last_form4_date}
@@ -152,32 +147,32 @@ async def analyze_stock_with_gemini(
 
     context = f"""
     --- SENIOR ANALYST TERMINAL ({ticker}) ---
-    Company: {sec_data.get('entity_name', ticker)}
+    Company: {sec_data.get("entity_name", ticker)}
     {personalization}
     
     [Current Fundamentals]
-    Revenue: ${latest_10k.get('revenue', 0):,}
-    Net Income: ${latest_10k.get('net_income', 0):,}
-    Operating Income: ${latest_10k.get('operating_income', 0):,}
-    Operating Cash Flow: ${latest_10k.get('operating_cash_flow', 0):,}
-    Free Cash Flow: ${latest_10k.get('free_cash_flow', 0):,}
-    R&D Investment: ${latest_10k.get('research_and_development', 0):,}
+    Revenue: ${latest_10k.get("revenue", 0):,}
+    Net Income: ${latest_10k.get("net_income", 0):,}
+    Operating Income: ${latest_10k.get("operating_income", 0):,}
+    Operating Cash Flow: ${latest_10k.get("operating_cash_flow", 0):,}
+    Free Cash Flow: ${latest_10k.get("free_cash_flow", 0):,}
+    R&D Investment: ${latest_10k.get("research_and_development", 0):,}
     
     [3-Year Quant Trends]
-    Revenue Trend: {quant_metrics.get('revenue_trend_data') if quant_metrics else 'N/A'}
-    Net Income Trend: {quant_metrics.get('net_income_trend_data') if quant_metrics else 'N/A'}
-    OCF Trend: {quant_metrics.get('ocf_trend_data') if quant_metrics else 'N/A'}
-    R&D Trend: {quant_metrics.get('rnd_trend_data') if quant_metrics else 'N/A'}
+    Revenue Trend: {quant_metrics.get("revenue_trend_data") if quant_metrics else "N/A"}
+    Net Income Trend: {quant_metrics.get("net_income_trend_data") if quant_metrics else "N/A"}
+    OCF Trend: {quant_metrics.get("ocf_trend_data") if quant_metrics else "N/A"}
+    R&D Trend: {quant_metrics.get("rnd_trend_data") if quant_metrics else "N/A"}
     
     [Efficiency Ratios]
-    Revenue CAGR (3Y): {quant_metrics.get('revenue_cagr_3y', 0)*100:.2f}%
-    Revenue Growth (YoY): {quant_metrics.get('revenue_growth_yoy', 0)*100:.2f}%
-    Net Income Growth (YoY): {quant_metrics.get('net_income_growth_yoy', 0)*100:.2f}%
+    Revenue CAGR (3Y): {quant_metrics.get("revenue_cagr_3y", 0) * 100:.2f}%
+    Revenue Growth (YoY): {quant_metrics.get("revenue_growth_yoy", 0) * 100:.2f}%
+    Net Income Growth (YoY): {quant_metrics.get("net_income_growth_yoy", 0) * 100:.2f}%
     
     --- MARKET DATA ---
-    Current Price: {market_data.get('price', 'N/A') if market_data else 'N/A'}
-    Market Cap: {market_data.get('market_cap', 'N/A') if market_data else 'N/A'}
-    Sector: {market_data.get('sector', 'Unknown') if market_data else 'Unknown'}
+    Current Price: {market_data.get("price", "N/A") if market_data else "N/A"}
+    Market Cap: {market_data.get("market_cap", "N/A") if market_data else "N/A"}
+    Sector: {market_data.get("sector", "Unknown") if market_data else "Unknown"}
     """
 
     system_instruction = """
@@ -214,26 +209,25 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
             timeout=40.0,
         )
-        
+
         text = response.text.strip()
         if text.startswith("```json"):
             text = text[7:-3].strip()
         elif text.startswith("```"):
             text = text[3:-3].strip()
-            
+
         analysis = json.loads(text)
         logger.info(f"[Gemini Operon] Deep Fundamental Report success for {ticker}")
         return analysis
 
     except asyncio.TimeoutError:
-        logger.warning(f"[Gemini Operon] Gemini timed out for {ticker}; falling back to deterministic analysis")
+        logger.warning(
+            f"[Gemini Operon] Gemini timed out for {ticker}; falling back to deterministic analysis"
+        )
         return {"error": "Gemini timeout", "fallback": True}
     except Exception as e:
         logger.error(f"[Gemini Operon] Error calling Gemini: {e}")
-        return {
-            "error": str(e),
-            "fallback": True
-        }
+        return {"error": str(e), "fallback": True}
 
 
 async def analyze_sentiment_with_gemini(
@@ -245,29 +239,32 @@ async def analyze_sentiment_with_gemini(
 ) -> Dict[str, Any]:
     """
     Operon: Sentiment analysis using Gemini-2.0-flash.
-    
+
     Analyzes news articles and market sentiment for investment signals.
     """
     # 1. Validate Consent
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope("agent.kai.analyze")
-    )
-    
+    valid, reason, token = validate_token(consent_token, ConsentScope("agent.kai.analyze"))
+
     if not valid:
         logger.error(f"[Gemini Sentiment] Permission denied: {reason}")
         raise PermissionError(f"Sentiment analysis denied: {reason}")
-    
+
     if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
         return {"error": "Gemini unavailable", "fallback": True}
 
     logger.info(f"[Gemini Sentiment] Analyzing sentiment for {ticker}")
 
     # 2. Build Context from news articles
-    news_context = "\n".join([
-        f"- [{a.get('source', {}).get('name', 'Unknown')}] {a.get('title', 'No title')}: {a.get('description', '')[:200]}"
-        for a in news_articles[:10]
-    ]) if news_articles else "No recent news available."
+    news_context = (
+        "\n".join(
+            [
+                f"- [{a.get('source', {}).get('name', 'Unknown')}] {a.get('title', 'No title')}: {a.get('description', '')[:200]}"
+                for a in news_articles[:10]
+            ]
+        )
+        if news_articles
+        else "No recent news available."
+    )
 
     user_risk = user_context.get("risk_tolerance", "Balanced") if user_context else "Balanced"
 
@@ -308,13 +305,13 @@ Analyze the provided news articles and assess market sentiment for this stock.
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
         )
-        
+
         text = response.text.strip()
         if text.startswith("```json"):
             text = text[7:-3].strip()
         elif text.startswith("```"):
             text = text[3:-3].strip()
-            
+
         analysis = json.loads(text)
         logger.info(f"[Gemini Sentiment] Analysis complete for {ticker}")
         return analysis
@@ -337,29 +334,32 @@ async def analyze_valuation_with_gemini(
 ) -> Dict[str, Any]:
     """
     Operon: Valuation analysis using Gemini-2.0-flash.
-    
+
     Performs relative and intrinsic valuation analysis.
     """
     # 1. Validate Consent
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope("agent.kai.analyze")
-    )
-    
+    valid, reason, token = validate_token(consent_token, ConsentScope("agent.kai.analyze"))
+
     if not valid:
         logger.error(f"[Gemini Valuation] Permission denied: {reason}")
         raise PermissionError(f"Valuation analysis denied: {reason}")
-    
+
     if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
         return {"error": "Gemini unavailable", "fallback": True}
 
     logger.info(f"[Gemini Valuation] Analyzing valuation for {ticker}")
 
     # 2. Build Context
-    peer_context = "\n".join([
-        f"- {p.get('ticker', 'N/A')}: P/E={p.get('pe_ratio', 'N/A')}, Growth={p.get('growth', 'N/A')}"
-        for p in (peer_data or [])[:5]
-    ]) if peer_data else "No peer data available."
+    peer_context = (
+        "\n".join(
+            [
+                f"- {p.get('ticker', 'N/A')}: P/E={p.get('pe_ratio', 'N/A')}, Growth={p.get('growth', 'N/A')}"
+                for p in (peer_data or [])[:5]
+            ]
+        )
+        if peer_data
+        else "No peer data available."
+    )
 
     user_risk = user_context.get("risk_tolerance", "Balanced") if user_context else "Balanced"
 
@@ -367,15 +367,15 @@ async def analyze_valuation_with_gemini(
     --- VALUATION ANALYSIS TERMINAL ({ticker}) ---
     
     [Market Data]
-    Current Price: ${market_data.get('price', 'N/A')}
-    P/E Ratio: {market_data.get('pe_ratio', 'N/A')}
-    Forward P/E: {market_data.get('forward_pe', 'N/A')}
-    P/B Ratio: {market_data.get('pb_ratio', 'N/A')}
-    P/S Ratio: {market_data.get('ps_ratio', 'N/A')}
-    EV/EBITDA: {market_data.get('ev_ebitda', 'N/A')}
-    Market Cap: ${market_data.get('market_cap', 'N/A')}
-    Dividend Yield: {market_data.get('dividend_yield', 'N/A')}
-    52-Week Range: ${market_data.get('52w_low', 'N/A')} - ${market_data.get('52w_high', 'N/A')}
+    Current Price: ${market_data.get("price", "N/A")}
+    P/E Ratio: {market_data.get("pe_ratio", "N/A")}
+    Forward P/E: {market_data.get("forward_pe", "N/A")}
+    P/B Ratio: {market_data.get("pb_ratio", "N/A")}
+    P/S Ratio: {market_data.get("ps_ratio", "N/A")}
+    EV/EBITDA: {market_data.get("ev_ebitda", "N/A")}
+    Market Cap: ${market_data.get("market_cap", "N/A")}
+    Dividend Yield: {market_data.get("dividend_yield", "N/A")}
+    52-Week Range: ${market_data.get("52w_low", "N/A")} - ${market_data.get("52w_high", "N/A")}
     
     [Peer Comparison]
     {peer_context}
@@ -413,13 +413,13 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
             model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
             timeout=30.0,
         )
-        
+
         text = response.text.strip()
         if text.startswith("```json"):
             text = text[7:-3].strip()
         elif text.startswith("```"):
             text = text[3:-3].strip()
-            
+
         analysis = json.loads(text)
         logger.info(f"[Gemini Valuation] Analysis complete for {ticker}")
         return analysis
@@ -436,6 +436,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 # STREAMING GENERATORS - Real-time Token Streaming
 # ============================================================================
 
+
 async def stream_gemini_response(
     prompt: str,
     agent_name: str = "gemini",
@@ -443,12 +444,12 @@ async def stream_gemini_response(
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Generic streaming generator for Gemini responses.
-    
+
     Yields events:
     - {"type": "token", "text": "..."} for each token chunk
     - {"type": "complete", "text": "full response"} when done
     - {"type": "error", "message": "..."} on error
-    
+
     Uses Gemini 3 Flash with synchronous streaming wrapped in async context.
     This is more reliable than async iteration which may not yield correctly.
     """
@@ -456,31 +457,31 @@ async def stream_gemini_response(
         logger.error("[Gemini Streaming] No client configured!")
         yield {"type": "error", "message": "Gemini API key not configured"}
         return
-    
+
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
-    
+
     try:
         # Use ASYNC streaming to prevent blocking the event loop
         config = types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=4096,
         )
-        
+
         # Call the ASYNC streaming method
         # Note: google.genai V1 SDK uses client.aio for async calls
         stream = await _gemini_client.aio.models.generate_content_stream(
-            model=GEMINI_MODEL, # Use standardized model
+            model=GEMINI_MODEL,  # Use standardized model
             contents=prompt,
             config=config,
         )
-        
+
         full_text = ""
         token_count = 0
-        
+
         # Async iteration
         async for chunk in stream:
             try:
-                chunk_text = chunk.text if hasattr(chunk, 'text') else ""
+                chunk_text = chunk.text if hasattr(chunk, "text") else ""
             except Exception as e:
                 logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
                 continue
@@ -490,23 +491,23 @@ async def stream_gemini_response(
                 full_text += chunk_text
                 # Log only every 10th token to reduce noise
                 if token_count % 10 == 0:
-                     logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
-                
+                    logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
+
                 yield {
                     "type": "token",
                     "text": chunk_text,
                     "agent": agent_name,
                 }
-        
+
         # Yield complete event with full text
         yield {
             "type": "complete",
             "text": full_text,
             "agent": agent_name,
         }
-        
+
         logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
-        
+
     except Exception as e:
         logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
         yield {
@@ -530,44 +531,41 @@ async def analyze_fundamental_streaming(
     Yields tokens in real-time as Gemini generates them.
     """
     # 1. Validate Consent
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope("agent.kai.analyze")
-    )
-    
+    valid, reason, token = validate_token(consent_token, ConsentScope("agent.kai.analyze"))
+
     if not valid:
         yield {"type": "error", "message": f"Permission denied: {reason}"}
         return
-    
+
     if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
         yield {"type": "error", "message": "Gemini unavailable"}
         return
 
     logger.info(f"[Fundamental Streaming] Starting for {ticker}")
-    
+
     # Build context (same as non-streaming version)
-    latest_10k = sec_data.get('latest_10k', {})
+    latest_10k = sec_data.get("latest_10k", {})
     user_context = user_context or {}
-    
+
     risk = user_context.get("risk_tolerance") or "Balanced"
-    
+
     context = f"""
     --- SENIOR ANALYST TERMINAL ({ticker}) ---
-    Company: {sec_data.get('entity_name', ticker)}
+    Company: {sec_data.get("entity_name", ticker)}
     Risk Profile: {risk}
     
     [Current Fundamentals]
-    Revenue: ${latest_10k.get('revenue', 0):,}
-    Net Income: ${latest_10k.get('net_income', 0):,}
-    Operating Cash Flow: ${latest_10k.get('operating_cash_flow', 0):,}
-    Free Cash Flow: ${latest_10k.get('free_cash_flow', 0):,}
+    Revenue: ${latest_10k.get("revenue", 0):,}
+    Net Income: ${latest_10k.get("net_income", 0):,}
+    Operating Cash Flow: ${latest_10k.get("operating_cash_flow", 0):,}
+    Free Cash Flow: ${latest_10k.get("free_cash_flow", 0):,}
     
     [3-Year Quant Trends]
-    Revenue Trend: {quant_metrics.get('revenue_trend_data') if quant_metrics else 'N/A'}
+    Revenue Trend: {quant_metrics.get("revenue_trend_data") if quant_metrics else "N/A"}
     
     --- MARKET DATA ---
-    Current Price: {market_data.get('price', 'N/A') if market_data else 'N/A'}
-    Market Cap: {market_data.get('market_cap', 'N/A') if market_data else 'N/A'}
+    Current Price: {market_data.get("price", "N/A") if market_data else "N/A"}
+    Market Cap: {market_data.get("market_cap", "N/A") if market_data else "N/A"}
     """
 
     system_instruction = """
@@ -585,9 +583,9 @@ Cover:
 
 Be specific and cite the numbers provided.
 """
-    
+
     prompt = f"{system_instruction}\n\nCONTEXT DATA:\n{context}"
-    
+
     # Stream the response
     async for event in stream_gemini_response(prompt, agent_name="fundamental"):
         yield event

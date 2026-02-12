@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # OPERON: store_decision_card
 # ============================================================================
 
+
 def store_decision_card(
     user_id: UserID,
     session_id: str,
@@ -43,13 +44,13 @@ def store_decision_card(
         decision_card: Complete decision card dict
         vault_key_hex: User's vault encryption key (client-provided)
         consent_token: Valid consent token
-        
+
     Returns:
         EncryptedPayload ready for database storage
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
-        
+
     Example:
         >>> payload = store_decision_card(
         ...     user_id="firebase_abc",
@@ -60,10 +61,7 @@ def store_decision_card(
         ... )
     """
     # Validate TrustLink (world-model write covers attr.kai_decisions.*)
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope.WORLD_MODEL_WRITE
-    )
+    valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_WRITE)
 
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
@@ -72,20 +70,23 @@ def store_decision_card(
     if token.user_id != user_id:
         raise PermissionError(f"Token user mismatch: expected {user_id}, got {token.user_id}")
 
-    logger.info(f"[Storage Operon] Storing decision for {decision_card.get('ticker')} - user {user_id}")
-    
+    logger.info(
+        f"[Storage Operon] Storing decision for {decision_card.get('ticker')} - user {user_id}"
+    )
+
     # Serialize decision card
     decision_json = json.dumps(decision_card)
-    
+
     # Encrypt with user's vault key
     encrypted_payload = encrypt_data(decision_json, vault_key_hex)
-    
+
     return encrypted_payload
 
 
 # ============================================================================
 # OPERON: retrieve_decision_card
 # ============================================================================
+
 
 def retrieve_decision_card(
     encrypted_payload: EncryptedPayload,
@@ -103,19 +104,16 @@ def retrieve_decision_card(
         vault_key_hex: User's vault encryption key (client-provided)
         consent_token: Valid consent token
         user_id: User identifier
-        
+
     Returns:
         Decrypted decision card dict
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
         ValueError: If decryption fails
     """
     # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope.WORLD_MODEL_READ
-    )
+    valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_READ)
 
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
@@ -140,6 +138,7 @@ def retrieve_decision_card(
 # OPERON: retrieve_decision_history
 # ============================================================================
 
+
 def retrieve_decision_history(
     user_id: UserID,
     consent_token: str,
@@ -152,23 +151,20 @@ def retrieve_decision_history(
 
     This returns only metadata (ticker, decision, confidence, timestamp).
     Full decision cards must be retrieved individually with vault keys.
-    
+
     Args:
         user_id: User identifier
         consent_token: Valid consent token
         limit: Max number of decisions to return
-        
+
     Returns:
         List of decision metadata dicts
-        
+
     Raises:
         PermissionError: If TrustLink validation fails
     """
     # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
-    valid, reason, token = validate_token(
-        consent_token,
-        ConsentScope.WORLD_MODEL_READ
-    )
+    valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_READ)
 
     if not valid:
         logger.error(f"[Storage Operon] TrustLink validation failed: {reason}")
@@ -178,9 +174,9 @@ def retrieve_decision_history(
         raise PermissionError("Token user mismatch")
 
     logger.info(f"[Storage Operon] Retrieving decision history for user {user_id}")
-    
+
     # This operon just validates consent
     # The actual database query is done by the API endpoint
     # This ensures separation of concerns (operon = business logic, not I/O)
-    
+
     return []  # Database query handled by endpoint

@@ -24,7 +24,12 @@ from db.db_client import get_db  # noqa: E402
 
 DEFAULT_JSON = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "..", "docs", "vision", "kai", "data", "investor_profiles_sample.json"
+    "..",
+    "docs",
+    "vision",
+    "kai",
+    "data",
+    "investor_profiles_sample.json",
 )
 
 
@@ -39,7 +44,7 @@ def seed_investors(json_path: str):
     print(f"📊 Found {len(investors)} investor profiles")
 
     db = get_db()
-    
+
     for inv in investors:
         name = inv.get("name")
         name_normalized = re.sub(r"\s+", "", name.lower()) if name else None
@@ -47,7 +52,9 @@ def seed_investors(json_path: str):
 
         # Prepare JSONB fields as JSON strings
         top_holdings = json.dumps(inv.get("top_holdings")) if inv.get("top_holdings") else None
-        sector_exposure = json.dumps(inv.get("sector_exposure")) if inv.get("sector_exposure") else None
+        sector_exposure = (
+            json.dumps(inv.get("sector_exposure")) if inv.get("sector_exposure") else None
+        )
         public_quotes = json.dumps(inv.get("public_quotes")) if inv.get("public_quotes") else None
 
         # Build the data dict
@@ -57,7 +64,9 @@ def seed_investors(json_path: str):
             "cik": cik,
             "firm": inv.get("firm"),
             "title": inv.get("title"),
-            "investor_type": inv.get("investor_type", "fund_manager") if cik else ("tech_insider" if inv.get("is_insider") else "fund_manager"),
+            "investor_type": inv.get("investor_type", "fund_manager")
+            if cik
+            else ("tech_insider" if inv.get("is_insider") else "fund_manager"),
             "aum_billions": inv.get("aum_billions"),
             "top_holdings": top_holdings,
             "sector_exposure": sector_exposure,
@@ -75,16 +84,18 @@ def seed_investors(json_path: str):
             "is_insider": inv.get("is_insider", False),
             "insider_company_ticker": inv.get("insider_company_ticker"),
         }
-        
+
         # Remove None values for cleaner insert
         investor_data = {k: v for k, v in investor_data.items() if v is not None}
-        
+
         # Upsert using the db client
         if cik:
-            result = db.table("investor_profiles").upsert(investor_data, on_conflict="cik").execute()
+            result = (
+                db.table("investor_profiles").upsert(investor_data, on_conflict="cik").execute()
+            )
         else:
             result = db.table("investor_profiles").insert(investor_data).execute()
-        
+
         if result.error:
             print(f"   ❌ {name}: {result.error}")
         else:
@@ -100,7 +111,7 @@ def main():
     parser = argparse.ArgumentParser(description="Seed investor profiles from JSON")
     parser.add_argument("--file", default=DEFAULT_JSON, help="Path to JSON file")
     args = parser.parse_args()
-    
+
     seed_investors(args.file)
     print("\n✅ Seeding complete!")
 

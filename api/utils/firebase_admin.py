@@ -66,4 +66,3 @@ def ensure_firebase_admin() -> Tuple[bool, Optional[str]]:
     except Exception:
         # Not configured (caller decides whether to 500/401)
         return False, None
-

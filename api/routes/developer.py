@@ -41,6 +41,7 @@ def _is_valid_world_model_scope(scope: str) -> bool:
         return True
     return bool(_DYNAMIC_ATTR_SCOPE_RE.match(scope))
 
+
 logger = logging.getLogger(__name__)
 
 # Consent timeout from env var (synced with frontend and SSE)
@@ -52,10 +53,10 @@ router = APIRouter(prefix="/api/v1", tags=["Developer API"])
 def get_scope_description(scope: str) -> str:
     """
     Human-readable scope descriptions.
-    
+
     Delegated to centralized dynamic scope resolution.
     """
-    return get_dynamic_scope_description(scope)
+    return str(get_dynamic_scope_description(scope))
 
 
 @router.get("")
@@ -69,8 +70,8 @@ async def developer_api_root():
             "POST /api/v1/request-consent",
             "POST /api/v1/food-data",
             "POST /api/v1/professional-data",
-            "GET /api/v1/list-scopes"
-        ]
+            "GET /api/v1/list-scopes",
+        ],
     }
 
 
@@ -78,39 +79,43 @@ async def developer_api_root():
 async def request_consent(request: ConsentRequest):
     """
     Request consent from a user for data access.
-    
+
     External developers call this to request permission to access
     specific user data. The user will be notified and must approve.
-    
+
     Follows Hushh Core Principle: "Consent First"
-    
+
     IMPORTANT: This does NOT auto-approve. User must explicitly approve
     via the /api/consent/pending/approve endpoint.
     """
-    logger.info(f"🔐 Consent Request: dev={request.developer_token}, user={request.user_id}, scope={request.scope}")
-    
+    logger.info(
+        f"🔐 Consent Request: dev={request.developer_token}, user={request.user_id}, scope={request.scope}"
+    )
+
     # Verify developer
     if request.developer_token not in REGISTERED_DEVELOPERS:
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid developer token")
-    
+
     dev_info = REGISTERED_DEVELOPERS[request.developer_token]
-    
+
     # Normalize to dot notation for storage and validation (e.g. attr_food -> attr.food.*)
     scope_dot = normalize_scope(request.scope)
     if not _is_valid_world_model_scope(scope_dot):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid scope: {request.scope}. Use world_model.read, world_model.write, or attr.{{domain}}.* (e.g. attr.food.*)"
+            detail=f"Invalid scope: {request.scope}. Use world_model.read, world_model.write, or attr.{{domain}}.* (e.g. attr.food.*)",
         )
 
     # Verify scope is allowed for this developer
     approved = dev_info["approved_scopes"]
     if "*" not in approved and scope_dot not in approved:
-        raise HTTPException(status_code=403, detail=f"Scope '{scope_dot}' not approved for this developer")
+        raise HTTPException(
+            status_code=403, detail=f"Scope '{scope_dot}' not approved for this developer"
+        )
 
     # Resolve to enum for token issuance
     _scope_enum = resolve_scope_to_enum(scope_dot)
-    
+
     # Check if consent already granted (query database with dot notation)
     service = ConsentDBService()
     is_active = await service.is_token_active(request.user_id, scope_dot)
@@ -119,22 +124,21 @@ async def request_consent(request: ConsentRequest):
         active_tokens = await service.get_active_tokens(request.user_id)
         existing_token = None
         expires_at = None
-        
+
         for t in active_tokens:
             if t.get("scope") == scope_dot:
                 existing_token = t.get("token_id")
                 expires_at = t.get("expires_at")
                 break
-        
+
         if existing_token:
             return ConsentResponse(
                 status="already_granted",
                 message="User has already granted consent for this scope.",
                 consent_token=existing_token,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
-    
-    
+
     # Check if request already pending (query database with dot notation)
     service = ConsentDBService()
     pending = await service.get_pending_requests(request.user_id)
@@ -144,17 +148,17 @@ async def request_consent(request: ConsentRequest):
         return ConsentResponse(
             status="pending",
             message="Consent request already pending. Waiting for user approval.",
-            request_id=existing_id
+            request_id=existing_id,
         )
-    
+
     # Generate a request ID
     request_id = str(uuid.uuid4())[:8]
-    
+
     # Pending request lifetime: use expiry_hours (capped at 24) so request stays pending for long timeouts
     now_ms = int(time.time() * 1000)
     pending_hours = min(max(1, request.expiry_hours), 24)
     poll_timeout_at = now_ms + int(pending_hours * 3600 * 1000)
-    
+
     # Store in database with dot notation scope (mandatory)
     service = ConsentDBService()
     await service.insert_event(
@@ -165,14 +169,16 @@ async def request_consent(request: ConsentRequest):
         request_id=request_id,
         scope_description=get_scope_description(scope_dot),
         poll_timeout_at=poll_timeout_at,
-        metadata={"developer_token": request.developer_token, "expiry_hours": request.expiry_hours}
+        metadata={"developer_token": request.developer_token, "expiry_hours": request.expiry_hours},
     )
-    logger.info(f"📋 Consent request saved to DB: {request.user_id}:{scope_dot} (request_id={request_id})")
-    
+    logger.info(
+        f"📋 Consent request saved to DB: {request.user_id}:{scope_dot} (request_id={request_id})"
+    )
+
     return ConsentResponse(
         status="pending",
         message=f"Consent request submitted. User must approve in their dashboard. Request ID: {request_id}",
-        request_id=request_id
+        request_id=request_id,
     )
 
 
@@ -201,11 +207,20 @@ async def list_available_scopes():
         "scopes": [
             {"name": "world_model.read", "description": "Read full world model (all domains)"},
             {"name": "world_model.write", "description": "Write to world model"},
-            {"name": "attr.food.*", "description": "Read user's food preferences (dietary, cuisines, budget)"},
-            {"name": "attr.professional.*", "description": "Read user's professional profile (title, skills, experience)"},
+            {
+                "name": "attr.food.*",
+                "description": "Read user's food preferences (dietary, cuisines, budget)",
+            },
+            {
+                "name": "attr.professional.*",
+                "description": "Read user's professional profile (title, skills, experience)",
+            },
             {"name": "attr.financial.*", "description": "Read user's financial data"},
             {"name": "attr.health.*", "description": "Read user's health and wellness data"},
             {"name": "attr.kai_decisions.*", "description": "Read/write Kai decision history"},
-            {"name": "attr.{domain}.*", "description": "Dynamic: any domain from world_model_index_v2.available_domains"},
+            {
+                "name": "attr.{domain}.*",
+                "description": "Dynamic: any domain from world_model_index_v2.available_domains",
+            },
         ]
     }
