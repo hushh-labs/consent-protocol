@@ -6,11 +6,9 @@ This service uses LLM to analyze conversations and extract structured user prefe
 then stores them in the world model with appropriate domain classification.
 """
 
-import base64
 import json
 import logging
 import os
-import secrets
 from dataclasses import dataclass
 from typing import Optional
 
@@ -66,24 +64,6 @@ class AttributeLearner:
     def __init__(self):
         self._client = None
         self._world_model = None
-    
-    @staticmethod
-    def _generate_encryption_params() -> tuple[str, str]:
-        """
-        Generate proper IV and tag for AES-256-GCM encryption.
-        
-        Note: In a full BYOK implementation, encryption happens client-side.
-        This generates placeholder values that indicate server-side storage
-        of inferred attributes (which should be re-encrypted by client).
-        
-        Returns:
-            Tuple of (iv_base64, tag_base64)
-        """
-        # Generate 12-byte IV (standard for AES-GCM)
-        iv = secrets.token_bytes(12)
-        # Generate 16-byte tag placeholder (actual tag comes from encryption)
-        tag = secrets.token_bytes(16)
-        return base64.b64encode(iv).decode(), base64.b64encode(tag).decode()
     
     @property
     def client(self):
@@ -167,7 +147,11 @@ class AttributeLearner:
         assistant_response: str,
     ) -> list[dict]:
         """
-        Extract attributes from conversation and store in world model.
+        Extract attributes from conversation and store as domain summaries.
+        
+        Inferred attributes are written to world_model_index_v2.domain_summaries
+        (non-sensitive metadata only). Sensitive data should be stored via the
+        client-side BYOK flow in world_model_data.
         
         Args:
             user_id: The user's ID
@@ -184,35 +168,31 @@ class AttributeLearner:
             return []
         
         stored = []
+        # Group attributes by domain so we do one update_domain_summary per domain
+        domain_attrs: dict[str, dict] = {}
         for attr in attributes:
+            domain_attrs.setdefault(attr.domain, {})[attr.key] = attr.value
+
+        for domain, summary_patch in domain_attrs.items():
             try:
-                # Store in world model
-                # Note: For inferred attributes, we generate server-side encryption params.
-                # In full BYOK flow, client would re-encrypt with their vault key.
-                iv, tag = self._generate_encryption_params()
-                
-                success, scope = await self.world_model.store_attribute(
+                success = await self.world_model.update_domain_summary(
                     user_id=user_id,
-                    domain=attr.domain,
-                    attribute_key=attr.key,
-                    ciphertext=attr.value,  # Would be encrypted in production
-                    iv=iv,
-                    tag=tag,
-                    source="inferred",
-                    confidence=attr.confidence,
+                    domain=domain,
+                    summary=summary_patch,
                 )
-                
                 if success:
-                    stored.append({
-                        "domain": attr.domain,
-                        "key": attr.key,
-                        "value": attr.value,
-                        "scope": scope,
-                    })
-                    logger.info(f"Stored learned attribute: {attr.domain}.{attr.key} for user {user_id}")
-                    
+                    for key, value in summary_patch.items():
+                        stored.append({
+                            "domain": domain,
+                            "key": key,
+                            "value": value,
+                            "scope": f"attr.{domain}.{key}",
+                        })
+                        logger.info(
+                            f"Stored learned attribute summary: {domain}.{key} for user {user_id}"
+                        )
             except Exception as e:
-                logger.error(f"Error storing attribute {attr.key}: {e}")
+                logger.error(f"Error storing domain summary for {domain}: {e}")
         
         return stored
 

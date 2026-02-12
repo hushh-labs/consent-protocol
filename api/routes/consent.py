@@ -110,7 +110,7 @@ async def approve_consent(
     # Issue consent token - map scope to ConsentScope enum using centralized resolver
     requested_scope = pending_request["scope"]
     try:
-        consent_scope = resolve_scope_to_enum(requested_scope)
+        _consent_scope = resolve_scope_to_enum(requested_scope)
     except Exception as e:
         logger.error(f"Failed to resolve scope {requested_scope}: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid scope: {requested_scope}")
