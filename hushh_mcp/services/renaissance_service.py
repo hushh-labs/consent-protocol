@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RenaissanceStock:
     """A stock in the Renaissance investable universe."""
+
     ticker: str
     company_name: str
     sector: str
@@ -29,9 +30,9 @@ class RenaissanceStock:
 
 # Tier weights for decision-making
 TIER_WEIGHTS = {
-    "ACE": 1.0,    # Highest conviction
+    "ACE": 1.0,  # Highest conviction
     "KING": 0.85,  # High conviction
-    "QUEEN": 0.70, # Moderate conviction
+    "QUEEN": 0.70,  # Moderate conviction
     "JACK": 0.55,  # Lower conviction but still investable
 }
 
@@ -47,35 +48,39 @@ TIER_DESCRIPTIONS = {
 class RenaissanceService:
     """
     Service for querying the Renaissance investable universe.
-    
+
     Used by Kai to:
     1. Check if a stock is investable
     2. Get tier-based conviction weights
     3. Provide investment thesis context
     """
-    
+
     def __init__(self):
         self._db = None
-    
+
     @property
     def db(self):
         if self._db is None:
             from db.db_client import get_db
+
             self._db = get_db()
         return self._db
-    
+
     async def is_investable(self, ticker: str) -> tuple[bool, Optional[RenaissanceStock]]:
         """
         Check if a ticker is in the Renaissance investable universe.
-        
+
         Returns:
             Tuple of (is_investable, stock_info)
         """
         try:
-            response = self.db.table("renaissance_universe").select("*").eq(
-                "ticker", ticker.upper()
-            ).execute()
-            
+            response = (
+                self.db.table("renaissance_universe")
+                .select("*")
+                .eq("ticker", ticker.upper())
+                .execute()
+            )
+
             if response.data and len(response.data) > 0:
                 row = response.data[0]
                 stock = RenaissanceStock(
@@ -88,17 +93,17 @@ class RenaissanceService:
                     tier_rank=row.get("tier_rank", 0),
                 )
                 return True, stock
-            
+
             return False, None
-            
+
         except Exception as e:
             logger.error(f"Error checking Renaissance universe: {e}")
             return False, None
-    
+
     async def get_tier_weight(self, ticker: str) -> float:
         """
         Get the conviction weight for a ticker based on its tier.
-        
+
         Returns:
             Weight from 0.0 to 1.0 (0.0 if not in universe)
         """
@@ -106,12 +111,14 @@ class RenaissanceService:
         if is_inv and stock:
             return TIER_WEIGHTS.get(stock.tier, 0.0)
         return 0.0
-    
+
     async def get_all_investable(self) -> list[RenaissanceStock]:
         """Get all stocks in the Renaissance investable universe."""
         try:
-            response = self.db.table("renaissance_universe").select("*").order("tier_rank").execute()
-            
+            response = (
+                self.db.table("renaissance_universe").select("*").order("tier_rank").execute()
+            )
+
             return [
                 RenaissanceStock(
                     ticker=row["ticker"],
@@ -124,7 +131,7 @@ class RenaissanceService:
                 )
                 for row in response.data
             ]
-            
+
         except Exception as e:
             logger.error(f"Error getting all investable stocks: {e}")
             return []
@@ -132,10 +139,14 @@ class RenaissanceService:
     async def get_by_tier(self, tier: str) -> list[RenaissanceStock]:
         """Get all stocks in a specific tier."""
         try:
-            response = self.db.table("renaissance_universe").select("*").eq(
-                "tier", tier.upper()
-            ).order("tier_rank").execute()
-            
+            response = (
+                self.db.table("renaissance_universe")
+                .select("*")
+                .eq("tier", tier.upper())
+                .order("tier_rank")
+                .execute()
+            )
+
             return [
                 RenaissanceStock(
                     ticker=row["ticker"],
@@ -148,18 +159,22 @@ class RenaissanceService:
                 )
                 for row in response.data
             ]
-            
+
         except Exception as e:
             logger.error(f"Error getting tier {tier}: {e}")
             return []
-    
+
     async def get_by_sector(self, sector: str) -> list[RenaissanceStock]:
         """Get all stocks in a specific sector."""
         try:
-            response = self.db.table("renaissance_universe").select("*").ilike(
-                "sector", f"%{sector}%"
-            ).order("tier_rank").execute()
-            
+            response = (
+                self.db.table("renaissance_universe")
+                .select("*")
+                .ilike("sector", f"%{sector}%")
+                .order("tier_rank")
+                .execute()
+            )
+
             return [
                 RenaissanceStock(
                     ticker=row["ticker"],
@@ -172,7 +187,7 @@ class RenaissanceService:
                 )
                 for row in response.data
             ]
-            
+
         except Exception as e:
             logger.error(f"Error getting sector {sector}: {e}")
             return []
@@ -180,7 +195,7 @@ class RenaissanceService:
     async def get_avoid_context(self, ticker: str) -> dict:
         """
         Get Renaissance avoid context for a ticker.
-        
+
         Returns dict with:
         - is_avoid: bool
         - category: str | None
@@ -240,7 +255,7 @@ class RenaissanceService:
     async def get_screening_context(self) -> str:
         """
         Build a compact Renaissance rubric string for prompts.
-        
+
         This is intentionally short: it’s meant to ground the LLM in the
         criteria-first approach, not to duplicate the entire rubric verbatim.
         """
@@ -280,11 +295,11 @@ class RenaissanceService:
             "THE MATH:\n"
             f"{chr(10).join(math_lines)}\n"
         ).strip()
-    
+
     async def get_analysis_context(self, ticker: str) -> dict:
         """
         Get Renaissance context for a stock analysis.
-        
+
         Returns dict with:
         - is_investable: bool
         - tier: str or None
@@ -297,7 +312,7 @@ class RenaissanceService:
         is_inv, stock = await self.is_investable(ticker)
         avoid_ctx = await self.get_avoid_context(ticker)
         screening_ctx = await self.get_screening_context()
-        
+
         if not is_inv:
             return {
                 "is_investable": False,
@@ -314,18 +329,23 @@ class RenaissanceService:
                 "avoid_source": avoid_ctx.get("source"),
                 "screening_criteria": screening_ctx,
             }
-        
+
         # Get sector peers in same or higher tier
         sector_peers = []
         try:
-            response = self.db.table("renaissance_universe").select(
-                "ticker"
-            ).eq("sector", stock.sector).neq("ticker", ticker.upper()).limit(5).execute()
-            
+            response = (
+                self.db.table("renaissance_universe")
+                .select("ticker")
+                .eq("sector", stock.sector)
+                .neq("ticker", ticker.upper())
+                .limit(5)
+                .execute()
+            )
+
             sector_peers = [row["ticker"] for row in response.data]
         except Exception:
             pass
-        
+
         # Determine recommendation bias based on tier
         bias_map = {
             "ACE": "STRONG_BUY",
@@ -333,7 +353,7 @@ class RenaissanceService:
             "QUEEN": "HOLD_TO_BUY",
             "JACK": "HOLD",
         }
-        
+
         return {
             "is_investable": True,
             "ticker": stock.ticker,

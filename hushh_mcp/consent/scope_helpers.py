@@ -69,54 +69,53 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
 def scope_matches(granted_scope: str, requested_scope: str) -> bool:
     """
     Check if a granted scope satisfies a requested scope.
-    
+
     This is the KEY function for scope isolation. It ensures:
     - attr.financial.* ONLY matches attr.financial.* or attr.financial.{specific}
     - attr.financial.* does NOT match attr.food.* or other domains
     - world_model.read matches ALL attr.* scopes (full access)
     - vault.owner matches EVERYTHING (master key)
-    
+
     Args:
         granted_scope: The scope that was granted (from token)
         requested_scope: The scope being requested (from operation)
-    
+
     Returns:
         True if granted scope satisfies requested scope
     """
     # Exact match
     if granted_scope == requested_scope:
         return True
-    
+
     # Master key: vault.owner grants everything
     if granted_scope == "vault.owner":
         return True
-    
+
     # world_model.read grants access to ALL attr.* domains
     if granted_scope == "world_model.read":
         generator = get_scope_generator()
         if generator.is_dynamic_scope(requested_scope):
             return True
-    
+
     # Wildcard matching for attr.* scopes
     generator = get_scope_generator()
     if generator.is_dynamic_scope(granted_scope) and generator.is_dynamic_scope(requested_scope):
         # Both are attr.* scopes - check domain isolation
         granted_domain, _, granted_wildcard = generator.parse_scope(granted_scope)
         requested_domain, _, _ = generator.parse_scope(requested_scope)
-        
+
         # Domain must match for isolation
         if granted_domain != requested_domain:
             return False
-        
+
         # If granted is wildcard (attr.domain.*), it matches all in that domain
         if granted_wildcard:
             return True
-        
+
         # Otherwise, must be exact match (already checked above)
         return granted_scope == requested_scope
-    
-    return False
 
+    return False
 
 
 def get_scope_description(scope: str) -> str:
@@ -132,14 +131,14 @@ def get_scope_description(scope: str) -> str:
         Human-readable description
     """
     generator = get_scope_generator()
-    
+
     # Dynamic attr.* scopes - generate description from scope structure
     if generator.is_dynamic_scope(scope):
         display_info = generator.get_scope_display_info(scope)
         domain = display_info["domain"]
         attribute = display_info["attribute"]
         is_wildcard = display_info["is_wildcard"]
-        
+
         if is_wildcard:
             return f"Access all your {domain} data"
         elif attribute:
@@ -147,7 +146,7 @@ def get_scope_description(scope: str) -> str:
             return f"Access your {domain} - {attr_display}"
         else:
             return f"Access your {domain} domain"
-    
+
     # Hardcoded descriptions for non-dynamic scopes (world-model only; no legacy vault.*)
     descriptions = {
         "vault.owner": "Full access to your vault (master key)",

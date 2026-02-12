@@ -12,21 +12,18 @@ MANIFEST = {
     "name": "Agent Kai",
     "version": "1.0.0",
     "description": "Explainable investing copilot with 3-agent debate framework",
-    
     # Required consent scopes (world-model only; enum members)
     "required_scopes": [
         ConsentScope.WORLD_MODEL_READ,
         ConsentScope.WORLD_MODEL_WRITE,
         ConsentScope.AGENT_KAI_ANALYZE,
     ],
-    
     # Optional scopes (for hybrid mode)
     "optional_scopes": [
         ConsentScope("external.sec.filings"),
         ConsentScope("external.market.data"),
         ConsentScope("external.news.api"),
     ],
-    
     # Specialist agents
     "specialists": [
         {
@@ -51,15 +48,13 @@ MANIFEST = {
             "icon": "calculator",
         },
     ],
-    
     # Capabilities
     "capabilities": {
-        "on_device": True,   # Supports on-device analysis
-        "hybrid": True,      # Supports hybrid mode with external data
-        "real_time": True,   # Can fetch real-time data
+        "on_device": True,  # Supports on-device analysis
+        "hybrid": True,  # Supports hybrid mode with external data
+        "real_time": True,  # Can fetch real-time data
         "historical": True,  # Can analyze historical data
     },
-    
     # Regulatory compliance
     "compliance": {
         "educational_only": True,

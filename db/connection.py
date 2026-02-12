@@ -7,7 +7,7 @@ Supabase's session pooler credentials.
 
 Usage:
     from db.connection import get_pool
-    
+
     async def my_function():
         pool = await get_pool()
         result = await pool.fetch("SELECT * FROM users")
@@ -71,15 +71,15 @@ def _get_database_url() -> str:
 
 async def get_pool() -> asyncpg.Pool:
     """Get or create the connection pool.
-    
+
     Returns:
         asyncpg.Pool: The database connection pool
-        
+
     Raises:
         EnvironmentError: If database credentials are not configured
     """
     global _pool
-    
+
     if _pool is None:
         database_url = _get_database_url()
         ssl_config = get_database_ssl()
@@ -93,11 +93,10 @@ async def get_pool() -> asyncpg.Pool:
             max_size=10,
             command_timeout=60,
             max_inactive_connection_lifetime=300,
-            ssl=ssl_config
+            ssl=ssl_config,
         )
         logger.info(
-            f"PostgreSQL pool created: min={_pool.get_min_size()}, "
-            f"max={_pool.get_max_size()}"
+            f"PostgreSQL pool created: min={_pool.get_min_size()}, max={_pool.get_max_size()}"
         )
     return _pool
 

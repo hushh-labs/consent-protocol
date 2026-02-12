@@ -24,7 +24,7 @@ async def require_firebase_auth(
 ) -> str:
     """
     FastAPI dependency that validates a Firebase ID token.
-    
+
     Usage:
         @router.get("/protected")
         async def protected_endpoint(
@@ -32,10 +32,10 @@ async def require_firebase_auth(
         ):
             # firebase_uid is the authenticated user's Firebase UID
             ...
-    
+
     Returns:
         str: The Firebase UID of the authenticated user
-    
+
     Raises:
         HTTPException 401 if token is missing or invalid
     """
@@ -45,14 +45,14 @@ async def require_firebase_auth(
             detail="Missing Authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format. Expected: Bearer <token>",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
         firebase_uid = verify_firebase_bearer(authorization)
         return firebase_uid
@@ -70,7 +70,7 @@ async def require_firebase_auth(
 def verify_user_id_match(firebase_uid: str, requested_user_id: str) -> None:
     """
     Helper to verify that the authenticated user matches the requested user_id.
-    
+
     Raises:
         HTTPException 403 if user_id doesn't match
     """
@@ -78,16 +78,18 @@ def verify_user_id_match(firebase_uid: str, requested_user_id: str) -> None:
         logger.warning(f"User ID mismatch: token={firebase_uid}, request={requested_user_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID does not match authenticated user"
+            detail="User ID does not match authenticated user",
         )
 
 
 async def require_vault_owner_token(
-    authorization: Optional[str] = Header(None, description="Bearer token for vault owner authentication"),
+    authorization: Optional[str] = Header(
+        None, description="Bearer token for vault owner authentication"
+    ),
 ) -> dict:
     """
     FastAPI dependency that validates a VAULT_OWNER consent token.
-    
+
     Usage:
         @router.post("/protected")
         async def protected_endpoint(
@@ -95,10 +97,10 @@ async def require_vault_owner_token(
         ):
             user_id = token_data["user_id"]
             ...
-    
+
     Returns:
         dict with user_id, agent_id, scope, and token object
-    
+
     Raises:
         HTTPException 401 if token is missing or invalid
         HTTPException 403 if token scope is insufficient
@@ -109,26 +111,26 @@ async def require_vault_owner_token(
             detail="Missing Authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Authorization header format. Expected: Bearer <token>",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     token = authorization.removeprefix("Bearer ").strip()
-    
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Validate token with VAULT_OWNER scope requirement
     valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
-    
+
     if not valid or not token_obj:
         logger.warning(f"Token validation failed: {reason}")
         raise HTTPException(
@@ -136,7 +138,7 @@ async def require_vault_owner_token(
             detail=f"Invalid token: {reason}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return {
         "user_id": token_obj.user_id,
         "agent_id": token_obj.agent_id,
