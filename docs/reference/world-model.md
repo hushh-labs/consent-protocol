@@ -121,14 +121,6 @@ vault.owner                  # Full vault access (owner only)
 3. MCP agent requests consent for specific scope
 4. User approves/denies in the consent UI
 
-### Legacy Scope Migration
-
-| Legacy Scope           | Current Equivalent      |
-| ---------------------- | ----------------------- |
-| `vault.read.food`      | `attr.food.*`           |
-| `vault.read.finance`   | `attr.financial.*`      |
-| `vault.write.decision` | `attr.kai_decisions.*`  |
-
 ---
 
 ## MCP Zero-Knowledge Export Flow
@@ -233,6 +225,6 @@ New domains auto-register when first stored via `WorldModelService`.
 
 ## See Also
 
-- [Architecture](./architecture.md) -- System overview
-- [API Contracts](./api-contracts.md) -- Endpoint documentation
+- [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) -- System overview
+- [API Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) -- Endpoint documentation
 - [Agent Development](./agent-development.md) -- How agents access world model data
