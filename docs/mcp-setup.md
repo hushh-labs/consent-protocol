@@ -70,10 +70,10 @@ Create or edit the file (replace paths with your actual directory locations):
     "hushh-consent": {
       "command": "python",
       "args": [
-        "/path/to/hushh-research/consent-protocol/mcp_server.py"
+        "/path/to/consent-protocol/mcp_server.py"
       ],
       "env": {
-        "PYTHONPATH": "/path/to/hushh-research/consent-protocol"
+        "PYTHONPATH": "/path/to/consent-protocol"
       }
     }
   }
@@ -88,10 +88,10 @@ Create or edit the file (replace paths with your actual directory locations):
     "hushh-consent": {
       "command": "python",
       "args": [
-        "C:\\path\\to\\hushh-research\\consent-protocol\\mcp_server.py"
+        "C:\\path\\to\\consent-protocol\\mcp_server.py"
       ],
       "env": {
-        "PYTHONPATH": "C:\\path\\to\\hushh-research\\consent-protocol"
+        "PYTHONPATH": "C:\\path\\to\\consent-protocol"
       }
     }
   }

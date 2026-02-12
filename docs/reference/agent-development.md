@@ -438,6 +438,7 @@ See the Kai agent for the reference implementation.
 
 ## See Also
 
-- [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) -- System overview and DNA model
 - [Kai Agents](./kai-agents.md) -- Reference implementation
-- [API Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) -- Adding new endpoints
+- [World Model](./world-model.md) -- Encrypted data architecture
+- [Consent Protocol](./consent-protocol.md) -- Token lifecycle and validation
+- [Environment Variables](./env-vars.md) -- Backend configuration reference

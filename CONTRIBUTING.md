@@ -138,16 +138,15 @@ tools:
 2. Use service classes for all DB operations
 3. Add the route to `server.py` router registration
 4. Update `docs/reference/consent-protocol.md` if it involves consent
-5. Update the monorepo `docs/reference/api-contracts.md` route table
+5. Update route documentation in `docs/`
 
 ---
 
 ## Documentation
 
-- Backend-specific docs live in `docs/` within this repo
-- Cross-cutting docs (architecture, API contracts, frontend) live in the [monorepo](https://github.com/hushh-labs/hushh-research/tree/main/docs)
+- All documentation lives in `docs/` within this repository
 - Every new agent or operon must be documented
-- Internal links use relative paths; links to monorepo docs use GitHub URLs
+- Use relative paths for all internal links
 
 ---
 
