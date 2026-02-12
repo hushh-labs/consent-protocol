@@ -26,7 +26,7 @@ def get_rate_limit_key(request: Request) -> str:
     user_id = request.headers.get("X-User-ID")
     if user_id:
         return f"user:{user_id}"
-    
+
     # Fallback to IP address
     return get_remote_address(request)
 
@@ -38,19 +38,19 @@ limiter = Limiter(key_func=get_rate_limit_key)
 # Rate limit constants (per minute)
 class RateLimits:
     """Safe rate limits for 2-step consent flow."""
-    
+
     # Step 1: Request consent - conservative limit
     CONSENT_REQUEST = "10/minute"  # noqa: S105
-    
+
     # Step 2: Approve/deny - slightly higher
     CONSENT_ACTION = "20/minute"  # noqa: S105
-    
+
     # Token validation - higher for polling (soon replaced by SSE)
     TOKEN_VALIDATION = "60/minute"  # noqa: S105
-    
+
     # Agent chat - moderate limit
     AGENT_CHAT = "30/minute"  # noqa: S105
-    
+
     # Global fallback per IP
     GLOBAL_PER_IP = "100/minute"  # noqa: S105
 
@@ -64,6 +64,6 @@ def log_rate_limit_hit(request: Request, limit: str):
             "key": key,
             "limit": limit,
             "path": request.url.path,
-            "event_type": "rate_limit_exceeded"
-        }
+            "event_type": "rate_limit_exceeded",
+        },
     )

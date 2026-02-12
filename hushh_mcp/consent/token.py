@@ -20,22 +20,23 @@ _revoked_tokens: set[str] = set()
 
 # ========== Token Generator ==========
 
+
 def issue_token(
     user_id: UserID,
     agent_id: AgentID,
     scope: Union[str, ConsentScope],
-    expires_in_ms: int = DEFAULT_CONSENT_TOKEN_EXPIRY_MS
+    expires_in_ms: int = DEFAULT_CONSENT_TOKEN_EXPIRY_MS,
 ) -> HushhConsentToken:
     """
     Issue a consent token with the given scope.
-    
+
     CRITICAL: Scope can be a string (e.g., 'attr.financial.*') or ConsentScope enum.
     When a string is provided, it's preserved exactly in the token to maintain domain isolation.
     This ensures 'attr.financial.*' tokens can ONLY access financial data, not all attr.* domains.
     """
     issued_at = int(time.time() * 1000)
     expires_at = issued_at + expires_in_ms
-    
+
     # Preserve original scope string or convert enum to string.
     #
     # IMPORTANT: ConsentScope is declared as `class ConsentScope(str, Enum)`,
@@ -46,11 +47,13 @@ def issue_token(
         scope_str = scope.value
     else:
         scope_str = scope
-    
+
     raw = f"{user_id}|{agent_id}|{scope_str}|{issued_at}|{expires_at}"
     signature = _sign(raw)
 
-    token_string = f"{CONSENT_TOKEN_PREFIX}:{base64.urlsafe_b64encode(raw.encode()).decode()}.{signature}"
+    token_string = (
+        f"{CONSENT_TOKEN_PREFIX}:{base64.urlsafe_b64encode(raw.encode()).decode()}.{signature}"
+    )
 
     # Map dynamic scopes (attr.*) to WORLD_MODEL_READ enum for type compatibility
     scope_enum = scope if isinstance(scope, ConsentScope) else _scope_str_to_enum(scope_str)
@@ -63,7 +66,7 @@ def issue_token(
         scope_str=scope_str,  # Preserve actual scope string!
         issued_at=issued_at,
         expires_at=expires_at,
-        signature=signature
+        signature=signature,
     )
 
 
@@ -84,17 +87,17 @@ def _scope_str_to_enum(scope_str: str) -> ConsentScope:
 
 # ========== Token Verifier ==========
 
+
 def validate_token(
-    token_str: str,
-    expected_scope: Optional[Union[str, ConsentScope]] = None
+    token_str: str, expected_scope: Optional[Union[str, ConsentScope]] = None
 ) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
     """
     Validate a consent token.
-    
+
     Args:
         token_str: The token string to validate
         expected_scope: Optional scope to validate against (string or enum)
-    
+
     Returns:
         Tuple of (valid, error_reason, token_object)
     """
@@ -111,7 +114,7 @@ def validate_token(
 
         decoded = base64.urlsafe_b64decode(encoded.encode()).decode()
         user_id, agent_id, scope_str, issued_at_str, expires_at_str = decoded.split("|")
-        
+
         # Map scope string to enum (for type compatibility)
         # IMPORTANT: Don't fail for dynamic scopes - they're valid!
         scope_enum = _scope_str_to_enum(scope_str)
@@ -125,16 +128,22 @@ def validate_token(
         # SCOPE VALIDATION with domain isolation
         if expected_scope:
             # Convert enum to string if needed
-            expected_scope_str = expected_scope.value if isinstance(expected_scope, ConsentScope) else expected_scope
-            
+            expected_scope_str = (
+                expected_scope.value if isinstance(expected_scope, ConsentScope) else expected_scope
+            )
+
             # Use the ACTUAL scope string from token, not enum value
             granted_scope_str = scope_str
-            
+
             # Use scope_matches for proper domain isolation
             from hushh_mcp.consent.scope_helpers import scope_matches
-            
+
             if not scope_matches(granted_scope_str, expected_scope_str):
-                return False, f"Scope mismatch: token has '{granted_scope_str}', but '{expected_scope_str}' required", None
+                return (
+                    False,
+                    f"Scope mismatch: token has '{granted_scope_str}', but '{expected_scope_str}' required",
+                    None,
+                )
 
         if int(time.time() * 1000) > int(expires_at_str):
             return False, "Token expired", None
@@ -147,7 +156,7 @@ def validate_token(
             scope_str=scope_str,  # CRITICAL: Preserve actual scope string!
             issued_at=int(issued_at_str),
             expires_at=int(expires_at_str),
-            signature=signature
+            signature=signature,
         )
         return True, None, token
 
@@ -156,21 +165,20 @@ def validate_token(
 
 
 async def validate_token_with_db(
-    token_str: str,
-    expected_scope: Optional[Union[str, ConsentScope]] = None
+    token_str: str, expected_scope: Optional[Union[str, ConsentScope]] = None
 ) -> Tuple[bool, Optional[str], Optional[HushhConsentToken]]:
     """
     Validate token with additional database revocation check.
-    
+
     Use this for critical operations where cross-instance consistency matters.
     Falls back to in-memory check if DB is unavailable.
     """
     # First do the fast in-memory validation
     valid, reason, token_obj = validate_token(token_str, expected_scope)
-    
+
     if not valid:
         return valid, reason, token_obj
-    
+
     # Additional DB check for revocation status
     # This catches tokens revoked on other Cloud Run instances
     try:
@@ -180,10 +188,7 @@ async def validate_token_with_db(
             service = ConsentDBService()
             # CRITICAL FIX: Use scope_str (actual scope) for DB lookup, not enum value!
             scope_for_lookup = token_obj.scope_str if token_obj.scope_str else token_obj.scope.value
-            is_active = await service.is_token_active(
-                str(token_obj.user_id),
-                scope_for_lookup
-            )
+            is_active = await service.is_token_active(str(token_obj.user_id), scope_for_lookup)
             if not is_active:
                 # Add to in-memory set for future fast checks
                 _revoked_tokens.add(token_str)
@@ -192,22 +197,23 @@ async def validate_token_with_db(
     except Exception as e:
         # Log but don't fail - in-memory check is sufficient for single instance
         logger.warning(f"DB revocation check failed, using in-memory only: {e}")
-    
+
     return valid, reason, token_obj
 
+
 # ========== Token Revoker ==========
+
 
 def revoke_token(token_str: str) -> None:
     _revoked_tokens.add(token_str)
 
+
 def is_token_revoked(token_str: str) -> bool:
     return token_str in _revoked_tokens
 
+
 # ========== Internal Signer ==========
 
+
 def _sign(input_string: str) -> str:
-    return hmac.new(
-        SECRET_KEY.encode(),
-        input_string.encode(),
-        hashlib.sha256
-    ).hexdigest()
+    return hmac.new(SECRET_KEY.encode(), input_string.encode(), hashlib.sha256).hexdigest()

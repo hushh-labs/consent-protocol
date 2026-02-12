@@ -9,7 +9,7 @@ from mcp.types import Tool
 def get_tool_definitions() -> list[Tool]:
     """
     Return all Hushh consent tools for MCP hosts.
-    
+
     Compliance: MCP tools/list specification
     Privacy: Tools enforce consent before any data access
     """
@@ -28,7 +28,7 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier or Email Address (e.g., user@example.com)"
+                        "description": "The user's unique identifier or Email Address (e.g., user@example.com)",
                     },
                     "scope": {
                         "type": "string",
@@ -37,17 +37,21 @@ def get_tool_definitions() -> list[Tool]:
                             "or attr.{domain}.* for one domain (e.g. attr.financial.*, attr.food.*). "
                             "Domains per user from discover_user_domains(user_id). Each scope requires separate consent."
                         ),
-                        "examples": ["world_model.read", "attr.financial.*", "attr.food.*", "attr.health.*"]
+                        "examples": [
+                            "world_model.read",
+                            "attr.financial.*",
+                            "attr.food.*",
+                            "attr.health.*",
+                        ],
                     },
                     "reason": {
                         "type": "string",
-                        "description": "Human-readable reason for the request (transparency)"
-                    }
+                        "description": "Human-readable reason for the request (transparency)",
+                    },
                 },
-                "required": ["user_id", "scope"]
-            }
+                "required": ["user_id", "scope"],
+            },
         ),
-        
         # Tool 2: Validate Token
         Tool(
             name="validate_token",
@@ -61,17 +65,16 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "token": {
                         "type": "string",
-                        "description": "The consent token string (format: HCT:base64.signature)"
+                        "description": "The consent token string (format: HCT:base64.signature)",
                     },
                     "expected_scope": {
                         "type": "string",
-                        "description": "Optional: verify token has this specific scope"
-                    }
+                        "description": "Optional: verify token has this specific scope",
+                    },
                 },
-                "required": ["token"]
-            }
+                "required": ["token"],
+            },
         ),
-        
         # Tool 3: Get Financial Profile
         Tool(
             name="get_financial_profile",
@@ -86,17 +89,16 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier or Email Address"
+                        "description": "The user's unique identifier or Email Address",
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with attr.financial.* or world_model.read scope"
-                    }
+                        "description": "Valid consent token with attr.financial.* or world_model.read scope",
+                    },
                 },
-                "required": ["user_id", "consent_token"]
-            }
+                "required": ["user_id", "consent_token"],
+            },
         ),
-        
         # Tool 4: Get Food Preferences
         Tool(
             name="get_food_preferences",
@@ -111,18 +113,16 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier or Email Address"
+                        "description": "The user's unique identifier or Email Address",
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with attr.food.* or world_model.read scope"
-                    }
+                        "description": "Valid consent token with attr.food.* or world_model.read scope",
+                    },
                 },
-                "required": ["user_id", "consent_token"]
-            }
+                "required": ["user_id", "consent_token"],
+            },
         ),
-
-        
         # Tool 4: Get Professional Profile
         Tool(
             name="get_professional_profile",
@@ -137,17 +137,16 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier or Email Address"
+                        "description": "The user's unique identifier or Email Address",
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with attr.professional.* or world_model.read scope"
-                    }
+                        "description": "Valid consent token with attr.professional.* or world_model.read scope",
+                    },
                 },
-                "required": ["user_id", "consent_token"]
-            }
+                "required": ["user_id", "consent_token"],
+            },
         ),
-        
         # Tool 5: Delegate to Agent (TrustLink)
         Tool(
             name="delegate_to_agent",
@@ -161,26 +160,26 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "from_agent": {
                         "type": "string",
-                        "description": "Agent ID making the delegation (e.g., 'orchestrator')"
+                        "description": "Agent ID making the delegation (e.g., 'orchestrator')",
                     },
                     "to_agent": {
                         "type": "string",
                         "description": "Target agent ID",
-                        "enum": ["agent_food_dining", "agent_professional_profile", "agent_identity"]
+                        "enum": [
+                            "agent_food_dining",
+                            "agent_professional_profile",
+                            "agent_identity",
+                        ],
                     },
-                    "scope": {
-                        "type": "string",
-                        "description": "Scope being delegated"
-                    },
+                    "scope": {"type": "string", "description": "Scope being delegated"},
                     "user_id": {
                         "type": "string",
-                        "description": "User authorizing the delegation (or Email Address)"
-                    }
+                        "description": "User authorizing the delegation (or Email Address)",
+                    },
                 },
-                "required": ["from_agent", "to_agent", "scope", "user_id"]
-            }
+                "required": ["from_agent", "to_agent", "scope", "user_id"],
+            },
         ),
-        
         # Tool 6: List Available Scopes
         Tool(
             name="list_scopes",
@@ -188,13 +187,8 @@ def get_tool_definitions() -> list[Tool]:
                 "📋 List all available consent scopes and their descriptions. "
                 "Use this to understand what data categories exist before requesting consent."
             ),
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+            inputSchema={"type": "object", "properties": {}, "required": []},
         ),
-        
         # Tool 6b: Discover user's domains and scopes (per-user discovery)
         Tool(
             name="discover_user_domains",
@@ -208,13 +202,12 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier (Firebase UID or email to resolve)"
+                        "description": "The user's unique identifier (Firebase UID or email to resolve)",
                     }
                 },
-                "required": ["user_id"]
-            }
+                "required": ["user_id"],
+            },
         ),
-        
         # Tool 7: Check Consent Status (Production Flow)
         Tool(
             name="check_consent_status",
@@ -229,14 +222,11 @@ def get_tool_definitions() -> list[Tool]:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "The user's unique identifier or Email Address"
+                        "description": "The user's unique identifier or Email Address",
                     },
-                    "scope": {
-                        "type": "string",
-                        "description": "The scope that was requested"
-                    }
+                    "scope": {"type": "string", "description": "The scope that was requested"},
                 },
-                "required": ["user_id", "scope"]
-            }
-        )
+                "required": ["user_id", "scope"],
+            },
+        ),
     ]

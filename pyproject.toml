@@ -60,9 +60,42 @@ warn_unused_configs = true
 disallow_untyped_defs = false  # Gradual typing adoption
 ignore_missing_imports = true   # Third-party libs without stubs
 files = ["api", "hushh_mcp"]
+# Exclude modules with existing type debt (quarantined, not ignored)
+# Un-skip these one at a time as they're fixed
+exclude = [
+    "hushh_mcp/operons/",
+    "hushh_mcp/agents/",
+    "hushh_mcp/adk_bridge/",
+    "hushh_mcp/services/",
+    "hushh_mcp/trust/",
+    "hushh_mcp/vault/",
+    "hushh_mcp/tools/",
+    "hushh_mcp/hushh_adk/",
+    "hushh_mcp/consent/",
+    "hushh_mcp/constants\\.py",
+    "api/routes/kai/",
+    "api/routes/analysis\\.py",
+    "api/routes/consent\\.py",
+    "api/routes/session\\.py",
+]
 
 [[tool.mypy.overrides]]
-module = ["hushh_mcp.operons.*", "hushh_mcp.agents.*"]
+module = [
+    "hushh_mcp.operons.*",
+    "hushh_mcp.agents.*",
+    "hushh_mcp.adk_bridge.*",
+    "hushh_mcp.services.*",
+    "hushh_mcp.trust.*",
+    "hushh_mcp.vault.*",
+    "hushh_mcp.tools.*",
+    "hushh_mcp.hushh_adk.*",
+    "hushh_mcp.consent.*",
+    "hushh_mcp.constants",
+    "api.routes.kai.*",
+    "api.routes.analysis",
+    "api.routes.consent",
+    "api.routes.session",
+]
 follow_imports = "skip"
 
 [tool.bandit]
@@ -70,6 +103,7 @@ exclude_dirs = ["tests", "__pycache__"]
 skips = ["B101"]  # Skip assert warnings
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]

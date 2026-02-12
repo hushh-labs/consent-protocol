@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api", tags=["Agents"])
 # TOKEN VALIDATION
 # ============================================================================
 
+
 @router.post("/validate-token")
 async def validate_token_endpoint(request: ValidateTokenRequest):
     """
@@ -29,11 +30,11 @@ async def validate_token_endpoint(request: ValidateTokenRequest):
     Used by frontend to verify tokens before performing privileged actions.
     """
     from hushh_mcp.consent.token import validate_token
-    
+
     try:
         # Validate signature and expiration
         valid, reason, token_obj = validate_token(request.token)
-        
+
         if not valid:
             # SECURITY: Return generic message, log detailed reason server-side
             logger.warning(f"Token validation failed: {reason}")
@@ -42,12 +43,12 @@ async def validate_token_endpoint(request: ValidateTokenRequest):
         if token_obj is None:
             logger.error("Token validation succeeded but token payload was missing")
             return {"valid": False, "reason": "Token validation failed"}
-            
+
         return {
-            "valid": True, 
+            "valid": True,
             "user_id": str(token_obj.user_id),
             "agent_id": str(token_obj.agent_id),
-            "scope": token_obj.scope.value
+            "scope": token_obj.scope.value,
         }
     except Exception as e:
         # SECURITY: Never expose exception details to client (CodeQL fix)
@@ -59,36 +60,37 @@ async def validate_token_endpoint(request: ValidateTokenRequest):
 # KAI FINANCIAL AGENT
 # ============================================================================
 
+
 @router.post("/agents/kai/chat", response_model=ChatResponse)
 async def kai_chat(request: ChatRequest):
     """
     Handle Kai Financial agent chat messages.
-    
+
     This endpoint manages the agentic flow for:
     - Fundamental Analysis
     - Sentiment Analysis
     - Valuation Analysis
-    
+
     Orchestrates tools via Gemini 3 Flash.
     """
     logger.info(f"📈 Kai Agent: user={request.userId}, msg='{request.message[:50]}...'")
-    
+
     try:
         result = get_kai_agent().handle_message(
             message=request.message,
             user_id=request.userId,
             # session_state=request.sessionState # Kai likely manages state in context/memory
         )
-        
+
         # Kai's ADK agent returns 'is_complete' when tools are done.
-        
+
         return ChatResponse(
             response=result.get("response", ""),
-            sessionState=None, # Kai uses internal ADK memory
-            needsConsent=False, # Handled via tools if needed in future
+            sessionState=None,  # Kai uses internal ADK memory
+            needsConsent=False,  # Handled via tools if needed in future
             isComplete=result.get("is_complete", True),
             # UI hints (Optional for Kai)
-            ui_type=None, 
+            ui_type=None,
             options=[],
         )
     except Exception as e:
