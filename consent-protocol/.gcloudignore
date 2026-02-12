@@ -1,8 +1,0 @@
-.git
-.gitignore
-__pycache__/
-*.pyc
-venv/
-.env
-.vscode/
-tests/
