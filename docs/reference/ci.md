@@ -56,7 +56,7 @@ Using a different Node or Python locally can cause “pass locally, fail in CI�
 
 **Coding rules that affect CI:**
 
-- Do **not** use `fetch("/api/...")` in components or pages; use the service layer (see [Project Context Map](../project_context_map.md) and [.cursorrules](../../.cursorrules)).
+- Do **not** use `fetch("/api/...")` in components or pages; use the service layer (see [Architecture](./architecture.md)).
 - ESLint must pass with no **errors** (warnings may exist but should be cleaned up over time).
 - TypeScript must compile with no errors.
 
@@ -101,7 +101,7 @@ Using a different Node or Python locally can cause “pass locally, fail in CI�
 | Install | `npm ci` in `hushh-webapp/` | Yes |
 | Verify | `npm run verify:routes` (script: `scripts/verify-route-contracts.cjs`) | Yes |
 
-Route contracts must stay in sync between frontend expectations and backend (or proxy) routes. See [Route Contracts](route_contracts.md). If you add or change API routes, update the contract and run `npm run verify:routes` (or full local CI).
+Route contracts must stay in sync between frontend expectations and backend (or proxy) routes. See [API Contracts](api-contracts.md). If you add or change API routes, update the contract and run `npm run verify:routes` (or full local CI).
 
 ---
 
@@ -141,8 +141,6 @@ If it exits 0, CI should pass. If it fails, fix the reported step before committ
 
 ## Related Docs
 
-- [Testing Guide](../../testing.md) — BYOK, test structure, fixtures, CI integration summary.
-- [Contributor Onboarding](guides/contributor_onboarding.md) — Setup and “test CI locally” step.
-- [Contributing](../../contributing.md) — Tri-Flow, consent-first, and local CI requirement.
-- [Route Contracts](route_contracts.md) — API contract verification.
-- [Project Context Map](../project_context_map.md) — Tri-Flow and service-layer rules.
+- [Getting Started](../guides/getting-started.md) -- Setup and local CI instructions.
+- [API Contracts](api-contracts.md) -- API contract verification.
+- [Architecture](./architecture.md) -- Tri-Flow and service-layer rules.

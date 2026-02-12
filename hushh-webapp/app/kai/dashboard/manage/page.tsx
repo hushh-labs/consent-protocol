@@ -34,6 +34,7 @@ import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { useVault } from "@/lib/vault/vault-context";
 import { useAuth } from "@/lib/firebase";
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { normalizeStoredPortfolio } from "@/lib/utils/portfolio-normalize";
 import { HushhVault } from "@/lib/capacitor";
 import { useCache } from "@/lib/cache/cache-context";
 import { EditHoldingModal } from "@/components/kai/modals/edit-holding-modal";
@@ -197,7 +198,9 @@ export default function ManagePortfolioPage() {
                 
                 // Parse decrypted data
                 const allData = JSON.parse(decrypted.plaintext);
-                parsed = allData.financial || allData;
+                const rawFinancial = allData.financial || allData;
+                // Normalize Review-format → Dashboard-format field names
+                parsed = normalizeStoredPortfolio(rawFinancial) as typeof parsed;
                 
                 // Update cache for future use
                 if (parsed) {

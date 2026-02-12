@@ -12,7 +12,7 @@ Use this checklist for EVERY new feature that involves data operations.
 - [ ] Create endpoint in `consent-protocol/api/routes/{domain}.py`
 - [ ] Add VAULT_OWNER token validation
 - [ ] Test endpoint with curl/Postman
-- [ ] Document in `docs/reference/route_contracts.md` (or use symlink `docs/technical/route_contracts.md`)
+- [ ] Document in `docs/reference/api-contracts.md`
 
 ## Web Proxy (Next.js)
 
@@ -103,7 +103,7 @@ If you add a new `.swift` file (e.g. a new plugin or helper) and need to edit `i
 ## Documentation
 
 - [ ] Add route to `hushh-webapp/route-contracts.json`
-- [ ] Update `docs/reference/route_contracts.md` (or use symlink `docs/technical/route_contracts.md`) if needed
+- [ ] Update `docs/reference/api-contracts.md` if needed
 - [ ] Add JSDoc comments to service methods
 
 ## Common Mistakes to Avoid
@@ -291,7 +291,7 @@ For features that use Server-Sent Events (SSE) streaming:
 
 - [Project Context Map](../project_context_map.md) - Tri-flow architecture rules
 - [Component README](../../hushh-webapp/components/README.md) - Component guidelines
-- [Route Contracts](../reference/route_contracts.md) - Endpoint documentation
+- [Route Contracts](../reference/api-contracts.md) - Endpoint documentation
 - [Architecture](../reference/architecture.md) - System design
 - [Native Streaming Guide](./native_streaming.md) - SSE streaming patterns
 - [Testing Guide](../testing.md) - BYOK-compliant testing
