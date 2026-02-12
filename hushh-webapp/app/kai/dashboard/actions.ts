@@ -29,7 +29,7 @@ export interface KaiSession {
 // API CONFIGURATION
 // =============================================================================
 
-function getBackendUrl(): string {
+function _getBackendUrl(): string {
   // If running on native mobile device, we MUST use absolute URL
   if (Capacitor.isNativePlatform()) {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -136,13 +136,13 @@ export async function clearConsentTokens(): Promise<void> {
  * This will be used to save risk profile and processing mode
  */
 export async function storeKaiPreferences(
-  userId: string,
-  preferences: {
+  _userId: string,
+  _preferences: {
     risk_profile: RiskProfile;
     processing_mode: ProcessingMode;
   },
-  vaultKey: string,
-  consentToken: string
+  _vaultKey: string,
+  _consentToken: string
 ): Promise<{ success: boolean }> {
   // This would call the vault storage operon
   // For now, preferences are stored in kai_sessions table

@@ -11,12 +11,10 @@ No Firebase Auth fallback - consistent with Consent-First Architecture.
 import logging
 from typing import Any, Dict, Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
-from hushh_mcp.consent.token import issue_token
-from hushh_mcp.constants import ConsentScope
 
 logger = logging.getLogger(__name__)
 

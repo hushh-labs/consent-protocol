@@ -10,7 +10,7 @@
 
   ```bash
   gcloud auth login
-  gcloud config set project hushh-pda
+  gcloud config set project YOUR_GCP_PROJECT
   ```
 
 - [x] Docker installed and running
@@ -190,7 +190,7 @@
 - [x] Check Cloud Run metrics
 
   ```
-  https://console.cloud.google.com/run?project=hushh-pda
+  https://console.cloud.google.com/run?project=YOUR_GCP_PROJECT
   ```
 
 - [x] Verify auto-scaling works

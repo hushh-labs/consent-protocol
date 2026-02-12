@@ -15,11 +15,10 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { cn } from "@/lib/morphy-ux";
 import {
   StreamingStageIndicator,
-  ThinkingIndicator,
 } from "@/lib/morphy-ux";
 import { StreamingAccordion } from "@/lib/morphy-ux/streaming-accordion";
 import { 
@@ -29,7 +28,7 @@ import {
   CardTitle 
 } from "@/lib/morphy-ux/card";
 import { Button as MorphyButton } from "@/lib/morphy-ux/button";
-import { X, FileText, FileChartColumn, Database, CheckCircle2, Loader2, Zap } from "lucide-react";
+import { X, FileChartColumn, Database, CheckCircle2 } from "lucide-react";
 
 
 export type ImportStage =
@@ -105,7 +104,6 @@ export function ImportProgressView({
   className,
 }: ImportProgressViewProps) {
   const currentStageIndex = stageToIndex[stage];
-  const [formattedResult, setFormattedResult] = useState<string | null>(null);
 
   // Determine if we're in a thinking or extracting phase
   const isThinking = stage === "thinking";
@@ -120,11 +118,6 @@ export function ImportProgressView({
     }
     return thoughts.map((t, i) => `[${i + 1}] **${t}**`).join("\n");
   }, [thoughts, isThinking]);
-
-  // Handle when formatting is complete
-  const handleFormatComplete = useCallback((formatted: string) => {
-    setFormattedResult(formatted);
-  }, []);
 
   return (
     <Card className={cn("w-full", className)}>

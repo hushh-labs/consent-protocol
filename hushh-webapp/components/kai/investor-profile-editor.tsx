@@ -13,7 +13,6 @@
  */
 
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
 import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 import {
@@ -26,10 +25,6 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/lib/morphy-ux/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -41,13 +36,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/lib/morphy-ux/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import type { InvestorProfile } from "@/lib/services/identity-service";
 import { cn } from "@/lib/utils";
@@ -87,7 +75,7 @@ type SectorRow = {
   value?: number | null; // %
 };
 
-type Jsonish = Record<string, unknown> | unknown[] | null;
+type _Jsonish = Record<string, unknown> | unknown[] | null;
 
 function clampNumber(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -105,14 +93,6 @@ function uniqAdd(list: string[] | null | undefined, value: string): string[] {
   return [...base, v];
 }
 
-function stringifyJson(value: Jsonish): string {
-  if (value == null) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return "";
-  }
-}
 
 function listToCsv(list: string[] | null | undefined): string {
   return list?.length ? list.join(", ") : "";
@@ -196,8 +176,8 @@ export function InvestorProfileEditor(props: {
   const {
     value,
     onChange,
-    readOnlyProvenance = true,
-    flat = false,
+    readOnlyProvenance: _readOnlyProvenance = true,
+    flat: _flat = false,
     readOnly = false,
   } = props;
 
@@ -298,7 +278,7 @@ export function InvestorProfileEditor(props: {
           <BackgroundContent
             value={value}
             onChange={onChange}
-            readOnlyProvenance={readOnlyProvenance}
+            readOnlyProvenance={_readOnlyProvenance}
             readOnly={readOnly}
           />
         </TabsContent>
@@ -448,17 +428,17 @@ function PortfolioDNAContent({
   setBuysInput,
   sellsInput,
   setSellsInput,
-  applyStructured,
+  applyStructured: _applyStructured,
   readOnly = false,
 }: {
   value: EnrichedInvestorProfile;
   onChange: (v: EnrichedInvestorProfile) => void;
   holdingsRows: HoldingRow[];
-  setHoldingsRows: (r: HoldingRow[]) => void;
-  holdingsChartData: any[];
+  setHoldingsRows: (rows: HoldingRow[]) => void;
+  holdingsChartData: { ticker: string; value: number }[];
   sectorRows: SectorRow[];
-  setSectorRows: (r: SectorRow[]) => void;
-  sectorChartData: any[];
+  setSectorRows: (rows: SectorRow[]) => void;
+  sectorChartData: { name: string; value: number }[];
   buysInput: string;
   setBuysInput: (v: string) => void;
   sellsInput: string;
@@ -799,7 +779,7 @@ function PortfolioDNAContent({
 function BackgroundContent({
   value,
   onChange,
-  readOnlyProvenance,
+  readOnlyProvenance: _readOnlyProvenance,
   readOnly = false,
 }: {
   value: EnrichedInvestorProfile;

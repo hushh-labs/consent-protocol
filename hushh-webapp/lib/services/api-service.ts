@@ -794,7 +794,6 @@ export class ApiService {
     // Updated to use dynamic attr.* scopes instead of legacy vault.read.*/vault.write.*
     const scopes = data.scopes || [
       "attr.financial.risk_profile",  // Replaces vault.read.risk_profile
-      "attr.kai_decisions.*",          // Replaces vault.write.decision
       "agent.kai.analyze",
     ];
 

@@ -48,9 +48,9 @@ export function ConsentNotificationProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
+  const _router = useRouter();
   const { isVaultUnlocked } = useVault();
-  const [pendingCount, setPendingCount] = useState(0);
+  const [_pendingCount, setPendingCount] = useState(0);
   const { user } = useAuth();
   const fcmInitializedRef = useRef(false);
   const fetchPendingRef = useRef<(userId: string) => void>(() => {});
@@ -60,14 +60,14 @@ export function ConsentNotificationProvider({
     handleApprove,
     handleDeny,
     shouldShowToast,
-    shouldDismissToast,
+    shouldDismissToast: _shouldDismissToast,
     markAsPending,
-    clearRequest,
+    clearRequest: _clearRequest,
   } = useConsentActions({
+    userId: user?.uid,
     onActionComplete: () => {
       // Refresh pending count after action
-      const userId = sessionStorage.getItem("user_id");
-      if (userId) fetchPendingAndShowToasts(userId);
+      if (user?.uid) fetchPendingAndShowToasts(user.uid);
     },
   });
 
@@ -158,21 +158,23 @@ export function ConsentNotificationProvider({
   );
 
   // Keep ref updated for FCM message handler
-  fetchPendingRef.current = fetchPendingAndShowToasts;
+  useEffect(() => {
+    fetchPendingRef.current = fetchPendingAndShowToasts;
+  }, [fetchPendingAndShowToasts]);
 
   // Initialize FCM when user logs in
   useEffect(() => {
     if (!user || fcmInitializedRef.current) return;
 
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) return;
+    const uid = user.uid;
+    if (!uid) return;
 
     fcmInitializedRef.current = true;
 
     user
       .getIdToken()
       .then((idToken) => {
-        return initializeFCM(userId, idToken);
+        return initializeFCM(uid, idToken);
       })
       .catch((err) => {
         console.error("[NotificationProvider] FCM initialization failed:", err);
@@ -192,9 +194,9 @@ export function ConsentNotificationProvider({
         return;
       }
 
-      const userId = sessionStorage.getItem("user_id");
-      if (userId) {
-        fetchPendingRef.current(userId);
+      const uid = user?.uid;
+      if (uid) {
+        fetchPendingRef.current(uid);
       }
     };
 
@@ -203,7 +205,7 @@ export function ConsentNotificationProvider({
     return () => {
       window.removeEventListener(FCM_MESSAGE_EVENT, handleFCMMessage);
     };
-  }, [isVaultUnlocked]);
+  }, [isVaultUnlocked, user?.uid]);
 
   // Poll for initial pending consents when vault unlocks
   useEffect(() => {
@@ -214,17 +216,17 @@ export function ConsentNotificationProvider({
       return;
     }
 
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) {
+    const uid = user?.uid;
+    if (!uid) {
       console.log(
-        "🔔 [NotificationProvider] No user_id on mount, skipping fetch"
+        "🔔 [NotificationProvider] No user on mount, skipping fetch"
       );
       return;
     }
 
     console.log("🔔 [NotificationProvider] Polling for pending (vault unlocked)");
-    fetchPendingAndShowToasts(userId);
-  }, [isVaultUnlocked, fetchPendingAndShowToasts]);
+    fetchPendingAndShowToasts(uid);
+  }, [isVaultUnlocked, user?.uid, fetchPendingAndShowToasts]);
 
   // Native fallback polling (iOS Simulator cannot receive APNs push).
   // Keep this light: refresh pending list periodically while vault is unlocked.
@@ -232,16 +234,16 @@ export function ConsentNotificationProvider({
     if (!Capacitor.isNativePlatform()) return;
     if (!isVaultUnlocked) return;
 
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) return;
+    const uid = user?.uid;
+    if (!uid) return;
 
     const intervalMs = 10_000;
     const id = window.setInterval(() => {
-      fetchPendingRef.current(userId);
+      fetchPendingRef.current(uid);
     }, intervalMs);
 
     return () => window.clearInterval(id);
-  }, [isVaultUnlocked]);
+  }, [isVaultUnlocked, user?.uid]);
 
   return <>{children}</>;
 }
@@ -253,23 +255,24 @@ export function ConsentNotificationProvider({
 export function usePendingConsentCount() {
   const [count, setCount] = useState(0);
   const { isVaultUnlocked } = useVault();
+  const { user } = useAuth();
 
   // Fetch count from API
   const fetchCount = useCallback(async () => {
     if (!isVaultUnlocked) return;
 
-    const userId = sessionStorage.getItem("user_id");
-    if (!userId) return;
+    const uid = user?.uid;
+    if (!uid) return;
 
     try {
-      const response = await ApiService.getPendingConsents(userId);
+      const response = await ApiService.getPendingConsents(uid);
       if (!response.ok) return;
       const data = await response.json().catch(() => ({}));
       setCount(data.pending?.length || 0);
     } catch (err) {
       console.error("Error fetching pending count:", err);
     }
-  }, [isVaultUnlocked]);
+  }, [isVaultUnlocked, user?.uid]);
 
   // Initial fetch when vault unlocks
   useEffect(() => {

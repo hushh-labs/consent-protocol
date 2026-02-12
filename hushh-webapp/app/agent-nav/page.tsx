@@ -33,8 +33,8 @@ export default function AgentNavPage() {
   const [wordIndex, setWordIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [showCursor, setShowCursor] = useState(true);
+  const [_isPaused, _setIsPaused] = useState(false);
+  const [_showCursor, setShowCursor] = useState(true);
 
   // Register 1 step: Auth check
   useEffect(() => {

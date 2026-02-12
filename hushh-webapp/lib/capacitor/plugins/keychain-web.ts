@@ -2,7 +2,7 @@
  * HushhKeychain Web Fallback Implementation
  *
  * This implementation is used when running in a browser (web/cloud mode).
- * Uses sessionStorage/localStorage as a fallback (NOT secure like iOS Keychain).
+ * Uses an in-memory Map as a fallback (NOT secure like iOS Keychain).
  *
  * WARNING: This is for development/testing only.
  * In production web mode, consider using IndexedDB with encryption.
@@ -21,21 +21,15 @@ import type {
 const KEYCHAIN_PREFIX = "hushh_keychain_";
 
 export class HushhKeychainWeb extends WebPlugin {
+  /** In-memory store replacing sessionStorage for web fallback */
+  private store = new Map<string, string>();
+
   /**
-   * Store a value - uses sessionStorage in web mode
-   * (sessionStorage is more secure than localStorage as it clears on tab close)
+   * Store a value - uses in-memory Map in web mode
    */
   async set(options: KeychainSetOptions): Promise<void> {
     const key = KEYCHAIN_PREFIX + options.key;
-
-    // In web mode, use sessionStorage for in-memory-like behavior
-    // This is NOT as secure as iOS Keychain but works for development
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem(key, options.value);
-    } else {
-      // Fallback to in-memory storage
-      (globalThis as unknown as Record<string, string>)[key] = options.value;
-    }
+    this.store.set(key, options.value);
   }
 
   /**
@@ -43,14 +37,7 @@ export class HushhKeychainWeb extends WebPlugin {
    */
   async get(options: KeychainGetOptions): Promise<KeychainGetResult> {
     const key = KEYCHAIN_PREFIX + options.key;
-
-    if (typeof sessionStorage !== "undefined") {
-      return { value: sessionStorage.getItem(key) };
-    } else {
-      return {
-        value: (globalThis as unknown as Record<string, string>)[key] || null,
-      };
-    }
+    return { value: this.store.get(key) ?? null };
   }
 
   /**
@@ -58,12 +45,7 @@ export class HushhKeychainWeb extends WebPlugin {
    */
   async delete(options: KeychainDeleteOptions): Promise<void> {
     const key = KEYCHAIN_PREFIX + options.key;
-
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.removeItem(key);
-    } else {
-      delete (globalThis as unknown as Record<string, string>)[key];
-    }
+    this.store.delete(key);
   }
 
   /**

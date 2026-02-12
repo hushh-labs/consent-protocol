@@ -11,7 +11,7 @@
 │                     Google Cloud Platform                       │
 ├──────────────────────┬─────────────────────┬───────────────────┤
 │    hushh-webapp      │  consent-protocol   │   Supabase        │
-│    (Next.js 15)      │  (FastAPI/Python)   │   (PostgreSQL)    │
+│    (Next.js 16)      │  (FastAPI/Python)   │   (PostgreSQL)    │
 │    Port: 8080        │  Port: 8080         │   Session Pooler  │
 ├──────────────────────┼─────────────────────┼───────────────────┤
 │  Artifact Registry   │  Secret Manager     │   Cloud Build     │

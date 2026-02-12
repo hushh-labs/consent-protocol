@@ -55,7 +55,7 @@ interface VaultLockGuardProps {
 export function VaultLockGuard({ children }: VaultLockGuardProps) {
   const router = useRouter();
   const { isVaultUnlocked } = useVault();
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const preloadedRef = useRef(false);
 
   // Preload onboarding status when vault is unlocked

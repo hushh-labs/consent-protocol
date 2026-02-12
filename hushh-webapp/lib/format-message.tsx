@@ -7,7 +7,7 @@
 
 import React from "react";
 
-interface FormattedMessage {
+interface _FormattedMessage {
   type: "text" | "bold" | "bullet" | "divider" | "heading";
   content: string;
 }

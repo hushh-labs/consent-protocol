@@ -4,7 +4,7 @@
  *
  * Provides platform-aware methods for:
  * - Fetching user metadata (domains, attributes)
- * - Storing encrypted attributes
+ * - Storing encrypted domain data blobs (BYOK)
  * - Managing domain discovery
  * - Scope validation
  *
@@ -327,10 +327,6 @@ export class WorldModelService {
   }
 
   /**
-   * Store an encrypted attribute.
-   * Domain will be auto-inferred if not provided.
-   */
-  /**
    * Store domain data (NEW blob-based architecture).
    *
    * This is the NEW method for storing user data following BYOK principles.
@@ -349,7 +345,7 @@ export class WorldModelService {
     vaultOwnerToken?: string;
   }): Promise<{ success: boolean }> {
     if (Capacitor.isNativePlatform()) {
-      return HushhWorldModel.storeDomainData({
+      const result = await HushhWorldModel.storeDomainData({
         userId: params.userId,
         domain: params.domain,
         encryptedBlob: {
@@ -361,6 +357,18 @@ export class WorldModelService {
         summary: params.summary,
         vaultOwnerToken: this.getVaultOwnerToken(params.vaultOwnerToken),
       });
+
+      // Invalidate caches after successful native store
+      if (result.success) {
+        const cache = CacheService.getInstance();
+        cache.invalidate(CACHE_KEYS.DOMAIN_DATA(params.userId, params.domain));
+        cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(params.userId));
+        if (params.domain === "financial") {
+          cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(params.userId));
+        }
+      }
+
+      return result;
     }
 
     // Web: Use ApiService.apiFetch() for tri-flow compliance
@@ -389,71 +397,16 @@ export class WorldModelService {
     }
 
     const data = await response.json();
+
+    // Invalidate caches after successful store
+    const cache = CacheService.getInstance();
+    cache.invalidate(CACHE_KEYS.DOMAIN_DATA(params.userId, params.domain));
+    cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(params.userId));
+    if (params.domain === "financial") {
+      cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(params.userId));
+    }
+
     return data;
-  }
-
-  /**
-   * Store an encrypted attribute in the World Model.
-   * Domain will be auto-inferred if not provided.
-   * 
-   * @deprecated Use storeDomainData() for new code (blob-based architecture)
-   */
-  static async storeAttribute(
-    userId: string,
-    attributeKey: string,
-    encryptedValue: EncryptedValue,
-    options?: {
-      domain?: string;
-      displayName?: string;
-      dataType?: string;
-      source?: string;
-    }
-  ): Promise<{ success: boolean; scope: string }> {
-    if (Capacitor.isNativePlatform()) {
-      return HushhWorldModel.storeAttribute({
-        userId,
-        attributeKey,
-        ciphertext: encryptedValue.ciphertext,
-        iv: encryptedValue.iv,
-        tag: encryptedValue.tag,
-        domain: options?.domain,
-        displayName: options?.displayName,
-        dataType: options?.dataType,
-        source: options?.source,
-        vaultOwnerToken: this.getVaultOwnerToken(),
-      });
-    }
-
-    // Web: Use ApiService.apiFetch() for tri-flow compliance
-    const response = await ApiService.apiFetch("/api/world-model/attributes", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...this.getAuthHeaders(),
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        domain: options?.domain,
-        attribute_key: attributeKey,
-        ciphertext: encryptedValue.ciphertext,
-        iv: encryptedValue.iv,
-        tag: encryptedValue.tag,
-        algorithm: encryptedValue.algorithm || "aes-256-gcm",
-        source: options?.source || "explicit",
-        display_name: options?.displayName,
-        data_type: options?.dataType || "string",
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to store attribute: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return {
-      success: data.success,
-      scope: data.scope,
-    };
   }
 
   /**

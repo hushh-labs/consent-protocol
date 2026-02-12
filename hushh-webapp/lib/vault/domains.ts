@@ -51,7 +51,7 @@ export async function fetchDomains(includeEmpty = false): Promise<DomainInfo[]> 
  * Fetch domains for a specific user.
  * Only returns domains where the user has data.
  */
-export async function fetchUserDomains(userId: string): Promise<DomainInfo[]> {
+export async function fetchUserDomains(_userId: string): Promise<DomainInfo[]> {
   try {
     // For now, just return all domains - the backend will eventually support user-specific filtering
     return await WorldModelService.listDomains(false);

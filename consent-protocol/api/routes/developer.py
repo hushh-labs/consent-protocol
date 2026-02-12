@@ -7,6 +7,7 @@ Only world-model scopes are supported: world_model.read, world_model.write, attr
 
 import logging
 import os
+import re
 import time
 import uuid
 
@@ -18,8 +19,9 @@ from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_en
 from hushh_mcp.services.consent_db import ConsentDBService
 from shared import REGISTERED_DEVELOPERS
 
-# World-model scopes only (dot notation). API accepts these or API-format equivalents (e.g. attr_food).
-VALID_WORLD_MODEL_SCOPES = {
+# Well-known world-model scopes (dot notation).
+# API also accepts any dynamic attr.{domain}.* scope based on available_domains.
+_STATIC_WORLD_MODEL_SCOPES = {
     "world_model.read",
     "world_model.write",
     "attr.food.*",
@@ -28,6 +30,16 @@ VALID_WORLD_MODEL_SCOPES = {
     "attr.health.*",
     "attr.kai_decisions.*",
 }
+
+# Pattern for dynamic attr.{domain}.* scopes (lowercase alphanumeric + underscores)
+_DYNAMIC_ATTR_SCOPE_RE = re.compile(r"^attr\.[a-z][a-z0-9_]*\.\*$")
+
+
+def _is_valid_world_model_scope(scope: str) -> bool:
+    """Return True if *scope* is a recognized world-model scope (static or dynamic)."""
+    if scope in _STATIC_WORLD_MODEL_SCOPES:
+        return True
+    return bool(_DYNAMIC_ATTR_SCOPE_RE.match(scope))
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +97,7 @@ async def request_consent(request: ConsentRequest):
     
     # Normalize to dot notation for storage and validation (e.g. attr_food -> attr.food.*)
     scope_dot = normalize_scope(request.scope)
-    if scope_dot not in VALID_WORLD_MODEL_SCOPES:
+    if not _is_valid_world_model_scope(scope_dot):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid scope: {request.scope}. Use world_model.read, world_model.write, or attr.{{domain}}.* (e.g. attr.food.*)"
@@ -97,7 +109,7 @@ async def request_consent(request: ConsentRequest):
         raise HTTPException(status_code=403, detail=f"Scope '{scope_dot}' not approved for this developer")
 
     # Resolve to enum for token issuance
-    scope_enum = resolve_scope_to_enum(scope_dot)
+    _scope_enum = resolve_scope_to_enum(scope_dot)
     
     # Check if consent already granted (query database with dot notation)
     service = ConsentDBService()
@@ -182,6 +194,8 @@ async def list_available_scopes():
     List all available consent scopes (world-model only).
 
     Developers can reference this to understand what data they can request.
+    Dynamic ``attr.{domain}.*`` scopes are accepted for any domain registered
+    in the user's world model.
     """
     return {
         "scopes": [
@@ -192,5 +206,6 @@ async def list_available_scopes():
             {"name": "attr.financial.*", "description": "Read user's financial data"},
             {"name": "attr.health.*", "description": "Read user's health and wellness data"},
             {"name": "attr.kai_decisions.*", "description": "Read/write Kai decision history"},
+            {"name": "attr.{domain}.*", "description": "Dynamic: any domain from world_model_index_v2.available_domains"},
         ]
     }

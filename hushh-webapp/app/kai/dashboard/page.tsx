@@ -17,20 +17,17 @@ import { useVault } from "@/lib/vault/vault-context";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { KaiFlow, FlowState } from "@/components/kai/kai-flow";
 import { KaiSearchBar } from "@/components/kai/kai-search-bar";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export default function KaiPage() {
-  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { vaultOwnerToken } = useVault();
-  const [holdings, setHoldings] = useState<string[]>([]);
+  const [_holdings, setHoldings] = useState<string[]>([]);
   const [flowState, setFlowState] = useState<FlowState>("checking");
   const [initialized, setInitialized] = useState(false);
   
   // Ref to call KaiFlow's analyze function
-  const analyzeStockRef = useRef<((symbol: string) => void) | null>(null);
+  const _analyzeStockRef = useRef<((symbol: string) => void) | null>(null);
 
   const { registerSteps, completeStep, reset } = useStepProgress();
 
@@ -72,18 +69,6 @@ export default function KaiPage() {
   // We trust the layout guard and don't duplicate the check here.
   // If we reach this point, the vault is guaranteed to be unlocked.
 
-  // Handle search bar commands
-  const handleCommand = (command: string, params?: Record<string, unknown>) => {
-    console.log("[Kai] Command:", command, params);
-
-    if (command === "analyze" && params?.symbol) {
-      toast.info(`Stock analysis for ${params.symbol} is coming soon!`, {
-        description: "We are currently refining our debate engine for more precise insights."
-      });
-    } else if (command === "open_settings") {
-      router.push("/kai/dashboard/preferences");
-    }
-  };
  
   // Update holdings when KaiFlow loads portfolio data
   const handleHoldingsUpdate = (newHoldings: string[]) => {

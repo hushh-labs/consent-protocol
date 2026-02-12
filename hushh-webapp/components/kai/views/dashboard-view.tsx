@@ -22,7 +22,7 @@
 
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import {
   Settings,
   TrendingUp,
@@ -53,8 +53,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { StockAnalysisDialog } from "@/components/kai/stock-analysis-dialog";
-import { getStockContext } from "@/lib/services/kai-service";
 import { useVault } from "@/lib/vault/vault-context";
 import { toast } from "sonner";
 import { PortfolioHistoryChart, type HistoricalDataPoint } from "../charts/portfolio-history-chart";
@@ -70,6 +68,7 @@ import { YtdSummaryCard, type YtdData } from "../cards/ytd-summary-card";
 import { KPICard } from "../cards/kpi-card";
 import { TopMoversCard } from "../cards/top-movers-card";
 import { PortfolioMetricsCard } from "../cards/portfolio-metrics-card";
+import { StockSearch } from "./stock-search";
 
 // =============================================================================
 // TYPES
@@ -215,10 +214,6 @@ export function DashboardView({
   onReupload,
   onClearData,
 }: DashboardViewProps) {
-  const [showDialog, setShowDialog] = useState(false);
-  const [selectedTicker, setSelectedTicker] = useState("");
-  const [analysisContext, setAnalysisContext] = useState<any>(undefined);
-  
   const { vaultOwnerToken } = useVault();
   
   // Generate unique request ID
@@ -228,41 +223,18 @@ export function DashboardView({
 
   // Handle analyze stock click
   const handleAnalyzeStock = async (ticker: string) => {
-    setSelectedTicker(ticker);
-    
-    try {
-      if (vaultOwnerToken) {
-        setAnalysisContext(
-          await getStockContext(ticker, vaultOwnerToken)
-        );
-      }
-    } catch (error) {
-      console.error("[DashboardView] Failed to get context:", error);
-      toast.error("Failed to load context", {
-        description: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-    
-    setShowDialog(true);
-  };
-
-  // Handle dialog confirmation
-  const handleDialogConfirm = async () => {
-    console.log("[DashboardView] Dialog confirm clicked for:", selectedTicker);
-    if (!selectedTicker || !vaultOwnerToken) {
-      console.error("Missing ticker or vault token");
+    if (!vaultOwnerToken) {
+      console.error("Vault must be unlocked for stock analysis");
       toast?.error?.("Please unlock your vault first");
       return;
     }
     
-    setShowDialog(false);
-    
     // Call KaiFlow's handleAnalyzeStock - this will write to sessionStorage and navigate
     try {
       const requestId = generateRequestId();
-      console.log(`[DashboardView] Starting analysis for ${selectedTicker} (Request ${requestId})`);
+      console.log(`[DashboardView] Starting analysis for ${ticker} (Request ${requestId})`);
       
-      await onAnalyzeStock?.(selectedTicker);
+      await onAnalyzeStock?.(ticker);
       console.log("[DashboardView] Analysis started successfully");
     } catch (error) {
       console.error("[DashboardView] Error starting analysis:", error);
@@ -401,7 +373,7 @@ export function DashboardView({
   const hasTransactions = transactions.length > 0;
   const hasCashFlow = portfolioData.cash_flow && 
     (portfolioData.cash_flow.opening_balance || portfolioData.cash_flow.closing_balance);
-  const hasIncomeDetail = portfolioData.income_detail || portfolioData.income_summary;
+  const _hasIncomeDetail = portfolioData.income_detail || portfolioData.income_summary;
   const hasMeaningfulIncome = useMemo(() => {
     const summary = portfolioData.income_summary;
     const detail = portfolioData.income_detail;
@@ -497,8 +469,8 @@ export function DashboardView({
   return (
     <div className="w-full space-y-3">
       {/* Header with Actions */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-lg font-semibold">Portfolio Dashboard</h1>
           {brokerageName && (
             <p className="text-sm text-muted-foreground">
@@ -509,20 +481,13 @@ export function DashboardView({
         </div>
 
         <div className="flex items-center gap-2">
-          {onAnalyzeLosers && (
-            <MorphyButton
-              variant="muted"
-              size="default"
-              onClick={onAnalyzeLosers}
-              className="px-6 cursor-pointer rounded-2xl border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all font-bold"
-              icon={{ icon: Activity }}
-            >
-              <span className="ml-2 text-base">Optimize Portfolio</span>
-            </MorphyButton>
-          )}
-
-
-          <DropdownMenu modal={false}>
+            {/* New Autocomplete Search */}
+            <StockSearch 
+                onSelect={handleAnalyzeStock} 
+                className="w-[200px] md:w-[300px]"
+            />
+            
+            <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <MorphyButton 
                 variant="muted"
@@ -534,6 +499,12 @@ export function DashboardView({
             </DropdownMenuTrigger>
 
             <DropdownMenuContent align="end" className="w-48" sideOffset={5} avoidCollisions={false}>
+              {onAnalyzeLosers && (
+                <DropdownMenuItem onClick={onAnalyzeLosers} className="cursor-pointer">
+                  <Activity className="w-4 h-4 mr-2" />
+                  Optimize Portfolio
+                </DropdownMenuItem>
+              )}
               {onReupload && (
                 <DropdownMenuItem onClick={onReupload} className="cursor-pointer">
                   <Upload className="w-4 h-4 mr-2" />
@@ -878,21 +849,6 @@ export function DashboardView({
           </button>
         </div>
 
-        {/* Confirmation Dialog */}
-        <StockAnalysisDialog
-          ticker={selectedTicker}
-          context={analysisContext}
-          onConfirm={() => {
-            handleDialogConfirm();
-          }}
-          onCancel={() => {
-            setShowDialog(false);
-            setSelectedTicker("");
-            setAnalysisContext(undefined);
-          }}
-          isOpen={showDialog}
-        />
-
         <Card variant="none" effect="glass" showRipple={false}>
           <CardContent className="p-0 divide-y divide-border">
             {primeAssets.length > 0 ? (
@@ -902,7 +858,7 @@ export function DashboardView({
                 const gainLossPct = holding.unrealized_gain_loss_pct ?? 0;
                 const isHoldingPositive = gainLoss >= 0;
 
-                // Handle analyze click - show confirmation dialog
+                // Handle analyze click
                 const handleAnalyzeClick = async (symbol: string) => {
                   console.log("[DashboardView] handleAnalyzeClick called for:", symbol);
                   console.log("[DashboardView] vaultOwnerToken present:", !!vaultOwnerToken);
@@ -914,23 +870,20 @@ export function DashboardView({
                     return;
                   }
 
-                  setSelectedTicker(symbol);
-                  
-                  // Get world model context for this stock
+                  // Call KaiFlow's handleAnalyzeStock - this will write to sessionStorage and navigate
                   try {
-                    const context = await getStockContext(symbol, vaultOwnerToken);
-                    console.log("[DashboardView] Context received:", context.ticker || "no ticker");
-                    setAnalysisContext(context);
+                    const requestId = generateRequestId();
+                    console.log(`[DashboardView] Starting analysis for ${symbol} (Request ${requestId})`);
+                    
+                    await onAnalyzeStock?.(symbol);
+                    console.log("[DashboardView] Analysis started successfully");
                   } catch (error) {
-                    console.error("Failed to get context:", error);
-                    toast.error("Failed to load context", {
+                    console.error("[DashboardView] Error starting analysis:", error);
+                    toast.error("Analysis failed", {
                       description: error instanceof Error ? error.message : "Unknown error",
                     });
                   }
-                  
-                  setShowDialog(true);
                 };
-                
 
                 return (
                   <button

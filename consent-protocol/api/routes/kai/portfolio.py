@@ -258,7 +258,7 @@ async def import_portfolio_stream(
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
     # Create disconnection event to stop streaming when client disconnects
-    disconnection_event = asyncio.Event()
+    _disconnection_event = asyncio.Event()
     
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""

@@ -12,7 +12,9 @@ import logging
 from typing import Any, Dict, List
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope  # WORLD_MODEL_READ / WORLD_MODEL_WRITE for attr.kai_decisions.*
+from hushh_mcp.constants import (
+    ConsentScope,  # WORLD_MODEL_READ / WORLD_MODEL_WRITE for attr.kai_decisions.*
+)
 from hushh_mcp.types import EncryptedPayload, UserID
 from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
 
