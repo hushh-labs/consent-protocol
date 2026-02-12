@@ -38,10 +38,6 @@ class StorePreferencesRequest(BaseModel):
     preferences: List[EncryptedPreference]
 
 
-class PreferencesResponse(BaseModel):
-    preferences: List[EncryptedPreference]
-
-
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
@@ -125,7 +121,7 @@ async def store_preferences(
         )
 
 
-@router.get("/preferences/{user_id}", response_model=PreferencesResponse)
+@router.get("/preferences/{user_id}")
 async def get_preferences(
     user_id: str,
     token_data: dict = Depends(require_vault_owner_token),
@@ -133,7 +129,8 @@ async def get_preferences(
     """
     Retrieve preferences for a user from WorldModelService.
 
-    Reads the encrypted blob stored under domain='kai_preferences'.
+    Returns the encrypted blob stored under domain='kai_preferences'.
+    The client must decrypt it using the vault key (BYOK).
     REQUIRES: VAULT_OWNER consent token.
     """
     if token_data.get("user_id") != user_id:
@@ -160,19 +157,20 @@ async def get_preferences(
             detail="Failed to read preferences",
         )
 
-    prefs: list[EncryptedPreference] = []
-    if data:
-        fields = data.get("fields", {})
-        for field_name, payload in fields.items():
-            if isinstance(payload, dict):
-                prefs.append(EncryptedPreference(
-                    field_name=field_name,
-                    ciphertext=payload.get("ciphertext", ""),
-                    iv=payload.get("iv", ""),
-                    tag=payload.get("tag", ""),
-                ))
+    if not data:
+        # No preferences stored yet — return empty response
+        return {"encrypted_blob": None, "has_preferences": False}
 
-    return PreferencesResponse(preferences=prefs)
+    # Return the encrypted envelope; client decrypts with vault key
+    return {
+        "encrypted_blob": {
+            "ciphertext": data.get("ciphertext", ""),
+            "iv": data.get("iv", ""),
+            "tag": data.get("tag", ""),
+            "algorithm": data.get("algorithm", "aes-256-gcm"),
+        },
+        "has_preferences": True,
+    }
 
 
 @router.delete("/preferences/{user_id}")

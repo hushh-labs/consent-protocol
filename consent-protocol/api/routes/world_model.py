@@ -30,15 +30,6 @@ class StockContextRequest(BaseModel):
     ticker: str  # user_id is extracted from VAULT_OWNER token, not request body
 
 
-class PortfolioHolding(BaseModel):
-    """Represents a single stock holding."""
-    symbol: str
-    quantity: float
-    current_price: float
-    market_value: float
-    name: str
-
-
 class DecisionRecord(BaseModel):
     """Represents a Kai investment decision."""
     id: int
@@ -55,28 +46,6 @@ class StockContextResponse(BaseModel):
     holdings: list[dict]
     recent_decisions: list[dict]
     portfolio_allocation: dict[str, int]
-
-
-def calculate_portfolio_allocation(holdings: list[PortfolioHolding]) -> dict[str, float]:
-    """
-    Calculate allocation percentages from actual holdings.
-    
-    Returns allocation percentages based on market value of equities vs cash.
-    """
-    if not holdings:
-        return {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
-    
-    total_value = sum(h.market_value for h in holdings)
-    if total_value == 0:
-        return {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
-    
-    equities_pct = (total_value / total_value) * 100
-    
-    return {
-        "equities_pct": round(equities_pct, 2),
-        "bonds_pct": round(100 - equities_pct) / 2,
-        "cash_pct": round(100 - equities_pct) / 2
-    }
 
 
 async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], dict[str, int]]:
@@ -119,80 +88,6 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
     
     # Fallback defaults if no cache exists
     return "balanced", [], {"equities_pct": 70, "bonds_pct": 20, "cash_pct": 10}
-
-
-async def fetch_holdings(user_id: str) -> list[PortfolioHolding]:
-    """
-    Fetch all portfolio holdings for a user.
-    
-    Reads from world_model_index_v2 domain_summaries.financial instead of 
-    the deprecated vault_portfolios table.
-    
-    Returns a list of PortfolioHolding objects with calculated market values.
-    """
-    from db.db_client import get_db
-    supabase = get_db()
-    
-    try:
-        # Read from world_model_index_v2 which contains non-encrypted metadata
-        response = (
-            await supabase.table("world_model_index_v2")
-            .select("domain_summaries")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        
-        holdings: list[PortfolioHolding] = []
-        
-        if not response.data:
-            # Fallback: try legacy vault_portfolios table for backwards compat
-            legacy_response = (
-                await supabase.table("vault_portfolios")
-                .select("*")
-                .eq("user_id", user_id)
-                .execute()
-            )
-            for row in legacy_response.data or []:
-                if isinstance(row, dict):
-                    symbol = (row.get("symbol") or row.get("ticker") or "").upper()
-                    quantity = float(row.get("quantity", 0) or 0)
-                    current_price = float(row.get("current_price", 0) or 0)
-                    holdings.append(PortfolioHolding(
-                        symbol=symbol,
-                        quantity=quantity,
-                        current_price=current_price,
-                        market_value=quantity * current_price,
-                        name=row.get("company_name") or row.get("name") or ""
-                    ))
-            return holdings
-        
-        # Parse domain_summaries from the index
-        index_row = response.data[0] if response.data else {}
-        domain_summaries = index_row.get("domain_summaries", {})
-        financial_summary = domain_summaries.get("financial", {})
-        
-        # NOTE: holdings detail is stripped from domain_summaries by
-        # update_domain_summary() sanitization (MCP scope safety).
-        # This path will return [] for new data; legacy data may still
-        # have holdings if stored before the sanitization was added.
-        holdings_list = financial_summary.get("holdings", [])
-        for h in holdings_list:
-            if isinstance(h, dict):
-                symbol = (h.get("symbol") or h.get("ticker") or "").upper()
-                quantity = float(h.get("quantity", 0) or 0)
-                current_price = float(h.get("current_price", 0) or 0)
-                holdings.append(PortfolioHolding(
-                    symbol=symbol,
-                    quantity=quantity,
-                    current_price=current_price,
-                    market_value=quantity * current_price,
-                    name=h.get("company_name") or h.get("name") or ""
-                ))
-        
-        return holdings
-    except Exception as e:
-        logger.warning(f"[World Model Context] Failed to fetch holdings: {e}")
-        return []
 
 
 async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]:

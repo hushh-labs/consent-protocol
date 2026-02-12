@@ -351,6 +351,6 @@ const payload = event?.data !== undefined ? event.data : event;
 
 ## See Also
 
-- [Mobile Development Guide](./mobile_development.md) - Native plugin patterns
-- [Feature Checklist](./feature_checklist.md) - Tri-flow implementation steps
+- [Mobile Development Guide](./mobile.md) - Native plugin patterns
+- [Feature Checklist](./new-feature.md) - Tri-flow implementation steps
 - [ApiService Implementation](../../hushh-webapp/lib/services/api-service.ts) - Reference implementation
