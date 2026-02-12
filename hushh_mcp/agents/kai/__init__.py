@@ -14,10 +14,9 @@ from .agent import KaiAgent, get_kai_agent
 
 __all__ = ["handle_message", "KaiAgent", "get_kai_agent"]
 
+
 def handle_message(
-    message: str,
-    user_id: UserID,
-    session_state: Optional[Dict] = None
+    message: str, user_id: UserID, session_state: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """Compatibility wrapper for the new ADK agent."""
     agent = get_kai_agent()

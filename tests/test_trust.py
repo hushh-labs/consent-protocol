@@ -27,7 +27,7 @@ def test_expired_trust_link():
         to_agent=DELEGATEE,
         scope=SCOPE_VALID,
         signed_by_user=USER_ID,
-        expires_in_ms=-1000  # already expired
+        expires_in_ms=-1000,  # already expired
     )
 
     assert verify_trust_link(expired) is False
