@@ -189,7 +189,7 @@ def validate_token(token_str, expected_scope=None):
 
 ### Frontend Token Storage (Memory-Only)
 
-**CRITICAL SECURITY MODEL**: Both vault key AND VAULT_OWNER token are stored in React state (memory only). This prevents XSS attacks from stealing credentials via `sessionStorage` or `localStorage`.
+**CRITICAL SECURITY MODEL**: Both vault key AND VAULT_OWNER token are stored in React state (Zustand / memory only). No `sessionStorage` or `localStorage` is used anywhere in the codebase. This prevents XSS attacks from stealing credentials.
 
 ```typescript
 // hushh-webapp/lib/vault/vault-context.tsx
@@ -201,33 +201,19 @@ const unlockVault = useCallback(
     setVaultOwnerToken(token);
     setTokenExpiresAt(expiresAt);
 
-    // Only store unlock STATUS flag (not sensitive)
-    setSessionItem("vault_unlocked", "true");
-    
-    // NEVER store vault_owner_token in sessionStorage!
+    // Zero-storage: nothing written to sessionStorage or localStorage
   },
   [],
 );
 ```
 
-**What IS stored in sessionStorage (non-sensitive only)**:
-- `vault_unlocked` - Boolean flag ("true")
-- `user_id` - Firebase UID (public identifier)
-
-**What is NEVER stored in sessionStorage**:
-- `vault_key` - Encryption key
-- `vault_owner_token` - Consent token
+**Zero-Storage Policy**: No sensitive or non-sensitive data is stored in `sessionStorage` or `localStorage`. All state lives in React memory (Zustand stores, React context) and is evicted on tab close.
 
 ### Service Layer Token Access
 
 Services MUST receive the token as an explicit parameter from components that have access to `useVault()` hook:
 
 ```typescript
-// ❌ WRONG - Never read token from sessionStorage
-static getVaultOwnerToken(): string | null {
-  return sessionStorage.getItem("vault_owner_token"); // SECURITY VIOLATION!
-}
-
 // ✅ CORRECT - Token passed explicitly from useVault() hook
 async deleteAccount(vaultOwnerToken: string): Promise<Result> {
   if (!vaultOwnerToken) {
@@ -435,24 +421,22 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 ┌─────────────────────────────────────────────────────────────┐
 │                    MEMORY ONLY (XSS Protected)              │
 ├─────────────────────────────────────────────────────────────┤
-│  Vault Key        → React State (VaultContext)              │
-│  VAULT_OWNER Token → React State (VaultContext)             │
+│  Vault Key        → React State (VaultContext / Zustand)    │
+│  VAULT_OWNER Token → React State (VaultContext / Zustand)   │
 ├─────────────────────────────────────────────────────────────┤
-│                    sessionStorage (Non-Sensitive Only)      │
-├─────────────────────────────────────────────────────────────┤
-│  vault_unlocked   → "true" flag only                        │
-│  user_id          → Firebase UID (public identifier)        │
+│  Zero-Storage: No sessionStorage / localStorage used        │
+│  All state evicted on tab close                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Why this matters**:
-- XSS attacks can read `sessionStorage` and `localStorage`
+- XSS attacks can read `sessionStorage` and `localStorage` -- we use neither
 - XSS attacks CANNOT read React component state
 - Token theft via XSS is impossible with memory-only storage
 
 **Service layer pattern**:
 - Services MUST receive token as explicit parameter
-- Services MUST NOT read from sessionStorage
+- Services MUST NOT access browser storage APIs
 - Components with `useVault()` access pass token to services
 
 ---
@@ -506,5 +490,5 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 ## See Also
 
 - [Architecture Overview](./architecture.md) - System architecture
-- [Route Contracts](./route_contracts.md) - API endpoint specifications
-- [Database Schema](./database_schema.md) - Full database schema
+- [Route Contracts](./api-contracts.md) - API endpoint specifications
+- [Database Schema](./world-model.md) - Database architecture

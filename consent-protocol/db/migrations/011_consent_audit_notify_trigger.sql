@@ -11,13 +11,14 @@ RETURNS TRIGGER AS $$
 DECLARE
   payload TEXT;
 BEGIN
-  -- Build small JSON payload: user_id, request_id, action (NOTIFY limit 8000 bytes)
+  -- Build small JSON payload (NOTIFY limit 8000 bytes)
   payload := json_build_object(
     'user_id', NEW.user_id,
     'request_id', COALESCE(NEW.request_id, ''),
     'action', NEW.action,
     'scope', COALESCE(NEW.scope, ''),
     'agent_id', COALESCE(NEW.agent_id, ''),
+    'scope_description', COALESCE(NEW.scope_description, ''),
     'issued_at', NEW.issued_at
   )::TEXT;
   PERFORM pg_notify('consent_audit_new', payload);

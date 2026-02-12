@@ -1,9 +1,4 @@
 export {
-  requestConsentPushPermission,
-  registerConsentPushToken,
-} from "./register-push";
-
-export {
   initializeFCM,
   getFCMToken,
   deleteFCMToken,

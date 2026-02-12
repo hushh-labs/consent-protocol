@@ -38,3 +38,23 @@ class PushTokensService:
         row = result.data[0] if result.data else None
         return int(row["id"]) if row and row.get("id") is not None else None
 
+    def delete_user_push_tokens(self, user_id: str, platform: Optional[Platform] = None) -> int:
+        """Delete push tokens for a user. If platform is given, only that platform's token is removed."""
+        db = get_db()
+
+        if platform:
+            sql = "DELETE FROM user_push_tokens WHERE user_id = :uid AND platform = :platform"
+            params = {"uid": user_id, "platform": platform}
+        else:
+            sql = "DELETE FROM user_push_tokens WHERE user_id = :uid"
+            params = {"uid": user_id}
+
+        result = db.execute_raw(sql, params)
+
+        if result.error:
+            logger.error("Push token delete failed: %s", result.error)
+            raise RuntimeError("Failed to delete push token(s)")
+
+        # execute_raw may return the deleted rows or empty list
+        return len(result.data) if result.data else 0
+

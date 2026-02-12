@@ -1,5 +1,17 @@
 # pyproject.toml - Python tooling configuration for Hushh Consent Protocol
 
+[project]
+name = "hushh-consent-protocol"
+version = "1.0.0"
+description = "Consent-first backend for Hushh Personal Data Agents"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+readme = "README.md"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.ruff]
 # Python 3.13 - aligned with CI and Dockerfile
 target-version = "py313"
