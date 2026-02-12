@@ -21,10 +21,8 @@ __all__ = ["handle_user_message", "OrchestratorAgent"]
 # COMPATIBILITY WRAPPERS
 # ============================================================================
 
-def handle_user_message(
-    message: str,
-    user_id: UserID = "user_anonymous"
-) -> Dict[str, Any]:
+
+def handle_user_message(message: str, user_id: UserID = "user_anonymous") -> Dict[str, Any]:
     """
     Main entry point for handling user messages.
     Wraps the new ADK OrchestratorAgent.

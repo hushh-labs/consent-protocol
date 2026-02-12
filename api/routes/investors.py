@@ -33,6 +33,7 @@ router = APIRouter(prefix="/api/investors", tags=["Investor Profiles (Public)"])
 # Request/Response Models
 # ============================================================================
 
+
 class InvestorSearchResult(BaseModel):
     id: int
     name: str
@@ -98,23 +99,24 @@ class InvestorCreateRequest(BaseModel):
 # Search Endpoints
 # ============================================================================
 
+
 @router.get("/search", response_model=List[InvestorSearchResult])
 async def search_investors(
     name: str = Query(..., min_length=2, description="Name to search for"),
-    limit: int = Query(10, ge=1, le=50)
+    limit: int = Query(10, ge=1, le=50),
 ):
     """
     Search for investors by name using fuzzy matching.
-    
+
     This is the primary identity resolution endpoint.
     Returns ranked list of potential matches with similarity scores.
-    
+
     Example: /api/investors/search?name=Warren+Buffett
     """
     # Use service layer (no consent required for public investor data)
     service = InvestorDBService()
     results = await service.search_investors(name=name, limit=limit)
-    
+
     logger.info(f"🔍 Search '{name}' returned {len(results)} results")
     return results
 
@@ -123,22 +125,22 @@ async def search_investors(
 async def get_investor(investor_id: int):
     """
     Get full investor profile by ID.
-    
+
     Returns complete public profile including holdings, quotes, biography.
     Used after user selects from search results to show full preview.
     """
     # Use service layer (no consent required for public investor data)
     service = InvestorDBService()
-    
+
     try:
         profile = await service.get_investor_by_id(investor_id)
-        
+
         if not profile:
             raise HTTPException(status_code=404, detail="Investor not found")
-        
+
         logger.info(f"📥 Retrieved investor {investor_id}: {profile['name']}")
         return profile
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -152,10 +154,10 @@ async def get_investor_by_cik(cik: str):
     # Use service layer (no consent required for public investor data)
     service = InvestorDBService()
     profile = await service.get_investor_by_cik(cik)
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail=f"Investor with CIK {cik} not found")
-    
+
     return profile
 
 
@@ -163,22 +165,23 @@ async def get_investor_by_cik(cik: str):
 # Admin Endpoints (for data ingestion)
 # ============================================================================
 
+
 @router.post("/", status_code=201)
 async def create_investor(investor: InvestorCreateRequest):
     """
     Create or update an investor profile.
-    
+
     Admin endpoint for data ingestion from SEC EDGAR, etc.
     """
-    
+
     # Use service layer
     service = InvestorDBService()
-    
+
     # Normalize name for search
-    name_normalized = re.sub(r'\s+', '', investor.name.lower())
-    
+    name_normalized = re.sub(r"\s+", "", investor.name.lower())
+
     now_iso = datetime.now().isoformat()
-    
+
     # Prepare data
     data = {
         "name": investor.name,
@@ -189,7 +192,9 @@ async def create_investor(investor: InvestorCreateRequest):
         "investor_type": investor.investor_type or "fund_manager",
         "aum_billions": investor.aum_billions,
         "top_holdings": json.dumps(investor.top_holdings) if investor.top_holdings else None,
-        "sector_exposure": json.dumps(investor.sector_exposure) if investor.sector_exposure else None,
+        "sector_exposure": json.dumps(investor.sector_exposure)
+        if investor.sector_exposure
+        else None,
         "investment_style": investor.investment_style,
         "risk_tolerance": investor.risk_tolerance,
         "time_horizon": investor.time_horizon,
@@ -203,19 +208,19 @@ async def create_investor(investor: InvestorCreateRequest):
         "peer_investors": investor.peer_investors,
         "is_insider": investor.is_insider or False,
         "insider_company_ticker": investor.insider_company_ticker,
-        "updated_at": now_iso
+        "updated_at": now_iso,
     }
-    
+
     # Remove None values
     data = {k: v for k, v in data.items() if v is not None}
-    
+
     try:
         # Use service method
         result = await service.upsert_investor(data, upsert_key="cik" if investor.cik else None)
-        
+
         logger.info(f"📈 Created/updated investor profile: {investor.name} (id={result.get('id')})")
         return {"id": result.get("id"), "name": investor.name, "status": "created"}
-        
+
     except Exception as e:
         logger.error(f"Error creating investor: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -225,16 +230,16 @@ async def create_investor(investor: InvestorCreateRequest):
 async def bulk_create_investors(investors: List[InvestorCreateRequest]):
     """
     Bulk create investor profiles from list.
-    
+
     Used for initial data seeding from JSON file.
     """
     results = []
     for investor in investors:
         result = await create_investor(investor)
         results.append(result)
-    
+
     logger.info(f"📈 Bulk created {len(results)} investor profiles")
-    
+
     return {"created": len(results), "profiles": results}
 
 
@@ -244,8 +249,5 @@ async def get_stats():
     # Use service layer
     service = InvestorDBService()
     stats = await service.get_investor_stats()
-    
-    return {
-        "total_profiles": stats.get("total", 0),
-        "by_type": stats.get("by_type", {})
-    }
+
+    return {"total_profiles": stats.get("total", 0), "by_type": stats.get("by_type", {})}

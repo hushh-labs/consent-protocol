@@ -34,9 +34,9 @@ REQUIRED_COLUMNS = [
     "token_type",
     "ip_address",
     "user_agent",
-    "request_id",         # Required for pending/SSE
+    "request_id",  # Required for pending/SSE
     "scope_description",
-    "poll_timeout_at",    # Required for pending timeout
+    "poll_timeout_at",  # Required for pending timeout
 ]
 
 
@@ -47,7 +47,10 @@ def main() -> int:
         from db.db_client import get_db_connection
     except ImportError as e:
         print("Error: could not import db_client.", e, file=sys.stderr)
-        print("Run from consent-protocol with: python scripts/verify_consent_audit_schema.py", file=sys.stderr)
+        print(
+            "Run from consent-protocol with: python scripts/verify_consent_audit_schema.py",
+            file=sys.stderr,
+        )
         return 1
 
     if not all(os.getenv(k) for k in ("DB_USER", "DB_PASSWORD", "DB_HOST")):

@@ -7,11 +7,11 @@ This file generates test VAULT_OWNER tokens using MCP_DEVELOPER_TOKEN from .env
 
 Usage:
     from tests.dev_test_token import generate_dev_vault_owner_token
-    
+
     # Generate a test token
     token_info = generate_dev_vault_owner_token("test_user_id")
     headers = {"Authorization": f"Bearer {token_info['token']}"}
-    
+
     # Use in API calls
     response = requests.post(
         "http://localhost:8000/api/kai/analyze",
@@ -35,18 +35,18 @@ logger = logging.getLogger(__name__)
 def generate_dev_vault_owner_token(user_id: str) -> dict:
     """
     Generate a test VAULT_OWNER token for development/testing.
-    
+
     Uses MCP_DEVELOPER_TOKEN from .env environment variable.
-    
+
     Args:
         user_id: The user ID to assign to the token
-        
+
     Returns:
         dict with keys:
             - token: The generated token string
             - user_id: The assigned user ID
             - expires_at: Unix timestamp of expiration
-            
+
     Raises:
         HTTPException if MCP_DEVELOPER_TOKEN is not configured
     """
@@ -59,10 +59,7 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
         )
         raise HTTPException(
             status_code=500,
-            detail=(
-                "MCP_DEVELOPER_TOKEN not configured. "
-                "Set it in .env for development testing."
-            ),
+            detail=("MCP_DEVELOPER_TOKEN not configured. Set it in .env for development testing."),
         )
 
     # Import here to avoid circular import issues
@@ -70,15 +67,15 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
     from hushh_mcp.constants import ConsentScope
 
     logger.info(f"Generating dev VAULT_OWNER token for user: {user_id}")
-    
+
     # Issue token with MCP_DEVELOPER_TOKEN as agent_id, full vault.owner scope
     token_obj = issue_token(
         user_id=user_id,
         agent_id=mcp_developer_token,
         scope=ConsentScope.VAULT_OWNER,
-        expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+        expires_in_ms=24 * 60 * 60 * 1000,  # 24 hours
     )
-    
+
     return {
         "token": token_obj.token,
         "user_id": user_id,
@@ -91,11 +88,11 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
 def generate_dev_agent_token(user_id: str, scope: str) -> dict:
     """
     Generate a scoped agent token for development/testing.
-    
+
     Args:
         user_id: The user ID to assign to the token
         scope: The requested scope (e.g., "attr.financial.*", "agent.kai.analyze")
-        
+
     Returns:
         dict with token and metadata
     """
@@ -112,7 +109,7 @@ def generate_dev_agent_token(user_id: str, scope: str) -> dict:
         user_id=user_id,
         agent_id=mcp_developer_token,
         scope=scope,
-        expires_in_ms=24 * 60 * 60 * 1000  # 24 hours
+        expires_in_ms=24 * 60 * 60 * 1000,  # 24 hours
     )
 
     return {

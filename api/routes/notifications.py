@@ -99,5 +99,7 @@ async def unregister_push_token(request: Request):
         logger.error("Push token unregister failed: %s", e)
         raise HTTPException(status_code=500, detail="Failed to unregister token(s)")
 
-    logger.info("Push token(s) unregistered for user=%s platform=%s deleted=%d", user_id, platform, deleted)
+    logger.info(
+        "Push token(s) unregistered for user=%s platform=%s deleted=%d", user_id, platform, deleted
+    )
     return {"ok": True, "user_id": user_id, "deleted": deleted}

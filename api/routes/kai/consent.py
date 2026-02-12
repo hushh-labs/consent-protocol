@@ -31,6 +31,7 @@ router = APIRouter()
 # MODELS
 # ============================================================================
 
+
 class GrantConsentRequest(BaseModel):
     user_id: str
     scopes: List[str] = [
@@ -50,6 +51,7 @@ class GrantConsentResponse(BaseModel):
 # ENDPOINTS
 # ============================================================================
 
+
 @router.post("/consent/grant", response_model=GrantConsentResponse)
 async def grant_consent(
     request: GrantConsentRequest,
@@ -57,32 +59,28 @@ async def grant_consent(
 ):
     """
     Grant consent for Kai data access.
-    
+
     SECURITY: Requires Firebase authentication. User can only grant consent for their own data.
-    
+
     Stateless: Issues tokens for the requested user_id and scopes.
     Does not rely on a pre-existing session.
     """
     # Verify user is granting consent for their own data
     verify_user_id_match(firebase_uid, request.user_id)
-    
+
     service = ConsentDBService()
-    
+
     tokens = {}
     consent_id = f"kai_consent_{uuid.uuid4().hex[:16]}"
     last_token_issued = None
-    
+
     for scope_str in request.scopes:
         try:
             scope = ConsentScope(scope_str)
-            token = issue_token(
-                user_id=request.user_id,
-                agent_id="agent_kai",
-                scope=scope
-            )
+            token = issue_token(user_id=request.user_id, agent_id="agent_kai", scope=scope)
             tokens[scope_str] = token.token
             last_token_issued = token
-            
+
             # Log to consent_audit using service layer
             await service.insert_event(
                 user_id=request.user_id,
@@ -91,23 +89,20 @@ async def grant_consent(
                 action="CONSENT_GRANTED",  # Use standard action name
                 token_id=token.token[:32],  # Store truncated token ID
                 expires_at=token.expires_at,
-                issued_at=token.issued_at
+                issued_at=token.issued_at,
             )
-            
+
         except Exception as e:
             logger.error(f"Failed to issue token for scope {scope_str}: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid scope: {scope_str}"
-            )
-    
+            raise HTTPException(status_code=400, detail=f"Invalid scope: {scope_str}")
+
     if not tokens:
         raise HTTPException(status_code=400, detail="No valid scopes provided")
-    
+
     logger.info(f"[Kai] Consent granted for user: {request.user_id}")
-    
+
     return GrantConsentResponse(
         consent_id=consent_id,
         tokens=tokens,
-        expires_at=str(last_token_issued.expires_at) if last_token_issued else ""
+        expires_at=str(last_token_issued.expires_at) if last_token_issued else "",
     )

@@ -217,7 +217,9 @@ def parse_screening_criteria_rows(path: Path) -> list[CriteriaRow]:
             if not detail:
                 # Keep non-empty, schema requires detail TEXT NOT NULL
                 detail = title
-            out.append(CriteriaRow(section=section, rule_index=rule_index, title=title, detail=detail))
+            out.append(
+                CriteriaRow(section=section, rule_index=rule_index, title=title, detail=detail)
+            )
             continue
 
         if section == "the_math":
@@ -253,7 +255,9 @@ def wipe_tables(db) -> None:
 
 
 def main() -> None:
-    missing = [p for p in (INVESTABLE_CSV, AVOID_CSV, EXTENDED_AVOID_CSV, CRITERIA_CSV) if not p.exists()]
+    missing = [
+        p for p in (INVESTABLE_CSV, AVOID_CSV, EXTENDED_AVOID_CSV, CRITERIA_CSV) if not p.exists()
+    ]
     if missing:
         raise FileNotFoundError(f"Missing Renaissance CSV(s): {', '.join(str(p) for p in missing)}")
 
@@ -298,9 +302,15 @@ def main() -> None:
 
     # Summary counts
     try:
-        uni = db.execute_raw("SELECT COUNT(*)::int AS count FROM renaissance_universe").data[0]["count"]
-        avd = db.execute_raw("SELECT COUNT(*)::int AS count FROM renaissance_avoid").data[0]["count"]
-        crt = db.execute_raw("SELECT COUNT(*)::int AS count FROM renaissance_screening_criteria").data[0]["count"]
+        uni = db.execute_raw("SELECT COUNT(*)::int AS count FROM renaissance_universe").data[0][
+            "count"
+        ]
+        avd = db.execute_raw("SELECT COUNT(*)::int AS count FROM renaissance_avoid").data[0][
+            "count"
+        ]
+        crt = db.execute_raw(
+            "SELECT COUNT(*)::int AS count FROM renaissance_screening_criteria"
+        ).data[0]["count"]
         print("\n=== Summary ===")
         print(f"renaissance_universe: {uni}")
         print(f"renaissance_avoid: {avd}")
@@ -313,4 +323,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
