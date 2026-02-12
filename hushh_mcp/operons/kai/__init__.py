@@ -32,12 +32,10 @@ __all__ = [
     "analyze_sentiment",
     "analyze_valuation",
     "analyze_stock_with_gemini",
-    
     # Calculator operons
     "calculate_financial_ratios",
     "calculate_sentiment_score",
     "calculate_valuation_metrics",
-    
     # Storage operons
     "store_decision_card",
     "retrieve_decision_card",

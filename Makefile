@@ -3,7 +3,7 @@
 # For the standalone backend repository.
 # Run `make help` to see all available targets.
 
-.PHONY: help dev lint format typecheck test security ci-local clean
+.PHONY: help dev lint format format-check fix typecheck test security ci-local clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -25,18 +25,27 @@ format: ## Format code (ruff)
 format-check: ## Check formatting without changes
 	ruff format --check .
 
+fix: ## Auto-format and lint-fix (run before committing)
+	ruff format .
+	ruff check . --fix
+
 typecheck: ## Run type checker (mypy)
-	mypy --config-file pyproject.toml --ignore-missing-imports .
+	mypy --config-file pyproject.toml --ignore-missing-imports
 
 test: ## Run tests (pytest)
-	pytest tests/ -v
+	TESTING=true \
+	SECRET_KEY="test_secret_key_for_ci_only_32chars_min" \
+	VAULT_ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000" \
+	PYTHONPATH=. pytest tests/ -v --tb=short
 
-security: ## Run security scan (bandit)
-	bandit -r hushh_mcp/ api/ -c pyproject.toml
+security: ## Run security scan (bandit, Medium+ severity)
+	bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
 # === Combined Checks ===
 
 ci-local: lint format-check typecheck test security ## Run all CI checks locally
+	@echo ""
+	@echo "All CI checks passed!"
 
 # === Utilities ===
 

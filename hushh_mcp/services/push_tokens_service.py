@@ -57,4 +57,3 @@ class PushTokensService:
 
         # execute_raw may return the deleted rows or empty list
         return len(result.data) if result.data else 0
-

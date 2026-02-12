@@ -24,15 +24,12 @@ from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
 def test_encrypt_decrypt_roundtrip(test_vault_key):
     """
     Test that data can be encrypted and decrypted successfully.
-    
+
     Uses dynamically generated test key (BYOK-compliant).
     """
     payload = {
         "email": "alice@hushh.ai",
-        "preferences": {
-            "category": "electronics",
-            "frequency": "weekly"
-        }
+        "preferences": {"category": "electronics", "frequency": "weekly"},
     }
     plaintext = json.dumps(payload)
 
@@ -46,7 +43,7 @@ def test_encrypt_decrypt_roundtrip(test_vault_key):
 def test_decryption_fails_with_wrong_key(test_vault_key):
     """
     Test that decryption fails when using an incorrect key.
-    
+
     Uses dynamically generated test key (BYOK-compliant).
     """
     plaintext = "sensitive data"
@@ -54,6 +51,7 @@ def test_decryption_fails_with_wrong_key(test_vault_key):
 
     # Generate a different fake key (32-byte hex)
     import os
+
     wrong_key = os.urandom(32).hex()
 
     with pytest.raises(ValueError, match="Invalid authentication tag"):
@@ -63,16 +61,16 @@ def test_decryption_fails_with_wrong_key(test_vault_key):
 def test_decryption_fails_with_tampered_data(test_vault_key):
     """
     Test that decryption fails when ciphertext has been tampered with.
-    
+
     Uses dynamically generated test key (BYOK-compliant).
     """
     plaintext = "user@hushh.ai"
     encrypted = encrypt_data(plaintext, test_vault_key)
 
     # Tamper with ciphertext
-    corrupted = encrypted.copy(update={
-        "ciphertext": base64.b64encode(b"malicious content").decode("utf-8")
-    })
+    corrupted = encrypted.copy(
+        update={"ciphertext": base64.b64encode(b"malicious content").decode("utf-8")}
+    )
 
     with pytest.raises(Exception, match="Decryption failed"):
         decrypt_data(corrupted, test_vault_key)
@@ -84,7 +82,7 @@ def test_encrypted_payload_structure(test_vault_key):
     """
     plaintext = "test data"
     encrypted = encrypt_data(plaintext, test_vault_key)
-    
+
     assert "ciphertext" in encrypted.dict()
     assert "iv" in encrypted.dict()
     assert "tag" in encrypted.dict()
@@ -96,10 +94,10 @@ def test_different_ivs_produce_different_ciphertext(test_vault_key):
     (due to random IV generation).
     """
     plaintext = "same data"
-    
+
     encrypted1 = encrypt_data(plaintext, test_vault_key)
     encrypted2 = encrypt_data(plaintext, test_vault_key)
-    
+
     # Same plaintext + key but different IVs should produce different ciphertexts
     assert encrypted1.ciphertext != encrypted2.ciphertext
     assert encrypted1.iv != encrypted2.iv

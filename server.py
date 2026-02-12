@@ -60,7 +60,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS - Dynamic origins based on environment
 # Add FRONTEND_URL env var for production deployments
 cors_origins = [
-    "http://localhost:3000", 
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://10.0.0.177:3000",
 ]
@@ -152,12 +152,15 @@ app.include_router(sync.router)
 
 # Force reload check - onboarding registered
 
-logger.info("🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED")
+logger.info(
+    "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED"
+)
 
 
 # ============================================================================
 # CONSENT NOTIFY LISTENER (event-driven SSE + push)
 # ============================================================================
+
 
 @app.on_event("startup")
 async def startup_consent_listener():
@@ -165,6 +168,7 @@ async def startup_consent_listener():
     import asyncio
 
     from api.consent_listener import run_consent_listener
+
     asyncio.create_task(run_consent_listener())
 
 
@@ -172,23 +176,26 @@ async def startup_consent_listener():
 # RUN
 # ============================================================================
 
+
 @app.get("/debug/diagnostics", tags=["Debug"])
 async def diagnostics():
     """List all registered routes to debug 404s."""
     routes = []
     for route in app.routes:
         if hasattr(route, "path"):
-            routes.append({
-                "path": route.path,
-                "name": route.name,
-                "methods": list(route.methods) if route.methods else []
-            })
-            
+            routes.append(
+                {
+                    "path": route.path,
+                    "name": route.name,
+                    "methods": list(route.methods) if route.methods else [],
+                }
+            )
+
     return {
         "status": "ok",
         "timestamp": time.time(),
         "routes_count": len(routes),
-        "routes": sorted(routes, key=lambda x: x["path"])
+        "routes": sorted(routes, key=lambda x: x["path"]),
     }
 
 
@@ -197,8 +204,11 @@ async def debug_consent_listener():
     """Consent NOTIFY listener status: listener_active, queue_count, notify_received_count.
     Use to confirm the listener is running and that NOTIFY is being received."""
     from api.consent_listener import get_consent_listener_status
+
     return get_consent_listener_status()
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104

@@ -21,7 +21,7 @@ SSE Event Format (for sse_starlette):
 The sse_starlette library will automatically convert this to SSE format:
     event: agent_start
     data: {"agent": "fundamental", ...}
-    
+
 NOTE: The 'data' field should be a plain dict, not json.dumps()!
 """
 
@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DebateRound:
     """Single round of debate."""
+
     round_number: int
     agent_statements: Dict[str, str]  # agent_id -> statement
     timestamp: datetime
@@ -58,6 +59,7 @@ class DebateRound:
 @dataclass
 class DebateResult:
     """Result of multi-agent debate."""
+
     decision: DecisionType
     confidence: float
     consensus_reached: bool
@@ -70,34 +72,34 @@ class DebateResult:
 class DebateEngine:
     """
     Debate Engine - Orchestrates 3-agent discussion with Real-Time Streaming.
-    
+
     Implements the AlphaAgents framework:
     - Each agent speaks at least twice (A2A Debate)
     - Real-time token streaming from Gemini 3 Flash
     - Round-robin structured debate
     - Consensus building with dissent capture
     - Weighted voting by risk profile
-    
+
     Args:
         risk_profile: User's risk tolerance ("conservative", "balanced", "aggressive")
         disconnection_event: Optional asyncio.Event to signal when client disconnects
     """
-    
+
     def __init__(
         self,
         risk_profile: RiskProfile = "balanced",
-        disconnection_event: Optional[asyncio.Event] = None
+        disconnection_event: Optional[asyncio.Event] = None,
     ):
         self.risk_profile = risk_profile
         self.agent_weights = AGENT_WEIGHTS[risk_profile]
         self.rounds: List[DebateRound] = []
-        
+
         # Helper to track full text for the final result object
         self.current_statements: Dict[str, str] = {}
-        
+
         # Disconnection event to signal when client disconnects
         self._disconnection_event = disconnection_event
-        
+
     async def orchestrate_debate_stream(
         self,
         fundamental_insight: FundamentalInsight,
@@ -106,7 +108,7 @@ class DebateEngine:
     ) -> AsyncGenerator[Dict[str, Any], DebateResult]:
         """
         Orchestrate multi-agent debate with real-time streaming.
-        
+
         Yields events:
         - round_start
         - kai_thinking
@@ -114,21 +116,23 @@ class DebateEngine:
         - agent_token (streaming content)
         - agent_complete
         - debate_round
-        
+
         NOTE: Data is a plain dict, NOT JSON-encoded. sse_starlette handles encoding.
-        
+
         Returns:
         - Final DebateResult object (only in Python 3.13+, currently None)
         """
-        logger.info(f"[Debate Stream] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile")
-        
+        logger.info(
+            f"[Debate Stream] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile"
+        )
+
         # Store insights for easy access
         self.insights = {
             "fundamental": fundamental_insight,
             "sentiment": sentiment_insight,
-            "valuation": valuation_insight
+            "valuation": valuation_insight,
         }
-        
+
         # =========================================================================
         # ROUND 1: Initial Presentation
         # =========================================================================
@@ -137,25 +141,27 @@ class DebateEngine:
             "data": {
                 "round": 1,
                 "description": "Round 1: Agents present their initial findings.",
-                "is_final_round": False
-            }
+                "is_final_round": False,
+            },
         }
-        
+
         round1_statements = {}
-        
+
         # Agent 1: Fundamental
         yield {
             "event": "kai_thinking",
             "data": {
                 "phase": "round1",
                 "message": "Inviting Fundamental Agent to open the debate...",
-                "tokens": ["Analyzing", "SEC", "filings", "and", "growth", "metrics."]
-            }
+                "tokens": ["Analyzing", "SEC", "filings", "and", "growth", "metrics."],
+            },
         }
-        async for event in self._stream_agent_turn(1, "fundamental", "initial_analysis", round1_statements):
+        async for event in self._stream_agent_turn(
+            1, "fundamental", "initial_analysis", round1_statements
+        ):
             yield event
         round1_statements["fundamental"] = self.current_statements["fundamental"]
-        
+
         if self._disconnection_event and self._disconnection_event.is_set():
             return
         yield {
@@ -163,13 +169,15 @@ class DebateEngine:
             "data": {
                 "phase": "round1",
                 "message": "Checking Sentiment Agent for market pulse...",
-                "tokens": ["Scanning", "news", "flow", "and", "market", "momentum."]
-            }
+                "tokens": ["Scanning", "news", "flow", "and", "market", "momentum."],
+            },
         }
-        async for event in self._stream_agent_turn(1, "sentiment", "initial_analysis", round1_statements):
+        async for event in self._stream_agent_turn(
+            1, "sentiment", "initial_analysis", round1_statements
+        ):
             yield event
         round1_statements["sentiment"] = self.current_statements["sentiment"]
-        
+
         if self._disconnection_event and self._disconnection_event.is_set():
             return
 
@@ -179,13 +187,23 @@ class DebateEngine:
             "data": {
                 "phase": "round1",
                 "message": "Calling Valuation Agent for price analysis...",
-                "tokens": ["Evaluating", "multiples", "vs", "peers", "and", "historical", "averages."]
-            }
+                "tokens": [
+                    "Evaluating",
+                    "multiples",
+                    "vs",
+                    "peers",
+                    "and",
+                    "historical",
+                    "averages.",
+                ],
+            },
         }
-        async for event in self._stream_agent_turn(1, "valuation", "initial_analysis", round1_statements):
+        async for event in self._stream_agent_turn(
+            1, "valuation", "initial_analysis", round1_statements
+        ):
             yield event
         round1_statements["valuation"] = self.current_statements["valuation"]
-        
+
         if self._disconnection_event and self._disconnection_event.is_set():
             return
 
@@ -197,8 +215,8 @@ class DebateEngine:
                 "round": 1,
                 "statements": round1_statements,
                 "context": "presenting initial findings",
-                "is_final_round": False
-            }
+                "is_final_round": False,
+            },
         }
 
         # =========================================================================
@@ -209,25 +227,27 @@ class DebateEngine:
             "data": {
                 "round": 2,
                 "description": "Round 2: Cross-examination and position refinement.",
-                "is_final_round": True
-            }
+                "is_final_round": True,
+            },
         }
-        
+
         round2_statements = {}
-        
+
         # Agent 1: Fundamental Rebuttal
         yield {
             "event": "kai_thinking",
             "data": {
                 "phase": "round2",
                 "message": "Fundamental Agent is reviewing peer arguments...",
-                "tokens": ["Comparing", "intrinsic", "value", "against", "market", "sentiment."]
-            }
+                "tokens": ["Comparing", "intrinsic", "value", "against", "market", "sentiment."],
+            },
         }
-        async for event in self._stream_agent_turn(2, "fundamental", "challenge_positions", round2_statements):
+        async for event in self._stream_agent_turn(
+            2, "fundamental", "challenge_positions", round2_statements
+        ):
             yield event
         round2_statements["fundamental"] = self.current_statements["fundamental"]
-        
+
         if self._disconnection_event and self._disconnection_event.is_set():
             return
 
@@ -237,13 +257,22 @@ class DebateEngine:
             "data": {
                 "phase": "round2",
                 "message": "Sentiment Agent is analyzing reaction risks...",
-                "tokens": ["Assessing", "potential", "volatility", "from", "conflicting", "signals."]
-            }
+                "tokens": [
+                    "Assessing",
+                    "potential",
+                    "volatility",
+                    "from",
+                    "conflicting",
+                    "signals.",
+                ],
+            },
         }
-        async for event in self._stream_agent_turn(2, "sentiment", "challenge_positions", round2_statements):
+        async for event in self._stream_agent_turn(
+            2, "sentiment", "challenge_positions", round2_statements
+        ):
             yield event
         round2_statements["sentiment"] = self.current_statements["sentiment"]
-        
+
         if self._disconnection_event and self._disconnection_event.is_set():
             return
 
@@ -253,10 +282,20 @@ class DebateEngine:
             "data": {
                 "phase": "round2",
                 "message": "Valuation Agent is stress-testing assumptions...",
-                "tokens": ["Checking", "if", "fundamentals", "justify", "the", "current", "premium."]
-            }
+                "tokens": [
+                    "Checking",
+                    "if",
+                    "fundamentals",
+                    "justify",
+                    "the",
+                    "current",
+                    "premium.",
+                ],
+            },
         }
-        async for event in self._stream_agent_turn(2, "valuation", "challenge_positions", round2_statements):
+        async for event in self._stream_agent_turn(
+            2, "valuation", "challenge_positions", round2_statements
+        ):
             yield event
         round2_statements["valuation"] = self.current_statements["valuation"]
 
@@ -268,8 +307,8 @@ class DebateEngine:
                 "round": 2,
                 "statements": round2_statements,
                 "context": "challenging and refining positions",
-                "is_final_round": True
-            }
+                "is_final_round": True,
+            },
         }
 
         # =========================================================================
@@ -290,43 +329,39 @@ class DebateEngine:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream an individual agent's turn.
-        
+
         1. Yields 'agent_start'
         2. Streams 'agent_token' from Gemini
         3. Yields 'agent_complete'
-        
+
         Checks for client disconnection after each event to stop LLM processing
         when client disconnects abruptly.
-        
+
         NOTE: Data is a plain dict, NOT JSON-encoded. sse_starlette handles encoding.
         """
-        
+
         agent_display_names = {
             "fundamental": "Fundamental Agent",
             "sentiment": "Sentiment Agent",
-            "valuation": "Valuation Agent"
+            "valuation": "Valuation Agent",
         }
-        
+
         yield {
             "event": "agent_start",
             "data": {
                 "agent": agent_name,
                 "agent_name": agent_display_names.get(agent_name, agent_name),
-                "message": f"Formulating arguments for Round {round_num}..."
-            }
+                "message": f"Formulating arguments for Round {round_num}...",
+            },
         }
-        
+
         # Build prompt
         prompt = self._build_agent_prompt(
-            agent_name, 
-            round_num, 
-            context_type, 
-            self.insights[agent_name],
-            current_round_statements
+            agent_name, round_num, context_type, self.insights[agent_name], current_round_statements
         )
-        
+
         full_response = ""
-        
+
         # Stream from Gemini
         async for chunk in stream_gemini_response(prompt, agent_name=agent_name):
             if chunk.get("type") == "token":
@@ -334,11 +369,7 @@ class DebateEngine:
                 full_response += text
                 yield {
                     "event": "agent_token",
-                    "data": {
-                        "agent": agent_name,
-                        "text": text,
-                        "type": "token"
-                    }
+                    "data": {"agent": agent_name, "text": text, "type": "token"},
                 }
                 # Check for disconnection after each token to stop LLM streaming
                 if self._disconnection_event is not None and self._disconnection_event.is_set():
@@ -346,21 +377,19 @@ class DebateEngine:
                     return
             elif chunk.get("type") == "error":
                 logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
-        
+
         # Fallback if empty (Gemini error or timeout)
         if not full_response:
-            full_response = self._get_fallback_statement(agent_name, self.insights[agent_name], round_num)
+            full_response = self._get_fallback_statement(
+                agent_name, self.insights[agent_name], round_num
+            )
             yield {
                 "event": "agent_token",
-                "data": {
-                    "agent": agent_name,
-                    "text": full_response,
-                    "type": "token"
-                }
+                "data": {"agent": agent_name, "text": full_response, "type": "token"},
             }
-            
+
         self.current_statements[agent_name] = full_response
-        
+
         yield {
             "event": "agent_complete",
             "data": {
@@ -368,24 +397,24 @@ class DebateEngine:
                 "summary": full_response,  # The summary for the card IS the statement
                 "recommendation": self.insights[agent_name].recommendation,
                 "confidence": self.insights[agent_name].confidence,
-                "sentiment_score": getattr(self.insights[agent_name], 'sentiment_score', None),
-            }
+                "sentiment_score": getattr(self.insights[agent_name], "sentiment_score", None),
+            },
         }
-        
+
         # Final disconnection check
         if self._disconnection_event is not None and self._disconnection_event.is_set():
             logger.info(f"[{agent_name}] Client disconnected after completion, stopping...")
 
     def _build_agent_prompt(
-        self, 
-        agent: str, 
-        round_num: int, 
-        context_type: str, 
+        self,
+        agent: str,
+        round_num: int,
+        context_type: str,
         insight: Any,
-        current_round_statements: Dict[str, str]
+        current_round_statements: Dict[str, str],
     ) -> str:
         """Construct a specific prompt for the agent's turn."""
-        
+
         role_desc = ""
         if agent == "fundamental":
             role_desc = "You are a Fundamental Analyst focused on SEC filings, moat, and cash flow."
@@ -396,7 +425,7 @@ class DebateEngine:
         else:
             role_desc = "You are a Sentiment Analyst focused on market momentum and news catalysts."
             details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Score: {getattr(insight, 'sentiment_score', 'N/A')}\n- Catalysts: {getattr(insight, 'key_catalysts', 'N/A')}"
-            
+
         previous_context = ""
         if round_num > 1:
             previous_context = "Round 1 Statements (for context/rebuttal):\n"
@@ -404,13 +433,13 @@ class DebateEngine:
                 for ag, stmt in r.agent_statements.items():
                     if ag != agent:
                         previous_context += f"- {ag}: {stmt}\n"
-        
+
         task = ""
         if round_num == 1:
             task = f"State your initial position clearly in 2-3 sentences. Support it with your key metrics. Be decisive ({insight.recommendation.upper()})."
         else:
             task = f"Critique the positions of other agents if they differ from yours. If you agree, explain why their evidence reinforces your view. Re-affirm your {insight.recommendation.upper()} stance. Keep it to 2-3 sentences."
-            
+
         prompt = f"""
         {role_desc}
         
@@ -441,23 +470,21 @@ class DebateEngine:
         valuation: ValuationInsight,
     ) -> DebateResult:
         """Build consensus from agent insights (Unchanged logic)."""
-        
+
         # Collect agent votes
         agent_votes = {
             "fundamental": self._recommendation_to_decision(fundamental.recommendation),
             "sentiment": self._recommendation_to_decision(sentiment.recommendation),
             "valuation": self._recommendation_to_decision(valuation.recommendation),
         }
-        
+
         # Calculate weighted decision
-        decision, confidence = self._calculate_weighted_decision(
-            fundamental, sentiment, valuation
-        )
-        
+        decision, confidence = self._calculate_weighted_decision(fundamental, sentiment, valuation)
+
         # Check for consensus
         unique_votes = set(agent_votes.values())
         consensus_reached = len(unique_votes) == 1 or confidence >= CONSENSUS_THRESHOLD
-        
+
         # Capture dissent
         dissenting_opinions = []
         majority_decision = decision
@@ -466,12 +493,12 @@ class DebateEngine:
                 dissenting_opinions.append(
                     f"{agent_id.capitalize()} agent dissents: recommends {vote}"
                 )
-        
+
         # Generate final statement
         final_statement = self._generate_final_statement(
             decision, confidence, consensus_reached, dissenting_opinions
         )
-        
+
         return DebateResult(
             decision=decision,
             confidence=confidence,
@@ -481,7 +508,7 @@ class DebateEngine:
             dissenting_opinions=dissenting_opinions,
             final_statement=final_statement,
         )
-    
+
     def _recommendation_to_decision(self, recommendation: str) -> DecisionType:
         """Convert agent recommendation to decision type."""
         rec = recommendation.lower()
@@ -491,7 +518,7 @@ class DebateEngine:
             return "reduce"
         else:
             return "hold"
-    
+
     def _calculate_weighted_decision(
         self,
         fundamental: FundamentalInsight,
@@ -499,28 +526,28 @@ class DebateEngine:
         valuation: ValuationInsight,
     ) -> tuple[DecisionType, float]:
         """Calculate weighted decision based on risk profile."""
-        
+
         # Convert recommendations to numeric scores
         scores = {
             "fundamental": self._rec_to_score(fundamental.recommendation),
             "sentiment": self._rec_to_score(sentiment.recommendation),
             "valuation": self._rec_to_score(valuation.recommendation),
         }
-        
+
         # Calculate weighted score
         weighted_score = (
-            scores["fundamental"] * self.agent_weights["fundamental"] +
-            scores["sentiment"] * self.agent_weights["sentiment"] +
-            scores["valuation"] * self.agent_weights["valuation"]
+            scores["fundamental"] * self.agent_weights["fundamental"]
+            + scores["sentiment"] * self.agent_weights["sentiment"]
+            + scores["valuation"] * self.agent_weights["valuation"]
         )
-        
+
         # Calculate weighted confidence
         weighted_confidence = (
-            fundamental.confidence * self.agent_weights["fundamental"] +
-            sentiment.confidence * self.agent_weights["sentiment"] +
-            valuation.confidence * self.agent_weights["valuation"]
+            fundamental.confidence * self.agent_weights["fundamental"]
+            + sentiment.confidence * self.agent_weights["sentiment"]
+            + valuation.confidence * self.agent_weights["valuation"]
         )
-        
+
         # Convert score to decision
         if weighted_score > 0.3:
             decision = "buy"
@@ -528,9 +555,9 @@ class DebateEngine:
             decision = "reduce"
         else:
             decision = "hold"
-        
+
         return decision, weighted_confidence
-    
+
     def _rec_to_score(self, recommendation: str) -> float:
         """Convert recommendation to numeric score."""
         rec = recommendation.lower()
@@ -540,7 +567,7 @@ class DebateEngine:
             return -1.0
         else:
             return 0.0
-    
+
     def _generate_final_statement(
         self,
         decision: DecisionType,
@@ -549,10 +576,10 @@ class DebateEngine:
         dissent: List[str],
     ) -> str:
         """Generate final consensus statement."""
-        
+
         consensus_word = "unanimous" if consensus else "majority"
         dissent_note = f" (with {len(dissent)} dissenting opinion(s))" if dissent else ""
-        
+
         return (
             f"After {DEBATE_ROUNDS} rounds of analysis, the committee has reached a "
             f"{consensus_word} decision to {decision.upper()} with {confidence:.0%} confidence{dissent_note}."

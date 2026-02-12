@@ -32,4 +32,3 @@ async def debug_firebase(authorization: str = Header(..., description="Bearer Fi
 
     uid = verify_firebase_bearer(authorization)
     return {"ok": True, "uid": uid, "firebase_project_id": project_id}
-

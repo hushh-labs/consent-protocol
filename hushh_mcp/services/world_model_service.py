@@ -41,14 +41,16 @@ logger = logging.getLogger(__name__)
 
 class AttributeSource(str, Enum):
     """Source of attribute data."""
-    EXPLICIT = "explicit"      # User provided directly
-    INFERRED = "inferred"      # Inferred by Kai
-    IMPORTED = "imported"      # From portfolio import
-    COMPUTED = "computed"      # Calculated from other data
+
+    EXPLICIT = "explicit"  # User provided directly
+    INFERRED = "inferred"  # Inferred by Kai
+    IMPORTED = "imported"  # From portfolio import
+    COMPUTED = "computed"  # Calculated from other data
 
 
 class EmbeddingType(str, Enum):
     """Types of user profile embeddings."""
+
     FINANCIAL_PROFILE = "financial_profile"
     LIFESTYLE_PROFILE = "lifestyle_profile"
     INTEREST_PROFILE = "interest_profile"
@@ -58,6 +60,7 @@ class EmbeddingType(str, Enum):
 @dataclass
 class DomainSummary:
     """Summary of a domain for a user."""
+
     domain_key: str
     display_name: str
     icon: str
@@ -71,6 +74,7 @@ class DomainSummary:
 @dataclass
 class WorldModelIndexV2:
     """Dynamic world model index with JSONB flexibility."""
+
     user_id: str
     domain_summaries: dict = field(default_factory=dict)
     available_domains: list[str] = field(default_factory=list)
@@ -84,6 +88,7 @@ class WorldModelIndexV2:
 @dataclass
 class UserWorldModelMetadata:
     """Complete metadata about a user's world model for UI."""
+
     user_id: str
     domains: list[DomainSummary] = field(default_factory=list)
     total_attributes: int = 0
@@ -95,6 +100,7 @@ class UserWorldModelMetadata:
 @dataclass
 class EncryptedAttribute:
     """Encrypted attribute with BYOK encryption."""
+
     user_id: str
     domain: str  # Now accepts any string (dynamic domains)
     attribute_key: str
@@ -112,56 +118,62 @@ class EncryptedAttribute:
 class WorldModelService:
     """
     Service for managing the unified world model with dynamic domains.
-    
+
     Follows BYOK principles - all sensitive attributes are encrypted
     with the user's vault key before storage.
     """
-    
+
     def __init__(self):
         self._supabase = None
         self._domain_registry = None
         self._domain_inferrer = None
         self._scope_generator = None
-    
+
     @property
     def supabase(self):
         if self._supabase is None:
             self._supabase = get_db()
         return self._supabase
-    
+
     @property
     def domain_registry(self):
         if self._domain_registry is None:
             from hushh_mcp.services.domain_registry_service import get_domain_registry_service
+
             self._domain_registry = get_domain_registry_service()
         return self._domain_registry
-    
+
     @property
     def domain_inferrer(self):
         if self._domain_inferrer is None:
             from hushh_mcp.services.domain_inferrer import get_domain_inferrer
+
             self._domain_inferrer = get_domain_inferrer()
         return self._domain_inferrer
-    
+
     @property
     def scope_generator(self):
         if self._scope_generator is None:
             from hushh_mcp.consent.scope_generator import get_scope_generator
+
             self._scope_generator = get_scope_generator()
         return self._scope_generator
-    
+
     # ==================== INDEX V2 OPERATIONS ====================
-    
+
     async def get_index_v2(self, user_id: str) -> Optional[WorldModelIndexV2]:
         """Get user's world model index (v2 with JSONB)."""
         try:
-            result = self.supabase.table("world_model_index_v2").select("*").eq(
-                "user_id", user_id
-            ).execute()
-            
+            result = (
+                self.supabase.table("world_model_index_v2")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+
             if not result.data:
                 return None
-            
+
             row = result.data[0]
             return WorldModelIndexV2(
                 user_id=row["user_id"],
@@ -176,7 +188,7 @@ class WorldModelService:
         except Exception as e:
             logger.error(f"Error getting world model index v2: {e}")
             return None
-    
+
     async def upsert_index_v2(self, index: WorldModelIndexV2) -> bool:
         """Create or update user's world model index (v2)."""
         try:
@@ -187,7 +199,8 @@ class WorldModelService:
             for domain, summary in (index.domain_summaries or {}).items():
                 if isinstance(summary, dict):
                     sanitized_summaries[domain] = {
-                        k: v for k, v in summary.items()
+                        k: v
+                        for k, v in summary.items()
                         if k not in ("holdings", "total_value", "vault_key", "password")
                     }
                 else:
@@ -196,22 +209,28 @@ class WorldModelService:
             # Serialize dict fields to JSON strings for psycopg2 compatibility
             data = {
                 "user_id": index.user_id,
-                "domain_summaries": json.dumps(sanitized_summaries) if sanitized_summaries else "{}",
+                "domain_summaries": json.dumps(sanitized_summaries)
+                if sanitized_summaries
+                else "{}",
                 "available_domains": index.available_domains,
                 "computed_tags": index.computed_tags,
                 "activity_score": index.activity_score,
-                "last_active_at": index.last_active_at.isoformat() if index.last_active_at else None,
+                "last_active_at": index.last_active_at.isoformat()
+                if index.last_active_at
+                else None,
                 "total_attributes": index.total_attributes,
                 "model_version": index.model_version,
                 "updated_at": datetime.utcnow().isoformat(),
             }
-            
-            self.supabase.table("world_model_index_v2").upsert(data, on_conflict="user_id").execute()
+
+            self.supabase.table("world_model_index_v2").upsert(
+                data, on_conflict="user_id"
+            ).execute()
             return True
         except Exception as e:
             logger.error(f"Error upserting world model index v2: {e}")
             return False
-    
+
     async def update_domain_summary(
         self,
         user_id: str,
@@ -219,29 +238,32 @@ class WorldModelService:
         summary: dict,
     ) -> bool:
         """Atomically merge a domain summary using the JSONB merge RPC.
-        
+
         Uses the merge_domain_summary Postgres function to atomically update
         a single domain's summary without overwriting other domains' data.
         Analogous to MongoDB's $set on nested paths.
         """
         try:
             # Sanitize: strip any sensitive fields before writing to index
-            sanitized = {k: v for k, v in summary.items()
-                        if k not in ("holdings", "total_value", "vault_key", "password")}
-            
+            sanitized = {
+                k: v
+                for k, v in summary.items()
+                if k not in ("holdings", "total_value", "vault_key", "password")
+            }
+
             result = await self.supabase.rpc(
                 "merge_domain_summary",
                 {
                     "p_user_id": user_id,
                     "p_domain": domain,
                     "p_summary": sanitized,
-                }
+                },
             ).execute()
-            
+
             if hasattr(result, "error") and result.error:
                 logger.error(f"JSONB merge RPC error: {result.error}")
                 return False
-            
+
             return True
         except Exception as e:
             logger.error(f"Error updating domain summary via RPC: {e}")
@@ -250,17 +272,17 @@ class WorldModelService:
                 index = await self.get_index_v2(user_id)
                 if index is None:
                     index = WorldModelIndexV2(user_id=user_id)
-                
+
                 index.domain_summaries[domain] = sanitized
-                
+
                 if domain not in index.available_domains:
                     index.available_domains.append(domain)
-                
+
                 return await self.upsert_index_v2(index)
             except Exception as fallback_err:
                 logger.error(f"Fallback update_domain_summary also failed: {fallback_err}")
                 return False
-    
+
     # ==================== ATTRIBUTE OPERATIONS (DEPRECATED) ====================
     # These methods wrote to the now-removed world_model_attributes table.
     # Signatures are kept temporarily to catch hidden callers at runtime.
@@ -321,36 +343,37 @@ class WorldModelService:
     ) -> bool:
         """DEPRECATED – raises NotImplementedError."""
         raise NotImplementedError(self._DEPRECATION_MSG)
-    
+
     # ==================== METADATA OPERATIONS ====================
-    
+
     async def get_user_metadata(self, user_id: str) -> UserWorldModelMetadata:
         """
         Get complete metadata about user's world model for UI.
-        
+
         This is the primary method for frontend to fetch user profile data.
         """
         try:
             # Try RPC function first (more efficient)
             try:
                 result = self.supabase.rpc(
-                    "get_user_world_model_metadata",
-                    {"p_user_id": user_id}
+                    "get_user_world_model_metadata", {"p_user_id": user_id}
                 ).execute()
-                
+
                 if result.data:
                     data = result.data
                     domains = []
-                    for d in (data.get("domains") or []):
-                        domains.append(DomainSummary(
-                            domain_key=d["key"],
-                            display_name=d["display_name"],
-                            icon=d["icon"],
-                            color=d["color"],
-                            attribute_count=d["attribute_count"],
-                            last_updated=d.get("last_updated"),
-                        ))
-                    
+                    for d in data.get("domains") or []:
+                        domains.append(
+                            DomainSummary(
+                                domain_key=d["key"],
+                                display_name=d["display_name"],
+                                icon=d["icon"],
+                                color=d["color"],
+                                attribute_count=d["attribute_count"],
+                                last_updated=d.get("last_updated"),
+                            )
+                        )
+
                     return UserWorldModelMetadata(
                         user_id=user_id,
                         domains=domains,
@@ -358,48 +381,66 @@ class WorldModelService:
                         last_updated=data.get("last_updated"),
                     )
             except Exception as rpc_error:
-                logger.warning(f"RPC get_user_world_model_metadata failed, using fallback: {rpc_error}")
-            
+                logger.warning(
+                    f"RPC get_user_world_model_metadata failed, using fallback: {rpc_error}"
+                )
+
             # Fallback: Manual query
             user_domains = await self.domain_registry.get_user_domains(user_id)
-            
+
             domains = []
             for domain_info in user_domains:
                 # Get scopes for this domain
                 scopes = await self.scope_generator.get_available_scopes(user_id)
-                domain_scopes = [s for s in scopes if s.startswith(f"attr.{domain_info.domain_key}.")]
-                
-                domains.append(DomainSummary(
-                    domain_key=domain_info.domain_key,
-                    display_name=domain_info.display_name,
-                    icon=domain_info.icon_name,
-                    color=domain_info.color_hex,
-                    attribute_count=domain_info.attribute_count,
-                    available_scopes=domain_scopes,
-                ))
-            
+                domain_scopes = [
+                    s for s in scopes if s.startswith(f"attr.{domain_info.domain_key}.")
+                ]
+
+                domains.append(
+                    DomainSummary(
+                        domain_key=domain_info.domain_key,
+                        display_name=domain_info.display_name,
+                        icon=domain_info.icon_name,
+                        color=domain_info.color_hex,
+                        attribute_count=domain_info.attribute_count,
+                        available_scopes=domain_scopes,
+                    )
+                )
+
             # Compute total count from domain summaries (no legacy table query)
             total = 0
             for domain in domains:
                 total += domain.attribute_count
-            
+
             # Calculate completeness (based on recommended domains from registry)
             # Query domain registry for domains marked as "recommended" or use top domains by user count
             try:
-                registry_result = self.supabase.table("domain_registry").select(
-                    "domain_key"
-                ).order("user_count", desc=True).limit(5).execute()
-                common_domains = {d["domain_key"] for d in registry_result.data} if registry_result.data else set()
+                registry_result = (
+                    self.supabase.table("domain_registry")
+                    .select("domain_key")
+                    .order("user_count", desc=True)
+                    .limit(5)
+                    .execute()
+                )
+                common_domains = (
+                    {d["domain_key"] for d in registry_result.data}
+                    if registry_result.data
+                    else set()
+                )
             except Exception:
                 # Fallback to sensible defaults if registry query fails
                 common_domains = {"financial", "subscriptions", "health", "travel", "food"}
-            
+
             user_domain_keys = {d.domain_key for d in domains}
-            completeness = len(user_domain_keys & common_domains) / len(common_domains) if common_domains else 0.0
-            
+            completeness = (
+                len(user_domain_keys & common_domains) / len(common_domains)
+                if common_domains
+                else 0.0
+            )
+
             # Suggest missing common domains
             suggested = list(common_domains - user_domain_keys)[:3]
-            
+
             return UserWorldModelMetadata(
                 user_id=user_id,
                 domains=domains,
@@ -411,9 +452,9 @@ class WorldModelService:
         except Exception as e:
             logger.error(f"Error getting user metadata: {e}")
             return UserWorldModelMetadata(user_id=user_id)
-    
+
     # ==================== EMBEDDING OPERATIONS ====================
-    
+
     async def store_embedding(
         self,
         user_id: str,
@@ -430,16 +471,15 @@ class WorldModelService:
                 "model_name": model_name,
                 "updated_at": datetime.utcnow().isoformat(),
             }
-            
+
             self.supabase.table("world_model_embeddings").upsert(
-                data,
-                on_conflict="user_id,embedding_type"
+                data, on_conflict="user_id,embedding_type"
             ).execute()
             return True
         except Exception as e:
             logger.error(f"Error storing embedding: {e}")
             return False
-    
+
     async def find_similar_users(
         self,
         query_embedding: list[float],
@@ -456,16 +496,16 @@ class WorldModelService:
                     "embedding_type_filter": embedding_type.value,
                     "match_threshold": threshold,
                     "match_count": limit,
-                }
+                },
             ).execute()
-            
+
             return result.data or []
         except Exception as e:
             logger.error(f"Error finding similar users: {e}")
             return []
-    
+
     # ==================== WORLD MODEL DATA OPERATIONS (BLOB-BASED) ====================
-    
+
     async def store_domain_data(
         self,
         user_id: str,
@@ -475,10 +515,10 @@ class WorldModelService:
     ) -> bool:
         """
         Store encrypted domain data and update index.
-        
+
         This is the NEW method for storing user data following BYOK principles.
         Client encrypts entire domain object and sends only ciphertext to backend.
-        
+
         Args:
             user_id: User's ID
             domain: Domain key (e.g., "financial", "food")
@@ -494,20 +534,20 @@ class WorldModelService:
                     "holdings_count": 4,
                     "risk_bucket": "aggressive"
                 }
-        
+
         Returns:
             bool: Success status
         """
         try:
             # 1. Get current encrypted data
             current_data = await self.get_encrypted_data(user_id)
-            
+
             # 2. Store updated encrypted blob
             # Note: Merging happens on client-side. Backend just stores the new blob.
             current_version = 0
             if current_data is not None:
                 current_version = current_data.get("data_version", 0) or 0
-            
+
             data = {
                 "user_id": user_id,
                 "encrypted_data_ciphertext": encrypted_blob["ciphertext"],
@@ -517,39 +557,39 @@ class WorldModelService:
                 "data_version": current_version + 1,
                 "updated_at": datetime.utcnow().isoformat(),
             }
-            
+
             if current_data is None:
                 data["created_at"] = datetime.utcnow().isoformat()
-            
+
             self.supabase.table("world_model_data").upsert(data, on_conflict="user_id").execute()
-            
+
             # 3. Update world_model_index_v2
             await self.update_domain_summary(user_id, domain, summary)
-            
+
             return True
         except Exception as e:
             logger.error(f"Error storing domain data: {e}")
             return False
-    
+
     async def get_encrypted_data(self, user_id: str) -> Optional[dict]:
         """
         Get user's encrypted data blob.
-        
+
         Returns encrypted blob that can only be decrypted client-side.
         Backend cannot read this data.
-        
+
         Returns:
             dict with keys: ciphertext, iv, tag, algorithm
             or None if no data exists
         """
         try:
-            result = self.supabase.table("world_model_data").select("*").eq(
-                "user_id", user_id
-            ).execute()
-            
+            result = (
+                self.supabase.table("world_model_data").select("*").eq("user_id", user_id).execute()
+            )
+
             if not result.data:
                 return None
-            
+
             row = result.data[0]
             return {
                 "ciphertext": row["encrypted_data_ciphertext"],
@@ -562,19 +602,19 @@ class WorldModelService:
         except Exception as e:
             logger.error(f"Error getting encrypted data: {e}")
             return None
-    
+
     async def get_domain_data(self, user_id: str, domain: str) -> Optional[dict]:
         """
         Get user's encrypted data blob for a specific domain.
-        
+
         Note: The current architecture stores all domains in a single encrypted blob.
         This method returns the full blob - the client must decrypt and extract
         the specific domain data.
-        
+
         Args:
             user_id: User's ID
             domain: Domain key (e.g., "financial") - used to verify domain exists
-        
+
         Returns:
             dict with keys: ciphertext, iv, tag, algorithm
             or None if no data exists for this domain
@@ -585,51 +625,47 @@ class WorldModelService:
             if index is None or domain not in index.available_domains:
                 logger.info(f"Domain {domain} not found in user's available domains")
                 return None
-            
+
             # Return the encrypted blob (client will decrypt and extract domain)
             return await self.get_encrypted_data(user_id)
         except Exception as e:
             logger.error(f"Error getting domain data: {e}")
             return None
-    
+
     async def delete_user_data(self, user_id: str) -> bool:
         """
         Delete all user data (encrypted blob and index).
-        
+
         Used for account deletion / data purge.
         """
         try:
             # Delete encrypted data
-            self.supabase.table("world_model_data").delete().eq(
-                "user_id", user_id
-            ).execute()
-            
+            self.supabase.table("world_model_data").delete().eq("user_id", user_id).execute()
+
             # Delete index
-            self.supabase.table("world_model_index_v2").delete().eq(
-                "user_id", user_id
-            ).execute()
-            
+            self.supabase.table("world_model_index_v2").delete().eq("user_id", user_id).execute()
+
             return True
         except Exception as e:
             logger.error(f"Error deleting user data: {e}")
             return False
-    
+
     async def delete_domain_data(self, user_id: str, domain: str) -> bool:
         """
         Delete a specific domain from user's world model.
-        
+
         This removes the domain from the index (available_domains and domain_summaries).
         Note: The encrypted blob still contains the domain data, but since the client
         manages the blob, it will be overwritten on next save without this domain.
-        
+
         For complete deletion, the client should:
         1. Call this endpoint to remove from index
         2. Decrypt their blob, remove the domain, re-encrypt and save
-        
+
         Args:
             user_id: User's ID
             domain: Domain key to delete (e.g., "financial")
-            
+
         Returns:
             bool: Success status
         """
@@ -639,52 +675,52 @@ class WorldModelService:
             if index is None:
                 logger.warning(f"No index found for user {user_id} when deleting domain {domain}")
                 return True  # Nothing to delete
-            
+
             # Check if domain exists
             if domain not in index.available_domains:
                 logger.info(f"Domain {domain} not in user {user_id}'s available domains")
                 return True  # Domain doesn't exist, consider it deleted
-            
+
             # Remove domain from available_domains
             index.available_domains = [d for d in index.available_domains if d != domain]
-            
+
             # Remove domain from domain_summaries
             if domain in index.domain_summaries:
                 del index.domain_summaries[domain]
-            
+
             # Update total_attributes (recalculate from remaining domains)
             total_attrs = 0
             for _d, summary in index.domain_summaries.items():
                 total_attrs += (
-                    summary.get("holdings_count") or 
-                    summary.get("attribute_count") or 
-                    summary.get("item_count") or 
-                    0
+                    summary.get("holdings_count")
+                    or summary.get("attribute_count")
+                    or summary.get("item_count")
+                    or 0
                 )
             index.total_attributes = total_attrs
-            
+
             # If no domains left, delete the entire index and data
             if not index.available_domains:
                 logger.info(f"No domains left for user {user_id}, deleting all data")
                 return await self.delete_user_data(user_id)
-            
+
             # Update the index
             success = await self.upsert_index_v2(index)
             if success:
                 logger.info(f"Successfully deleted domain {domain} for user {user_id}")
             return success
-            
+
         except Exception as e:
             logger.error(f"Error deleting domain {domain} for user {user_id}: {e}")
             return False
-    
+
     # ==================== LEGACY COMPATIBILITY ====================
     # These methods maintain backward compatibility with the old API
-    
+
     async def get_index(self, user_id: str):
         """Legacy: Get world model index (redirects to v2)."""
         return await self.get_index_v2(user_id)
-    
+
     async def upsert_index(self, index):
         """Legacy: Upsert world model index."""
         if isinstance(index, WorldModelIndexV2):
@@ -696,16 +732,19 @@ class WorldModelService:
             last_active_at=getattr(index, "last_active_at", None),
         )
         return await self.upsert_index_v2(new_index)
-    
+
     async def update_activity(self, user_id: str) -> bool:
         """Update user's last active timestamp."""
         try:
             # Update v2 index
-            self.supabase.table("world_model_index_v2").upsert({
-                "user_id": user_id,
-                "last_active_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-            }, on_conflict="user_id").execute()
+            self.supabase.table("world_model_index_v2").upsert(
+                {
+                    "user_id": user_id,
+                    "last_active_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+                on_conflict="user_id",
+            ).execute()
             return True
         except Exception as e:
             logger.error(f"Error updating activity: {e}")

@@ -26,6 +26,7 @@ _DEPRECATION_MSG = (
 
 class MessageRole(str, Enum):
     """Role of message sender."""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -34,6 +35,7 @@ class MessageRole(str, Enum):
 
 class ContentType(str, Enum):
     """Type of message content."""
+
     TEXT = "text"
     COMPONENT = "component"
     TOOL_USE = "tool_use"
@@ -41,6 +43,7 @@ class ContentType(str, Enum):
 
 class ComponentType(str, Enum):
     """Types of insertable UI components."""
+
     ANALYSIS = "analysis"
     PORTFOLIO_IMPORT = "portfolio_import"
     DECISION_CARD = "decision_card"
@@ -53,6 +56,7 @@ class ComponentType(str, Enum):
 @dataclass
 class Conversation:
     """Chat conversation metadata."""
+
     id: str
     user_id: str
     title: Optional[str] = None
@@ -69,6 +73,7 @@ class Conversation:
 @dataclass
 class ChatMessage:
     """Chat message with optional component and encryption support."""
+
     id: str
     conversation_id: str
     role: MessageRole

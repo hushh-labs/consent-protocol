@@ -53,9 +53,7 @@ def _notify_callback(connection, pid, channel, payload: str):
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.call_soon_threadsafe(
-                lambda: asyncio.ensure_future(_handle_notify(payload))
-            )
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_handle_notify(payload)))
     except Exception as e:
         logger.exception("Consent notify callback error: %s", e)
 
@@ -93,6 +91,7 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
     """Fetch tokens from user_push_tokens and send FCM data message."""
     try:
         from db.db_client import get_db
+
         db = get_db()
         # Sync query via raw SQL (user_push_tokens may not exist yet if migration not run)
         result = db.execute_raw(
@@ -103,11 +102,15 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
             logger.info("FCM skipped: no push tokens for user_id=%s", user_id)
             return
         from api.utils.firebase_admin import ensure_firebase_admin
+
         configured, _ = ensure_firebase_admin()
         if not configured:
-            logger.warning("FCM skipped: Firebase Admin not configured (set FIREBASE_SERVICE_ACCOUNT_JSON)")
+            logger.warning(
+                "FCM skipped: Firebase Admin not configured (set FIREBASE_SERVICE_ACCOUNT_JSON)"
+            )
             return
         from firebase_admin import messaging
+
         request_id = data.get("request_id", "")
         action = data.get("action", "REQUESTED")
         scope = data.get("scope", "")
@@ -134,7 +137,9 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
                     body=f"{agent_id or 'An agent'} is requesting access to your {scope_description or scope or 'data'}."
                     if action == "REQUESTED"
                     else f"Request {request_id}: {action}",
-                ) if action == "REQUESTED" else None,
+                )
+                if action == "REQUESTED"
+                else None,
             )
             try:
                 messaging.send(message)
@@ -157,6 +162,7 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
 async def _timeout_job_loop():
     """Periodically emit TIMEOUT events for expired REQUESTED rows (NOTIFY → SSE)."""
     from hushh_mcp.services.consent_db import ConsentDBService
+
     while True:
         try:
             await asyncio.sleep(TIMEOUT_JOB_INTERVAL)
@@ -179,6 +185,7 @@ async def run_consent_listener():
     timeout_task = asyncio.create_task(_timeout_job_loop())
     try:
         from db.connection import get_pool
+
         pool = await get_pool()
     except Exception as e:
         logger.error("Consent listener: DB pool not available (%s), skipping LISTEN", e)
