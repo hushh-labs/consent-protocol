@@ -62,6 +62,7 @@ SERVER_INFO = {
 # ============================================================================
 
 # Map MCP scope strings (dot notation) to API format. Only world-model scopes are supported.
+# Static entries for well-known scopes:
 SCOPE_API_MAP = {
     "world_model.read": "world_model_read",
     "attr.food.*": "attr_food",
@@ -70,3 +71,26 @@ SCOPE_API_MAP = {
     "attr.health.*": "attr_health",
     "attr.kai_decisions.*": "attr_kai_decisions",
 }
+
+
+def resolve_scope_api(scope: str) -> str | None:
+    """Resolve a scope string to its API format, supporting dynamic attr.* scopes.
+
+    Static scopes are looked up from SCOPE_API_MAP.  Dynamic scopes matching
+    the ``attr.{domain}.*`` pattern are resolved on-the-fly by converting dots
+    and stripping the wildcard suffix (e.g. ``attr.travel.*`` -> ``attr_travel``).
+
+    Returns None if the scope is not a valid world-model scope.
+    """
+    # Fast path: static lookup
+    if scope in SCOPE_API_MAP:
+        return SCOPE_API_MAP[scope]
+
+    # Dynamic: accept any well-formed attr.{domain}.* scope
+    import re
+    m = re.match(r"^attr\.([a-z][a-z0-9_]*)\.\*$", scope)
+    if m:
+        domain = m.group(1)
+        return f"attr_{domain}"
+
+    return None

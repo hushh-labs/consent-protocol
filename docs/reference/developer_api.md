@@ -271,7 +271,7 @@ HCT:base64(user_id|agent_id|scope|issued_at|expires_at).hmac_sha256_signature
 | `HCT`        | Hushh Consent Token prefix                 |
 | `user_id`    | Firebase user ID                           |
 | `agent_id`   | `developer:dev-token` for API access       |
-| `scope`      | Authorized scope (e.g., `vault.read.food`) |
+| `scope`      | Authorized scope (e.g., `attr.food.*`) |
 | `issued_at`  | Unix timestamp (ms)                        |
 | `expires_at` | Unix timestamp (ms)                        |
 | `signature`  | HMAC-SHA256 of payload                     |
@@ -403,7 +403,7 @@ curl -X POST http://localhost:8000/api/validate-token \
   "valid": true,
   "user_id": "user_firebase_id",
   "agent_id": "developer:dev-partner-001",
-  "scope": "vault.read.food"
+  "scope": "attr.food.*"
 }
 ```
 

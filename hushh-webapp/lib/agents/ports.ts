@@ -37,7 +37,7 @@ function loadAgentPorts(): Record<string, number> {
       const parsed = JSON.parse(portsJson);
       console.log("[AgentPorts] Loaded from environment");
       return { ...DEFAULT_AGENT_PORTS, ...parsed };
-    } catch (e) {
+    } catch (_e) {
       console.warn(
         "[AgentPorts] Failed to parse AGENT_PORTS_JSON, using defaults"
       );

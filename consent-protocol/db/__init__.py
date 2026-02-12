@@ -12,7 +12,7 @@ Connection Method:
     - DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
 """
 
-from .connection import close_pool, get_database_url, get_database_ssl, get_pool, hash_token
+from .connection import close_pool, get_database_ssl, get_database_url, get_pool, hash_token
 from .consent import insert_event
 from .queries import (
     get_active_tokens,

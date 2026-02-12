@@ -4,8 +4,6 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import {
-  type ColorVariant,
-  type ComponentEffect,
   type MorphyCardBaseProps,
 } from "@/lib/morphy-ux/types";
 import { type IconWeight } from "@phosphor-icons/react";

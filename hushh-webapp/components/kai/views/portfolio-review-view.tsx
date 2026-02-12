@@ -18,18 +18,14 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
-  ArrowLeft,
   Pencil,
   Trash2,
   Plus,
   Save,
   RefreshCw,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   Building2,
-  Calendar,
-  DollarSign,
   TrendingUp,
   TrendingDown,
   PieChart,
@@ -50,14 +46,13 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { WorldModelService } from "@/lib/services/world-model-service";
-import { Button as MorphyButton, ButtonProps as MorphyButtonProps } from "@/lib/morphy-ux/button";
+import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
+import { Button as MorphyButton } from "@/lib/morphy-ux/button";
 import { 
   Card as MorphyCard, 
   CardContent, 
   CardHeader, 
   CardTitle,
-  CardDescription,
-  CardFooter
 } from "@/lib/morphy-ux/card";
 
 
@@ -161,7 +156,7 @@ function formatCurrency(value: number | undefined | null): string {
   }).format(value);
 }
 
-function formatPercent(value: number | undefined | null): string {
+function _formatPercent(value: number | undefined | null): string {
   if (value === undefined || value === null) return "0.00%";
   const sign = value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
@@ -203,14 +198,14 @@ export function PortfolioReviewView({
   vaultOwnerToken,
   onSaveComplete,
   onReimport,
-  onBack,
+  onBack: _onBack,
   className,
 }: PortfolioReviewViewProps) {
   // Editable state
   const [accountInfo, setAccountInfo] = useState<AccountInfo>(
     initialData.account_info || {}
   );
-  const [accountSummary, setAccountSummary] = useState<AccountSummary>(
+  const [accountSummary, _setAccountSummary] = useState<AccountSummary>(
     initialData.account_summary || {}
   );
   const [holdings, setHoldings] = useState<Holding[]>(
@@ -319,25 +314,58 @@ export function PortfolioReviewView({
         total_value: totalValue,
       };
 
-      // 1. Encrypt the portfolio data
+      // 1. Fetch existing blob and merge (prevents cross-domain overwrite)
       const { HushhVault } = await import("@/lib/capacitor");
+      const { decryptData } = await import("@/lib/vault/encrypt");
+
+      let fullBlob: Record<string, any> = {};
+      try {
+        const existingEncrypted = await WorldModelService.getDomainData(userId, "financial", vaultOwnerToken);
+        if (existingEncrypted) {
+          const decrypted = await decryptData(
+            {
+              ciphertext: existingEncrypted.ciphertext,
+              iv: existingEncrypted.iv,
+              tag: existingEncrypted.tag,
+              encoding: "base64",
+              algorithm: (existingEncrypted.algorithm || "aes-256-gcm") as "aes-256-gcm",
+            },
+            vaultKey
+          );
+          fullBlob = JSON.parse(decrypted);
+        }
+      } catch (e) {
+        console.warn("[PortfolioReview] Could not fetch/decrypt existing blob, creating fresh:", e);
+      }
+
+      // 2. Merge new financial domain into existing blob (preserves other domains)
+      fullBlob.financial = portfolioToSave;
+
+      // 3. Re-encrypt the full merged blob
       const encrypted = await HushhVault.encryptData({
-        plaintext: JSON.stringify({ financial: portfolioToSave }),
+        plaintext: JSON.stringify(fullBlob),
         keyHex: vaultKey,
       });
 
-      // 2. Build summary for indexing (non-sensitive metadata)
+      // 4. Build summary for indexing (non-sensitive metadata only, no total_value)
+      const holdingsSummary = holdings.map((h) => ({
+        symbol: h.symbol,
+        name: h.name,
+        quantity: h.quantity,
+        current_price: h.price,
+      }));
+
       const summary = {
         holdings_count: holdings.length,
-        total_value: totalValue,
+        holdings: holdingsSummary,
         risk_bucket: riskBucket,
         has_income_data: !!(incomeSummary.total_income),
         has_realized_gains: !!(realizedGainLoss.net_realized),
         last_updated: new Date().toISOString(),
       };
 
-      // 3. Store to world model
-      await WorldModelService.storeDomainData({
+      // 5. Store to world model
+      const result = await WorldModelService.storeDomainData({
         userId,
         domain: "financial",
         encryptedBlob: {
@@ -350,11 +378,25 @@ export function PortfolioReviewView({
         vaultOwnerToken,
       });
 
-      // 4. Cache in session storage for immediate use
-      sessionStorage.setItem(
-        "kai_portfolio_data",
-        JSON.stringify(portfolioToSave)
-      );
+      if (!result.success) {
+        throw new Error("Backend returned failure on store");
+      }
+
+      // 5b. Invalidate caches after successful save
+      const cache = CacheService.getInstance();
+      cache.invalidate(CACHE_KEYS.DOMAIN_DATA(userId, "financial"));
+      cache.invalidate(CACHE_KEYS.PORTFOLIO_DATA(userId));
+      cache.invalidate(CACHE_KEYS.WORLD_MODEL_METADATA(userId));
+
+      // 6. Verify the save by reading back
+      try {
+        const readBack = await WorldModelService.getDomainData(userId, "financial", vaultOwnerToken);
+        if (!readBack) {
+          console.warn("[PortfolioReview] Read-back verification failed: no data returned");
+        }
+      } catch (verifyErr) {
+        console.warn("[PortfolioReview] Read-back verification error:", verifyErr);
+      }
 
       toast.success("Portfolio saved to vault!");
       onSaveComplete(portfolioToSave);

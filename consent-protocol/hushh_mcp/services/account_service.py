@@ -19,10 +19,10 @@ since it's deleting the entire user account including their vault.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
-from hushh_mcp.services.world_model_service import WorldModelService
 from db.db_client import get_db
+from hushh_mcp.services.world_model_service import WorldModelService
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +114,9 @@ class AccountService:
             except Exception as e:
                 logger.warning(f"⚠️ world_model_index_v2 delete skipped or failed: {e}")
             
-            # 3. Delete domain attributes (from world_model_attributes table)
-            try:
-                self.supabase.table("world_model_attributes").delete().eq(
-                    "user_id", user_id
-                ).execute()
-                results["domain_attributes"] = True
-                logger.info(f"✓ Deleted world_model_attributes for {user_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ world_model_attributes delete skipped or failed: {e}")
+            # 3. world_model_attributes table removed – nothing to clean up
+            results["domain_attributes"] = True
+            logger.info(f"ℹ️ world_model_attributes table removed – skip for {user_id}")
             
             # 4. DELETE IDENTITY - REMOVED (no longer in use)
             # The user_investor_profiles table has been deprecated and removed.
@@ -130,7 +124,7 @@ class AccountService:
             results["identity"] = True  # Mark as complete (nothing to clean up)
             
             # 5. CHAT & SESSION TABLES REMOVED - nothing to delete
-            logger.info(f"ℹ️ Chat/Session tables already removed from database")
+            logger.info("ℹ️ Chat/Session tables already removed from database")
             
             # 6. Revoke all consent tokens (mark as revoked in audit log)
             try:

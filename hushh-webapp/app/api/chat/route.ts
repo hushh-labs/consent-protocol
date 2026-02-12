@@ -134,7 +134,7 @@ async function callOrchestrator(message: string, userId: string) {
     if (response.ok) {
       return await response.json();
     }
-  } catch (e) {
+  } catch (_e) {
     console.log("[API] Orchestrator not running, using fallback");
   }
 
@@ -159,9 +159,9 @@ function fallbackIntentClassification(_message: string) {
  */
 async function handleDomainAgentChat(
   agentId: string,
-  message: string,
-  userId: string,
-  sessionState: Record<string, unknown>
+  _message: string,
+  _userId: string,
+  _sessionState: Record<string, unknown>
 ) {
   // Other domain agents - not yet implemented
   return NextResponse.json({

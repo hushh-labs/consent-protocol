@@ -19,6 +19,7 @@ from mcp_modules.config import (
     MCP_DEVELOPER_TOKEN,
     PRODUCTION_MODE,
     SCOPE_API_MAP,
+    resolve_scope_api,
 )
 
 logger = logging.getLogger("hushh-mcp-server")
@@ -100,14 +101,14 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             ]
         }))]
     
-    # Validate scope
-    scope_api = SCOPE_API_MAP.get(scope_str)
+    # Validate scope (supports dynamic attr.{domain}.* scopes)
+    scope_api = resolve_scope_api(scope_str)
     if not scope_api:
         return [TextContent(type="text", text=json.dumps({
             "status": "error",
             "error": f"Invalid scope: {scope_str}",
-            "valid_scopes": list(SCOPE_API_MAP.keys()),
-            "hint": "Use list_scopes tool to see available options"
+            "valid_scopes": list(SCOPE_API_MAP.keys()) + ["attr.{domain}.*  (any domain)"],
+            "hint": "Use list_scopes tool to see available options, or use attr.<domain>.* for any domain"
         }))]
     
     # Production mode
@@ -380,7 +381,7 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                         "scope": scope_str,
                         "expires_at": expires_at,
                         "message": "✅ Consent is active! Use this token to access data.",
-                        "next_step": f"Call get_financial_profile, get_food_preferences, or get_professional_profile with this consent_token."
+                        "next_step": "Call get_financial_profile, get_food_preferences, or get_professional_profile with this consent_token."
                     }))]
             
             # Step 2: Check for pending consent

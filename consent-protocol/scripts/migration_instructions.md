@@ -9,7 +9,7 @@ The migration from asyncpg (Cloud SQL) to Supabase has been completed. All API r
 
 - **VaultDBService** - Vault operations
 - **ConsentDBService** - Consent management (consent_audit table)
-- **InvestorDBService** - Investor profiles
+- **WorldModelService** - World model data and attributes
 
 See `docs/reference/database_service_layer.md` for architecture details.
 
@@ -19,7 +19,7 @@ Only needed when migrating data from an existing Cloud SQL database:
 
 1. **Cloud SQL Proxy** (only if source is Cloud SQL): run on port 5432, then set `DB_*` in `.env` to point at that source.
    ```bash
-   ./cloud-sql-proxy hushh-pda:us-central1:hushh-vault-db --port 5432
+   ./cloud-sql-proxy YOUR_GCP_PROJECT:us-central1:hushh-vault-db --port 5432
    ```
 
 2. **Environment variables** in `consent-protocol/.env`: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` (see `.env.example`). For source migration, set `DB_*` to the source instance for the migration run.
@@ -54,16 +54,12 @@ The script automatically verifies:
 ## Migration Details
 
 **Tables to migrate (in dependency order); app uses consent_audit (not consent_events):**
-1. investor_profiles (1,683 rows)
-2. vault_keys (11 rows)
-3. vault_kai (0 rows)
-4. consent_audit (97 rows)
-5. user_investor_profiles (7 rows)
-6. vault_food (3 rows)
-7. vault_professional (4 rows)
-8. vault_kai_preferences (16 rows)
+1. vault_keys (11 rows)
+2. consent_audit (97 rows)
 
-**Total: 1,821 rows**
+> **Note:** The following tables existed in the original Cloud SQL database but have since been dropped and replaced by the unified `world_model_data` architecture: `investor_profiles`, `vault_kai`, `user_investor_profiles`, `vault_food`, `vault_professional`, `vault_kai_preferences`. They are listed here only for historical reference.
+
+**Total: ~108 rows (core tables)**
 
 ## Data Type Handling
 

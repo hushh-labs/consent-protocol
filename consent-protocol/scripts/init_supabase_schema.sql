@@ -60,25 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_investor_type ON investor_profiles(investor_type)
 CREATE INDEX IF NOT EXISTS idx_investor_style ON investor_profiles USING GIN (investment_style);
 CREATE INDEX IF NOT EXISTS idx_investor_cik ON investor_profiles(cik) WHERE cik IS NOT NULL;
 
--- 3. vault_kai (encrypted investment decisions)
-CREATE TABLE IF NOT EXISTS vault_kai (
-    id SERIAL PRIMARY KEY,
-    user_id VARCHAR(255) NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    session_id TEXT,
-    ticker VARCHAR(10) NOT NULL,
-    decision_type VARCHAR(10) CHECK (decision_type IN ('buy', 'hold', 'reduce')),
-    decision_ciphertext TEXT NOT NULL,
-    iv VARCHAR(255) NOT NULL,
-    tag VARCHAR(255),
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    confidence_score DOUBLE PRECISION,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_vault_kai_user ON vault_kai(user_id);
-CREATE INDEX IF NOT EXISTS idx_vault_kai_ticker ON vault_kai(ticker);
-
--- 4. consent_audit (consent token audit trail; app uses this only)
+-- 3. consent_audit (consent token audit trail; app uses this only)
 CREATE TABLE IF NOT EXISTS consent_audit (
     id SERIAL PRIMARY KEY,
     token_id TEXT NOT NULL,
@@ -129,80 +111,6 @@ CREATE TABLE IF NOT EXISTS user_push_tokens (
     UNIQUE (user_id, platform)
 );
 CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_id ON user_push_tokens(user_id);
-
--- 5. user_investor_profiles (private vault layer)
-CREATE TABLE IF NOT EXISTS user_investor_profiles (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    confirmed_investor_id INTEGER REFERENCES investor_profiles(id),
-    profile_data_ciphertext TEXT,
-    profile_data_iv TEXT,
-    profile_data_tag TEXT,
-    custom_holdings_ciphertext TEXT,
-    custom_holdings_iv TEXT,
-    custom_holdings_tag TEXT,
-    preferences_ciphertext TEXT,
-    preferences_iv TEXT,
-    preferences_tag TEXT,
-    confirmed_at TIMESTAMPTZ,
-    consent_scope TEXT,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_investor_user ON user_investor_profiles(user_id);
-
--- 6. vault_food (food & dining domain data)
-CREATE TABLE IF NOT EXISTS vault_food (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,
-    ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    consent_token_id TEXT,
-    UNIQUE(user_id, field_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vault_food_user ON vault_food(user_id);
-
--- 7. vault_professional (professional profile domain data)
-CREATE TABLE IF NOT EXISTS vault_professional (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,
-    ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    consent_token_id TEXT,
-    UNIQUE(user_id, field_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vault_professional_user ON vault_professional(user_id);
-
--- 8. vault_kai_preferences (encrypted user settings)
-CREATE TABLE IF NOT EXISTS vault_kai_preferences (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,
-    ciphertext TEXT NOT NULL,
-    iv TEXT NOT NULL,
-    tag TEXT NOT NULL,
-    algorithm TEXT DEFAULT 'aes-256-gcm',
-    created_at BIGINT NOT NULL,
-    updated_at BIGINT,
-    UNIQUE(user_id, field_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_vault_kai_prefs_user ON vault_kai_preferences(user_id);
 
 -- Verification: Show all created tables
 SELECT table_name 

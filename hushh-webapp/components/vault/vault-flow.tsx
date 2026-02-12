@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
 import {
   Lock,
@@ -128,9 +127,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
 
-          // Persist user_id for downstream pages (Food, Professional, Consents)
-          localStorage.setItem("user_id", user.uid);
-          sessionStorage.setItem("user_id", user.uid);
           setStep("success");
           setTimeout(onSuccess, 1000);
         } catch (tokenError: any) {
@@ -171,24 +167,15 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           VaultService.setVaultCheckCache(user.uid, true);
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
-
-          // Persist user_id for downstream pages
-          localStorage.setItem("user_id", user.uid);
-          sessionStorage.setItem("user_id", user.uid);
-          setStep("success");
-          setTimeout(onSuccess, 1000);
-        } catch (tokenError: any) {
+        } catch (tokenError: unknown) {
           console.error("Failed to issue VAULT_OWNER token:", tokenError);
-          toast.error(
-            "Vault unlocked but failed to issue access token. Please try again."
-          );
         }
-      } else {
-        toast.error("Invalid recovery key");
+
+        setStep("success");
       }
-    } catch (err: any) {
-      console.error("Recovery error:", err);
-      toast.error("Invalid recovery key or failed to recover");
+    } catch (err: unknown) {
+      console.error("Recovery key unlock failed:", err);
+      setError("Invalid recovery key. Please try again.");
     } finally {
       setIsUnlocking(false);
     }
@@ -221,10 +208,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
           VaultService.setVaultCheckCache(user.uid, true);
           // Unlock vault with key + token
           unlockVault(decryptedKey, token, expiresAt);
-
-          // Persist user_id for downstream pages
-          localStorage.setItem("user_id", user.uid);
-          sessionStorage.setItem("user_id", user.uid);
         } catch (tokenError: any) {
           console.error("Failed to issue VAULT_OWNER token:", tokenError);
           // Fall through to success anyway, user can retry unlock if needed
@@ -238,10 +221,6 @@ export function VaultFlow({ user, onSuccess, onStepChange }: VaultFlowProps) {
       return;
     }
 
-    // Always persist user_id after vault creation
-    localStorage.setItem("user_id", user.uid);
-    sessionStorage.setItem("user_id", user.uid);
-    
     // Only go to success if we actually have a key (implied by execution reaching here without return)
     // But double check IS_UNLOCKED logic via context? 
     // Actually, if we reached here, we ostensibly called unlockVault.

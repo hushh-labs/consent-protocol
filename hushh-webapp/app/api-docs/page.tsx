@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, Button } from "@/lib/morphy-ux/morphy";
+import { Card, Button } from "@/lib/morphy-ux/morphy";
 import {
   Code,
   Lock,

@@ -149,7 +149,7 @@ await service.store_attribute(domain="food", ...)
 - Document scope generation pattern: `attr.{domain}.{attribute_key}`
 - Document new financial KPIs (15+ metrics)
 - Update World Model tri-flow table
-- Add migration guide from legacy vault_* to world_model_attributes
+- Add migration guide from legacy vault_* to world_model_data
 
 ---
 

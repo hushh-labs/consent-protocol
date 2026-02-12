@@ -109,7 +109,7 @@ interface DisclosureItemProps {
   index: number;
 }
 
-function DisclosureItem({ text, index }: DisclosureItemProps) {
+function DisclosureItem({ text, index: _index }: DisclosureItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { category, icon, priority } = categorizeDisclosure(text);
 

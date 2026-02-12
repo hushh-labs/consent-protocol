@@ -35,6 +35,7 @@ async def consent_event_generator(
     Heartbeat every 30s to keep connection alive.
     """
     from datetime import datetime
+
     from api.consent_listener import get_consent_queue
 
     logger.info(f"SSE connection opened for user: {user_id}")

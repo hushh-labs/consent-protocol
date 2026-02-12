@@ -120,7 +120,7 @@ export function NavigationProvider({
       try {
         backButtonListener = await App.addListener(
           "backButton",
-          ({ canGoBack }) => {
+          ({ canGoBack: _canGoBack }) => {
             handleBackRef.current();
           }
         );

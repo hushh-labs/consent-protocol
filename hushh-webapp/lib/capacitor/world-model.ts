@@ -69,23 +69,6 @@ export interface HushhWorldModelPlugin {
   }>;
 
   /**
-   * Store an encrypted attribute.
-   * Calls: POST /api/world-model/attributes
-   */
-  storeAttribute(options: {
-    userId: string;
-    attributeKey: string;
-    ciphertext: string;
-    iv: string;
-    tag: string;
-    domain?: string;
-    displayName?: string;
-    dataType?: string;
-    source?: string;
-    vaultOwnerToken?: string;
-  }): Promise<{ success: boolean; scope: string }>;
-
-  /**
    * Delete a specific attribute.
    * Calls: DELETE /api/world-model/attributes/:userId/:domain/:attributeKey
    */
