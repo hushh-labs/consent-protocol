@@ -144,3 +144,11 @@ If it exits 0, CI should pass. If it fails, fix the reported step before committ
 - [Getting Started](../guides/getting-started.md) -- Setup and local CI instructions.
 - [API Contracts](api-contracts.md) -- API contract verification.
 - [Architecture](./architecture.md) -- Tri-Flow and service-layer rules.
+
+---
+
+## Upstream CI (consent-protocol standalone)
+
+The consent-protocol has its own full CI pipeline at [hushh-labs/consent-protocol](https://github.com/hushh-labs/consent-protocol/actions). It runs 5 jobs: lint, typecheck, test, security scan, and Docker build verification.
+
+The monorepo `protocol-check` job is a lightweight mirror. For full coverage, PRs to the upstream repo are the authoritative gate.
