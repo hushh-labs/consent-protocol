@@ -89,6 +89,7 @@ jobs:
           TESTING: "true"
           SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
           VAULT_ENCRYPTION_KEY: "TEST_VAULT_KEY_PLACEHOLDER"
+          MCP_DEVELOPER_TOKEN: "test_mcp_developer_token_for_ci"
 
   # ============================================================================
   # Security: bandit static analysis
