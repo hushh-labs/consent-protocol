@@ -1,155 +1,22 @@
-name: "Tri-Flow CI"
+name: "Consent Protocol CI"
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      scope:
-        description: "Run frontend only, backend only, or all"
-        required: true
-        default: "all"
-        type: choice
-        options:
-          - frontend
-          - backend
-          - all
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
 
 env:
-  NODE_VERSION: "20"
   PYTHON_VERSION: "3.13"
 
 jobs:
   # ============================================================================
-  # Path filters: run frontend/backend jobs only when their paths change (or manual scope)
+  # Lint: ruff check + format verification
   # ============================================================================
-  paths:
-    name: "Path filters"
+  lint:
+    name: "Lint (ruff)"
     runs-on: ubuntu-latest
-    outputs:
-      frontend: ${{ steps.outputs.frontend }}
-      backend: ${{ steps.outputs.backend }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dorny/paths-filter@v3
-        id: filter
-        if: github.event_name != 'workflow_dispatch'
-        with:
-          filters: |
-            frontend: hushh-webapp/**
-            backend: consent-protocol/**
-
-      - id: manual
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          scope="${{ github.event.inputs.scope }}"
-          case "$scope" in
-            frontend) echo "frontend=true" >> $GITHUB_OUTPUT; echo "backend=false" >> $GITHUB_OUTPUT ;;
-            backend) echo "frontend=false" >> $GITHUB_OUTPUT; echo "backend=true" >> $GITHUB_OUTPUT ;;
-            *) echo "frontend=true" >> $GITHUB_OUTPUT; echo "backend=true" >> $GITHUB_OUTPUT ;;
-          esac
-
-      - id: outputs
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "frontend=${{ steps.manual.outputs.frontend }}" >> $GITHUB_OUTPUT
-            echo "backend=${{ steps.manual.outputs.backend }}" >> $GITHUB_OUTPUT
-          else
-            echo "frontend=${{ steps.filter.outputs.frontend }}" >> $GITHUB_OUTPUT
-            echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
-          fi
-        if: always() && (github.event_name == 'workflow_dispatch' && steps.manual.outcome == 'success') || (github.event_name != 'workflow_dispatch' && steps.filter.outcome == 'success')
-
-  # ============================================================================
-  # Frontend (Next.js + Capacitor)
-  # ============================================================================
-  web-check:
-    name: "Web (Next.js)"
-    needs: [paths]
-    if: needs.paths.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./hushh-webapp
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: hushh-webapp/package-lock.json
-
-      - name: Validate Node version
-        run: |
-          node --version
-          node -e "const v = process.version.match(/^v(\d+)\./); if (!v || parseInt(v[1]) < 20) throw new Error('Node.js 20+ required')"
-
-      - name: Validate required files
-        run: |
-          test -f package-lock.json || (echo "❌ ERROR: package-lock.json not found. Run 'npm install' to generate it." && exit 1)
-          node -e "JSON.parse(require('fs').readFileSync('package-lock.json'))" || (echo "❌ ERROR: package-lock.json is not valid JSON" && exit 1)
-          test -f next.config.ts || (echo "❌ ERROR: next.config.ts not found" && exit 1)
-          echo "✓ package-lock.json exists and is valid"
-          echo "✓ next.config.ts exists"
-
-      - name: Use latest npm
-        run: npm install -g npm@latest && npm --version
-
-      - name: Install dependencies
-        timeout-minutes: 5
-        run: npm ci
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Build (web standalone)
-        run: npm run build
-        env:
-          NEXT_PUBLIC_BACKEND_URL: https://api.example.com
-          NEXT_PUBLIC_FIREBASE_API_KEY: "GCP_API_KEY_PLACEHOLDER"
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "hushh-pda.firebaseapp.com"
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID: "hushh-pda"
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
-          NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
-
-      - name: Build (Capacitor export)
-        run: npm run cap:build
-        env:
-          CAPACITOR_BUILD: "true"
-          NEXT_PUBLIC_BACKEND_URL: https://api.example.com
-          NEXT_PUBLIC_FIREBASE_API_KEY: "GCP_API_KEY_PLACEHOLDER"
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "hushh-pda.firebaseapp.com"
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID: "hushh-pda"
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "dummy-project.appspot.com"
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "123456789"
-          NEXT_PUBLIC_FIREBASE_APP_ID: "1:123456789:web:abcdef123456"
-
-      - name: Security audit
-        run: npm audit --audit-level=high
-
-      - name: Run frontend tests
-        run: npm test
-
-  # ============================================================================
-  # Backend (Python FastAPI) -- lightweight check; upstream repo has full CI
-  # See: https://github.com/hushh-labs/consent-protocol/actions
-  # ============================================================================
-  protocol-check:
-    name: "Protocol (Python)"
-    needs: [paths]
-    if: needs.paths.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./consent-protocol
     steps:
       - uses: actions/checkout@v4
 
@@ -157,7 +24,31 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
-          cache-dependency-path: consent-protocol/requirements.txt
+          cache-dependency-path: requirements.txt
+
+      - name: Install dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: python -m ruff check .
+
+      - name: Check formatting with ruff
+        run: python -m ruff format --check .
+
+  # ============================================================================
+  # Type check: mypy
+  # ============================================================================
+  typecheck:
+    name: "Type Check (mypy)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         timeout-minutes: 10
@@ -166,53 +57,66 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
-      - name: Lint with ruff
-        run: python -m ruff check .
-
       - name: Type check with mypy
         run: python -m mypy --config-file pyproject.toml --ignore-missing-imports
 
-      - name: Run tests
+  # ============================================================================
+  # Tests: pytest with coverage
+  # ============================================================================
+  test:
+    name: "Test (pytest)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
         timeout-minutes: 10
         run: |
-          if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -o -name '*_test.py' | head -1)" ]; then
-            python -m pytest tests/ -v --tb=short
-          else
-            echo "⚠ No test files found, skipping"
-          fi
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        timeout-minutes: 10
+        run: python -m pytest tests/ -v --tb=short --cov=hushh_mcp --cov-report=xml --cov-report=term
         env:
           TESTING: "true"
           SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
           VAULT_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
 
   # ============================================================================
-  # Integration Check (route contracts; runs when frontend or backend paths changed)
+  # Security: bandit static analysis
   # ============================================================================
-  integration-check:
-    name: "Integration"
-    needs: [paths]
-    if: needs.paths.outputs.frontend == 'true' || needs.paths.outputs.backend == 'true'
+  security:
+    name: "Security (bandit)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: hushh-webapp/package-lock.json
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Use latest npm
-        working-directory: ./hushh-webapp
-        run: npm install -g npm@latest && npm --version
+      - name: Install bandit
+        run: python -m pip install --upgrade pip && python -m pip install bandit>=1.7.6
 
-      - name: Verify route contracts
-        working-directory: ./hushh-webapp
-        run: |
-          npm ci
-          if [ -f scripts/verify-route-contracts.cjs ]; then
-            npm run verify:routes
-          else
-            echo "⚠ WARNING: verify-route-contracts.cjs not found, skipping"
-          fi
-        continue-on-error: false  # Route contracts must pass; fail CI if missing/out of sync
+      - name: Security scan
+        run: python -m bandit -r hushh_mcp/ api/ -c pyproject.toml
+
+  # ============================================================================
+  # Docker: verify Dockerfile builds
+  # ============================================================================
+  docker:
+    name: "Docker Build"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t consent-protocol:ci .
