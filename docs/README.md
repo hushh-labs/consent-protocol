@@ -90,7 +90,9 @@ All database access goes through service classes. API routes never import `Datab
 API Route → Service (validates consent) → DatabaseClient → PostgreSQL
 ```
 
-See: [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md)
+The backend follows a layered architecture: FastAPI routes delegate to service classes which handle consent validation and database operations. Agents follow the DNA model (Agent > Tools > Operons > Services), ensuring consent is checked at every layer.
+
+See: [Agent Development](./reference/agent-development.md)
 
 ### Agent Architecture
 
@@ -118,6 +120,14 @@ pytest                          # Tests
 
 ## Deployment
 
-Deploys to Google Cloud Run via GitHub Actions or manual `gcloud run deploy`.
+Deploys to Google Cloud Run via GitHub Actions or manual:
 
-See: [Getting Started](https://github.com/hushh-labs/hushh-research/blob/main/docs/guides/getting-started.md#deployment)
+```bash
+gcloud run deploy consent-protocol \
+  --source . \
+  --region us-east1 \
+  --port 8000 \
+  --allow-unauthenticated
+```
+
+See [env-vars.md](./reference/env-vars.md) for required environment variables and secrets.
