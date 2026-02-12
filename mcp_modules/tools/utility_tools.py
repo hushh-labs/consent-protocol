@@ -15,9 +15,9 @@ from mcp.types import TextContent
 from hushh_mcp.consent.scope_helpers import get_scope_description, resolve_scope_to_enum
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import AGENT_PORTS
-from mcp_modules.config import FASTAPI_URL
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
+from mcp_modules.config import FASTAPI_URL
 
 logger = logging.getLogger("hushh-mcp-server")
 

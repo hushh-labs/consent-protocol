@@ -6,10 +6,10 @@ Tests VAULT_OWNER token enforcement and error handling.
 """
 
 import pytest
-from fastapi.testclient import TestClient
 
 # Import router directly
 from consent_protocol.api.routes.kai.analyze import router
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -101,6 +101,7 @@ class TestAnalyzeRequestValidation:
     @pytest.mark.asyncio
     async def test_analyze_missing_ticker_returns_422(self, client):
         """Test that missing ticker returns 422 validation error."""
+        from tests.dev_test_token import generate_dev_vault_owner_token
         token_info = generate_dev_vault_owner_token("test_user")
         
         response = client.post(
@@ -114,6 +115,7 @@ class TestAnalyzeRequestValidation:
     @pytest.mark.asyncio
     async def test_analyze_invalid_risk_profile_returns_422(self, client):
         """Test that invalid risk_profile returns 422."""
+        from tests.dev_test_token import generate_dev_vault_owner_token
         token_info = generate_dev_vault_owner_token("test_user")
         
         response = client.post(

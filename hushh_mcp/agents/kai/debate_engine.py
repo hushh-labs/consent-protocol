@@ -155,21 +155,9 @@ class DebateEngine:
         async for event in self._stream_agent_turn(1, "fundamental", "initial_analysis", round1_statements):
             yield event
         round1_statements["fundamental"] = self.current_statements["fundamental"]
-
-        # Agent 2: Valuation
-        yield {
-            "event": "kai_thinking",
-            "data": {
-                "phase": "round1",
-                "message": "Calling Valuation Agent for price analysis...",
-                "tokens": ["Evaluating", "multiples", "vs", "peers", "and", "historical", "averages."]
-            }
-        }
-        async for event in self._stream_agent_turn(1, "valuation", "initial_analysis", round1_statements):
-            yield event
-        round1_statements["valuation"] = self.current_statements["valuation"]
-
-        # Agent 3: Sentiment
+        
+        if self._disconnection_event and self._disconnection_event.is_set():
+            return
         yield {
             "event": "kai_thinking",
             "data": {
@@ -181,6 +169,25 @@ class DebateEngine:
         async for event in self._stream_agent_turn(1, "sentiment", "initial_analysis", round1_statements):
             yield event
         round1_statements["sentiment"] = self.current_statements["sentiment"]
+        
+        if self._disconnection_event and self._disconnection_event.is_set():
+            return
+
+        # Agent 3: Valuation (Moved to 3rd position)
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round1",
+                "message": "Calling Valuation Agent for price analysis...",
+                "tokens": ["Evaluating", "multiples", "vs", "peers", "and", "historical", "averages."]
+            }
+        }
+        async for event in self._stream_agent_turn(1, "valuation", "initial_analysis", round1_statements):
+            yield event
+        round1_statements["valuation"] = self.current_statements["valuation"]
+        
+        if self._disconnection_event and self._disconnection_event.is_set():
+            return
 
         # Record Round 1
         self.rounds.append(DebateRound(1, round1_statements, datetime.utcnow()))
@@ -220,21 +227,11 @@ class DebateEngine:
         async for event in self._stream_agent_turn(2, "fundamental", "challenge_positions", round2_statements):
             yield event
         round2_statements["fundamental"] = self.current_statements["fundamental"]
+        
+        if self._disconnection_event and self._disconnection_event.is_set():
+            return
 
-        # Agent 2: Valuation Rebuttal
-        yield {
-            "event": "kai_thinking",
-            "data": {
-                "phase": "round2",
-                "message": "Valuation Agent is stress-testing assumptions...",
-                "tokens": ["Checking", "if", "fundamentals", "justify", "the", "current", "premium."]
-            }
-        }
-        async for event in self._stream_agent_turn(2, "valuation", "challenge_positions", round2_statements):
-            yield event
-        round2_statements["valuation"] = self.current_statements["valuation"]
-
-        # Agent 3: Sentiment Rebuttal
+        # Agent 2: Sentiment Rebuttal (Moved to 2nd position)
         yield {
             "event": "kai_thinking",
             "data": {
@@ -246,6 +243,22 @@ class DebateEngine:
         async for event in self._stream_agent_turn(2, "sentiment", "challenge_positions", round2_statements):
             yield event
         round2_statements["sentiment"] = self.current_statements["sentiment"]
+        
+        if self._disconnection_event and self._disconnection_event.is_set():
+            return
+
+        # Agent 3: Valuation Rebuttal (Moved to 3rd position)
+        yield {
+            "event": "kai_thinking",
+            "data": {
+                "phase": "round2",
+                "message": "Valuation Agent is stress-testing assumptions...",
+                "tokens": ["Checking", "if", "fundamentals", "justify", "the", "current", "premium."]
+            }
+        }
+        async for event in self._stream_agent_turn(2, "valuation", "challenge_positions", round2_statements):
+            yield event
+        round2_statements["valuation"] = self.current_statements["valuation"]
 
         # Record Round 2
         self.rounds.append(DebateRound(2, round2_statements, datetime.utcnow()))

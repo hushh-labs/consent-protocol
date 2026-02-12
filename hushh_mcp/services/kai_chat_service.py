@@ -12,11 +12,9 @@ This service handles:
 7. Intent classification for workflow triggers
 """
 
-import base64
 import logging
 import os
 import re
-import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -41,24 +39,6 @@ from hushh_mcp.services.world_model_service import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _generate_encryption_params() -> tuple[str, str]:
-    """
-    Generate proper IV and tag for AES-256-GCM encryption.
-    
-    Note: In a full BYOK implementation, encryption happens client-side.
-    This generates placeholder values that indicate server-side storage
-    of computed attributes (which should be re-encrypted by client).
-    
-    Returns:
-        Tuple of (iv_base64, tag_base64)
-    """
-    # Generate 12-byte IV (standard for AES-GCM)
-    iv = secrets.token_bytes(12)
-    # Generate 16-byte tag placeholder (actual tag comes from encryption)
-    tag = secrets.token_bytes(16)
-    return base64.b64encode(iv).decode(), base64.b64encode(tag).decode()
 
 
 # =============================================================================
@@ -418,14 +398,8 @@ class KaiChatService:
         # Check if portfolio already imported
         user_domain_keys = [d.domain_key for d in user_context.domains] if user_context and user_context.domains else []
         if user_context and "financial" in user_domain_keys:
-            # Check for portfolio_imported attribute
-            try:
-                attrs = await self.world_model.get_domain_attributes(user_id, "financial")
-                portfolio_imported = any(attr.attribute_key == "portfolio_imported" for attr in attrs)
-                if portfolio_imported:
-                    return False
-            except Exception:
-                pass
+            # Portfolio data exists in the financial domain — no need to prompt
+            return False
         
         return True
     
@@ -457,9 +431,16 @@ class KaiChatService:
                     "total_attributes": 0,
                 }
             
-            # Get financial domain attributes
-            attrs = await self.world_model.get_domain_attributes(user_id, "financial")
-            attr_keys = {attr.attribute_key for attr in attrs}
+            # Get financial domain summary from world_model_index_v2
+            index = await self.world_model.get_index_v2(user_id)
+            domain_summary = (
+                index.domain_summaries.get("financial", {}) if index else {}
+            )
+            
+            # Build a set of "known" attribute keys from the domain summary
+            # The summary is a dict of non-sensitive metadata written by
+            # update_domain_summary(); keys present indicate data has been stored.
+            attr_keys = set(domain_summary.keys()) if domain_summary else set()
             
             # Define required attributes for complete profile
             required_attrs = {
@@ -953,47 +934,18 @@ REASONING: [2-3 sentences]
             summary = summary_match.group(1).strip() if summary_match else f"Analysis complete for {ticker}"
             reasoning = reasoning_match.group(1).strip() if reasoning_match else ""
             
-            # Store decision in world model
+            # Store decision as a non-sensitive summary in world_model_index_v2
             saved = False
             try:
-                # Generate proper encryption params for each attribute
-                iv1, tag1 = _generate_encryption_params()
-                iv2, tag2 = _generate_encryption_params()
-                iv3, tag3 = _generate_encryption_params()
-                
-                # Store decision
-                await self.world_model.store_attribute(
+                await self.world_model.update_domain_summary(
                     user_id=user_id,
                     domain="kai_decisions",
-                    attribute_key=f"{ticker}_decision",
-                    ciphertext=decision,  # In production, this would be encrypted
-                    iv=iv1,
-                    tag=tag1,
-                    source="computed",
+                    summary={
+                        f"{ticker}_decision": decision,
+                        f"{ticker}_confidence": confidence,
+                        f"{ticker}_analyzed_at": datetime.now().isoformat(),
+                    },
                 )
-                
-                # Store confidence
-                await self.world_model.store_attribute(
-                    user_id=user_id,
-                    domain="kai_decisions",
-                    attribute_key=f"{ticker}_confidence",
-                    ciphertext=str(confidence),
-                    iv=iv2,
-                    tag=tag2,
-                    source="computed",
-                )
-                
-                # Store analysis date
-                await self.world_model.store_attribute(
-                    user_id=user_id,
-                    domain="kai_decisions",
-                    attribute_key=f"{ticker}_analyzed_at",
-                    ciphertext=datetime.now().isoformat(),
-                    iv=iv3,
-                    tag=tag3,
-                    source="computed",
-                )
-                
                 saved = True
                 
             except Exception as e:

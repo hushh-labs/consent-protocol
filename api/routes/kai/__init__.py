@@ -7,7 +7,7 @@ This package organizes Kai routes into logical modules:
 - portfolio.py: Portfolio import and analysis
 - analyze.py: Non-streaming analysis endpoint
 - stream.py: SSE streaming analysis endpoint
-- decisions.py: Decision history CRUD
+- decisions.py: Decision history (reads from domain_summaries; legacy CRUD returns 410)
 - preferences.py: User preferences CRUD
 - consent.py: Kai-specific consent grants
 
