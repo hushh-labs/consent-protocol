@@ -73,7 +73,7 @@ The `@hushh_tool` decorator re-validates consent with the tool's specific scope 
 
 ```python
 # hushh_mcp/hushh_adk/tools.py
-@hushh_tool(scope=ConsentScope.AGENT_KAI_ANALYZE)
+@hushh_tool(scope="agent.kai.analyze")
 async def perform_fundamental_analysis(ticker: str) -> Dict:
     ctx = HushhContext.current()  # Access injected context
     # ... tool logic (consent already validated by decorator)
@@ -92,7 +92,7 @@ Impure operons (fetchers, analysis, LLM, storage) validate consent inline as the
 # hushh_mcp/operons/kai/analysis.py
 def analyze_fundamentals(ticker, user_id, sec_filings, consent_token):
     # Consent validation as first line
-    valid, reason, _ = validate_token(consent_token, ConsentScope.AGENT_KAI_ANALYZE)
+    valid, reason, _ = validate_token(consent_token, "agent.kai.analyze")
     if not valid:
         raise PermissionError(f"Consent denied: {reason}")
     # ... business logic
@@ -232,7 +232,7 @@ def fetch_earnings_calendar(
     consent_token: str,
 ) -> Dict[str, Any]:
     """Fetch upcoming earnings dates."""
-    valid, reason, _ = validate_token(consent_token, ConsentScope.AGENT_KAI_ANALYZE)
+    valid, reason, _ = validate_token(consent_token, "agent.kai.analyze")
     if not valid:
         raise PermissionError(f"Consent denied: {reason}")
 
@@ -438,6 +438,6 @@ See the Kai agent for the reference implementation.
 
 ## See Also
 
-- [Architecture](./architecture.md) -- System overview and DNA model
+- [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) -- System overview and DNA model
 - [Kai Agents](./kai-agents.md) -- Reference implementation
-- [API Contracts](./api-contracts.md) -- Adding new endpoints
+- [API Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) -- Adding new endpoints
