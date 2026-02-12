@@ -130,10 +130,9 @@ POST /api/consent/request-consent       # MCP: Request token
 GET  /api/consent/pending               # Dashboard: View pending
 POST /api/consent/pending/approve      # Dashboard: Approve request
 
-# Scoped Data Tools (MCP)
-GET  /api/mcp/get-financial             # Financial Profile
-GET  /api/mcp/get-food-preferences      # Food Preferences
-GET  /api/mcp/get-professional-profile  # Professional Profile
+# MCP Server Data Access
+# MCP tools access vault data via the consent-gated endpoint:
+GET  /api/consent/data                   # MCP reads data with consent token
 ```
 
 ---
@@ -290,7 +289,31 @@ fun chat(call: PluginCall) {
 | --------------- | ------------- | ------------------------------------------------------------------------------------- |
 | **VAULT_OWNER** | `vault.owner` | Master scope - satisfies ANY other scope. Granted only to vault owner via BYOK login. |
 
-### Dynamic Scopes (Preferred)
+### Static Scopes
+
+| Category | Scope | Description |
+| -------- | ----- | ----------- |
+| **Master** | `vault.owner` | Master scope - satisfies ALL other scopes |
+| **Portfolio** | `portfolio.import` | Import portfolio data |
+| | `portfolio.analyze` | Analyze portfolio holdings |
+| | `portfolio.read` | Read portfolio summaries |
+| **Chat** | `chat.history.read` | Read chat conversation history |
+| | `chat.history.write` | Write/create chat messages |
+| **Embeddings** | `embedding.profile.read` | Read computed embedding profiles |
+| | `embedding.profile.compute` | Compute new embedding profiles |
+| **World Model** | `world_model.read` | Read world model attributes |
+| | `world_model.write` | Write world model attributes |
+| | `world_model.metadata` | Access world model metadata |
+| **Agent Kai** | `agent.kai.analyze` | Run Kai analysis pipelines |
+| | `agent.kai.debate` | Run Kai debate/reasoning |
+| | `agent.kai.infer` | Run Kai inference |
+| | `agent.kai.chat` | Kai chat interactions |
+| **External** | `external.sec.filings` | Access SEC filing data |
+| | `external.news.api` | Access news API data |
+| | `external.market.data` | Access market data feeds |
+| | `external.renaissance.data` | Access Renaissance data |
+
+### Dynamic Scopes
 
 ```
 attr.{domain}.{attribute_key}   # Specific attribute
@@ -303,22 +326,20 @@ Examples:
 - `attr.food.dietary_restrictions`
 - `attr.professional.*`
 
-### Legacy Scopes (Deprecated)
-
-| Legacy                    | Replacement            |
-| ------------------------- | ---------------------- |
-| `vault.read.food`         | `attr.food.*`          |
-| `vault.read.professional` | `attr.professional.*`  |
-| `vault.read.finance`      | `attr.financial.*`     |
-| `vault.write.decision`    | `attr.kai_decisions.*` |
-
 ### Scope Hierarchy
 
 ```
-vault.owner (Master)
-    └── Satisfies ALL other scopes
-        ├── attr.*
-        └── agent.*
+vault.owner (Master - satisfies ALL scopes)
+    ├── portfolio.*
+    ├── chat.history.*
+    ├── embedding.profile.*
+    ├── world_model.*
+    ├── agent.kai.*
+    ├── external.*
+    └── Dynamic attribute scopes:
+        world_model.read
+            └── attr.{domain}.*
+                └── attr.{domain}.{key}
 ```
 
 ---
@@ -489,6 +510,6 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 
 ## See Also
 
-- [Architecture Overview](./architecture.md) - System architecture
-- [Route Contracts](./api-contracts.md) - API endpoint specifications
+- [Architecture Overview](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) - System architecture
+- [Route Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) - API endpoint specifications
 - [Database Schema](./world-model.md) - Database architecture
