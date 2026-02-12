@@ -4,8 +4,6 @@
 
 [![CI](https://github.com/hushh-labs/consent-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/hushh-labs/consent-protocol/actions/workflows/ci.yml)
 
-> **Note:** This repository is the upstream source of truth. It is also embedded as a git subtree in [hushh-labs/hushh-research](https://github.com/hushh-labs/hushh-research) monorepo at `consent-protocol/`. Changes flow bidirectionally between both repos via git subtree commands.
-
 ---
 
 ## What This Is

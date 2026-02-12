@@ -225,6 +225,7 @@ New domains auto-register when first stored via `WorldModelService`.
 
 ## See Also
 
-- [Architecture](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) -- System overview
-- [API Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) -- Endpoint documentation
 - [Agent Development](./agent-development.md) -- How agents access world model data
+- [Consent Protocol](./consent-protocol.md) -- Token lifecycle and validation
+- [Kai Agents](./kai-agents.md) -- Multi-agent financial analysis system
+- [Environment Variables](./env-vars.md) -- Backend configuration reference
