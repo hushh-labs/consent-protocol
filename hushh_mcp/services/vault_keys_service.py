@@ -186,28 +186,33 @@ class VaultKeysService:
         
         supabase = self._get_supabase()
         
-        # Kai domain only (food/professional removed; use world-model for domain data)
-        kai_check_response = supabase.table("user_investor_profiles")\
-            .select("user_id")\
-            .eq("user_id", user_id)\
-            .limit(1)\
-            .execute()
-        kai_onboarded = len(kai_check_response.data) > 0 if kai_check_response.data else False
-        
-        kai_prefs_response = supabase.table("vault_kai_preferences")\
-            .select("user_id", count="exact")\
-            .eq("user_id", user_id)\
-            .limit(0)\
-            .execute()
-        kai_prefs_count = kai_prefs_response.count if hasattr(kai_prefs_response, 'count') and kai_prefs_response.count is not None else 0
-        
-        kai_has_data = kai_onboarded or kai_prefs_count > 0
+        # Check world_model_index_v2 for Kai domain data instead of
+        # deprecated user_investor_profiles / vault_kai_preferences tables
+        kai_has_data = False
+        kai_field_count = 0
+        try:
+            wm_response = supabase.table("world_model_index_v2")\
+                .select("domain_summaries")\
+                .eq("user_id", user_id)\
+                .limit(1)\
+                .execute()
+            if wm_response.data:
+                summaries = wm_response.data[0].get("domain_summaries") or {}
+                kai_has_data = (
+                    "financial" in summaries
+                    or "kai_preferences" in summaries
+                    or "kai_decisions" in summaries
+                )
+                prefs_summary = summaries.get("kai_preferences", {})
+                kai_field_count = prefs_summary.get("field_count", 0) if isinstance(prefs_summary, dict) else 0
+        except Exception as e:
+            logger.warning(f"Failed to check world_model_index_v2 for vault status: {e}")
         
         domains = {
             "kai": {
                 "hasData": kai_has_data,
-                "onboarded": kai_onboarded,
-                "fieldCount": kai_prefs_count
+                "onboarded": kai_has_data,
+                "fieldCount": kai_field_count
             }
         }
         

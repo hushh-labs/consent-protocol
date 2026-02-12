@@ -111,7 +111,6 @@ class TestConsentPatternCompliance:
             "hushh_mcp/services/consent_db.py",
             "hushh_mcp/services/investor_db.py",
             "hushh_mcp/services/vault_keys_service.py",
-            "hushh_mcp/services/kai_decisions_service.py",
             "hushh_mcp/services/user_investor_profile_db.py",
             "hushh_mcp/services/world_model_service.py",
             "hushh_mcp/services/domain_registry_service.py",

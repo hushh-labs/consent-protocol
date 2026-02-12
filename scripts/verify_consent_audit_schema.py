@@ -43,6 +43,7 @@ REQUIRED_COLUMNS = [
 def main() -> int:
     try:
         from sqlalchemy import text
+
         from db.db_client import get_db_connection
     except ImportError as e:
         print("Error: could not import db_client.", e, file=sys.stderr)
