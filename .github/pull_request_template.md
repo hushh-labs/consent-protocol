@@ -1,26 +1,50 @@
-# Description
+## Summary
 
-Briefly explain what you changed and why.
+<!-- 1-3 bullet points describing what this PR does -->
 
-## 🛑 Tri-Flow Architecture Check
+## Type
 
-_Every feature must be implemented across all three layers or explicitly marked as not applicable._
+<!-- Check one -->
+- [ ] Bug fix
+- [ ] Feature (new agent, operon, endpoint)
+- [ ] Enhancement (existing functionality)
+- [ ] Documentation
+- [ ] Refactor (no behavior change)
 
-- [ ] **Web**: Next.js implementation (`app/api/...`)
-- [ ] **iOS**: Swift Capacitor Plugin (`ios/App/App/Plugins/...`)
-- [ ] **Android**: Kotlin Capacitor Plugin (`android/app/.../plugins/...`)
+## Checklist
 
-## 🧪 Testing
+### Required for all PRs
+- [ ] `ruff check .` passes
+- [ ] `ruff format --check .` passes
+- [ ] `mypy --config-file pyproject.toml` passes
+- [ ] `pytest tests/ -v` passes
+- [ ] `bandit -r hushh_mcp/ api/ -c pyproject.toml` passes
 
-- [ ] Tested on Web (Chrome/Safari)
-- [ ] Tested on iOS Simulator/Device
-- [ ] Tested on Android Emulator/Device
+### If adding/modifying agents or tools
+- [ ] Consent is validated at agent entry (`HushhAgent.run()`)
+- [ ] Consent is validated at each tool invocation (`@hushh_tool`)
+- [ ] Agent manifest (`agent.yaml`) is created/updated
+- [ ] Documentation updated in `docs/reference/agent-development.md`
 
-## 📸 Screenshots / Video
+### If adding/modifying operons
+- [ ] Purity classification is correct (PURE vs IMPURE)
+- [ ] IMPURE operons validate consent before user data access
+- [ ] Tests cover the new operon
+- [ ] Operon catalog updated in `docs/reference/agent-development.md`
 
-_Attach proof of work here._
+### If adding/modifying API routes
+- [ ] Service layer is used (no direct DB access from routes)
+- [ ] Route documented in API contracts
+- [ ] Tests cover the new endpoint
 
-## 🛡️ Privacy & Consent
+### If modifying database schema
+- [ ] SQL migration file added in `db/migrations/`
+- [ ] `docs/reference/world-model.md` updated if schema changed
 
-- [ ] Does this change access user data?
-- [ ] If yes, have you implemented `checkConsentToken()`?
+## Testing
+
+<!-- How was this tested? -->
+
+## Related Issues
+
+<!-- Link related issues: Fixes #123, Relates to #456 -->
