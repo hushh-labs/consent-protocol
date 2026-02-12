@@ -510,6 +510,7 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 
 ## See Also
 
-- [Architecture Overview](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/architecture.md) - System architecture
-- [Route Contracts](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/api-contracts.md) - API endpoint specifications
-- [Database Schema](./world-model.md) - Database architecture
+- [World Model](./world-model.md) -- Database architecture
+- [Agent Development](./agent-development.md) -- Building new agents and operons
+- [Kai Agents](./kai-agents.md) -- Multi-agent financial analysis system
+- [Environment Variables](./env-vars.md) -- Backend configuration reference
