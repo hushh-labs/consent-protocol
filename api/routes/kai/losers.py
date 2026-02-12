@@ -33,9 +33,7 @@ class PortfolioLoser(BaseModel):
     gain_loss_pct: Optional[float] = Field(
         None, description="Unrealized P/L percent (negative for losers)"
     )
-    gain_loss: Optional[float] = Field(
-        None, description="Unrealized P/L amount"
-    )
+    gain_loss: Optional[float] = Field(None, description="Unrealized P/L amount")
     market_value: Optional[float] = None
 
 
@@ -44,18 +42,10 @@ class PortfolioHolding(BaseModel):
 
     symbol: str = Field(..., description="Ticker symbol")
     name: Optional[str] = None
-    gain_loss_pct: Optional[float] = Field(
-        None, description="Unrealized P/L percent"
-    )
-    gain_loss: Optional[float] = Field(
-        None, description="Unrealized P/L amount"
-    )
-    market_value: Optional[float] = Field(
-        None, description="Current market value of the position"
-    )
-    sector: Optional[str] = Field(
-        None, description="Sector or industry label if available"
-    )
+    gain_loss_pct: Optional[float] = Field(None, description="Unrealized P/L percent")
+    gain_loss: Optional[float] = Field(None, description="Unrealized P/L amount")
+    market_value: Optional[float] = Field(None, description="Current market value of the position")
+    sector: Optional[str] = Field(None, description="Sector or industry label if available")
     asset_type: Optional[str] = Field(
         None, description="High-level asset type (equity, cash, ETF, etc.)"
     )
@@ -65,7 +55,9 @@ class AnalyzeLosersRequest(BaseModel):
     user_id: str
     losers: list[PortfolioLoser] = Field(default_factory=list)
     threshold_pct: float = Field(-5.0, description="Only analyze losers at or below this %")
-    max_positions: int = Field(10, ge=1, le=50, description="Max number of loser positions to analyze")
+    max_positions: int = Field(
+        10, ge=1, le=50, description="Max number of loser positions to analyze"
+    )
     holdings: list[PortfolioHolding] = Field(
         default_factory=list,
         description="Optional full holdings snapshot for Optimize Portfolio.",
@@ -120,7 +112,9 @@ async def analyze_portfolio_losers(
     The caller must provide the loser positions (symbol + P/L context).
     """
     if token_data["user_id"] != request.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
+        )
 
     losers_in = request.losers or []
     holdings_in = request.holdings or []
@@ -176,7 +170,13 @@ async def analyze_portfolio_losers(
     # Build investable replacement candidates: fetch EVERY investable stock
     all_investable = await renaissance.get_all_investable()
     replacement_pool = [
-        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis, "name": s.company_name}
+        {
+            "ticker": s.ticker,
+            "tier": s.tier,
+            "sector": s.sector,
+            "thesis": s.investment_thesis,
+            "name": s.company_name,
+        }
         for s in all_investable
     ]
 
@@ -186,9 +186,7 @@ async def analyze_portfolio_losers(
     for loser in losers_filtered:
         ticker = loser.symbol.upper().strip()
         ren_ctx = await renaissance.get_analysis_context(ticker)
-        weight_pct = (
-            (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
-        )
+        weight_pct = (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
         per_loser_context.append(
             {
                 "symbol": ticker,
@@ -380,9 +378,9 @@ async def _build_optimization_context(
 ) -> tuple[list[PortfolioLoser], str, list[dict], list[dict], list[dict], bool, float]:
     """
     Build the optimization context (shared between streaming and non-streaming endpoints).
-    
+
     Returns:
-        Tuple of (losers_filtered, criteria_context, criteria_rows, replacement_pool, 
+        Tuple of (losers_filtered, criteria_context, criteria_rows, replacement_pool,
                   per_loser_context, optimize_from_losers, total_mv)
     """
     losers_in = request.losers or []
@@ -434,7 +432,13 @@ async def _build_optimization_context(
     # Build investable replacement candidates: fetch EVERY investable stock
     all_investable = await renaissance.get_all_investable()
     replacement_pool = [
-        {"ticker": s.ticker, "tier": s.tier, "sector": s.sector, "thesis": s.investment_thesis, "name": s.company_name}
+        {
+            "ticker": s.ticker,
+            "tier": s.tier,
+            "sector": s.sector,
+            "thesis": s.investment_thesis,
+            "name": s.company_name,
+        }
         for s in all_investable
     ]
 
@@ -443,9 +447,7 @@ async def _build_optimization_context(
     for loser in losers_filtered:
         ticker = loser.symbol.upper().strip()
         ren_ctx = await renaissance.get_analysis_context(ticker)
-        weight_pct = (
-            (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
-        )
+        weight_pct = (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
         per_loser_context.append(
             {
                 "symbol": ticker,
@@ -618,27 +620,26 @@ async def analyze_portfolio_losers_stream(
 ):
     """
     Streaming version of portfolio losers analysis with AI reasoning.
-    
+
     Uses SSE to stream:
     - 'thinking' events: AI reasoning/thought summaries
     - 'chunk' events: Partial response text
     - 'complete' events: Final parsed JSON result
     - 'error' events: Error messages
-    
-    **Disconnection Optimization**: 
+
+    **Disconnection Optimization**:
     - Client disconnects → `raw_request.is_disconnected()` → LLM stops processing
     """
     if token_data["user_id"] != request.user_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID does not match token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
 
     async def generate():
         try:
             # Stage 1: Building context
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
-            
+
             (
                 losers_filtered,
                 criteria_context,
@@ -702,7 +703,7 @@ async def analyze_portfolio_losers_stream(
                 if await raw_request.is_disconnected():
                     logger.info("[Losers Analysis] Client disconnected, stopping streaming...")
                     break
-                
+
                 # Check for thought summaries (Gemini thinking mode)
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
@@ -725,7 +726,7 @@ async def analyze_portfolio_losers_stream(
             try:
                 payload = _extract_json_object(full_response)
                 payload.setdefault("criteria_context", criteria_context)
-                
+
                 yield f"data: {json.dumps({'type': 'complete', 'data': payload})}\n\n"
             except Exception as parse_error:
                 logger.error(f"Failed to parse LLM response: {parse_error}")
@@ -746,4 +747,3 @@ async def analyze_portfolio_losers_stream(
             "X-Accel-Buffering": "no",
         },
     )
-

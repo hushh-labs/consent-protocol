@@ -22,15 +22,16 @@ from .tools import (
 
 logger = logging.getLogger(__name__)
 
+
 class KaiAgent(HushhAgent):
     """
     Agentic Kai Financial Coordinator.
     """
-    
+
     def __init__(self):
         manifest_path = os.path.join(os.path.dirname(__file__), "agent.yaml")
         self.manifest = ManifestLoader.load(manifest_path)
-        
+
         super().__init__(
             name=self.manifest.name,
             model=self.manifest.model,
@@ -38,16 +39,13 @@ class KaiAgent(HushhAgent):
             tools=[
                 perform_fundamental_analysis,
                 perform_sentiment_analysis,
-                perform_valuation_analysis
+                perform_valuation_analysis,
             ],
-            required_scopes=self.manifest.required_scopes
+            required_scopes=self.manifest.required_scopes,
         )
-        
+
     def handle_message(
-        self,
-        message: str,
-        user_id: UserID,
-        consent_token: str = ""
+        self, message: str, user_id: UserID, consent_token: str = ""
     ) -> Dict[str, Any]:
         """
         Agentic Entry Point.
@@ -56,21 +54,23 @@ class KaiAgent(HushhAgent):
             # Execute ADK run
             # Note: For long running analysis, we might want to stream or notify
             response = self.run(message, user_id=user_id, consent_token=consent_token)
-            
+
             return {
-                "response": response.text if hasattr(response, 'text') else str(response),
-                "is_complete": True 
+                "response": response.text if hasattr(response, "text") else str(response),
+                "is_complete": True,
             }
-            
+
         except Exception as e:
             logger.error(f"KaiAgent error: {e}")
             return {
                 "response": "I encountered an error analyzing the market data.",
-                "error": str(e)
+                "error": str(e),
             }
+
 
 # Singleton
 _kai_agent = None
+
 
 def get_kai_agent():
     global _kai_agent

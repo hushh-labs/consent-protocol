@@ -17,6 +17,7 @@ ALGORITHM_NAME = "aes-256-gcm"
 
 # ==================== Encrypt ====================
 
+
 def encrypt_data(plaintext: str, key_hex: str) -> EncryptedPayload:
     try:
         key = bytes.fromhex(key_hex)
@@ -26,20 +27,22 @@ def encrypt_data(plaintext: str, key_hex: str) -> EncryptedPayload:
         cipher = Cipher(algorithms.AES(key), modes.GCM(iv), backend=backend)
         encryptor = cipher.encryptor()
 
-        ciphertext = encryptor.update(plaintext.encode('utf-8')) + encryptor.finalize()
+        ciphertext = encryptor.update(plaintext.encode("utf-8")) + encryptor.finalize()
         tag = encryptor.tag
 
         return EncryptedPayload(
-            ciphertext=base64.b64encode(ciphertext).decode('utf-8'),
-            iv=base64.b64encode(iv).decode('utf-8'),
-            tag=base64.b64encode(tag).decode('utf-8'),
+            ciphertext=base64.b64encode(ciphertext).decode("utf-8"),
+            iv=base64.b64encode(iv).decode("utf-8"),
+            tag=base64.b64encode(tag).decode("utf-8"),
             encoding="base64",
-            algorithm=ALGORITHM_NAME
+            algorithm=ALGORITHM_NAME,
         )
     except Exception as e:
         raise RuntimeError(f"Encryption failed: {str(e)}")
 
+
 # ==================== Decrypt ====================
+
 
 def decrypt_data(payload: EncryptedPayload, key_hex: str) -> str:
     try:
@@ -53,7 +56,7 @@ def decrypt_data(payload: EncryptedPayload, key_hex: str) -> str:
         decryptor = cipher.decryptor()
 
         decrypted = decryptor.update(ciphertext) + decryptor.finalize()
-        return decrypted.decode('utf-8')
+        return decrypted.decode("utf-8")
 
     except InvalidTag:
         raise ValueError("Decryption failed: Invalid authentication tag. Possible tampering.")
