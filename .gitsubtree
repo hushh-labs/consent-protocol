@@ -1,0 +1,24 @@
+# Git Subtree Marker
+
+This directory is a git subtree linked to the upstream repository:
+https://github.com/hushh-labs/consent-protocol
+
+## Upstream Repository
+- URL: https://github.com/hushh-labs/consent-protocol.git
+- Remote name: consent-upstream
+- Branch: main
+
+## Sync Commands
+
+Pull upstream changes:
+```bash
+git subtree pull --prefix=consent-protocol consent-upstream main --squash
+```
+
+Push local changes to upstream:
+```bash
+git subtree push --prefix=consent-protocol consent-upstream main
+```
+
+## Documentation
+See the monorepo README for full details on the subtree architecture.
