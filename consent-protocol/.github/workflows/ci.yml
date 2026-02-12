@@ -1,0 +1,122 @@
+name: "Consent Protocol CI"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  # ============================================================================
+  # Lint: ruff check + format verification
+  # ============================================================================
+  lint:
+    name: "Lint (ruff)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: python -m ruff check .
+
+      - name: Check formatting with ruff
+        run: python -m ruff format --check .
+
+  # ============================================================================
+  # Type check: mypy
+  # ============================================================================
+  typecheck:
+    name: "Type Check (mypy)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        timeout-minutes: 10
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Type check with mypy
+        run: python -m mypy --config-file pyproject.toml --ignore-missing-imports
+
+  # ============================================================================
+  # Tests: pytest with coverage
+  # ============================================================================
+  test:
+    name: "Test (pytest)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        timeout-minutes: 10
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        timeout-minutes: 10
+        run: python -m pytest tests/ -v --tb=short --cov=hushh_mcp --cov-report=xml --cov-report=term
+        env:
+          TESTING: "true"
+          SECRET_KEY: "test_secret_key_for_ci_only_32chars_min"
+          VAULT_ENCRYPTION_KEY: "635ce8d8018dee8b98ec987dc2dbfb79f3658ac7a54d4cb4c6150a21cd60098f"
+
+  # ============================================================================
+  # Security: bandit static analysis
+  # ============================================================================
+  security:
+    name: "Security (bandit)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install bandit
+        run: python -m pip install --upgrade pip && python -m pip install bandit>=1.7.6
+
+      - name: Security scan
+        run: python -m bandit -r hushh_mcp/ api/ -c pyproject.toml
+
+  # ============================================================================
+  # Docker: verify Dockerfile builds
+  # ============================================================================
+  docker:
+    name: "Docker Build"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t consent-protocol:ci .

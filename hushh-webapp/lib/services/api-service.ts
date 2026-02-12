@@ -481,6 +481,27 @@ export class ApiService {
   }
 
   /**
+   * Unregister push notification tokens (logout flow).
+   * Route: DELETE /api/notifications/unregister
+   */
+  static async unregisterPushToken(
+    userId: string,
+    idToken: string,
+    platform?: "web" | "ios" | "android"
+  ): Promise<Response> {
+    return apiFetch("/api/notifications/unregister", {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        ...(platform ? { platform } : {}),
+      }),
+    });
+  }
+
+  /**
    * Get active consents
    * Route: GET /api/consent/active?userId=xxx
    */

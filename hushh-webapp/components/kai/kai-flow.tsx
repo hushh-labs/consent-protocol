@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { WorldModelService } from "@/lib/services/world-model-service";
+import { normalizeStoredPortfolio } from "@/lib/utils/portfolio-normalize";
 import { CacheService, CACHE_KEYS } from "@/lib/services/cache-service";
 import { useCache } from "@/lib/cache/cache-context";
 import { PortfolioImportView } from "./views/portfolio-import-view";
@@ -451,7 +452,9 @@ export function KaiFlow({
                 
                 // Extract financial domain data
                 // The structure could be { financial: {...} } or direct portfolio data
-                portfolioData = allData.financial || allData;
+                const rawFinancial = allData.financial || allData;
+                // Normalize Review-format → Dashboard-format field names
+                portfolioData = normalizeStoredPortfolio(rawFinancial) as PortfolioData;
                 console.log("[KaiFlow] Successfully decrypted portfolio data from World Model");
               }
             } catch (decryptError) {
