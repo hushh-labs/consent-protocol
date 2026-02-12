@@ -218,6 +218,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Sign out
   const signOut = async (): Promise<void> => {
     try {
+      // Delete FCM token before signing out (requires auth)
+      const currentUid = user?.uid;
+      if (currentUid) {
+        try {
+          const idToken = await user?.getIdToken();
+          const { deleteFCMToken } = await import("@/lib/notifications/fcm-service");
+          await deleteFCMToken(currentUid, idToken);
+        } catch (fcmErr) {
+          console.warn("FCM token cleanup on signOut failed (non-critical):", fcmErr);
+        }
+      }
+
       const { AuthService } = await import("@/lib/services/auth-service");
       await AuthService.signOut(); // Handles Native + Firebase
 

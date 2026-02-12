@@ -1,10 +1,10 @@
-# 🔌 MCP Server Setup Guide
+# MCP Server Setup Guide
 
 This guide explains how to connect the Hushh Consent MCP Server to Claude Desktop or other MCP hosts.
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.13+
 - Claude Desktop app installed
 - Hushh consent-protocol dependencies installed
 
@@ -152,7 +152,7 @@ Claude: "Get professional profile using the food token"
 | Import errors                  | Run `pip install -r requirements.txt`                                    |
 | Claude doesn't see tools       | Fully restart Claude (check system tray)                                 |
 | Token errors                   | Ensure `.env` has SECRET_KEY                                             |
-| Consent request never appears  | User must have the Hushh app **consent/dashboard page open** so it can poll `GET /api/consent/pending` and show the request. Then SSE will notify the MCP when they approve or deny. |
+| Consent request never appears  | User must have the Hushh app open. FCM push notifications deliver consent requests automatically. |
 | Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the world model, not a fixed list. |
 
 ## Protocol Compliance
@@ -167,4 +167,4 @@ This MCP server enforces the HushhMCP protocol:
 
 ---
 
-_Hushh - Your data, your consent, your control._ 🔐
+_Hushh - Your data, your consent, your control._

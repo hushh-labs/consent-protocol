@@ -766,4 +766,66 @@ Kai is successful when users trust it more than a single analyst — not to repl
 
 ---
 
-_Agent Kai — The committee you would hire if your portfolio were your business._
+_Agent Kai -- The committee you would hire if your portfolio were your business._
+
+---
+
+## Appendix A: Adaptive Attention Marketplace
+
+> Beyond v0 -- The full vision of Kai as an attention concierge.
+
+**Core Idea**: Your attention is your most valuable asset. Instead of you being sold to advertisers, agents must bid for your attention and prove value.
+
+### Attention Bids
+
+- **Alpha Bids**: Insight-driven, high-conviction alerts (e.g., "AAPL earnings beat consensus by 12% -- your position is up $3,400")
+- **Aloha Bids**: Low-urgency, convenience suggestions (e.g., "Your watched stock TSLA has a new analyst upgrade")
+
+### Trust Score System
+
+Every agent earns a trust score based on:
+- Past recommendation accuracy
+- User engagement with previous alerts
+- Data quality and sourcing transparency
+
+Higher trust = higher priority in notification queue. Low-trust agents get throttled.
+
+### Life Domains
+
+The attention marketplace extends beyond finance to all data domains:
+- Financial alerts (Kai)
+- Health reminders (Health Agent)
+- Dining suggestions (Food Agent)
+- Professional updates (Career Agent)
+
+Each domain has its own consent policy and attention budget controlled by the user.
+
+---
+
+## Appendix B: Investor Onboarding Vision
+
+> Extracted from founder conversations on the Kai investor onboarding concept.
+
+**Core Insight**: The power is not that it uses AI. The power is that it removes friction from one of the most archaic, time-wasting rituals in finance while increasing trust.
+
+### What Kai Does
+
+1. **Collapses weeks of investor friction into minutes** -- KYC/AML, accreditation, wire instructions
+2. **Learns investor preferences through conversation** -- risk tolerance, sector interests, allocation targets
+3. **Provides fiduciary-grade transparency** -- every recommendation comes with sources, math, and dissent
+4. **Preserves consent at every step** -- no data is shared without explicit approval
+
+### The 7-Second Opening
+
+> "Hi, I'm Kai. I help investors like you make faster, smarter decisions with full transparency. Your data stays yours -- I just make it work harder for you. Ready?"
+
+### Long-Term Vision
+
+Kai becomes the trust layer between investors and fund managers. The consent protocol ensures that even when Kai facilitates introductions or data sharing between parties, the investor maintains full control over what is shared and when.
+
+### North Star
+
+> _"An agent should work for the person whose life it touches."_
+
+Kai is successful when investors trust it more than a single analyst -- not to replace human judgment, but to augment it with perfect memory, tireless analysis, and explainable intelligence.
+
