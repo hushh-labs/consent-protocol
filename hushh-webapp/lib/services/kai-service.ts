@@ -17,7 +17,7 @@ import { Capacitor } from "@capacitor/core";
 import { Kai, type KaiEncryptedPreference } from "@/lib/capacitor/kai";
 import { HushhIdentity } from "@/lib/capacitor";
 import { apiJson } from "@/lib/services/api-client";
-import { ApiService, getDirectBackendUrl } from "@/lib/services/api-service";
+import { ApiService } from "@/lib/services/api-service";
 import { AuthService } from "@/lib/services/auth-service";
 import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/lib/services/cache-service";
 
@@ -103,7 +103,6 @@ export async function grantKaiConsent(
     // Updated to use dynamic attr.* scopes instead of legacy vault.read.*/vault.write.*
     scopes: scopes || [
       "attr.financial.risk_profile", // Replaces vault.read.risk_profile
-      "attr.kai_decisions.*", // Replaces vault.write.decision
       "agent.kai.analyze",
     ],
     authToken,
@@ -282,8 +281,6 @@ export async function streamKaiAnalysis(params: {
   vaultOwnerToken: string;
 }): Promise<Response> {
   // SSE streaming is now supported via ApiService.apiFetchStream
-  const baseUrl = getDirectBackendUrl();
-  const url = `${baseUrl}/api/kai/analyze/stream`;
 
   const response = await ApiService.apiFetchStream("/api/kai/analyze/stream", {
     method: "POST",

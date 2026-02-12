@@ -38,12 +38,12 @@ interface PersistentToast {
   timestamp: number;
 }
 
-const PERSISTENT_TOASTS_KEY = "morphy-persistent-toasts";
-
 class GlobalToastManager {
   private static instance: GlobalToastManager;
   private pendingToasts: PersistentToast[] = [];
   private isInitialized = false;
+  /** In-memory store replacing sessionStorage */
+  private store: PersistentToast[] = [];
 
   static getInstance(): GlobalToastManager {
     if (!GlobalToastManager.instance) {
@@ -55,7 +55,7 @@ class GlobalToastManager {
   initialize() {
     if (this.isInitialized) return;
 
-    // Load any pending toasts from sessionStorage
+    // Load any pending toasts from in-memory store
     this.loadPendingToasts();
 
     // Show pending toasts
@@ -68,20 +68,18 @@ class GlobalToastManager {
     if (typeof window === "undefined") return;
 
     try {
-      const stored = sessionStorage.getItem(PERSISTENT_TOASTS_KEY);
-      if (stored) {
-        const parsedToasts: PersistentToast[] = JSON.parse(stored);
+      if (this.store.length > 0) {
         // Only keep toasts from the last 30 seconds to avoid showing stale toasts
         const now = Date.now();
-        this.pendingToasts = parsedToasts.filter(
+        this.pendingToasts = this.store.filter(
           (toast) => now - toast.timestamp < 30000
         );
         // Clear the stored toasts
-        sessionStorage.removeItem(PERSISTENT_TOASTS_KEY);
+        this.store = [];
       }
     } catch (error) {
       console.warn("Failed to load pending toasts:", error);
-      sessionStorage.removeItem(PERSISTENT_TOASTS_KEY);
+      this.store = [];
     }
   }
 
@@ -136,16 +134,9 @@ class GlobalToastManager {
     if (this.isInitialized) {
       this.showToast(type, message, options);
     } else {
-      // Otherwise, store for later
+      // Otherwise, store in memory for later
       this.pendingToasts.push(persistentToast);
-      try {
-        sessionStorage.setItem(
-          PERSISTENT_TOASTS_KEY,
-          JSON.stringify(this.pendingToasts)
-        );
-      } catch (error) {
-        console.warn("Failed to persist toast:", error);
-      }
+      this.store = [...this.pendingToasts];
     }
   }
 }

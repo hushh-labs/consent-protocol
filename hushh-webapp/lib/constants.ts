@@ -13,7 +13,6 @@ export const CONSENT_SCOPES = {
   // Dynamic attr.* scopes (canonical - preferred)
   ATTR_FINANCIAL: "attr.financial.*",
   ATTR_FINANCIAL_RISK_PROFILE: "attr.financial.risk_profile",
-  ATTR_KAI_DECISIONS: "attr.kai_decisions.*",
   ATTR_HEALTH: "attr.health.*",
 
   // World model scopes

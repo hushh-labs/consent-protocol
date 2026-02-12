@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Card, CardContent } from "@/lib/morphy-ux/morphy";
-import { Shield, Lock, Key, ArrowRight, AlertCircle, Sparkles, TrendingUp } from "lucide-react";
+import { Shield, Lock, ArrowRight, AlertCircle, TrendingUp } from "lucide-react";
 import { AuthService } from "@/lib/services/auth-service";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getRedirectResult, signInWithEmailAndPassword } from "firebase/auth";
@@ -14,13 +13,12 @@ import { HushhLoader } from "@/components/ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
 import { isAppReviewMode, REVIEWER_EMAIL, REVIEWER_PASSWORD } from "@/lib/config";
 import { isAndroid } from "@/lib/capacitor/platform";
-import { KaiOnboardingFlow } from "@/components/kai/kai-onboarding-flow";
 
 // Global utility for resetting welcome screen (accessible from browser console)
 if (typeof window !== "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).resetWelcomeScreen = () => {
-    localStorage.removeItem("hushh_has_visited");
-    console.log("✅ Welcome screen reset. Refreshing...");
+    console.log("Welcome screen reset. Refreshing...");
     window.location.href = "/";
   };
 }
@@ -187,10 +185,6 @@ function LoginScreenContent() {
       console.log("[Login] signInWithGoogle returned user:", user?.uid);
 
       if (user) {
-        // Persist user_id for downstream pages
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
-
         // IMMEDIATE REDIRECT
         console.log("[Login] Navigating to:", redirectPath);
 
@@ -219,10 +213,6 @@ function LoginScreenContent() {
       console.log("[Login] signInWithApple returned user:", user?.uid);
 
       if (user) {
-        // Persist user_id for downstream pages
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
-
         // IMMEDIATE REDIRECT
         console.log("[Login] Navigating to:", redirectPath);
 
@@ -260,12 +250,6 @@ function LoginScreenContent() {
       console.log("[Login] Reviewer login returned user:", user?.uid);
 
       if (user) {
-        // Persist user_id for downstream pages
-        localStorage.setItem("user_id", user.uid);
-        sessionStorage.setItem("user_id", user.uid);
-        // Mark as reviewer mode for optional UI customization
-        localStorage.setItem("hushh_reviewer_mode", "true");
-
         // IMMEDIATE REDIRECT
         console.log("[Login] Navigating to:", redirectPath);
 

@@ -23,16 +23,14 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   User,
   signInWithPhoneNumber,
   ConfirmationResult,
-  signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth, getRecaptchaVerifier, resetRecaptcha } from "./config";
-import { getSessionItem } from "@/lib/utils/session-storage";
 import { Capacitor } from "@capacitor/core";
 import { AuthService } from "@/lib/services/auth-service";
 
@@ -82,7 +80,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Hushh State
   const [userId, setUserId] = useState<string | null>(null);
 
-  const pathname = usePathname();
   const router = useRouter();
 
   // Helper: Timeout wrapper
@@ -98,21 +95,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   /**
    * Core Auth Check Logic
-   * Handles both Native Restoration and Web LocalStorage checks
+   * Handles both Native Restoration and Web Firebase auth
    *
    * IMPORTANT: This function MUST call setLoading(false) in ALL code paths
    * to prevent VaultLockGuard from getting stuck.
    */
   const checkAuth = useCallback(async () => {
-    // 1. Sync State from Storage (Web/Native persistence)
-    const storedUserId =
-      typeof window !== "undefined"
-        ? localStorage.getItem("user_id") || sessionStorage.getItem("user_id")
-        : null;
-
-    setUserId(storedUserId);
-
-    // 2. Native Session Restoration
+    // 1. Native Session Restoration
     if (Capacitor.isNativePlatform()) {
       try {
         // Use timeout to avoid hanging
@@ -127,6 +116,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             nativeUser.uid
           );
           setUser(nativeUser);
+          setUserId(nativeUser.uid);
         } else {
           console.log("🍎 [AuthProvider] No native session found");
         }
@@ -211,6 +201,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setUser(firebaseUser);
+      setUserId(firebaseUser?.uid ?? null);
       if (firebaseUser?.phoneNumber) {
         setPhoneNumber(firebaseUser.phoneNumber);
       }

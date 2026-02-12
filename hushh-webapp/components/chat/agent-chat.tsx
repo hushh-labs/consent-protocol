@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/lib/morphy-ux/morphy";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, Loader2, Sparkles, ShieldCheck } from "lucide-react";
+import { Send, Bot, User, Sparkles, ShieldCheck } from "lucide-react";
 import { HushhLoader } from "@/components/ui/hushh-loader";
 import { cn } from "@/lib/utils";
 import { formatMessage } from "@/lib/format-message";
@@ -13,6 +12,7 @@ import { CollectedDataCard } from "./collected-data-card";
 import { CheckboxSelector } from "./checkbox-selector";
 import { encryptData } from "@/lib/vault/encrypt";
 import { useVault } from "@/lib/vault/vault-context";
+import { useAuth } from "@/lib/firebase/auth-context";
 import { ApiService } from "@/lib/services/api-service";
 
 /**
@@ -23,12 +23,10 @@ import { ApiService } from "@/lib/services/api-service";
 async function saveToVault(
   collectedData: Record<string, unknown>,
   consentToken: string,
-  vaultKey: string | null // Now passed as parameter from vault context
+  vaultKey: string | null, // Now passed as parameter from vault context
+  userId: string | null // Passed from auth context
 ): Promise<boolean> {
   try {
-    const userId =
-      localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
-
     if (!userId || !vaultKey) {
       console.error("Session expired. Missing user_id or vault_key");
       return false;
@@ -118,6 +116,7 @@ export function AgentChat({
   hideHeader = false,
 }: AgentChatProps) {
   const { getVaultKey } = useVault();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -164,8 +163,7 @@ export function AgentChat({
     setIsLoading(true);
 
     // Get current user ID to ensure consent token matches vault user
-    const userId =
-      localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+    const userId = user?.uid ?? null;
 
     // Real API Call
     try {
@@ -251,7 +249,8 @@ export function AgentChat({
           const saved = await saveToVault(
             data.sessionState.collected,
             data.consent_token,
-            getVaultKey()
+            getVaultKey(),
+            userId
           );
           if (saved) {
             setMessages((prev) => [
@@ -289,7 +288,7 @@ export function AgentChat({
       } else {
         setPendingUI(null);
       }
-    } catch (error) {
+    } catch (_error) {
       setMessages((prev) => [
         ...prev,
         {
@@ -325,8 +324,7 @@ export function AgentChat({
     setIsLoading(true);
 
     // Get current user ID for proper consent token issuance
-    const userId =
-      localStorage.getItem("user_id") || sessionStorage.getItem("user_id");
+    const userId = user?.uid ?? null;
 
     // Send to agent
     try {
@@ -393,7 +391,8 @@ export function AgentChat({
           const saved = await saveToVault(
             data.sessionState.collected,
             data.consent_token,
-            getVaultKey()
+            getVaultKey(),
+            userId
           );
           if (saved) {
             setMessages((prev) => [
@@ -428,7 +427,7 @@ export function AgentChat({
           allow_none: data.allow_none,
         });
       }
-    } catch (error) {
+    } catch (_error) {
       setMessages((prev) => [
         ...prev,
         {

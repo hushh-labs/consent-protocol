@@ -24,12 +24,10 @@ import React, {
   createContext,
   useContext,
   useState,
-  useRef,
   useCallback,
   useEffect,
   ReactNode,
 } from "react";
-import { setSessionItem, removeSessionItem } from "@/lib/utils/session-storage";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { WorldModelService } from "@/lib/services/world-model-service";
 import { ApiService } from "@/lib/services/api-service";
@@ -92,26 +90,17 @@ export function VaultProvider({ children }: VaultProviderProps) {
   const [vaultOwnerToken, setVaultOwnerToken] = useState<string | null>(null);
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const lockVault = useCallback(() => {
-    // Read userId before clearing session so we can invalidate vault check cache
-    const userId =
-      typeof window !== "undefined"
-        ? sessionStorage.getItem("user_id")
-        : null;
-
     console.log("🔒 Vault locked (key + token cleared from memory)");
     setVaultKey(null);
     setVaultOwnerToken(null);
     setTokenExpiresAt(null);
-    
-    // SECURITY: Only clear the unlock status flag
-    // Token was never in sessionStorage (memory-only for XSS protection)
-    removeSessionItem("vault_unlocked");
 
-    if (userId) {
-      CacheService.getInstance().invalidate(CACHE_KEYS.VAULT_CHECK(userId));
+    if (user?.uid) {
+      CacheService.getInstance().invalidate(CACHE_KEYS.VAULT_CHECK(user.uid));
     }
-  }, []);
+  }, [user?.uid]);
 
   // Auto-Lock on Sign Out
   // If AuthContext reports no user, we MUST clear the decrypted key from memory immediately.
@@ -203,10 +192,6 @@ export function VaultProvider({ children }: VaultProviderProps) {
       setVaultKey(key);
       setVaultOwnerToken(token);
       setTokenExpiresAt(expiresAt);
-
-      // SECURITY: Only store unlock status flag, NOT the actual token
-      // Token stays in React state (memory) only - XSS cannot access
-      setSessionItem("vault_unlocked", "true");
 
       if (user?.uid) {
         prefetchDashboardData(user.uid, token);

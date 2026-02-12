@@ -66,7 +66,7 @@ function safeBase64Decode(str: string): Uint8Array {
   try {
     const binaryString = atob(base64);
     return Uint8Array.from(binaryString, c => c.charCodeAt(0));
-  } catch (e) {
+  } catch (_e) {
     console.error("Failed to decode Base64 string:", str);
     throw new Error("Invalid Base64 string format");
   }

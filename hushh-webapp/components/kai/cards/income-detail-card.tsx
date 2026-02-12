@@ -12,7 +12,7 @@
 
 "use client";
 
-import { DollarSign, TrendingUp } from "lucide-react";
+import { DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/lib/morphy-ux/card";
 

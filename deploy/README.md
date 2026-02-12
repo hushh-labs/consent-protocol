@@ -27,7 +27,7 @@ gcloud builds submit --config=deploy/frontend.cloudbuild.yaml \
 
    ```bash
    gcloud auth login
-   gcloud config set project hushh-pda
+   gcloud config set project YOUR_GCP_PROJECT
    ```
 
 2. **Enable Required APIs**

@@ -5,7 +5,6 @@
  *
  * Shows what we capture today (and nothing else):
  * - Investor identity: encrypted copy in `user_investor_profiles` (client decrypts)
- * - Kai prefs: encrypted rows in `vault_kai_preferences` (client decrypts)
  *
  * Invariants:
  * - BYOK: vault key never leaves device
@@ -14,11 +13,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Check,
   Loader2,
   Pencil,
@@ -31,8 +28,6 @@ import {
 
 import { Button } from "@/lib/morphy-ux/button";
 import { Card, CardContent } from "@/lib/morphy-ux/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -40,10 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import {
   Tooltip,
   TooltipContent,
@@ -79,7 +70,7 @@ type DecryptedKaiPrefs = {
 };
 
 export default function KaiPreferencesPage() {
-  const router = useRouter();
+  const _router = useRouter();
   const { user } = useAuth();
   const { isVaultUnlocked, vaultKey, vaultOwnerToken } = useVault();
 
@@ -114,7 +105,7 @@ export default function KaiPreferencesPage() {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [resettingIdentity, setResettingIdentity] = useState(false);
-  const [resettingKai, setResettingKai] = useState(false);
+  const [_resettingKai, setResettingKai] = useState(false);
 
   // Processing mode draft (risk comes from profile now)
   const [draftProcessingMode, setDraftProcessingMode] = useState<
@@ -162,7 +153,7 @@ export default function KaiPreferencesPage() {
     };
   }, [draftProcessingMode, kaiPrefs.processingMode]);
 
-  const holdingsChartData = useMemo(() => {
+  const _holdingsChartData = useMemo(() => {
     const list = (displayProfile as any)?.top_holdings || [];
     if (!Array.isArray(list)) return [];
     return list
@@ -174,7 +165,7 @@ export default function KaiPreferencesPage() {
       .slice(0, 10);
   }, [displayProfile]);
 
-  const sectorChartData = useMemo(() => {
+  const _sectorChartData = useMemo(() => {
     const obj = (displayProfile as any)?.sector_exposure;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
     return Object.entries(obj as Record<string, any>)
@@ -512,7 +503,7 @@ export default function KaiPreferencesPage() {
     }
   }, [vaultOwnerToken]);
 
-  const handleResetKaiPrefs = useCallback(async () => {
+  const _handleResetKaiPrefs = useCallback(async () => {
     if (!user?.uid || !vaultOwnerToken) return;
     setResettingKai(true);
     try {
@@ -966,7 +957,7 @@ export default function KaiPreferencesPage() {
                     <InvestorProfileEditor
                       value={displayProfile}
                       onChange={
-                        isEditing ? setEditingProfile : (v) => undefined
+                        isEditing ? setEditingProfile : (_v) => undefined
                       }
                       flat
                       readOnly={!isEditing}

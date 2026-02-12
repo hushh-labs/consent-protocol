@@ -12,8 +12,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   User,
-  Building2,
-  TrendingUp,
   Check,
   X,
   Loader2,

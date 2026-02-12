@@ -116,7 +116,7 @@ export function KaiOnboardingFlow({ onboardingComplete, className }: KaiOnboardi
         <div className="relative space-y-10">
           {STEPS.map((step, idx) => {
             const isActive = idx <= activeStep;
-            const isCurrentlyAnimating = idx === activeStep;
+            const _isCurrentlyAnimating = idx === activeStep;
 
             return (
               <div

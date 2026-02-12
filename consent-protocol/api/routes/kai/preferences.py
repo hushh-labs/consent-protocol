@@ -2,49 +2,24 @@
 """
 Kai Preferences Endpoints
 
-Handles encrypted user preferences for Kai (risk profile, processing mode).
+Handles user preferences for Kai (risk profile, processing mode).
+Now backed by WorldModelService (world_model_data + world_model_index_v2)
+instead of the deprecated vault_kai_preferences table.
 """
 
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import ConsentScope
+from api.middleware import require_vault_owner_token
 from hushh_mcp.services.consent_db import ConsentDBService
-from hushh_mcp.services.vault_db import ConsentValidationError, VaultDBService
-from hushh_mcp.types import EncryptedPayload
+from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# ============================================================================
-# HELPERS
-# ============================================================================
-
-async def validate_vault_owner(authorization: str, expected_user_id: str) -> None:
-    """Validate VAULT_OWNER token and ensure user_id matches."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401, 
-            detail="Missing consent token. Call /api/consent/owner-token first."
-        )
-    
-    token = authorization.replace("Bearer ", "")
-    valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
-    
-    if not valid or not payload:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
-    
-    if payload.user_id != expected_user_id:
-        raise HTTPException(
-            status_code=403, 
-            detail="Token user does not match requested user"
-        )
 
 
 # ============================================================================
@@ -74,157 +49,163 @@ class PreferencesResponse(BaseModel):
 @router.post("/preferences/store")
 async def store_preferences(
     request: StorePreferencesRequest,
-    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
-    Store encrypted user preferences (Risk Profile, Processing Mode).
-    
+    Store user preferences via WorldModelService.
+
+    Stores an encrypted blob under domain='kai_preferences' and updates
+    the domain_summaries metadata in world_model_index_v2.
+
     REQUIRES: VAULT_OWNER consent token.
-    Upserts by (user_id, field_name).
     """
-    await validate_vault_owner(authorization, request.user_id)
-    
+    if token_data.get("user_id") != request.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
+
     # Log operation for audit trail
     consent_service = ConsentDBService()
     field_names = [p.field_name for p in request.preferences]
     await consent_service.log_operation(
         user_id=request.user_id,
         operation="kai.preferences.write",
-        metadata={"fields": field_names}
+        metadata={"fields": field_names},
     )
-    
-    # Use VaultDBService to store preferences
-    service = VaultDBService()
+
+    world_model = get_world_model_service()
+
+    # Build the encrypted blob from the list of preferences
+    # We combine them into a single blob keyed by field_name
+    encrypted_blob = {
+        "fields": {
+            p.field_name: {
+                "ciphertext": p.ciphertext,
+                "iv": p.iv,
+                "tag": p.tag or "",
+            }
+            for p in request.preferences
+        },
+        "algorithm": "aes-256-gcm",
+    }
+
+    # Non-sensitive summary for world_model_index_v2
+    summary = {
+        "field_names": field_names,
+        "field_count": len(field_names),
+    }
+
     try:
-        # Convert to EncryptedPayload format
-        fields = {}
-        for pref in request.preferences:
-            fields[pref.field_name] = EncryptedPayload(
-                ciphertext=pref.ciphertext,
-                iv=pref.iv,
-                tag=pref.tag or "",
-                algorithm="aes-256-gcm",
-                encoding="base64"
-            )
-        
-        # Get consent token from authorization header
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing consent token")
-        consent_token = authorization.replace("Bearer ", "")
-        
-        await service.store_encrypted_fields(
+        success = await world_model.store_domain_data(
             user_id=request.user_id,
             domain="kai_preferences",
-            fields=fields,
-            consent_token=consent_token
+            encrypted_blob=encrypted_blob,
+            summary=summary,
         )
-        
-        logger.info(f"[Kai] Stored {len(request.preferences)} encrypted preferences for {request.user_id}")
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to store preferences",
+            )
+
+        logger.info(
+            f"[Kai] Stored {len(request.preferences)} preferences for {request.user_id}"
+        )
         return {"success": True}
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[Kai] Failed to store preferences: {e}")
-        raise HTTPException(status_code=500, detail="Failed to store settings")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store settings",
+        )
 
 
 @router.get("/preferences/{user_id}", response_model=PreferencesResponse)
 async def get_preferences(
     user_id: str,
-    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
-    Retrieve all encrypted preferences for a user.
-    
+    Retrieve preferences for a user from WorldModelService.
+
+    Reads the encrypted blob stored under domain='kai_preferences'.
     REQUIRES: VAULT_OWNER consent token.
     """
-    await validate_vault_owner(authorization, user_id)
-    
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
+
     # Log operation for audit trail
     consent_service = ConsentDBService()
     await consent_service.log_operation(
         user_id=user_id,
-        operation="kai.preferences.read"
+        operation="kai.preferences.read",
     )
-    
-    # Use VaultDBService to get preferences
-    service = VaultDBService()
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing consent token")
-    consent_token = authorization.replace("Bearer ", "")
-    
+
+    world_model = get_world_model_service()
+
     try:
-        encrypted_fields = await service.get_encrypted_fields(
-            user_id=user_id,
-            domain="kai_preferences",
-            consent_token=consent_token,
-            field_names=None
-        )
-    except ConsentValidationError as e:
+        data = await world_model.get_domain_data(user_id, "kai_preferences")
+    except Exception as e:
+        logger.error(f"[Kai] Failed to read preferences: {e}")
         raise HTTPException(
-            status_code=401 if e.reason in ["missing_token", "invalid_token"] else 403,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to read preferences",
         )
-    
-    prefs = []
-    for field_name, payload in encrypted_fields.items():
-        prefs.append(EncryptedPreference(
-            field_name=field_name,
-            ciphertext=payload.ciphertext,
-            iv=payload.iv,
-            tag=payload.tag or ""
-        ))
-    
+
+    prefs: list[EncryptedPreference] = []
+    if data:
+        fields = data.get("fields", {})
+        for field_name, payload in fields.items():
+            if isinstance(payload, dict):
+                prefs.append(EncryptedPreference(
+                    field_name=field_name,
+                    ciphertext=payload.get("ciphertext", ""),
+                    iv=payload.get("iv", ""),
+                    tag=payload.get("tag", ""),
+                ))
+
     return PreferencesResponse(preferences=prefs)
 
 
 @router.delete("/preferences/{user_id}")
 async def delete_preferences(
     user_id: str,
-    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token")
+    token_data: dict = Depends(require_vault_owner_token),
 ):
     """
-    Delete all encrypted Kai preferences for a user.
+    Delete all Kai preferences for a user.
 
-    Requires VAULT_OWNER (consent protocol).
+    Removes the 'kai_preferences' domain from the world model.
+    REQUIRES: VAULT_OWNER consent token.
     """
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-    token = authorization.replace("Bearer ", "")
-    valid, reason, payload = validate_token(token)
-    if not valid or not payload:
-        raise HTTPException(status_code=401, detail="Invalid VAULT_OWNER token")
-
-    if payload.scope != ConsentScope.VAULT_OWNER.value:
-        raise HTTPException(status_code=403, detail="VAULT_OWNER scope required")
-
-    if payload.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Cannot delete preferences for another user")
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
 
     # Log operation for audit trail
     consent_service = ConsentDBService()
     await consent_service.log_operation(
         user_id=user_id,
-        operation="kai.preferences.delete"
+        operation="kai.preferences.delete",
     )
 
-    # Use VaultDBService to delete preferences
-    service = VaultDBService()
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    consent_token = authorization.replace("Bearer ", "")
-    
-    try:
-        deleted_count = await service.delete_encrypted_fields(
-            user_id=user_id,
-            domain="kai_preferences",
-            consent_token=consent_token,
-            field_names=None  # Delete all
-        )
-    except ConsentValidationError as e:
+    world_model = get_world_model_service()
+    success = await world_model.delete_domain_data(user_id, "kai_preferences")
+
+    if not success:
         raise HTTPException(
-            status_code=401 if e.reason in ["missing_token", "invalid_token"] else 403,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete preferences",
         )
 
-    return {"success": True, "deleted_count": deleted_count}
+    return {"success": True, "deleted_domain": "kai_preferences"}

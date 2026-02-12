@@ -101,7 +101,9 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
             
             risk_profile = financial_summary.get("risk_bucket", "balanced")
             
-            # Get holdings from cached summary
+            # NOTE: holdings detail is stripped from domain_summaries by
+            # update_domain_summary() sanitization (MCP scope safety).
+            # Holdings data lives in the encrypted blob, decrypted client-side.
             cached_holdings = financial_summary.get("holdings", [])
             
             # Build allocation from cached data
@@ -123,33 +125,68 @@ async def fetch_holdings(user_id: str) -> list[PortfolioHolding]:
     """
     Fetch all portfolio holdings for a user.
     
+    Reads from world_model_index_v2 domain_summaries.financial instead of 
+    the deprecated vault_portfolios table.
+    
     Returns a list of PortfolioHolding objects with calculated market values.
     """
     from db.db_client import get_db
     supabase = get_db()
     
     try:
+        # Read from world_model_index_v2 which contains non-encrypted metadata
         response = (
-            await supabase.table("vault_portfolios")
-            .select("*")
+            await supabase.table("world_model_index_v2")
+            .select("domain_summaries")
             .eq("user_id", user_id)
             .execute()
         )
         
         holdings: list[PortfolioHolding] = []
         
-        for row in response.data or []:
-            if isinstance(row, dict):
-                symbol = (row.get("symbol") or row.get("ticker") or "").upper()
-                quantity = float(row.get("quantity", 0) or 0)
-                current_price = float(row.get("current_price", 0) or 0)
-                
+        if not response.data:
+            # Fallback: try legacy vault_portfolios table for backwards compat
+            legacy_response = (
+                await supabase.table("vault_portfolios")
+                .select("*")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            for row in legacy_response.data or []:
+                if isinstance(row, dict):
+                    symbol = (row.get("symbol") or row.get("ticker") or "").upper()
+                    quantity = float(row.get("quantity", 0) or 0)
+                    current_price = float(row.get("current_price", 0) or 0)
+                    holdings.append(PortfolioHolding(
+                        symbol=symbol,
+                        quantity=quantity,
+                        current_price=current_price,
+                        market_value=quantity * current_price,
+                        name=row.get("company_name") or row.get("name") or ""
+                    ))
+            return holdings
+        
+        # Parse domain_summaries from the index
+        index_row = response.data[0] if response.data else {}
+        domain_summaries = index_row.get("domain_summaries", {})
+        financial_summary = domain_summaries.get("financial", {})
+        
+        # NOTE: holdings detail is stripped from domain_summaries by
+        # update_domain_summary() sanitization (MCP scope safety).
+        # This path will return [] for new data; legacy data may still
+        # have holdings if stored before the sanitization was added.
+        holdings_list = financial_summary.get("holdings", [])
+        for h in holdings_list:
+            if isinstance(h, dict):
+                symbol = (h.get("symbol") or h.get("ticker") or "").upper()
+                quantity = float(h.get("quantity", 0) or 0)
+                current_price = float(h.get("current_price", 0) or 0)
                 holdings.append(PortfolioHolding(
                     symbol=symbol,
                     quantity=quantity,
                     current_price=current_price,
                     market_value=quantity * current_price,
-                    name=row.get("company_name") or row.get("name") or ""
+                    name=h.get("company_name") or h.get("name") or ""
                 ))
         
         return holdings
@@ -160,31 +197,34 @@ async def fetch_holdings(user_id: str) -> list[PortfolioHolding]:
 
 async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]:
     """
-    Fetch recent decisions for a user.
-    
+    Fetch recent decisions for a user from domain_summaries.
+
+    Reads from world_model_index_v2.domain_summaries.kai_decisions.
     Returns a list of DecisionRecord objects sorted by creation date (newest first).
     """
     try:
-        from hushh_mcp.services.kai_decisions_service import KaiDecisionsService
-        kai_service = KaiDecisionsService()
-        
-        decisions = await kai_service.get_decisions(
-            user_id=user_id,
-            consent_token="",
-            limit=limit
-        )
-        
+        world_model = get_world_model_service()
+        index = await world_model.get_index_v2(user_id)
+
         records: list[DecisionRecord] = []
-        for d in decisions:
-            records.append(DecisionRecord(
-                id=d.get("id", 0),
-                ticker=(d.get("ticker") or "").upper(),
-                decision_type=d.get("decisionType") or "HOLD",
-                confidence=float(d.get("confidence", 0) or 0),
-                created_at=d.get("createdAt") or "",
-                metadata=d.get("metadata")
-            ))
-        
+        if index and "kai_decisions" in (index.domain_summaries or {}):
+            raw = index.domain_summaries["kai_decisions"]
+            items: list[dict] = []
+            if isinstance(raw, list):
+                items = raw
+            elif isinstance(raw, dict):
+                items = raw.get("decisions", [])
+
+            for d in items[:limit]:
+                records.append(DecisionRecord(
+                    id=d.get("id", 0),
+                    ticker=(d.get("ticker") or "").upper(),
+                    decision_type=d.get("decision_type") or d.get("decisionType") or "HOLD",
+                    confidence=float(d.get("confidence", 0) or 0),
+                    created_at=d.get("created_at") or d.get("createdAt") or "",
+                    metadata=d.get("metadata"),
+                ))
+
         # Sort by created_at, newest first
         records.sort(key=lambda x: x.created_at if x.created_at else "", reverse=True)
         return records
@@ -410,7 +450,10 @@ class WorldModelMetadataResponse(BaseModel):
 
 
 @router.get("/metadata/{user_id}", response_model=WorldModelMetadataResponse)
-async def get_metadata(user_id: str):
+async def get_metadata(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
     """
     Get user's world model metadata for UI display.
     
@@ -421,10 +464,15 @@ async def get_metadata(user_id: str):
     
     Returns 404 if user has no world model data (new user).
     
-    **Note**: This endpoint does NOT require authentication as it only returns
-    non-sensitive metadata (domain names, counts). The actual encrypted data
-    requires VAULT_OWNER token via /data/{user_id} endpoint.
+    **Authentication**: Requires valid VAULT_OWNER token.
+    Domain names, counts, and summaries are user-private metadata.
     """
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
     world_model = get_world_model_service()
     
     try:
@@ -522,14 +570,26 @@ class UserScopesResponse(BaseModel):
 
 
 @router.get("/scopes/{user_id}", response_model=UserScopesResponse)
-async def get_user_scopes(user_id: str):
+async def get_user_scopes(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
     """
     Get available scope strings for a user (lightweight agent discovery).
     
     Returns only scope strings derived from world_model_index_v2.available_domains.
-    No authentication required (non-sensitive). For full metadata (display names, counts),
-    use GET /api/world-model/metadata/{user_id}.
+    
+    **Authentication**: Requires valid VAULT_OWNER token.
+    Scope strings reveal which data domains a user has populated,
+    so they must be protected like other user metadata.
     """
+    # Verify token matches user_id
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id"
+        )
+    
     world_model = get_world_model_service()
     index = await world_model.get_index_v2(user_id)
     if index is None:

@@ -23,7 +23,7 @@ interface CollectedDataCardProps {
 
 export function CollectedDataCard({ 
   data, 
-  domain = "Preferences",
+  domain: _domain = "Preferences",
   className,
   isExpanded: defaultExpanded = true
 }: CollectedDataCardProps) {
