@@ -185,7 +185,7 @@ function setupNativeListeners(): void {
   import("@capacitor-firebase/messaging").then(({ FirebaseMessaging }) => {
     // Foreground message handler
     FirebaseMessaging.addListener("notificationReceived", (notification) => {
-      console.log("[FCM] 📬 Foreground message received:", notification);
+      console.log("[FCM] Foreground message received:", notification);
 
       // Dispatch custom event (same as web)
       window.dispatchEvent(
@@ -199,7 +199,7 @@ function setupNativeListeners(): void {
     FirebaseMessaging.addListener(
       "notificationActionPerformed",
       (action) => {
-        console.log("[FCM] 👆 Notification tapped:", action);
+        console.log("[FCM] Notification tapped:", action);
 
         const data = action.notification.data as
           | Record<string, unknown>
@@ -224,7 +224,30 @@ function setupNativeListeners(): void {
       }
     );
 
-    console.log("[FCM] ✅ Native listeners configured");
+    // Token refresh handler -- re-register with backend when FCM rotates the token
+    FirebaseMessaging.addListener("tokenReceived", async (event) => {
+      console.log("[FCM] Token refreshed:", event.token.substring(0, 20) + "...");
+      const platform = Capacitor.getPlatform() as "ios" | "android" | "web";
+      // Re-register silently; if it fails the next app launch will fix it
+      try {
+        const { getAuth } = await import("firebase/auth");
+        const currentUser = getAuth().currentUser;
+        if (currentUser) {
+          const idToken = await currentUser.getIdToken();
+          await ApiService.registerPushToken(
+            currentUser.uid,
+            event.token,
+            platform,
+            idToken
+          );
+          console.log("[FCM] Refreshed token re-registered with backend");
+        }
+      } catch (err) {
+        console.warn("[FCM] Token refresh re-registration failed:", err);
+      }
+    });
+
+    console.log("[FCM] Native listeners configured");
   });
 }
 
@@ -259,12 +282,28 @@ export async function getFCMToken(): Promise<string | null> {
 }
 
 /**
- * Delete FCM token (for logout)
+ * Delete FCM token (for logout).
+ * 
+ * Removes the token from Firebase and also calls the backend to unregister
+ * so no further pushes are attempted for this device.
  */
-export async function deleteFCMToken(): Promise<void> {
+export async function deleteFCMToken(
+  userId?: string,
+  idToken?: string
+): Promise<void> {
   const isNative = Capacitor.isNativePlatform();
 
   try {
+    // Step 1: Tell the backend to delete our push token
+    if (userId && idToken) {
+      try {
+        await ApiService.unregisterPushToken(userId, idToken);
+      } catch (backendErr) {
+        console.warn("[FCM] Backend unregister failed (non-critical):", backendErr);
+      }
+    }
+
+    // Step 2: Delete the token from Firebase SDK
     if (isNative) {
       const { FirebaseMessaging } = await import(
         "@capacitor-firebase/messaging"
@@ -278,7 +317,7 @@ export async function deleteFCMToken(): Promise<void> {
       await deleteToken(messaging);
     }
 
-    console.log("[FCM] ✅ Token deleted");
+    console.log("[FCM] Token deleted (Firebase + backend)");
   } catch (error) {
     console.error("[FCM] Failed to delete token:", error);
   }

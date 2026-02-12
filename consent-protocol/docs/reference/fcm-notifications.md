@@ -1,14 +1,41 @@
-# Consent Push Notifications (FCM)
+# FCM Notifications
 
-> **Status**: Implemented  
-> **Last Updated**: February 2026  
-> **Scope**: Web (FCM); iOS/Android use platform plugins (future).
+> **Status**: Production (Pure Push)
+> **Last Updated**: February 2026
+> **Scope**: Web (FCM), iOS/Android (Capacitor Firebase Messaging)
 
 ---
 
 ## Overview
 
-Consent requests are delivered to users via **Firebase Cloud Messaging (FCM)** when the app is closed or in the background, and via **in-app SSE** when the app is open. This document explains how FCM fits into the stack and what **cannot** be done with the gcloud CLI alone.
+Consent requests are delivered to users via **Firebase Cloud Messaging (FCM)** using a **pure push** architecture. The backend sends enriched FCM payloads containing all data needed to render consent toasts -- no frontend polling required.
+
+**Supported platforms**: Web (FCM JS SDK), iOS (Capacitor Firebase Messaging), Android (Capacitor Firebase Messaging).
+
+### Architecture
+
+```
+1. MCP Agent → POST /api/v1/request-consent
+2. Backend inserts consent_audit row
+3. PostgreSQL pg_notify trigger fires
+4. consent_listener.py receives event
+5. Enriches FCM payload: { request_id, scope, agent_id, scope_description }
+6. Sends FCM message to user's registered tokens
+7. Client receives push → renders toast from payload data
+8. No polling, no SSE, no frontend API calls for notification data
+```
+
+### Stale Token Handling
+
+When Firebase returns `messaging.UnregisteredError` or `messaging.SenderIdMismatchError`, the listener automatically deletes the stale token from `user_push_tokens`.
+
+### Token Lifecycle
+
+| Event        | Action                                    |
+| ------------ | ----------------------------------------- |
+| Login        | Register token via `POST /api/notifications/register` |
+| Token rotate | Native listener re-registers new token    |
+| Logout       | Delete token via `DELETE /api/notifications/unregister` |
 
 ---
 
@@ -34,8 +61,8 @@ gcloud is used for **GCP resources** that support the FCM-based flow:
 | Task | gcloud usage |
 |------|--------------|
 | **Enable APIs** | `gcloud services enable fcm.googleapis.com` (optional; Firebase/Cloud Messaging may already be enabled with Firebase). |
-| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env_and_secrets.md](env_and_secrets.md)). |
-| **Deploy backend/frontend** | Deploy consent-protocol and hushh-webapp to Cloud Run via `gcloud run deploy` or Cloud Build (see [deployment.md](../guides/deployment.md)). |
+| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env-and-secrets.md](env-and-secrets.md)). |
+| **Deploy backend/frontend** | Deploy consent-protocol and hushh-webapp to Cloud Run via `gcloud run deploy` or Cloud Build (see [getting-started.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/guides/getting-started.md)). |
 | **Get an OAuth token for FCM HTTP v1 (testing)** | You can obtain an access token (e.g. Application Default Credentials after `gcloud auth application-default login`) and send a **test** message via the FCM HTTP v1 API with `curl`. This does not replace the Firebase Console or the app for normal operation. |
 
 ---
@@ -48,7 +75,7 @@ gcloud is used for **GCP resources** that support the FCM-based flow:
    - Pushes the event into a per-user in-app queue for SSE.
 3. **Web client**: Requests permission, gets FCM token (`getToken` with VAPID key), registers token via `POST /api/notifications/register`; handles **onMessage** (foreground) and **notificationclick** (service worker) to open `/consents?tab=pending`.
 
-See the plan in `.cursor/plans/` and [consent_protocol.md](consent_protocol.md) for full flow.
+See the plan in `.cursor/plans/` and [consent-protocol.md](consent-protocol.md) for full flow.
 
 ---
 
@@ -76,10 +103,10 @@ Consent requests reach the user only when the following chain is in place:
    - **Web Push**: Under Project Settings → Cloud Messaging → “Web configuration”, generate a **Key pair** (VAPID key). Use the **Key pair** value as `NEXT_PUBLIC_FIREBASE_VAPID_KEY` in the frontend.
 
 2. **Backend**  
-   - **FIREBASE_SERVICE_ACCOUNT_JSON**: Service account JSON (Firebase Console → Project Settings → Service accounts → Generate new private key). Stored in GCP Secret Manager and injected into consent-protocol (see [env_and_secrets.md](env_and_secrets.md)).
+   - **FIREBASE_SERVICE_ACCOUNT_JSON**: Service account JSON (Firebase Console → Project Settings → Service accounts → Generate new private key). Stored in GCP Secret Manager and injected into consent-protocol (see [env-and-secrets.md](env-and-secrets.md)).
 
 3. **Frontend**  
-   - **NEXT_PUBLIC_FIREBASE_VAPID_KEY**: VAPID key from step 1. Without it, web FCM token registration is skipped (see [env_and_secrets.md](env_and_secrets.md)).
+   - **NEXT_PUBLIC_FIREBASE_VAPID_KEY**: VAPID key from step 1. Without it, web FCM token registration is skipped (see [env-and-secrets.md](env-and-secrets.md)).
 
 4. **gcloud**  
    - Create/update secret:  
@@ -130,6 +157,6 @@ The **device registration token** must come from the client (web app’s `getTok
 | Can consent push be done **directly with gcloud CLI**? | **No.** FCM requires Firebase Console (VAPID, project/config) and application code (Firebase Admin SDK + client SDK) for production. |
 | What **is** gcloud used for? | Enabling APIs, storing `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager, deploying services. Optionally getting an OAuth token to send a **test** message via FCM HTTP v1 with `curl`. |
 | Where is the VAPID key set? | **Firebase Console** → Project Settings → Cloud Messaging → Web configuration → Key pair. Set in frontend as `NEXT_PUBLIC_FIREBASE_VAPID_KEY`. |
-| Where is the service account JSON set? | **Firebase Console** → Project Settings → Service accounts → Generate key. Store in **GCP Secret Manager** and inject into the backend (see [env_and_secrets.md](env_and_secrets.md)). |
+| Where is the service account JSON set? | **Firebase Console** → Project Settings → Service accounts → Generate key. Store in **GCP Secret Manager** and inject into the backend (see [env-and-secrets.md](env-and-secrets.md)). |
 
-See also: [env_and_secrets.md](env_and_secrets.md), [deployment.md](../guides/deployment.md), [consent_protocol.md](consent_protocol.md).
+See also: [env-and-secrets.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/reference/env-and-secrets.md), [getting-started.md](https://github.com/hushh-labs/hushh-research/blob/main/docs/guides/getting-started.md), [consent-protocol.md](consent-protocol.md).
