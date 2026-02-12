@@ -39,10 +39,12 @@ cp .env.example .env
 # Edit .env with your Supabase, Gemini, and Firebase credentials
 
 # Run server
-python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+make dev
 ```
 
 Health check: `curl http://localhost:8000/health`
+
+**Available commands:** Run `make help` to see all available targets (dev, lint, test, format, typecheck, security, ci-local).
 
 ---
 
@@ -145,11 +147,12 @@ consent-protocol/
 ## Linting and Testing
 
 ```bash
-ruff check .                    # Lint
-ruff format --check .           # Format check
-mypy --config-file pyproject.toml  # Type check
-pytest tests/ -v                # Tests
-bandit -r hushh_mcp/ api/ -c pyproject.toml  # Security scan
+make lint           # Lint with ruff
+make format         # Format code
+make typecheck      # Type check with mypy
+make test           # Run tests with pytest
+make security       # Security scan with bandit
+make ci-local       # Run all checks (same as CI)
 ```
 
 All checks run automatically in CI on every PR to `main`.

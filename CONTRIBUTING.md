@@ -36,11 +36,17 @@ Follow the architecture and coding standards below.
 Every PR must pass these before merge:
 
 ```bash
-ruff check .                                    # Lint
-ruff format --check .                           # Format
-mypy --config-file pyproject.toml --ignore-missing-imports  # Type check
-pytest tests/ -v                                # Tests
-bandit -r hushh_mcp/ api/ -c pyproject.toml     # Security
+make ci-local  # Runs all checks (lint, format, typecheck, test, security)
+```
+
+Or run individually:
+
+```bash
+make lint          # Lint
+make format-check  # Format check
+make typecheck     # Type check
+make test          # Tests
+make security      # Security scan
 ```
 
 ### 5. Open a Pull Request
@@ -154,11 +160,7 @@ tools:
 
 Before submitting, verify:
 
-- [ ] `ruff check .` passes
-- [ ] `ruff format --check .` passes
-- [ ] `mypy --config-file pyproject.toml` passes
-- [ ] `pytest tests/ -v` passes
-- [ ] `bandit -r hushh_mcp/ api/ -c pyproject.toml` passes
+- [ ] `make ci-local` passes (or run checks individually)
 - [ ] Consent validation is present at agent entry AND tool invocation
 - [ ] Tests cover the new code
 - [ ] Documentation is updated
