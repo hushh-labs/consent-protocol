@@ -264,6 +264,33 @@ async def create_domain_registry(pool: asyncpg.Pool):
     print("✅ domain_registry ready!")
 
 
+async def create_tickers(pool: asyncpg.Pool):
+    """
+    Create tickers table (public company tickers imported from SEC).
+
+    Columns:
+      - ticker: STOCK symbol (PRIMARY KEY)
+      - title: Company name
+      - cik: SEC CIK (zero-padded 10 digits)
+      - exchange: Exchange code (if available)
+      - created_at, updated_at timestamps
+    """
+    print("📈 Creating tickers table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS tickers (
+            ticker TEXT PRIMARY KEY,
+            title TEXT,
+            cik TEXT,
+            exchange TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_tickers_title ON tickers USING GIN (to_tsvector('english', coalesce(title, ''))) ")
+
+    print("✅ tickers ready!")
+
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
@@ -271,6 +298,7 @@ TABLE_CREATORS = {
     "world_model_data": create_world_model_data,
     "world_model_index_v2": create_world_model_index_v2,
     "domain_registry": create_domain_registry,
+    "tickers": create_tickers,
     "consent_exports": create_consent_exports,
 }
 
