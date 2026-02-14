@@ -99,20 +99,25 @@ class ValuationAgent(HushhAgent):
         from hushh_mcp.operons.kai.llm import analyze_valuation_with_gemini
 
         gemini_analysis = None
+        gemini_analysis = None
         if GOOGLE_API_KEY and self.processing_mode == "hybrid" and consent_token:
-            try:
-                gemini_analysis = await analyze_valuation_with_gemini(
-                    ticker=ticker,
-                    user_id=user_id,
-                    consent_token=consent_token,
-                    market_data=market_data,
-                    peer_data=peer_data,
-                    user_context=context,
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[Valuation] Gemini analysis failed: {e}. Falling back to deterministic."
-                )
+            for attempt in range(2):
+                try:
+                    gemini_analysis = await analyze_valuation_with_gemini(
+                        ticker=ticker,
+                        user_id=user_id,
+                        consent_token=consent_token,
+                        market_data=market_data,
+                        peer_data=peer_data,
+                        user_context=context,
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        f"[Valuation] Gemini analysis failed (attempt {attempt+1}/2): {e}"
+                    )
+                    if attempt == 1:
+                        logger.warning("[Valuation] Max retries reached. Falling back to deterministic.")
 
         # Use Gemini results if available
         if gemini_analysis and "error" not in gemini_analysis:
