@@ -89,15 +89,6 @@ class DebateEngine:
         self,
         risk_profile: RiskProfile = "balanced",
         disconnection_event: Optional[asyncio.Event] = None,
-    ):
-        # User context for personalization (e.g. Renaissance Tier)
-        self.user_context = {} 
-        self.renaissance_context = {}
-
-    def __init__(
-        self,
-        risk_profile: RiskProfile = "balanced",
-        disconnection_event: Optional[asyncio.Event] = None,
         user_context: Optional[Dict[str, Any]] = None,
         renaissance_context: Optional[Dict[str, Any]] = None,
     ):
@@ -108,8 +99,6 @@ class DebateEngine:
         self._disconnection_event = disconnection_event
         self.user_context = user_context or {}
         self.renaissance_context = renaissance_context or {}
-
-
 
     async def orchestrate_debate_stream(
         self,
@@ -145,7 +134,7 @@ class DebateEngine:
             "valuation": valuation_insight,
         }
         self.user_context = user_context or {}
-        
+
         # Buffer for XML stream parsing
         self._xml_buffer = ""
 
@@ -396,25 +385,28 @@ class DebateEngine:
                     return
             elif chunk.get("type") == "error":
                 logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
-            
+
             # Artificial "Thinking" Delay to prevent "Dummy" feel
-            await asyncio.sleep(0.05) 
-            
+            await asyncio.sleep(0.05)
+
             # --- REAL-TIME XML PARSING ---
             # Parse the accumulating response to find completed XML tags
             # We use a simple regex approach on the full_response to find *new* tags
             # To avoid complexity, we just scan for the closing tags and emit if we haven't seen this ID yet.
             import re
-            
+
             # Pattern for Claims: <claim ...>content</claim>
             # Pattern for Impact: <portfolio_impact ...>content</portfolio_impact>
-            
-            # Note: This is a lightweight extraction. 
+
+            # Note: This is a lightweight extraction.
             # Ideally we'd use lxml.etree.iterparse but that requires valid chunks.
             # For 10x implementation, we can do a robust regex scan on the *tail* or full text.
-            
+
             # Let's extract 'claim' tags that have closed
-            claim_iter = re.finditer(r'<claim id="([^"]+)" type="([^"]+)" confidence="([^"]+)">([^<]+)</claim>', full_response)
+            claim_iter = re.finditer(
+                r'<claim id="([^"]+)" type="([^"]+)" confidence="([^"]+)">([^<]+)</claim>',
+                full_response,
+            )
             for match in claim_iter:
                 claim_id = match.group(1)
                 if claim_id not in self.emitted_ids:
@@ -423,15 +415,17 @@ class DebateEngine:
                         "event": "insight_extracted",
                         "data": {
                             "type": "claim",
-                            "classification": match.group(2), # fact/projection
+                            "classification": match.group(2),  # fact/projection
                             "confidence": float(match.group(3)),
                             "content": match.group(4).strip(),
-                            "agent": agent_name
-                        }
+                            "agent": agent_name,
+                        },
                     }
 
             # Extract Evidence
-            evidence_iter = re.finditer(r'<evidence target="([^"]+)" source="([^"]+)">([^<]+)</evidence>', full_response)
+            evidence_iter = re.finditer(
+                r'<evidence target="([^"]+)" source="([^"]+)">([^<]+)</evidence>', full_response
+            )
             for match in evidence_iter:
                 # Evidence doesn't have a unique ID usually, so we hash it or check strict equality
                 # For simplicity, we assume unique content for now or just emit.
@@ -446,12 +440,15 @@ class DebateEngine:
                             "target_claim_id": match.group(1),
                             "source": match.group(2),
                             "content": evidence_content,
-                            "agent": agent_name
-                        }
+                            "agent": agent_name,
+                        },
                     }
-                    
+
             # Extract Portfolio Impact
-            impact_iter = re.finditer(r'<portfolio_impact type="([^"]+)" magnitude="([^"]+)" score="([^"]+)">([^<]+)</portfolio_impact>', full_response)
+            impact_iter = re.finditer(
+                r'<portfolio_impact type="([^"]+)" magnitude="([^"]+)" score="([^"]+)">([^<]+)</portfolio_impact>',
+                full_response,
+            )
             for match in impact_iter:
                 impact_content = match.group(4).strip()
                 impact_id = f"imp_{hash(impact_content)}"
@@ -461,18 +458,20 @@ class DebateEngine:
                         "event": "insight_extracted",
                         "data": {
                             "type": "impact",
-                            "classification": match.group(1), # risk/opportunity
-                            "magnitude": match.group(2), # high/med/low
-                            "score": int(match.group(3)), # 0-10
+                            "classification": match.group(1),  # risk/opportunity
+                            "magnitude": match.group(2),  # high/med/low
+                            "score": int(match.group(3)),  # 0-10
                             "content": impact_content,
-                            "agent": agent_name
-                        }
-                    } 
+                            "agent": agent_name,
+                        },
+                    }
 
             # --- TRINITY CARD EXTRACTION (Scientist-Level) ---
-            
+
             # 1. Personalized Bull Case
-            bull_match = re.search(r'<bull_case_personalized>(.*?)</bull_case_personalized>', full_response, re.DOTALL)
+            bull_match = re.search(
+                r"<bull_case_personalized>(.*?)</bull_case_personalized>", full_response, re.DOTALL
+            )
             if bull_match:
                 bull_content = bull_match.group(1).strip()
                 bull_id = f"bull_{agent_name}_{round_num}"
@@ -483,12 +482,14 @@ class DebateEngine:
                         "data": {
                             "type": "bull_case_personalized",
                             "content": bull_content,
-                            "agent": agent_name
-                        }
+                            "agent": agent_name,
+                        },
                     }
 
             # 2. Personalized Bear Case
-            bear_match = re.search(r'<bear_case_personalized>(.*?)</bear_case_personalized>', full_response, re.DOTALL)
+            bear_match = re.search(
+                r"<bear_case_personalized>(.*?)</bear_case_personalized>", full_response, re.DOTALL
+            )
             if bear_match:
                 bear_content = bear_match.group(1).strip()
                 bear_id = f"bear_{agent_name}_{round_num}"
@@ -499,12 +500,14 @@ class DebateEngine:
                         "data": {
                             "type": "bear_case_personalized",
                             "content": bear_content,
-                            "agent": agent_name
-                        }
+                            "agent": agent_name,
+                        },
                     }
 
             # 3. Renaissance Verdict
-            ren_match = re.search(r'<renaissance_verdict>(.*?)</renaissance_verdict>', full_response, re.DOTALL)
+            ren_match = re.search(
+                r"<renaissance_verdict>(.*?)</renaissance_verdict>", full_response, re.DOTALL
+            )
             if ren_match:
                 ren_content = ren_match.group(1).strip()
                 ren_id = f"ren_{agent_name}_{round_num}"
@@ -515,8 +518,8 @@ class DebateEngine:
                         "data": {
                             "type": "renaissance_verdict",
                             "content": ren_content,
-                            "agent": agent_name
-                        }
+                            "agent": agent_name,
+                        },
                     }
 
         # Additional pause after full generation to let it sink in before next agent
@@ -524,14 +527,14 @@ class DebateEngine:
 
         # Fallback if empty (Gemini error or timeout)
         if not full_response:
-             # STRICT NO-MOCK POLICY: If agent fails to produce output, we error out or return empty.
-             # We do NOT fallback to "I recommend..." templates anymore.
-             logger.error(f"[{agent_name}] Failed to generate response (Empty output)")
-             yield {
-                 "event": "agent_error",
-                 "data": {"agent": agent_name, "error": "No data returned from analysis engine."}
-             }
-             return
+            # STRICT NO-MOCK POLICY: If agent fails to produce output, we error out or return empty.
+            # We do NOT fallback to "I recommend..." templates anymore.
+            logger.error(f"[{agent_name}] Failed to generate response (Empty output)")
+            yield {
+                "event": "agent_error",
+                "data": {"agent": agent_name, "error": "No data returned from analysis engine."},
+            }
+            return
 
         self.current_statements[agent_name] = full_response
 
@@ -550,9 +553,6 @@ class DebateEngine:
         if self._disconnection_event is not None and self._disconnection_event.is_set():
             logger.info(f"[{agent_name}] Client disconnected after completion, stopping...")
 
-
-
-
     def _build_agent_prompt(
         self,
         agent: str,
@@ -564,11 +564,13 @@ class DebateEngine:
         """Construct a specific prompt for the agent's turn."""
 
         # --- AlphaAgents Persona Injection ---
-        
+
         # Check for Renaissance Tier
-        is_renaissance = self.user_context.get("is_renaissance", False) or \
-                         self.user_context.get("tier") == "renaissance"
-        
+        is_renaissance = (
+            self.user_context.get("is_renaissance", False)
+            or self.user_context.get("tier") == "renaissance"
+        )
+
         complexity_instruction = ""
         if is_renaissance:
             complexity_instruction = "User is a RENAISSANCE TIER member. Use institutional-grade terminology, reference specific Greeks or advanced ratios if applicable. Do not simplify."
@@ -584,7 +586,7 @@ class DebateEngine:
                 "You focus on downside protection and long-term durability metrics (ROIC, Margins)."
             )
             details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Moat: {insight.business_moat}\n- Bull: {insight.bull_case}\n- Bear: {insight.bear_case}"
-        
+
         elif agent == "valuation":
             role_desc = (
                 "You are 'The Quant' (Valuation Expert). "
@@ -593,8 +595,8 @@ class DebateEngine:
                 "You are objective, precise, and emotionally detached."
             )
             details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Summary: {insight.summary}"
-        
-        else: # sentiment
+
+        else:  # sentiment
             role_desc = (
                 "You are 'The Trader' (Sentiment Analyst). "
                 "You care about market psychology, news catalysts, and social volume. "
@@ -662,7 +664,7 @@ class DebateEngine:
         {role_desc}
         
         AUDIENCE CONTEXT:
-        User Name: {self.user_context.get('user_name', 'Value Investor')}
+        User Name: {self.user_context.get("user_name", "Value Investor")}
         {user_context_str}
         {ren_context_str}
         {complexity_instruction}
@@ -698,8 +700,6 @@ class DebateEngine:
         </analysis>
         """
         return prompt
-        
-
 
     async def _build_consensus(
         self,
