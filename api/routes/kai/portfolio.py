@@ -20,8 +20,8 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.portfolio_import_service import (
@@ -233,8 +233,10 @@ async def import_portfolio_stream(
 
     **Authentication**: Requires valid VAULT_OWNER token.
 
-    **Disconnection Optimization**:
-    - Client disconnects → event.set() → LLM stops processing
+    **Disconnection Handling (Production-Grade)**:
+    - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
+    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
+    - Layer 3: request.is_disconnected() checked per-chunk for fast cleanup
     """
     # Verify user_id matches token
     if token_data["user_id"] != user_id:
@@ -252,12 +254,11 @@ async def import_portfolio_stream(
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
-    # Create disconnection event to stop streaming when client disconnects
-    _disconnection_event = asyncio.Event()
-
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import base64
+
+        HARD_TIMEOUT_SECONDS = 180  # 3-minute hard ceiling
 
         from google import genai
         from google.genai import types
@@ -268,6 +269,7 @@ async def import_portfolio_stream(
         thinking_enabled = True  # Flag to track if thinking is available
 
         try:
+          async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
             # Stage 1: Uploading
             yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
             await asyncio.sleep(0.1)  # Small delay for UI feedback
@@ -294,6 +296,11 @@ async def import_portfolio_stream(
 5. DISCLAIMERS & FOOTNOTES: Extract the full text of all legal messages, footnotes, and fine print.
 6. Parse negative numbers correctly: (1,234.56) means -1234.56
 7. Return ONLY valid JSON, no explanation or markdown.
+
+### CRITICAL ACCURACY RULES:
+8. TICKER SYMBOLS: The 'symbol_cusip' field MUST contain ONLY the actual stock ticker symbol as printed on the document (e.g., 'AAPL', 'MSFT'). Do NOT invent, guess, or fabricate tickers. If a ticker is not visible, use null.
+9. NUMERIC PRECISION: For 'quantity', 'price', and 'market_value' — ONLY use the exact numbers printed on the document. Do NOT estimate, round, or calculate approximate values. If a number is not clearly readable, use null.
+10. CROSS-VALIDATION: After extraction, verify that for each holding, market_value should approximately equal quantity × price. If they don't match, re-examine the document to resolve the discrepancy.
 
 ### JSON STRUCTURE REQUIREMENTS:
 Extract data into the following nested objects:
@@ -478,11 +485,14 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 config=config,
             )
 
+            client_disconnected = False
+
             async for chunk in stream:
                 # Check for disconnection after each chunk
                 if await request.is_disconnected():
-                    logger.info("[Portfolio Import] Client disconnected, stopping streaming...")
-                    return
+                    logger.info("[Portfolio Import] Client disconnected, stopping streaming — saving compute")
+                    client_disconnected = True
+                    break
 
                 # Handle chunks with thinking support
                 if hasattr(chunk, "candidates") and chunk.candidates:
@@ -516,6 +526,11 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                         full_response += chunk.text
                         chunk_count += 1
                         yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+
+            # Skip all post-processing if client disconnected — no point parsing for nobody
+            if client_disconnected:
+                logger.info("[Portfolio Import] Skipping post-processing, client gone — LLM compute saved")
+                return
 
             # Final extraction complete
             yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
@@ -562,12 +577,12 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 holdings = []
                 for h in detailed_holdings:
                     holding = {
-                        "symbol": h.get("symbol_cusip", h.get("symbol", "")),
+                        "symbol": h.get("symbol_cusip", h.get("symbol")),
                         "name": h.get("description", h.get("name", "Unknown")),
-                        "quantity": h.get("quantity", 0),
-                        "price": h.get("price", 0),
-                        "price_per_unit": h.get("price", 0),
-                        "market_value": h.get("market_value", 0),
+                        "quantity": h.get("quantity"),
+                        "price": h.get("price"),
+                        "price_per_unit": h.get("price"),
+                        "market_value": h.get("market_value"),
                         "cost_basis": h.get("cost_basis"),
                         "unrealized_gain_loss": h.get("unrealized_gain_loss"),
                         "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
@@ -578,12 +593,43 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     }
                     holdings.append(holding)
 
+                # ---- Validation pass: reject hallucinated or incomplete entries ----
+                raw_count = len(holdings)
+                validated_holdings = []
+                for h in holdings:
+                    # Drop entries with no symbol at all
+                    if not h.get("symbol"):
+                        logger.warning(f"[Portfolio Validation] Dropping holding with no symbol: {h.get('name', 'unnamed')}")
+                        continue
+                    # Drop entries with all-null financials (nothing useful extracted)
+                    if h.get("quantity") is None and h.get("market_value") is None and h.get("price") is None:
+                        logger.warning(f"[Portfolio Validation] Dropping holding with no financial data: {h['symbol']}")
+                        continue
+                    # Cross-validate: quantity * price ≈ market_value (within 10%)
+                    qty = h.get("quantity")
+                    price = h.get("price")
+                    mv = h.get("market_value")
+                    if qty is not None and price is not None and mv is not None:
+                        try:
+                            expected = float(qty) * float(price)
+                            actual = float(mv)
+                            if actual != 0 and abs(expected - actual) / abs(actual) > 0.10:
+                                logger.warning(
+                                    f"[Portfolio Validation] Market value mismatch for {h['symbol']}: "
+                                    f"qty({qty})*price({price})={expected:.2f} vs mv={actual:.2f}"
+                                )
+                        except (ValueError, TypeError):
+                            pass  # Non-numeric values, skip validation
+                    validated_holdings.append(h)
+                holdings = validated_holdings
+                logger.info(f"[Portfolio Validation] Validated {len(holdings)}/{raw_count} holdings")
+
                 # Calculate total_value if not provided
                 total_value = parsed_data.get("total_value", 0)
                 if not total_value and account_summary.get("ending_value"):
                     total_value = account_summary["ending_value"]
                 if not total_value and holdings:
-                    total_value = sum(h.get("market_value", 0) for h in holdings)
+                    total_value = sum(h.get("market_value", 0) or 0 for h in holdings)
 
                 # Build portfolio_data structure for frontend
                 portfolio_data = {
@@ -614,10 +660,16 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                 # Stage 5: Complete
                 yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
 
+
             except json.JSONDecodeError as e:
                 logger.error(f"JSON parse error: {e}")
                 yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
 
+          # end of asyncio.timeout context
+
+        except asyncio.TimeoutError:
+            logger.warning(f"[Portfolio Import] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM")
+            yield f"data: {json.dumps({'stage': 'error', 'message': f'Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. Please try again with a smaller file.'})}\n\n"
         except Exception as e:
             logger.error(f"SSE streaming error: {e}")
             import traceback
@@ -625,9 +677,9 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             logger.error(traceback.format_exc())
             yield f"data: {json.dumps({'stage': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(
+    return EventSourceResponse(
         event_generator(),
-        media_type="text/event-stream",
+        ping=15,  # Send ping every 15s — detects dead connections (app crash, force-close, network drop)
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
