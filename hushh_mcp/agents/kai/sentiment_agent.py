@@ -108,13 +108,15 @@ class SentimentAgent(HushhAgent):
                         news_articles=news_articles,
                         user_context=context,
                     )
-                    break 
+                    break
                 except Exception as e:
                     logger.warning(
-                        f"[Sentiment] Gemini analysis failed (attempt {attempt+1}/2): {e}"
+                        f"[Sentiment] Gemini analysis failed (attempt {attempt + 1}/2): {e}"
                     )
                     if attempt == 1:
-                        logger.warning("[Sentiment] Max retries reached. Falling back to deterministic.")
+                        logger.warning(
+                            "[Sentiment] Max retries reached. Falling back to deterministic."
+                        )
 
         # Use Gemini results if available
         if gemini_analysis and "error" not in gemini_analysis:
