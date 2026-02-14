@@ -112,21 +112,27 @@ class FundamentalAgent(HushhAgent):
         quant_metrics = calculate_quant_metrics(sec_filings)
 
         gemini_analysis = None
+        gemini_analysis = None
         if GOOGLE_API_KEY and self.processing_mode == "hybrid":
-            try:
-                gemini_analysis = await analyze_stock_with_gemini(
-                    ticker=ticker,
-                    user_id=user_id,
-                    consent_token=consent_token,
-                    sec_data=sec_filings,
-                    market_data=market_data,
-                    quant_metrics=quant_metrics,
-                    user_context=context,
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[Fundamental] Gemini analysis failed: {e}. Falling back to deterministic."
-                )
+            # Retry logic (Max 2 attempts)
+            for attempt in range(2):
+                try:
+                    gemini_analysis = await analyze_stock_with_gemini(
+                        ticker=ticker,
+                        user_id=user_id,
+                        consent_token=consent_token,
+                        sec_data=sec_filings,
+                        market_data=market_data,
+                        quant_metrics=quant_metrics,
+                        user_context=context,
+                    )
+                    break # Success
+                except Exception as e:
+                    logger.warning(
+                        f"[Fundamental] Gemini analysis failed (attempt {attempt+1}/2): {e}"
+                    )
+                    if attempt == 1:
+                        logger.warning("[Fundamental] Max retries reached. Falling back to deterministic.")
 
         # Step 3: Traditional Analysis (Fallback or baseline metrics)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
