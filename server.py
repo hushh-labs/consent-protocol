@@ -124,6 +124,11 @@ from api.routes import investors  # noqa: E402
 
 app.include_router(investors.router)
 
+# Public tickers search
+from api.routes import tickers  # noqa: E402
+
+app.include_router(tickers.router)
+
 # Phase 2: Identity Resolution (Consent-then-encrypt flow)
 from api.routes import identity  # noqa: E402
 
@@ -170,6 +175,22 @@ async def startup_consent_listener():
     from api.consent_listener import run_consent_listener
 
     asyncio.create_task(run_consent_listener())
+
+
+@app.on_event("startup")
+async def startup_ticker_cache():
+    """Preload SEC tickers into an in-memory cache on server startup.
+
+    This avoids a DB roundtrip for each keystroke in the frontend ticker search.
+    """
+    try:
+        from hushh_mcp.services.ticker_cache import ticker_cache
+
+        ticker_cache.load_from_db()
+    except Exception as e:
+        logger.warning(
+            "[startup] Ticker cache preload failed (routes will fall back to DB): %s", e
+        )
 
 
 # ============================================================================

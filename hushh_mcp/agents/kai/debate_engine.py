@@ -90,21 +90,33 @@ class DebateEngine:
         risk_profile: RiskProfile = "balanced",
         disconnection_event: Optional[asyncio.Event] = None,
     ):
+        # User context for personalization (e.g. Renaissance Tier)
+        self.user_context = {} 
+        self.renaissance_context = {}
+
+    def __init__(
+        self,
+        risk_profile: RiskProfile = "balanced",
+        disconnection_event: Optional[asyncio.Event] = None,
+        user_context: Optional[Dict[str, Any]] = None,
+        renaissance_context: Optional[Dict[str, Any]] = None,
+    ):
         self.risk_profile = risk_profile
         self.agent_weights = AGENT_WEIGHTS[risk_profile]
         self.rounds: List[DebateRound] = []
-
-        # Helper to track full text for the final result object
         self.current_statements: Dict[str, str] = {}
-
-        # Disconnection event to signal when client disconnects
         self._disconnection_event = disconnection_event
+        self.user_context = user_context or {}
+        self.renaissance_context = renaissance_context or {}
+
+
 
     async def orchestrate_debate_stream(
         self,
         fundamental_insight: FundamentalInsight,
         sentiment_insight: SentimentInsight,
         valuation_insight: ValuationInsight,
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], DebateResult]:
         """
         Orchestrate multi-agent debate with real-time streaming.
@@ -126,12 +138,16 @@ class DebateEngine:
             f"[Debate Stream] Starting {DEBATE_ROUNDS}-round debate with {self.risk_profile} profile"
         )
 
-        # Store insights for easy access
+        # Store insights and context
         self.insights = {
             "fundamental": fundamental_insight,
             "sentiment": sentiment_insight,
             "valuation": valuation_insight,
         }
+        self.user_context = user_context or {}
+        
+        # Buffer for XML stream parsing
+        self._xml_buffer = ""
 
         # =========================================================================
         # ROUND 1: Initial Presentation
@@ -355,6 +371,9 @@ class DebateEngine:
             },
         }
 
+        # Reset emitted IDs for this turn
+        self.emitted_ids = set()
+
         # Build prompt
         prompt = self._build_agent_prompt(
             agent_name, round_num, context_type, self.insights[agent_name], current_round_statements
@@ -377,16 +396,142 @@ class DebateEngine:
                     return
             elif chunk.get("type") == "error":
                 logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
+            
+            # Artificial "Thinking" Delay to prevent "Dummy" feel
+            await asyncio.sleep(0.05) 
+            
+            # --- REAL-TIME XML PARSING ---
+            # Parse the accumulating response to find completed XML tags
+            # We use a simple regex approach on the full_response to find *new* tags
+            # To avoid complexity, we just scan for the closing tags and emit if we haven't seen this ID yet.
+            import re
+            
+            # Pattern for Claims: <claim ...>content</claim>
+            # Pattern for Impact: <portfolio_impact ...>content</portfolio_impact>
+            
+            # Note: This is a lightweight extraction. 
+            # Ideally we'd use lxml.etree.iterparse but that requires valid chunks.
+            # For 10x implementation, we can do a robust regex scan on the *tail* or full text.
+            
+            # Let's extract 'claim' tags that have closed
+            claim_iter = re.finditer(r'<claim id="([^"]+)" type="([^"]+)" confidence="([^"]+)">([^<]+)</claim>', full_response)
+            for match in claim_iter:
+                claim_id = match.group(1)
+                if claim_id not in self.emitted_ids:
+                    self.emitted_ids.add(claim_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "claim",
+                            "classification": match.group(2), # fact/projection
+                            "confidence": float(match.group(3)),
+                            "content": match.group(4).strip(),
+                            "agent": agent_name
+                        }
+                    }
+
+            # Extract Evidence
+            evidence_iter = re.finditer(r'<evidence target="([^"]+)" source="([^"]+)">([^<]+)</evidence>', full_response)
+            for match in evidence_iter:
+                # Evidence doesn't have a unique ID usually, so we hash it or check strict equality
+                # For simplicity, we assume unique content for now or just emit.
+                evidence_content = match.group(3).strip()
+                evidence_id = f"ev_{hash(evidence_content)}"
+                if evidence_id not in self.emitted_ids:
+                    self.emitted_ids.add(evidence_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "evidence",
+                            "target_claim_id": match.group(1),
+                            "source": match.group(2),
+                            "content": evidence_content,
+                            "agent": agent_name
+                        }
+                    }
+                    
+            # Extract Portfolio Impact
+            impact_iter = re.finditer(r'<portfolio_impact type="([^"]+)" magnitude="([^"]+)" score="([^"]+)">([^<]+)</portfolio_impact>', full_response)
+            for match in impact_iter:
+                impact_content = match.group(4).strip()
+                impact_id = f"imp_{hash(impact_content)}"
+                if impact_id not in self.emitted_ids:
+                    self.emitted_ids.add(impact_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "impact",
+                            "classification": match.group(1), # risk/opportunity
+                            "magnitude": match.group(2), # high/med/low
+                            "score": int(match.group(3)), # 0-10
+                            "content": impact_content,
+                            "agent": agent_name
+                        }
+                    } 
+
+            # --- TRINITY CARD EXTRACTION (Scientist-Level) ---
+            
+            # 1. Personalized Bull Case
+            bull_match = re.search(r'<bull_case_personalized>(.*?)</bull_case_personalized>', full_response, re.DOTALL)
+            if bull_match:
+                bull_content = bull_match.group(1).strip()
+                bull_id = f"bull_{agent_name}_{round_num}"
+                if bull_id not in self.emitted_ids:
+                    self.emitted_ids.add(bull_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "bull_case_personalized",
+                            "content": bull_content,
+                            "agent": agent_name
+                        }
+                    }
+
+            # 2. Personalized Bear Case
+            bear_match = re.search(r'<bear_case_personalized>(.*?)</bear_case_personalized>', full_response, re.DOTALL)
+            if bear_match:
+                bear_content = bear_match.group(1).strip()
+                bear_id = f"bear_{agent_name}_{round_num}"
+                if bear_id not in self.emitted_ids:
+                    self.emitted_ids.add(bear_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "bear_case_personalized",
+                            "content": bear_content,
+                            "agent": agent_name
+                        }
+                    }
+
+            # 3. Renaissance Verdict
+            ren_match = re.search(r'<renaissance_verdict>(.*?)</renaissance_verdict>', full_response, re.DOTALL)
+            if ren_match:
+                ren_content = ren_match.group(1).strip()
+                ren_id = f"ren_{agent_name}_{round_num}"
+                if ren_id not in self.emitted_ids:
+                    self.emitted_ids.add(ren_id)
+                    yield {
+                        "event": "insight_extracted",
+                        "data": {
+                            "type": "renaissance_verdict",
+                            "content": ren_content,
+                            "agent": agent_name
+                        }
+                    }
+
+        # Additional pause after full generation to let it sink in before next agent
+        await asyncio.sleep(1.0)
 
         # Fallback if empty (Gemini error or timeout)
         if not full_response:
-            full_response = self._get_fallback_statement(
-                agent_name, self.insights[agent_name], round_num
-            )
-            yield {
-                "event": "agent_token",
-                "data": {"agent": agent_name, "text": full_response, "type": "token"},
-            }
+             # STRICT NO-MOCK POLICY: If agent fails to produce output, we error out or return empty.
+             # We do NOT fallback to "I recommend..." templates anymore.
+             logger.error(f"[{agent_name}] Failed to generate response (Empty output)")
+             yield {
+                 "event": "agent_error",
+                 "data": {"agent": agent_name, "error": "No data returned from analysis engine."}
+             }
+             return
 
         self.current_statements[agent_name] = full_response
 
@@ -405,6 +550,9 @@ class DebateEngine:
         if self._disconnection_event is not None and self._disconnection_event.is_set():
             logger.info(f"[{agent_name}] Client disconnected after completion, stopping...")
 
+
+
+
     def _build_agent_prompt(
         self,
         agent: str,
@@ -415,15 +563,44 @@ class DebateEngine:
     ) -> str:
         """Construct a specific prompt for the agent's turn."""
 
+        # --- AlphaAgents Persona Injection ---
+        
+        # Check for Renaissance Tier
+        is_renaissance = self.user_context.get("is_renaissance", False) or \
+                         self.user_context.get("tier") == "renaissance"
+        
+        complexity_instruction = ""
+        if is_renaissance:
+            complexity_instruction = "User is a RENAISSANCE TIER member. Use institutional-grade terminology, reference specific Greeks or advanced ratios if applicable. Do not simplify."
+        else:
+            complexity_instruction = "Use clear, professional financial language accessible to a knowledgeable retail investor."
+
         role_desc = ""
         if agent == "fundamental":
-            role_desc = "You are a Fundamental Analyst focused on SEC filings, moat, and cash flow."
-            details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Moat: {insight.business_moat}\n- Bull Case: {insight.bull_case}\n- Bear Case: {insight.bear_case}"
+            role_desc = (
+                "You are 'The Skeptic' (Fundamental Analyst). "
+                "You prioritize balance sheet strength, free cash flow, and competitive moats. "
+                "You are risk-averse and critical of hype. "
+                "You focus on downside protection and long-term durability metrics (ROIC, Margins)."
+            )
+            details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Moat: {insight.business_moat}\n- Bull: {insight.bull_case}\n- Bear: {insight.bear_case}"
+        
         elif agent == "valuation":
-            role_desc = "You are a Valuation Expert focused on fair value, multiples, and DCF."
+            role_desc = (
+                "You are 'The Quant' (Valuation Expert). "
+                "You rely strictly on numbers—DCF, multiples (P/E, EV/EBITDA), and historical averages. "
+                "You ignore narratives and focus on mispricing. "
+                "You are objective, precise, and emotionally detached."
+            )
             details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Summary: {insight.summary}"
-        else:
-            role_desc = "You are a Sentiment Analyst focused on market momentum and news catalysts."
+        
+        else: # sentiment
+            role_desc = (
+                "You are 'The Trader' (Sentiment Analyst). "
+                "You care about market psychology, news catalysts, and social volume. "
+                "You believe price action rules all. "
+                "You look for momentum, contrarian signals, and immediate catalysts."
+            )
             details = f"Your Analysis:\n- Recommendation: {insight.recommendation}\n- Score: {getattr(insight, 'sentiment_score', 'N/A')}\n- Catalysts: {getattr(insight, 'key_catalysts', 'N/A')}"
 
         previous_context = ""
@@ -432,19 +609,65 @@ class DebateEngine:
             for r in self.rounds:
                 for ag, stmt in r.agent_statements.items():
                     if ag != agent:
-                        previous_context += f"- {ag}: {stmt}\n"
+                        previous_context += f"- {ag.title()} Agent: {stmt}\n"
 
         task = ""
         if round_num == 1:
-            task = f"State your initial position clearly in 2-3 sentences. Support it with your key metrics. Be decisive ({insight.recommendation.upper()})."
+            task = (
+                f"State your initial position clearly in 3-4 sentences. "
+                f"Support it with your key metrics. Be decisive ({insight.recommendation.upper()}). "
+                "Do not hedge."
+            )
         else:
-            task = f"Critique the positions of other agents if they differ from yours. If you agree, explain why their evidence reinforces your view. Re-affirm your {insight.recommendation.upper()} stance. Keep it to 2-3 sentences."
+            task = (
+                f"Critique the positions of other agents if they differ from yours. "
+                f"If you agree, explain why their evidence reinforces your view from your specific lens. "
+                f"Re-affirm your {insight.recommendation.upper()} stance. "
+                "Keep it to 2-3 sentences. Be punchy."
+            )
+
+        # --- RENAISSANCE CONTEXT (The Truth) ---
+        ren_context_str = ""
+        if self.renaissance_context:
+            tier = self.renaissance_context.get("tier", "Standard")
+            fcf = self.renaissance_context.get("fcf_projection", "N/A")
+            thesis = self.renaissance_context.get("thesis", "N/A")
+            ren_context_str = f"""
+        RENAISSANCE DATA (THE MATHEMATICAL TRUTH):
+        - Tier: {tier} (ACE/KING = Strong Buy, QUEEN/JACK = Watch/Hold)
+        - Free Cash Flow: {fcf}
+        - Thesis: {thesis}
+        
+        MANDATE: You MUST reference this 'Renaissance' data. 
+        If Tier is ACE/KING, respect the math even if sentiment is weak.
+            """
+
+        # --- USER CONTEXT (The Person) ---
+        user_context_str = ""
+        if self.user_context:
+            risk = self.user_context.get("risk_profile", self.risk_profile)
+            holdings = self.user_context.get("holdings_summary", [])
+            port_alloc = self.user_context.get("portfolio_allocation", {})
+            user_context_str = f"""
+        USER CONTEXT (THE PERSON):
+        - Risk Profile: {risk}
+        - Portfolio Alloc: {port_alloc}
+        - Current Holdings: {holdings}
+        
+        MANDATE: You MUST personalize your argument.
+        Example: "Since you own [Holding], adding [Ticker] increases/decreases risk..."
+            """
 
         prompt = f"""
         {role_desc}
         
-        CONTEXT:
-        Risk Profile: {self.risk_profile}
+        AUDIENCE CONTEXT:
+        User Name: {self.user_context.get('user_name', 'Value Investor')}
+        {user_context_str}
+        {ren_context_str}
+        {complexity_instruction}
+        
+        YOUR DATA:
         {details}
         
         {previous_context}
@@ -452,16 +675,31 @@ class DebateEngine:
         TASK:
         {task}
         
-        Start directly with your statement. Do not use markdown.
+        STRICT OUTPUT FORMAT (XML):
+        <analysis>
+           <thought>Step-by-step reasoning...</thought>
+           
+           <claim id="c1" type="fact/projection" confidence="0.9">Key point here</claim>
+           <evidence target="c1" source="SEC/News">Quote or metric</evidence>
+           <portfolio_impact type="risk/opportunity" magnitude="high" score="8">Impact on user</portfolio_impact>
+           
+           <!-- TRINITY CARDS - MANDATORY SECTIONS -->
+           <bull_case_personalized>
+               [Why THIS USER specifically should be bullish. Reference their portfolio/goals.]
+           </bull_case_personalized>
+           
+           <bear_case_personalized>
+               [Why THIS USER specifically should be worried. Reference their risk profile/holdings.]
+           </bear_case_personalized>
+           
+           <renaissance_verdict>
+               [The Mathematical Truth. Cite the Tier, FCF, and Thesis explicitly.]
+           </renaissance_verdict>
+        </analysis>
         """
         return prompt
+        
 
-    def _get_fallback_statement(self, agent: str, insight: Any, round_num: int) -> str:
-        """Fallback dynamic templates if LLM fails."""
-        if round_num == 1:
-            return f"Based on my analysis, I recommend {insight.recommendation}. {insight.summary[:100]}..."
-        else:
-            return f"I maintain my position of {insight.recommendation} with {insight.confidence:.0%} confidence."
 
     async def _build_consensus(
         self,

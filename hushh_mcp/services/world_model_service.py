@@ -251,12 +251,14 @@ class WorldModelService:
                 if k not in ("holdings", "total_value", "vault_key", "password")
             }
 
-            result = await self.supabase.rpc(
+            # NOTE: get_db() returns a sync Supabase client; do not await.
+            # Also ensure p_summary is JSON-serializable for psycopg2.
+            result = self.supabase.rpc(
                 "merge_domain_summary",
                 {
                     "p_user_id": user_id,
                     "p_domain": domain,
-                    "p_summary": sanitized,
+                    "p_summary": json.dumps(sanitized),
                 },
             ).execute()
 

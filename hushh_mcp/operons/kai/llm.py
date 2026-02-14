@@ -10,17 +10,38 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-# New google.genai SDK (replaces deprecated google.generativeai)
+# Gemini SDK compatibility
+#
+# We support two possible SDKs:
+# - New: `google-genai`  -> `from google import genai` and `from google.genai import types`
+# - Legacy (deprecated): `google-generativeai` -> `import google.generativeai as genai`
+#
+# In dev environments, only the legacy package may be installed. We fall back
+# to it to avoid noisy runtime errors.
 try:
-    from google import genai
-    from google.genai import types
+    from google import genai  # type: ignore
+    from google.genai import types  # type: ignore
 
     GEMINI_AVAILABLE = True
+    GEMINI_SDK = "google-genai"
 except ImportError:
-    GEMINI_AVAILABLE = False
-    genai = None  # type: ignore
-    types = None  # type: ignore
-    logging.warning("⚠️ google.genai not found. Kai agent will run in logic-only mode.")
+    try:
+        import google.generativeai as genai  # type: ignore
+
+        types = None  # type: ignore
+        GEMINI_AVAILABLE = True
+        GEMINI_SDK = "google-generativeai"
+        logging.warning(
+            "⚠️ Using deprecated google.generativeai SDK fallback. Install google-genai to remove this warning."
+        )
+    except ImportError:
+        GEMINI_AVAILABLE = False
+        GEMINI_SDK = "none"
+        genai = None  # type: ignore
+        types = None  # type: ignore
+        logging.warning(
+            "⚠️ No Gemini SDK found (google-genai or google-generativeai). Kai agent will run in logic-only mode."
+        )
 
 from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.consent.token import validate_token
@@ -35,13 +56,45 @@ logger = logging.getLogger(__name__)
 _gemini_client = None
 if GEMINI_AVAILABLE and GOOGLE_API_KEY:
     try:
-        _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
+        if GEMINI_SDK == "google-genai":
+            _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
+        else:
+            # google.generativeai uses module-level configuration
+            genai.configure(api_key=GOOGLE_API_KEY)
+            _gemini_client = None
     except Exception as e:
         logger.error(f"Failed to initialize Gemini Client: {e}")
         GEMINI_AVAILABLE = False
 elif not GOOGLE_API_KEY:
     logger.warning("⚠️ GOOGLE_API_KEY not found. Gemini operons will be unavailable.")
 
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    """Robustly extract JSON from a string, handling markdown and noise."""
+    text = text.strip()
+    
+    # 1. Try standard markdown code block removal
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    
+    text = text.strip()
+    
+    # 2. Try identifying the first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    
+    if start != -1 and end != -1 and end > start:
+        text = text[start : end + 1]
+        
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning(f"[Kai LLM] JSON parse failed on text: {text[:100]}...")
+        return {}
 
 async def analyze_stock_with_gemini(
     ticker: str,
@@ -203,20 +256,34 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-        # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
-        response = await asyncio.wait_for(
-            model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
-            timeout=40.0,
-        )
+        if GEMINI_SDK == "google-genai":
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
+            response = await asyncio.wait_for(
+                model.generate_content_async(
+                    f"{system_instruction}\n\nCONTEXT DATA:\n{context}"
+                ),
+                timeout=40.0,
+            )
+        else:
+            # google.generativeai fallback
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    model.generate_content,
+                    f"{system_instruction}\n\nCONTEXT DATA:\n{context}",
+                ),
+                timeout=40.0,
+            )
 
-        text = response.text.strip()
-        if text.startswith("```json"):
-            text = text[7:-3].strip()
-        elif text.startswith("```"):
-            text = text[3:-3].strip()
+        analysis = _extract_json(response.text)
+        if not analysis:
+             raise ValueError("Failed to parse JSON from Gemini response")
 
-        analysis = json.loads(text)
+        # Fallback to defaults if keys missing to prevent "N/A"
+        analysis.setdefault("bull_case", "Growth potential through market expansion.")
+        analysis.setdefault("bear_case", "Risks include competitive pressure and macro headwinds.")
+        
         logger.info(f"[Gemini Operon] Deep Fundamental Report success for {ticker}")
         return analysis
 
@@ -300,11 +367,21 @@ Analyze the provided news articles and assess market sentiment for this stock.
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-        response = await asyncio.wait_for(
-            model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
-            timeout=30.0,
-        )
+        if GEMINI_SDK == "google-genai":
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            response = await asyncio.wait_for(
+                model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
+                timeout=30.0,
+            )
+        else:
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    model.generate_content,
+                    f"{system_instruction}\n\nCONTEXT:\n{context}",
+                ),
+                timeout=30.0,
+            )
 
         text = response.text.strip()
         if text.startswith("```json"):
@@ -408,11 +485,21 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 
     # 3. Call Gemini
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-        response = await asyncio.wait_for(
-            model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
-            timeout=30.0,
-        )
+        if GEMINI_SDK == "google-genai":
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            response = await asyncio.wait_for(
+                model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
+                timeout=30.0,
+            )
+        else:
+            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    model.generate_content,
+                    f"{system_instruction}\n\nCONTEXT:\n{context}",
+                ),
+                timeout=30.0,
+            )
 
         text = response.text.strip()
         if text.startswith("```json"):
@@ -453,6 +540,14 @@ async def stream_gemini_response(
     Uses Gemini 3 Flash with synchronous streaming wrapped in async context.
     This is more reliable than async iteration which may not yield correctly.
     """
+    if GEMINI_SDK != "google-genai":
+        # Streaming is only implemented for the new google-genai client.
+        yield {
+            "type": "error",
+            "message": "Gemini streaming unavailable (requires google-genai SDK)",
+        }
+        return
+
     if not _gemini_client:
         logger.error("[Gemini Streaming] No client configured!")
         yield {"type": "error", "message": "Gemini API key not configured"}
@@ -462,6 +557,13 @@ async def stream_gemini_response(
 
     try:
         # Use ASYNC streaming to prevent blocking the event loop
+        if types is None:
+            yield {
+                "type": "error",
+                "message": "Gemini streaming unavailable (google.genai.types missing)",
+            }
+            return
+
         config = types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=4096,
