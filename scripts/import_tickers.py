@@ -32,30 +32,25 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-from hushh_mcp.services.ticker_db import TickerDBService
 
 # NOTE:
 # The Supabase Session Pooler can be slow for very large multi-value UPSERTs.
 # We therefore stream inserts via psycopg2 (already in requirements) with
 # execute_values for robust batching.
 import psycopg2
+from dotenv import load_dotenv
 from psycopg2.extras import execute_values
 
+load_dotenv()
 
 logger = logging.getLogger("import_tickers")
 logging.basicConfig(level=logging.INFO)
 
 SEC_URL = "https://www.sec.gov/files/company_tickers.json"
-DEFAULT_OUTFILE = "/tmp/company_tickers.json"
+DEFAULT_OUTFILE = "/tmp/company_tickers.json"  # noqa: S108
 DEFAULT_UA = "Hushh-Research/1.0 (eng@hush1one.com)"
 
 
@@ -83,7 +78,7 @@ def ensure_file(path: str, user_agent: str) -> str:
         "-o",
         path,
     ]
-    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)  # noqa: S603
     if result.returncode != 0:
         raise RuntimeError(
             f"curl failed (code={result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
@@ -128,7 +123,9 @@ def parse_rows(data: Any) -> List[Dict[str, Any]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", default="", help="Path to downloaded company_tickers.json")
-    parser.add_argument("--out", default=DEFAULT_OUTFILE, help="Download path when --file not provided")
+    parser.add_argument(
+        "--out", default=DEFAULT_OUTFILE, help="Download path when --file not provided"
+    )
     parser.add_argument("--batch", type=int, default=500, help="Batch size for upserts")
     parser.add_argument("--user-agent", default=DEFAULT_UA, help="SEC-compliant User-Agent")
     parser.add_argument("--sleep", type=float, default=0.0, help="Sleep seconds between batches")
@@ -216,7 +213,9 @@ def main() -> int:
                         execute_values(cur, upsert_sql, values, page_size=len(values))
                         conn.commit()
                         done += len(batch)
-                        logger.info("Batch %d: upserted %d (progress %d/%d)", idx, len(batch), done, total)
+                        logger.info(
+                            "Batch %d: upserted %d (progress %d/%d)", idx, len(batch), done, total
+                        )
                         break
                     except Exception as e:
                         conn.rollback()
@@ -224,7 +223,13 @@ def main() -> int:
                             logger.error("Batch %d failed after %d attempts: %s", idx, attempt, e)
                             return 1
                         backoff = 1.5 * attempt
-                        logger.warning("Batch %d failed (attempt %d): %s; retrying in %.1fs", idx, attempt, e, backoff)
+                        logger.warning(
+                            "Batch %d failed (attempt %d): %s; retrying in %.1fs",
+                            idx,
+                            attempt,
+                            e,
+                            backoff,
+                        )
                         time.sleep(backoff)
 
                 if args.sleep and args.sleep > 0:

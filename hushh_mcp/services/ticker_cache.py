@@ -24,7 +24,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from hushh_mcp.services.ticker_db import TickerDBService
 
@@ -75,12 +75,7 @@ class TickerCache:
         svc = TickerDBService()
         db = svc._get_db()
 
-        res = (
-            db.table("tickers")
-            .select("ticker,title,cik,exchange")
-            .order("ticker")
-            .execute()
-        )
+        res = db.table("tickers").select("ticker,title,cik,exchange").order("ticker").execute()
         data = res.data or []
 
         rows: List[TickerRow] = []

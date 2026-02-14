@@ -126,13 +126,15 @@ class FundamentalAgent(HushhAgent):
                         quant_metrics=quant_metrics,
                         user_context=context,
                     )
-                    break # Success
+                    break  # Success
                 except Exception as e:
                     logger.warning(
-                        f"[Fundamental] Gemini analysis failed (attempt {attempt+1}/2): {e}"
+                        f"[Fundamental] Gemini analysis failed (attempt {attempt + 1}/2): {e}"
                     )
                     if attempt == 1:
-                        logger.warning("[Fundamental] Max retries reached. Falling back to deterministic.")
+                        logger.warning(
+                            "[Fundamental] Max retries reached. Falling back to deterministic."
+                        )
 
         # Step 3: Traditional Analysis (Fallback or baseline metrics)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
