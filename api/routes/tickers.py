@@ -9,8 +9,8 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from hushh_mcp.services.ticker_db import TickerDBService
 from hushh_mcp.services.ticker_cache import ticker_cache
+from hushh_mcp.services.ticker_db import TickerDBService
 
 logger = logging.getLogger(__name__)
 
