@@ -286,10 +286,15 @@ async def create_tickers(pool: asyncpg.Pool):
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))")
-    await pool.execute("CREATE INDEX IF NOT EXISTS idx_tickers_title ON tickers USING GIN (to_tsvector('english', coalesce(title, ''))) ")
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tickers_title ON tickers USING GIN (to_tsvector('english', coalesce(title, ''))) "
+    )
 
     print("✅ tickers ready!")
+
 
 # Table registry for modular access
 TABLE_CREATORS = {

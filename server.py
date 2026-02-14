@@ -188,9 +188,7 @@ async def startup_ticker_cache():
 
         ticker_cache.load_from_db()
     except Exception as e:
-        logger.warning(
-            "[startup] Ticker cache preload failed (routes will fall back to DB): %s", e
-        )
+        logger.warning("[startup] Ticker cache preload failed (routes will fall back to DB): %s", e)
 
 
 # ============================================================================
