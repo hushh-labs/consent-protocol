@@ -10,14 +10,15 @@ Authentication:
 - Requires VAULT_OWNER token (consent-first architecture)
 """
 
+import asyncio
 import json
 import logging
 from decimal import Decimal
 from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.renaissance_service import get_renaissance_service
@@ -627,8 +628,10 @@ async def analyze_portfolio_losers_stream(
     - 'complete' events: Final parsed JSON result
     - 'error' events: Error messages
 
-    **Disconnection Optimization**:
-    - Client disconnects → `raw_request.is_disconnected()` → LLM stops processing
+    **Disconnection Handling (Production-Grade)**:
+    - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
+    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
+    - Layer 3: raw_request.is_disconnected() checked per-chunk for fast cleanup
     """
     if token_data["user_id"] != request.user_id:
         raise HTTPException(
@@ -636,7 +639,10 @@ async def analyze_portfolio_losers_stream(
         )
 
     async def generate():
+        HARD_TIMEOUT_SECONDS = 180  # 3-minute hard ceiling
+
         try:
+          async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
             # Stage 1: Building context
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
 
@@ -697,11 +703,14 @@ async def analyze_portfolio_losers_stream(
                 config=config,
             )
 
+            client_disconnected = False
+
             # Then iterate over the stream
             async for chunk in stream:
                 # Check if client disconnected
                 if await raw_request.is_disconnected():
-                    logger.info("[Losers Analysis] Client disconnected, stopping streaming...")
+                    logger.info("[Losers Analysis] Client disconnected, stopping streaming — saving compute")
+                    client_disconnected = True
                     break
 
                 # Check for thought summaries (Gemini thinking mode)
@@ -719,6 +728,11 @@ async def analyze_portfolio_losers_stream(
                                     full_response += part.text
                                     yield f"data: {json.dumps({'type': 'chunk', 'text': part.text, 'count': chunk_count})}\n\n"
 
+            # Skip all post-processing if client disconnected — no point parsing for nobody
+            if client_disconnected:
+                logger.info("[Losers Analysis] Skipping post-processing, client gone — LLM compute saved")
+                return
+
             # Stage 3: Extracting results
             yield f"data: {json.dumps({'type': 'stage', 'stage': 'extracting', 'message': 'Extracting optimization recommendations...'})}\n\n"
 
@@ -732,15 +746,20 @@ async def analyze_portfolio_losers_stream(
                 logger.error(f"Failed to parse LLM response: {parse_error}")
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to parse AI response', 'raw': full_response[:500]})}\n\n"
 
+          # end of asyncio.timeout context
+
+        except asyncio.TimeoutError:
+            logger.warning(f"[Losers Analysis] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Analysis timed out after {HARD_TIMEOUT_SECONDS}s. Please try again.'})}\n\n"
         except HTTPException as http_err:
             yield f"data: {json.dumps({'type': 'error', 'message': http_err.detail})}\n\n"
         except Exception as e:
             logger.error(f"Streaming losers analysis failed: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(
+    return EventSourceResponse(
         generate(),
-        media_type="text/event-stream",
+        ping=15,  # Send ping every 15s — detects dead connections (app crash, force-close, network drop)
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
