@@ -269,24 +269,24 @@ async def import_portfolio_stream(
         thinking_enabled = True  # Flag to track if thinking is available
 
         try:
-          async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
-            # Stage 1: Uploading
-            yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
-            await asyncio.sleep(0.1)  # Small delay for UI feedback
+            async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
+                # Stage 1: Uploading
+                yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
+                await asyncio.sleep(0.1)  # Small delay for UI feedback
 
-            # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
-            client = genai.Client(http_options=HttpOptions(api_version="v1"))
-            model_to_use = GEMINI_MODEL
-            logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
+                # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
+                client = genai.Client(http_options=HttpOptions(api_version="v1"))
+                model_to_use = GEMINI_MODEL
+                logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
 
-            # Stage 2: Analyzing
-            yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
+                # Stage 2: Analyzing
+                yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
 
-            # Encode PDF as base64
-            pdf_base64 = base64.b64encode(content).decode("utf-8")
+                # Encode PDF as base64
+                pdf_base64 = base64.b64encode(content).decode("utf-8")
 
-            # Build prompt for comprehensive forensic extraction
-            prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
+                # Build prompt for comprehensive forensic extraction
+                prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
 
 ### INSTRUCTIONS:
 1. DO NOT SUMMARIZE. Extract all text, numbers, and dates verbatim.
@@ -439,236 +439,255 @@ Extract data into the following nested objects:
 
 CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no explanation or markdown."""
 
-            # Create content with PDF
-            contents = [
-                prompt,
-                types.Part(inline_data=types.Blob(mime_type="application/pdf", data=pdf_base64)),
-            ]
-
-            # Configure with thinking enabled for Gemini 3 Flash
-            try:
-                config = types.GenerateContentConfig(
-                    temperature=1,
-                    max_output_tokens=32768,
-                    thinking_config=types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_level=types.ThinkingLevel.MEDIUM,
+                # Create content with PDF
+                contents = [
+                    prompt,
+                    types.Part(
+                        inline_data=types.Blob(mime_type="application/pdf", data=pdf_base64)
                     ),
-                )
-                logger.info("SSE: Thinking mode enabled with level=MEDIUM")
-            except Exception as thinking_error:
-                # Fallback if thinking config not supported
-                logger.warning(
-                    f"SSE: Thinking config not supported, falling back: {thinking_error}"
-                )
-                thinking_enabled = False
-                config = types.GenerateContentConfig(
-                    temperature=0.1,
-                    max_output_tokens=32768,
-                )
+                ]
 
-            # Stage 3: Thinking/Streaming
-            if thinking_enabled:
-                yield f"data: {json.dumps({'stage': 'thinking', 'message': 'AI reasoning about document structure...'})}\n\n"
-            else:
-                yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting financial data...'})}\n\n"
+                # Configure with thinking enabled for Gemini 3 Flash
+                try:
+                    config = types.GenerateContentConfig(
+                        temperature=1,
+                        max_output_tokens=32768,
+                        thinking_config=types.ThinkingConfig(
+                            include_thoughts=True,
+                            thinking_level=types.ThinkingLevel.MEDIUM,
+                        ),
+                    )
+                    logger.info("SSE: Thinking mode enabled with level=MEDIUM")
+                except Exception as thinking_error:
+                    # Fallback if thinking config not supported
+                    logger.warning(
+                        f"SSE: Thinking config not supported, falling back: {thinking_error}"
+                    )
+                    thinking_enabled = False
+                    config = types.GenerateContentConfig(
+                        temperature=0.1,
+                        max_output_tokens=32768,
+                    )
 
-            full_response = ""
-            chunk_count = 0
-            thought_count = 0
-            in_extraction_phase = False
-
-            # Use official Gemini streaming API with thinking support
-            stream = await client.aio.models.generate_content_stream(
-                model=model_to_use,
-                contents=contents,
-                config=config,
-            )
-
-            client_disconnected = False
-
-            async for chunk in stream:
-                # Check for disconnection after each chunk
-                if await request.is_disconnected():
-                    logger.info("[Portfolio Import] Client disconnected, stopping streaming — saving compute")
-                    client_disconnected = True
-                    break
-
-                # Handle chunks with thinking support
-                if hasattr(chunk, "candidates") and chunk.candidates:
-                    candidate = chunk.candidates[0]
-                    if hasattr(candidate, "content") and candidate.content:
-                        for part in candidate.content.parts:
-                            if not hasattr(part, "text") or not part.text:
-                                continue
-
-                            # Check if this is a thought (reasoning) or actual response
-                            is_thought = hasattr(part, "thought") and part.thought
-
-                            if is_thought:
-                                # Stream thought summary to frontend
-                                thought_count += 1
-                                yield f"data: {json.dumps({'stage': 'thinking', 'thought': part.text, 'thought_count': thought_count, 'is_thought': True})}\n\n"
-                            else:
-                                # This is the actual JSON response
-                                if not in_extraction_phase:
-                                    in_extraction_phase = True
-                                    yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting structured data...'})}\n\n"
-
-                                full_response += part.text
-                                chunk_count += 1
-
-                                # Stream extraction progress
-                                yield f"data: {json.dumps({'stage': 'extracting', 'text': part.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                # Stage 3: Thinking/Streaming
+                if thinking_enabled:
+                    yield f"data: {json.dumps({'stage': 'thinking', 'message': 'AI reasoning about document structure...'})}\n\n"
                 else:
-                    # Fallback for non-thinking response format
-                    if chunk.text:
-                        full_response += chunk.text
-                        chunk_count += 1
-                        yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                    yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting financial data...'})}\n\n"
 
-            # Skip all post-processing if client disconnected — no point parsing for nobody
-            if client_disconnected:
-                logger.info("[Portfolio Import] Skipping post-processing, client gone — LLM compute saved")
-                return
+                full_response = ""
+                chunk_count = 0
+                thought_count = 0
+                in_extraction_phase = False
 
-            # Final extraction complete
-            yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
-
-            # Stage 4: Parsing
-            yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
-
-            # Parse JSON from response
-            try:
-                # Clean up response
-                json_text = full_response.strip()
-                if json_text.startswith("```json"):
-                    json_text = json_text[7:]
-                if json_text.startswith("```"):
-                    json_text = json_text[3:]
-                if json_text.endswith("```"):
-                    json_text = json_text[:-3]
-                json_text = json_text.strip()
-
-                parsed_data = json.loads(json_text)
-
-                # Transform Gemini response to match frontend expected structure
-                account_metadata = parsed_data.get("account_metadata", {})
-                account_info = {
-                    "holder_name": account_metadata.get("account_holder"),
-                    "account_number": account_metadata.get("account_number"),
-                    "account_type": account_metadata.get("account_type"),
-                    "brokerage_name": account_metadata.get("institution_name"),
-                    "statement_period_start": account_metadata.get("statement_period_start"),
-                    "statement_period_end": account_metadata.get("statement_period_end"),
-                }
-
-                portfolio_summary = parsed_data.get("portfolio_summary", {})
-                account_summary = {
-                    "beginning_value": portfolio_summary.get("beginning_value"),
-                    "ending_value": portfolio_summary.get("ending_value"),
-                    "change_in_value": portfolio_summary.get("total_change"),
-                    "cash_balance": parsed_data.get("cash_balance", 0),
-                    "net_deposits_withdrawals": portfolio_summary.get("net_deposits_withdrawals"),
-                    "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
-                }
-
-                detailed_holdings = parsed_data.get("detailed_holdings", [])
-                holdings = []
-                for h in detailed_holdings:
-                    holding = {
-                        "symbol": h.get("symbol_cusip", h.get("symbol")),
-                        "name": h.get("description", h.get("name", "Unknown")),
-                        "quantity": h.get("quantity"),
-                        "price": h.get("price"),
-                        "price_per_unit": h.get("price"),
-                        "market_value": h.get("market_value"),
-                        "cost_basis": h.get("cost_basis"),
-                        "unrealized_gain_loss": h.get("unrealized_gain_loss"),
-                        "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
-                        "asset_type": h.get("asset_class"),
-                        "acquisition_date": h.get("acquisition_date"),
-                        "estimated_annual_income": h.get("estimated_annual_income"),
-                        "est_yield": h.get("est_yield"),
-                    }
-                    holdings.append(holding)
-
-                # ---- Validation pass: reject hallucinated or incomplete entries ----
-                raw_count = len(holdings)
-                validated_holdings = []
-                for h in holdings:
-                    # Drop entries with no symbol at all
-                    if not h.get("symbol"):
-                        logger.warning(f"[Portfolio Validation] Dropping holding with no symbol: {h.get('name', 'unnamed')}")
-                        continue
-                    # Drop entries with all-null financials (nothing useful extracted)
-                    if h.get("quantity") is None and h.get("market_value") is None and h.get("price") is None:
-                        logger.warning(f"[Portfolio Validation] Dropping holding with no financial data: {h['symbol']}")
-                        continue
-                    # Cross-validate: quantity * price ≈ market_value (within 10%)
-                    qty = h.get("quantity")
-                    price = h.get("price")
-                    mv = h.get("market_value")
-                    if qty is not None and price is not None and mv is not None:
-                        try:
-                            expected = float(qty) * float(price)
-                            actual = float(mv)
-                            if actual != 0 and abs(expected - actual) / abs(actual) > 0.10:
-                                logger.warning(
-                                    f"[Portfolio Validation] Market value mismatch for {h['symbol']}: "
-                                    f"qty({qty})*price({price})={expected:.2f} vs mv={actual:.2f}"
-                                )
-                        except (ValueError, TypeError):
-                            pass  # Non-numeric values, skip validation
-                    validated_holdings.append(h)
-                holdings = validated_holdings
-                logger.info(f"[Portfolio Validation] Validated {len(holdings)}/{raw_count} holdings")
-
-                # Calculate total_value if not provided
-                total_value = parsed_data.get("total_value", 0)
-                if not total_value and account_summary.get("ending_value"):
-                    total_value = account_summary["ending_value"]
-                if not total_value and holdings:
-                    total_value = sum(h.get("market_value", 0) or 0 for h in holdings)
-
-                # Build portfolio_data structure for frontend
-                portfolio_data = {
-                    "account_info": account_info,
-                    "account_summary": account_summary,
-                    "asset_allocation": parsed_data.get("asset_allocation"),
-                    "holdings": holdings,
-                    "income_summary": parsed_data.get("income_summary"),
-                    "realized_gain_loss": parsed_data.get("realized_gain_loss"),
-                    "cash_flow": parsed_data.get("cash_flow"),
-                    "cash_management": parsed_data.get("cash_management"),
-                    "projections_and_mrd": parsed_data.get("projections_and_mrd"),
-                    "historical_values": parsed_data.get("historical_values"),
-                    "ytd_metrics": parsed_data.get("ytd_metrics"),
-                    "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
-                    "cash_balance": parsed_data.get("cash_balance", 0),
-                    "total_value": total_value,
-                    "kpis": {
-                        "holdings_count": len(holdings),
-                        "total_value": total_value,
-                    },
-                }
-
-                logger.info(
-                    f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}"
+                # Use official Gemini streaming API with thinking support
+                stream = await client.aio.models.generate_content_stream(
+                    model=model_to_use,
+                    contents=contents,
+                    config=config,
                 )
 
-                # Stage 5: Complete
-                yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
+                client_disconnected = False
 
+                async for chunk in stream:
+                    # Check for disconnection after each chunk
+                    if await request.is_disconnected():
+                        logger.info(
+                            "[Portfolio Import] Client disconnected, stopping streaming — saving compute"
+                        )
+                        client_disconnected = True
+                        break
 
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON parse error: {e}")
-                yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
+                    # Handle chunks with thinking support
+                    if hasattr(chunk, "candidates") and chunk.candidates:
+                        candidate = chunk.candidates[0]
+                        if hasattr(candidate, "content") and candidate.content:
+                            for part in candidate.content.parts:
+                                if not hasattr(part, "text") or not part.text:
+                                    continue
 
-          # end of asyncio.timeout context
+                                # Check if this is a thought (reasoning) or actual response
+                                is_thought = hasattr(part, "thought") and part.thought
+
+                                if is_thought:
+                                    # Stream thought summary to frontend
+                                    thought_count += 1
+                                    yield f"data: {json.dumps({'stage': 'thinking', 'thought': part.text, 'thought_count': thought_count, 'is_thought': True})}\n\n"
+                                else:
+                                    # This is the actual JSON response
+                                    if not in_extraction_phase:
+                                        in_extraction_phase = True
+                                        yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting structured data...'})}\n\n"
+
+                                    full_response += part.text
+                                    chunk_count += 1
+
+                                    # Stream extraction progress
+                                    yield f"data: {json.dumps({'stage': 'extracting', 'text': part.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                    else:
+                        # Fallback for non-thinking response format
+                        if chunk.text:
+                            full_response += chunk.text
+                            chunk_count += 1
+                            yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+
+                # Skip all post-processing if client disconnected — no point parsing for nobody
+                if client_disconnected:
+                    logger.info(
+                        "[Portfolio Import] Skipping post-processing, client gone — LLM compute saved"
+                    )
+                    return
+
+                # Final extraction complete
+                yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
+
+                # Stage 4: Parsing
+                yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
+
+                # Parse JSON from response
+                try:
+                    # Clean up response
+                    json_text = full_response.strip()
+                    if json_text.startswith("```json"):
+                        json_text = json_text[7:]
+                    if json_text.startswith("```"):
+                        json_text = json_text[3:]
+                    if json_text.endswith("```"):
+                        json_text = json_text[:-3]
+                    json_text = json_text.strip()
+
+                    parsed_data = json.loads(json_text)
+
+                    # Transform Gemini response to match frontend expected structure
+                    account_metadata = parsed_data.get("account_metadata", {})
+                    account_info = {
+                        "holder_name": account_metadata.get("account_holder"),
+                        "account_number": account_metadata.get("account_number"),
+                        "account_type": account_metadata.get("account_type"),
+                        "brokerage_name": account_metadata.get("institution_name"),
+                        "statement_period_start": account_metadata.get("statement_period_start"),
+                        "statement_period_end": account_metadata.get("statement_period_end"),
+                    }
+
+                    portfolio_summary = parsed_data.get("portfolio_summary", {})
+                    account_summary = {
+                        "beginning_value": portfolio_summary.get("beginning_value"),
+                        "ending_value": portfolio_summary.get("ending_value"),
+                        "change_in_value": portfolio_summary.get("total_change"),
+                        "cash_balance": parsed_data.get("cash_balance", 0),
+                        "net_deposits_withdrawals": portfolio_summary.get(
+                            "net_deposits_withdrawals"
+                        ),
+                        "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
+                    }
+
+                    detailed_holdings = parsed_data.get("detailed_holdings", [])
+                    holdings = []
+                    for h in detailed_holdings:
+                        holding = {
+                            "symbol": h.get("symbol_cusip", h.get("symbol")),
+                            "name": h.get("description", h.get("name", "Unknown")),
+                            "quantity": h.get("quantity"),
+                            "price": h.get("price"),
+                            "price_per_unit": h.get("price"),
+                            "market_value": h.get("market_value"),
+                            "cost_basis": h.get("cost_basis"),
+                            "unrealized_gain_loss": h.get("unrealized_gain_loss"),
+                            "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
+                            "asset_type": h.get("asset_class"),
+                            "acquisition_date": h.get("acquisition_date"),
+                            "estimated_annual_income": h.get("estimated_annual_income"),
+                            "est_yield": h.get("est_yield"),
+                        }
+                        holdings.append(holding)
+
+                    # ---- Validation pass: reject hallucinated or incomplete entries ----
+                    raw_count = len(holdings)
+                    validated_holdings = []
+                    for h in holdings:
+                        # Drop entries with no symbol at all
+                        if not h.get("symbol"):
+                            logger.warning(
+                                f"[Portfolio Validation] Dropping holding with no symbol: {h.get('name', 'unnamed')}"
+                            )
+                            continue
+                        # Drop entries with all-null financials (nothing useful extracted)
+                        if (
+                            h.get("quantity") is None
+                            and h.get("market_value") is None
+                            and h.get("price") is None
+                        ):
+                            logger.warning(
+                                f"[Portfolio Validation] Dropping holding with no financial data: {h['symbol']}"
+                            )
+                            continue
+                        # Cross-validate: quantity * price ≈ market_value (within 10%)
+                        qty = h.get("quantity")
+                        price = h.get("price")
+                        mv = h.get("market_value")
+                        if qty is not None and price is not None and mv is not None:
+                            try:
+                                expected = float(qty) * float(price)
+                                actual = float(mv)
+                                if actual != 0 and abs(expected - actual) / abs(actual) > 0.10:
+                                    logger.warning(
+                                        f"[Portfolio Validation] Market value mismatch for {h['symbol']}: "
+                                        f"qty({qty})*price({price})={expected:.2f} vs mv={actual:.2f}"
+                                    )
+                            except (ValueError, TypeError):
+                                pass  # Non-numeric values, skip validation
+                        validated_holdings.append(h)
+                    holdings = validated_holdings
+                    logger.info(
+                        f"[Portfolio Validation] Validated {len(holdings)}/{raw_count} holdings"
+                    )
+
+                    # Calculate total_value if not provided
+                    total_value = parsed_data.get("total_value", 0)
+                    if not total_value and account_summary.get("ending_value"):
+                        total_value = account_summary["ending_value"]
+                    if not total_value and holdings:
+                        total_value = sum(h.get("market_value", 0) or 0 for h in holdings)
+
+                    # Build portfolio_data structure for frontend
+                    portfolio_data = {
+                        "account_info": account_info,
+                        "account_summary": account_summary,
+                        "asset_allocation": parsed_data.get("asset_allocation"),
+                        "holdings": holdings,
+                        "income_summary": parsed_data.get("income_summary"),
+                        "realized_gain_loss": parsed_data.get("realized_gain_loss"),
+                        "cash_flow": parsed_data.get("cash_flow"),
+                        "cash_management": parsed_data.get("cash_management"),
+                        "projections_and_mrd": parsed_data.get("projections_and_mrd"),
+                        "historical_values": parsed_data.get("historical_values"),
+                        "ytd_metrics": parsed_data.get("ytd_metrics"),
+                        "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
+                        "cash_balance": parsed_data.get("cash_balance", 0),
+                        "total_value": total_value,
+                        "kpis": {
+                            "holdings_count": len(holdings),
+                            "total_value": total_value,
+                        },
+                    }
+
+                    logger.info(
+                        f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}"
+                    )
+
+                    # Stage 5: Complete
+                    yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parse error: {e}")
+                    yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
+
+            # end of asyncio.timeout context
 
         except asyncio.TimeoutError:
-            logger.warning(f"[Portfolio Import] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM")
+            logger.warning(
+                f"[Portfolio Import] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
+            )
             yield f"data: {json.dumps({'stage': 'error', 'message': f'Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. Please try again with a smaller file.'})}\n\n"
         except Exception as e:
             logger.error(f"SSE streaming error: {e}")
