@@ -23,10 +23,9 @@ from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.operons.kai.llm import stream_gemini_response
-from hushh_mcp.operons.kai.llm import stream_gemini_response
 from hushh_mcp.services.consent_db import ConsentDBService
-from hushh_mcp.services.world_model_service import get_world_model_service
 from hushh_mcp.services.renaissance_service import get_renaissance_service
+from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
@@ -161,21 +160,21 @@ async def analyze_stream_generator(
         # =========================================================================
         # 1. FETCH FULL CONTEXT (The Omniscient Backend)
         # =========================================================================
-        
+
         # A. Renaissance Universe Data (The Math)
         renaissance_service = get_renaissance_service()
         renaissance_context = await renaissance_service.get_analysis_context(ticker)
-        
+
         # B. User World Model Context (The Personalization)
         # We fetch the V2 index which contains summarized risk/holdings data
         world_model = get_world_model_service()
         wm_index = await world_model.get_index_v2(user_id)
-        
+
         full_user_context = {
             "risk_profile": risk_profile,
-            "holdings_summary": [], 
+            "holdings_summary": [],
             "goals": [],
-            "learned_attributes": []
+            "learned_attributes": [],
         }
 
         if wm_index and wm_index.domain_summaries:
@@ -184,9 +183,9 @@ async def analyze_stream_generator(
             full_user_context["holdings_summary"] = fin_summary.get("holdings", [])
             full_user_context["portfolio_allocation"] = {
                 "equities": fin_summary.get("equities_pct", 0),
-                "cash": fin_summary.get("cash_pct", 0)
+                "cash": fin_summary.get("cash_pct", 0),
             }
-            
+
             # Extract Learned Attributes (across all domains)
             # In a real implementation, we might filter for relevant ones
             # For now, we pass the raw domain summaries
@@ -194,8 +193,10 @@ async def analyze_stream_generator(
 
         # Yield thinking event about context retrieval
         yield create_event(
-            "kai_thinking", 
-            {"text": f"Analyzing {ticker} with {renaissance_context.get('tier', 'Standard')} Tier context..."}
+            "kai_thinking",
+            {
+                "text": f"Analyzing {ticker} with {renaissance_context.get('tier', 'Standard')} Tier context..."
+            },
         )
 
         # =========================================================================
@@ -206,10 +207,10 @@ async def analyze_stream_generator(
         normalized_risk_profile = risk_profile.lower() if risk_profile else "balanced"
 
         debate_engine = DebateEngine(
-            risk_profile=normalized_risk_profile, 
+            risk_profile=normalized_risk_profile,
             disconnection_event=disconnection_event,
             user_context=full_user_context,
-            renaissance_context=renaissance_context
+            renaissance_context=renaissance_context,
         )
 
         # =========================================================================
@@ -478,7 +479,7 @@ async def analyze_stream_generator(
             fundamental_insight=fundamental_insight,
             sentiment_insight=sentiment_insight,
             valuation_insight=valuation_insight,
-            user_context=full_user_context  # Redundant but keeps signature clean
+            user_context=full_user_context,  # Redundant but keeps signature clean
         ):
             # If client disconnected, stop yielding
             if await check_disconnected():

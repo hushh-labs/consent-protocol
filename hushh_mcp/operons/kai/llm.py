@@ -72,7 +72,7 @@ elif not GOOGLE_API_KEY:
 def _extract_json(text: str) -> Dict[str, Any]:
     """Robustly extract JSON from a string, handling markdown and noise."""
     text = text.strip()
-    
+
     # 1. Try standard markdown code block removal
     if text.startswith("```json"):
         text = text[7:]
@@ -80,21 +80,22 @@ def _extract_json(text: str) -> Dict[str, Any]:
         text = text[3:]
     if text.endswith("```"):
         text = text[:-3]
-    
+
     text = text.strip()
-    
+
     # 2. Try identifying the first { and last }
     start = text.find("{")
     end = text.rfind("}")
-    
+
     if start != -1 and end != -1 and end > start:
         text = text[start : end + 1]
-        
+
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         logger.warning(f"[Kai LLM] JSON parse failed on text: {text[:100]}...")
         return {}
+
 
 async def analyze_stock_with_gemini(
     ticker: str,
@@ -260,9 +261,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
             model = genai.GenerativeModel(GEMINI_MODEL_FULL)
             # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
             response = await asyncio.wait_for(
-                model.generate_content_async(
-                    f"{system_instruction}\n\nCONTEXT DATA:\n{context}"
-                ),
+                model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
                 timeout=40.0,
             )
         else:
@@ -278,12 +277,12 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
         analysis = _extract_json(response.text)
         if not analysis:
-             raise ValueError("Failed to parse JSON from Gemini response")
+            raise ValueError("Failed to parse JSON from Gemini response")
 
         # Fallback to defaults if keys missing to prevent "N/A"
         analysis.setdefault("bull_case", "Growth potential through market expansion.")
         analysis.setdefault("bear_case", "Risks include competitive pressure and macro headwinds.")
-        
+
         logger.info(f"[Gemini Operon] Deep Fundamental Report success for {ticker}")
         return analysis
 
