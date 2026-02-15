@@ -2921,9 +2921,7 @@ class PortfolioImportService:
 
         doc_type = "brokerage_statement" if positive_hits >= 6 else "unknown"
         code = "RELEVANT" if is_relevant else "IRRELEVANT_CONTENT"
-        reason = (
-            f"Heuristic relevance score={score:.1f} (positive={positive_hits}, negative={negative_hits})."
-        )
+        reason = f"Heuristic relevance score={score:.1f} (positive={positive_hits}, negative={negative_hits})."
 
         return DocumentRelevance(
             is_relevant=is_relevant,
@@ -2998,9 +2996,7 @@ Content sample:
                     candidate = response.candidates[0]
                     content = getattr(candidate, "content", None)
                     parts = getattr(content, "parts", None) or []
-                    raw = "".join(
-                        str(getattr(part, "text", "") or "") for part in parts
-                    ).strip()
+                    raw = "".join(str(getattr(part, "text", "") or "") for part in parts).strip()
 
                 if raw.startswith("```json"):
                     raw = raw[7:]
@@ -3027,7 +3023,9 @@ Content sample:
 
             is_relevant = bool(parsed.get("is_relevant"))
             confidence = float(parsed.get("confidence") or 0.0)
-            reason = str(parsed.get("reason") or "").strip() or "Classifier did not provide details."
+            reason = (
+                str(parsed.get("reason") or "").strip() or "Classifier did not provide details."
+            )
             doc_type = str(parsed.get("doc_type") or "unknown").strip() or "unknown"
 
             # Enforce threshold.
