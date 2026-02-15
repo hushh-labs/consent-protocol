@@ -277,7 +277,7 @@ id: agent_my_domain
 name: MyDomain Agent
 version: "1.0.0"
 description: Analyzes user data for the my_domain domain.
-model: gemini-2.5-flash-preview-05-20
+model: gemini-3-flash-preview
 system_instruction: |
   You are a Hushh agent specializing in [domain].
   Always respect user consent and privacy.

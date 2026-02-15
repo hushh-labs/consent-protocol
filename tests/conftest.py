@@ -82,8 +82,13 @@ def mock_consent_token(test_vault_key: str) -> str:
     that will pass validation in the test environment.
     """
     from hushh_mcp.consent.token import issue_token
+    from hushh_mcp.constants import ConsentScope
 
-    return issue_token(user_id="test_user_123", agent_id="test_agent", scope="VAULT_OWNER")
+    return issue_token(
+        user_id="test_user_123",
+        agent_id="test_agent",
+        scope=ConsentScope.VAULT_OWNER,
+    ).token
 
 
 @pytest.fixture
@@ -92,8 +97,44 @@ def mock_vault_owner_token() -> str:
     Generate a VAULT_OWNER consent token for testing.
     """
     from hushh_mcp.consent.token import issue_token
+    from hushh_mcp.constants import ConsentScope
 
-    return issue_token(user_id="test_user_123", agent_id="test_agent", scope="VAULT_OWNER")
+    return issue_token(
+        user_id="test_user_123",
+        agent_id="test_agent",
+        scope=ConsentScope.VAULT_OWNER,
+    ).token
+
+
+@pytest.fixture
+def vault_owner_token_for_user():
+    """
+    Factory fixture for issuing deterministic VAULT_OWNER bearer tokens in tests.
+    """
+    from hushh_mcp.consent.token import issue_token
+    from hushh_mcp.constants import ConsentScope
+
+    def _issue(user_id: str = "test_user_123", agent_id: str = "test_agent") -> str:
+        return issue_token(
+            user_id=user_id,
+            agent_id=agent_id,
+            scope=ConsentScope.VAULT_OWNER,
+        ).token
+
+    return _issue
+
+
+@pytest.fixture
+def vault_owner_auth_headers(vault_owner_token_for_user):
+    """
+    Factory fixture for Authorization headers using VAULT_OWNER tokens.
+    """
+
+    def _headers(user_id: str = "test_user_123", agent_id: str = "test_agent") -> dict[str, str]:
+        token = vault_owner_token_for_user(user_id=user_id, agent_id=agent_id)
+        return {"Authorization": f"Bearer {token}"}
+
+    return _headers
 
 
 @pytest.fixture
