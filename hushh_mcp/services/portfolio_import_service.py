@@ -10,11 +10,12 @@ Supports:
 
 import csv
 import io
+import json
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,18 @@ class ImportResult:
     realized_gain_loss: Optional[dict] = None
     transactions: Optional[list] = None
     cash_balance: float = 0.0
+
+
+@dataclass
+class DocumentRelevance:
+    """Relevance classification for uploaded portfolio documents."""
+
+    is_relevant: bool
+    confidence: float
+    reason: str
+    doc_type: str = "unknown"
+    code: str = "UNKNOWN"
+    source: str = "heuristic"
 
 
 # ============================================================================
@@ -2351,11 +2364,13 @@ Extract data into the following nested objects:
         chunk_count = 0
 
         try:
-            async for chunk in client.aio.models.generate_content_stream(
+            stream = await client.aio.models.generate_content_stream(
                 model=model_to_use,
                 contents=contents,
                 config=config,
-            ):
+            )
+
+            async for chunk in stream:
                 if chunk.text:
                     full_response += chunk.text
                     chunk_count += 1
@@ -2409,73 +2424,77 @@ Extract data into the following nested objects:
         """Parse Gemini's JSON response into ComprehensivePortfolio."""
         portfolio = ComprehensivePortfolio()
 
-        # Account Info
-        if data.get("account_info"):
-            ai = data["account_info"]
+        # Account Info (supports account_info and account_metadata aliases)
+        account_info_data = self._first_dict(data, "account_info", "account_metadata")
+        if account_info_data:
+            ai = account_info_data
             portfolio.account_info = AccountInfo(
-                holder_name=ai.get("holder_name", ""),
+                holder_name=ai.get("holder_name", ai.get("account_holder", "")),
                 account_number=ai.get("account_number", ""),
                 account_type=ai.get("account_type", ""),
-                brokerage=ai.get("brokerage", ""),
+                brokerage=ai.get("brokerage", ai.get("institution_name", "")),
                 statement_period_start=ai.get("statement_period_start", ""),
                 statement_period_end=ai.get("statement_period_end", ""),
                 tax_lot_method=ai.get("tax_lot_method", "FIFO"),
             )
 
-        # Account Summary
-        if data.get("account_summary"):
-            acs = data["account_summary"]
+        # Account Summary (supports account_summary and portfolio_summary aliases)
+        account_summary_data = self._first_dict(data, "account_summary", "portfolio_summary")
+        if account_summary_data:
+            acs = account_summary_data
             portfolio.account_summary = AccountSummary(
-                beginning_value=float(acs.get("beginning_value") or 0),
-                ending_value=float(acs.get("ending_value") or 0),
-                net_deposits_period=float(acs.get("net_deposits_period") or 0),
-                net_deposits_ytd=float(acs.get("net_deposits_ytd") or 0),
-                withdrawals_period=float(acs.get("withdrawals_period") or 0),
-                withdrawals_ytd=float(acs.get("withdrawals_ytd") or 0),
-                total_income_period=float(acs.get("total_income_period") or 0),
-                total_income_ytd=float(acs.get("total_income_ytd") or 0),
-                total_fees=float(acs.get("total_fees") or 0),
-                change_in_value=float(acs.get("change_in_value") or 0),
+                beginning_value=self._to_float(acs.get("beginning_value")),
+                ending_value=self._to_float(acs.get("ending_value")),
+                net_deposits_period=self._to_float(
+                    acs.get("net_deposits_period", acs.get("net_deposits_withdrawals"))
+                ),
+                net_deposits_ytd=self._to_float(acs.get("net_deposits_ytd")),
+                withdrawals_period=self._to_float(acs.get("withdrawals_period")),
+                withdrawals_ytd=self._to_float(acs.get("withdrawals_ytd")),
+                total_income_period=self._to_float(acs.get("total_income_period")),
+                total_income_ytd=self._to_float(acs.get("total_income_ytd")),
+                total_fees=self._to_float(acs.get("total_fees")),
+                change_in_value=self._to_float(acs.get("change_in_value", acs.get("total_change"))),
             )
 
-        # Asset Allocation
-        if data.get("asset_allocation"):
-            aa = data["asset_allocation"]
-            portfolio.asset_allocation = AssetAllocation(
-                cash_pct=float(aa.get("cash_pct") or 0),
-                cash_value=float(aa.get("cash_value") or 0),
-                equities_pct=float(aa.get("equities_pct") or 0),
-                equities_value=float(aa.get("equities_value") or 0),
-                bonds_pct=float(aa.get("bonds_pct") or 0),
-                bonds_value=float(aa.get("bonds_value") or 0),
-                mutual_funds_pct=float(aa.get("mutual_funds_pct") or 0),
-                mutual_funds_value=float(aa.get("mutual_funds_value") or 0),
-                etf_pct=float(aa.get("etf_pct") or 0),
-                etf_value=float(aa.get("etf_value") or 0),
-            )
+        # Asset Allocation (supports list and object forms)
+        portfolio.asset_allocation = self._parse_asset_allocation(data.get("asset_allocation"))
 
-        # Holdings
-        if data.get("holdings"):
-            for h in data["holdings"]:
+        # Holdings (supports holdings and detailed_holdings aliases)
+        holdings_data = self._first_list(data, "holdings", "detailed_holdings")
+        if holdings_data:
+            for h in holdings_data:
+                if not isinstance(h, dict):
+                    continue
                 if not h.get("symbol"):
+                    symbol_cusip = str(h.get("symbol_cusip", "")).strip().upper()
+                else:
+                    symbol_cusip = str(h.get("symbol", "")).strip().upper()
+
+                if not symbol_cusip:
                     continue
 
                 holding = EnhancedHolding(
-                    symbol=str(h.get("symbol", "")).upper(),
-                    name=h.get("name", h.get("symbol", "")),
-                    quantity=float(h.get("quantity") or 0),
-                    price_per_unit=float(h.get("price") or 0),
-                    market_value=float(h.get("market_value") or 0),
-                    cost_basis=float(h.get("cost_basis") or 0),
-                    unrealized_gain_loss=float(h.get("unrealized_gain_loss") or 0),
-                    unrealized_gain_loss_pct=float(h.get("unrealized_gain_loss_pct") or 0),
+                    symbol=symbol_cusip,
+                    name=h.get("name", h.get("description", symbol_cusip)),
+                    quantity=self._to_float(h.get("quantity")),
+                    price_per_unit=self._to_float(h.get("price")),
+                    market_value=self._to_float(h.get("market_value")),
+                    cost_basis=self._to_float(h.get("cost_basis")),
+                    unrealized_gain_loss=self._to_float(h.get("unrealized_gain_loss")),
+                    unrealized_gain_loss_pct=self._to_float(h.get("unrealized_gain_loss_pct")),
                     acquisition_date=h.get("acquisition_date"),
-                    sector=SECTOR_MAP.get(str(h.get("symbol", "")).upper()),
-                    asset_type=h.get("asset_type", "stock"),
-                    est_annual_income=float(h.get("est_annual_income"))
-                    if h.get("est_annual_income")
+                    sector=SECTOR_MAP.get(symbol_cusip),
+                    asset_type=h.get("asset_type", h.get("asset_class", "stock")),
+                    est_annual_income=self._to_float(
+                        h.get("est_annual_income", h.get("estimated_annual_income"))
+                    )
+                    if h.get("est_annual_income") is not None
+                    or h.get("estimated_annual_income") is not None
                     else None,
-                    est_yield=float(h.get("est_yield")) / 100 if h.get("est_yield") else None,
+                    est_yield=self._to_float(h.get("est_yield")) / 100
+                    if h.get("est_yield") is not None
+                    else None,
                     cusip=h.get("cusip"),
                 )
 
@@ -2488,66 +2507,82 @@ Extract data into the following nested objects:
                 portfolio.holdings.append(holding)
 
         # Income Summary
-        if data.get("income_summary"):
-            inc = data["income_summary"]
+        income_summary_data = self._first_dict(data, "income_summary")
+        if income_summary_data:
+            inc = income_summary_data
             portfolio.income_summary = IncomeSummary(
-                dividends_taxable=float(inc.get("dividends_taxable") or 0),
-                dividends_nontaxable=float(inc.get("dividends_nontaxable") or 0),
-                dividends_qualified=float(inc.get("dividends_qualified") or 0),
-                interest_income=float(inc.get("interest_income") or 0),
-                capital_gains_dist=float(inc.get("capital_gains_dist") or 0),
-                total_income=float(inc.get("total_income") or 0),
+                dividends_taxable=self._to_float(
+                    inc.get("dividends_taxable", inc.get("taxable_dividends"))
+                ),
+                dividends_nontaxable=self._to_float(
+                    inc.get("dividends_nontaxable", inc.get("tax_exempt_interest"))
+                ),
+                dividends_qualified=self._to_float(
+                    inc.get("dividends_qualified", inc.get("qualified_dividends"))
+                ),
+                interest_income=self._to_float(
+                    inc.get("interest_income", inc.get("taxable_interest"))
+                ),
+                capital_gains_dist=self._to_float(
+                    inc.get("capital_gains_dist", inc.get("capital_gains_distributions"))
+                ),
+                total_income=self._to_float(inc.get("total_income")),
             )
 
         # Realized Gain/Loss
-        if data.get("realized_gain_loss"):
-            rgl = data["realized_gain_loss"]
+        realized_gain_loss_data = self._first_dict(data, "realized_gain_loss")
+        if realized_gain_loss_data:
+            rgl = realized_gain_loss_data
             portfolio.realized_gain_loss = RealizedGainLoss(
-                short_term_gain=float(rgl.get("short_term_gain") or 0),
-                short_term_loss=float(rgl.get("short_term_loss") or 0),
-                long_term_gain=float(rgl.get("long_term_gain") or 0),
-                long_term_loss=float(rgl.get("long_term_loss") or 0),
-                net_short_term=float(rgl.get("net_short_term") or 0),
-                net_long_term=float(rgl.get("net_long_term") or 0),
-                net_realized=float(rgl.get("net_realized") or 0),
+                short_term_gain=self._to_float(rgl.get("short_term_gain")),
+                short_term_loss=self._to_float(rgl.get("short_term_loss")),
+                long_term_gain=self._to_float(rgl.get("long_term_gain")),
+                long_term_loss=self._to_float(rgl.get("long_term_loss")),
+                net_short_term=self._to_float(rgl.get("net_short_term")),
+                net_long_term=self._to_float(rgl.get("net_long_term")),
+                net_realized=self._to_float(rgl.get("net_realized")),
             )
 
         # Transactions
-        if data.get("transactions"):
-            for t in data["transactions"]:
+        transactions_data = self._first_list(data, "transactions", "activity_and_transactions")
+        if transactions_data:
+            for t in transactions_data:
+                if not isinstance(t, dict):
+                    continue
                 txn = Transaction(
                     date=t.get("date", ""),
                     settle_date=t.get("settle_date", ""),
-                    type=t.get("type", ""),
+                    type=t.get("type", t.get("transaction_type", "")),
                     symbol=t.get("symbol", ""),
                     description=t.get("description", ""),
-                    quantity=float(t.get("quantity") or 0),
-                    price=float(t.get("price") or 0),
-                    amount=float(t.get("amount") or 0),
-                    cost_basis=float(t.get("cost_basis") or 0),
-                    realized_gain_loss=float(t.get("realized_gain_loss") or 0),
-                    fees=float(t.get("fees") or 0),
+                    quantity=self._to_float(t.get("quantity")),
+                    price=self._to_float(t.get("price")),
+                    amount=self._to_float(t.get("amount")),
+                    cost_basis=self._to_float(t.get("cost_basis")),
+                    realized_gain_loss=self._to_float(t.get("realized_gain_loss")),
+                    fees=self._to_float(t.get("fees")),
                 )
                 portfolio.transactions.append(txn)
 
         # Cash Flow
-        if data.get("cash_flow"):
-            cf = data["cash_flow"]
+        cash_flow_data = self._first_dict(data, "cash_flow")
+        if cash_flow_data:
+            cf = cash_flow_data
             portfolio.cash_flow = CashFlow(
-                opening_balance=float(cf.get("opening_balance") or 0),
-                deposits=float(cf.get("deposits") or 0),
-                withdrawals=float(cf.get("withdrawals") or 0),
-                dividends_received=float(cf.get("dividends_received") or 0),
-                interest_received=float(cf.get("interest_received") or 0),
-                trades_proceeds=float(cf.get("trades_proceeds") or 0),
-                trades_cost=float(cf.get("trades_cost") or 0),
-                fees_paid=float(cf.get("fees_paid") or 0),
-                closing_balance=float(cf.get("closing_balance") or 0),
+                opening_balance=self._to_float(cf.get("opening_balance")),
+                deposits=self._to_float(cf.get("deposits")),
+                withdrawals=self._to_float(cf.get("withdrawals")),
+                dividends_received=self._to_float(cf.get("dividends_received")),
+                interest_received=self._to_float(cf.get("interest_received")),
+                trades_proceeds=self._to_float(cf.get("trades_proceeds")),
+                trades_cost=self._to_float(cf.get("trades_cost")),
+                fees_paid=self._to_float(cf.get("fees_paid")),
+                closing_balance=self._to_float(cf.get("closing_balance")),
             )
 
         # Totals
-        portfolio.cash_balance = float(data.get("cash_balance") or 0)
-        portfolio.total_value = float(data.get("total_value") or 0)
+        portfolio.cash_balance = self._to_float(data.get("cash_balance"))
+        portfolio.total_value = self._to_float(data.get("total_value"))
 
         # Calculate unrealized gain/loss total
         portfolio.unrealized_gain_loss = sum(h.unrealized_gain_loss for h in portfolio.holdings)
@@ -2665,6 +2700,82 @@ Extract data into the following nested objects:
         except ValueError:
             return 0.0
 
+    def _to_float(self, value) -> float:
+        """Coerce model numeric values to float, handling formatted strings."""
+        if isinstance(value, (int, float)):
+            return float(value)
+        return self._parse_number(value)
+
+    def _first_dict(self, data: dict, *keys: str) -> dict:
+        """Return the first present dictionary value among the given keys."""
+        for key in keys:
+            candidate = data.get(key)
+            if isinstance(candidate, dict):
+                return candidate
+        return {}
+
+    def _first_list(self, data: dict, *keys: str) -> list:
+        """Return the first present list value among the given keys."""
+        for key in keys:
+            candidate = data.get(key)
+            if isinstance(candidate, list):
+                return candidate
+        return []
+
+    def _parse_asset_allocation(self, raw_asset_allocation) -> Optional[AssetAllocation]:
+        """
+        Parse asset allocation from either:
+        - object form: {"cash_pct": ..., ...}
+        - list form: [{"category": "...", "percentage": ...}, ...]
+        """
+        if isinstance(raw_asset_allocation, dict):
+            return AssetAllocation(
+                cash_pct=self._to_float(raw_asset_allocation.get("cash_pct")),
+                cash_value=self._to_float(raw_asset_allocation.get("cash_value")),
+                equities_pct=self._to_float(raw_asset_allocation.get("equities_pct")),
+                equities_value=self._to_float(raw_asset_allocation.get("equities_value")),
+                bonds_pct=self._to_float(raw_asset_allocation.get("bonds_pct")),
+                bonds_value=self._to_float(raw_asset_allocation.get("bonds_value")),
+                mutual_funds_pct=self._to_float(raw_asset_allocation.get("mutual_funds_pct")),
+                mutual_funds_value=self._to_float(raw_asset_allocation.get("mutual_funds_value")),
+                etf_pct=self._to_float(raw_asset_allocation.get("etf_pct")),
+                etf_value=self._to_float(raw_asset_allocation.get("etf_value")),
+                other_pct=self._to_float(raw_asset_allocation.get("other_pct")),
+                other_value=self._to_float(raw_asset_allocation.get("other_value")),
+            )
+
+        if isinstance(raw_asset_allocation, list):
+            allocation = AssetAllocation()
+            for row in raw_asset_allocation:
+                if not isinstance(row, dict):
+                    continue
+                category = str(row.get("category", "")).strip().lower()
+                pct = self._to_float(row.get("percentage"))
+                value = self._to_float(row.get("market_value"))
+
+                if "cash" in category:
+                    allocation.cash_pct = pct
+                    allocation.cash_value = value
+                elif "bond" in category or "fixed income" in category:
+                    allocation.bonds_pct = pct
+                    allocation.bonds_value = value
+                elif "mutual" in category:
+                    allocation.mutual_funds_pct = pct
+                    allocation.mutual_funds_value = value
+                elif "etf" in category:
+                    allocation.etf_pct = pct
+                    allocation.etf_value = value
+                elif "equit" in category or "stock" in category:
+                    allocation.equities_pct = pct
+                    allocation.equities_value = value
+                else:
+                    allocation.other_pct += pct
+                    allocation.other_value += value
+
+            return allocation
+
+        return None
+
 
 class PortfolioImportService:
     """
@@ -2685,6 +2796,254 @@ class PortfolioImportService:
 
             self._world_model = get_world_model_service()
         return self._world_model
+
+    async def assess_document_relevance(
+        self,
+        *,
+        file_content: bytes,
+        filename: str,
+    ) -> DocumentRelevance:
+        """
+        Determine whether an uploaded document is relevant for portfolio import.
+
+        Stage A: deterministic keyword heuristics.
+        Stage B: Gemini JSON classifier for borderline cases.
+        """
+        text_sample = self._extract_text_sample(file_content=file_content, filename=filename)
+        if not text_sample.strip():
+            return DocumentRelevance(
+                is_relevant=False,
+                confidence=0.0,
+                reason=(
+                    "Could not extract readable statement text. Upload a brokerage statement PDF/CSV."
+                ),
+                doc_type="unknown",
+                code="EMPTY_OR_UNREADABLE",
+                source="heuristic",
+            )
+
+        heuristic = self._heuristic_relevance(text_sample=text_sample, filename=filename)
+        # Accept strong heuristic signals immediately to avoid unnecessary LLM latency/noise.
+        if heuristic.is_relevant and heuristic.confidence >= 0.70:
+            return heuristic
+
+        llm_result = await self._llm_relevance_classifier(
+            text_sample=text_sample,
+            filename=filename,
+            heuristic=heuristic,
+        )
+        if llm_result is not None:
+            return llm_result
+        return heuristic
+
+    def _extract_text_sample(self, *, file_content: bytes, filename: str) -> str:
+        """Extract a compact text sample for relevance checks (best effort)."""
+        filename_lower = filename.lower()
+        if filename_lower.endswith(".csv"):
+            return file_content.decode("utf-8", errors="ignore")[:12000]
+
+        if filename_lower.endswith(".pdf"):
+            try:
+                import pdfplumber
+
+                with pdfplumber.open(io.BytesIO(file_content)) as pdf:
+                    pages = pdf.pages[:3]
+                    text = "\n".join((page.extract_text() or "") for page in pages)
+                    return text[:12000]
+            except Exception as e:
+                logger.warning("PDF relevance text extraction failed: %s", e)
+
+        return file_content.decode("utf-8", errors="ignore")[:12000]
+
+    def _heuristic_relevance(self, *, text_sample: str, filename: str) -> DocumentRelevance:
+        """Fast deterministic relevance check."""
+        text = text_sample.lower()
+        filename_lower = filename.lower()
+
+        positive_keywords = [
+            "brokerage",
+            "statement",
+            "account",
+            "positions",
+            "holdings",
+            "portfolio",
+            "market value",
+            "cost basis",
+            "unrealized",
+            "realized gain",
+            "dividend",
+            "symbol",
+            "ticker",
+            "cusip",
+            "fidelity",
+            "schwab",
+            "jpmorgan",
+            "chase",
+            "vanguard",
+            "etrade",
+            "robinhood",
+        ]
+        negative_keywords = [
+            "invoice",
+            "receipt",
+            "resume",
+            "curriculum vitae",
+            "lease agreement",
+            "prescription",
+            "patient",
+            "diagnosis",
+            "lyrics",
+            "novel",
+            "poem",
+            "assignment",
+            "class notes",
+            "w2",
+            "paystub",
+        ]
+
+        positive_hits = sum(1 for keyword in positive_keywords if keyword in text)
+        negative_hits = sum(1 for keyword in negative_keywords if keyword in text)
+
+        if any(
+            broker in filename_lower
+            for broker in ("fidelity", "schwab", "jpmorgan", "chase", "vanguard", "etrade")
+        ):
+            positive_hits += 2
+        if "statement" in filename_lower:
+            positive_hits += 1
+
+        score = (positive_hits * 1.0) - (negative_hits * 1.4)
+        confidence = max(0.0, min(0.99, 0.45 + (score * 0.06)))
+
+        is_relevant = positive_hits >= 4 and score > 0
+        if negative_hits >= 4 and positive_hits < 4:
+            is_relevant = False
+
+        doc_type = "brokerage_statement" if positive_hits >= 6 else "unknown"
+        code = "RELEVANT" if is_relevant else "IRRELEVANT_CONTENT"
+        reason = (
+            f"Heuristic relevance score={score:.1f} (positive={positive_hits}, negative={negative_hits})."
+        )
+
+        return DocumentRelevance(
+            is_relevant=is_relevant,
+            confidence=round(confidence, 3),
+            reason=reason,
+            doc_type=doc_type,
+            code=code,
+            source="heuristic",
+        )
+
+    async def _llm_relevance_classifier(
+        self,
+        *,
+        text_sample: str,
+        filename: str,
+        heuristic: DocumentRelevance,
+    ) -> Optional[DocumentRelevance]:
+        """LLM classifier for ambiguous uploads. Returns None on classifier failure."""
+        try:
+            from google import genai
+            from google.genai import types
+            from google.genai.types import HttpOptions
+
+            from hushh_mcp.constants import GEMINI_MODEL
+
+            client = genai.Client(http_options=HttpOptions(api_version="v1"))
+
+            prompt = f"""
+Classify whether this uploaded file is a brokerage/investment account statement suitable for portfolio import.
+Return JSON only with keys:
+- is_relevant (boolean)
+- confidence (number between 0 and 1)
+- doc_type (string)
+- reason (string)
+
+Filename: {filename}
+Heuristic score: {heuristic.reason}
+
+Content sample:
+{text_sample[:6000]}
+""".strip()
+
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                max_output_tokens=256,
+                response_mime_type="application/json",
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "is_relevant": {"type": "BOOLEAN"},
+                        "confidence": {"type": "NUMBER"},
+                        "doc_type": {"type": "STRING"},
+                        "reason": {"type": "STRING"},
+                    },
+                    "required": ["is_relevant", "confidence", "reason"],
+                },
+            )
+
+            response = await client.aio.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=config,
+            )
+            parsed: dict[str, Any] | None = None
+            if isinstance(getattr(response, "parsed", None), dict):
+                parsed = response.parsed
+
+            if parsed is None:
+                raw = (response.text or "").strip()
+                if not raw and getattr(response, "candidates", None):
+                    candidate = response.candidates[0]
+                    content = getattr(candidate, "content", None)
+                    parts = getattr(content, "parts", None) or []
+                    raw = "".join(
+                        str(getattr(part, "text", "") or "") for part in parts
+                    ).strip()
+
+                if raw.startswith("```json"):
+                    raw = raw[7:]
+                if raw.startswith("```"):
+                    raw = raw[3:]
+                if raw.endswith("```"):
+                    raw = raw[:-3]
+                raw = raw.strip()
+                if not raw:
+                    raise ValueError("Classifier returned empty payload")
+
+                try:
+                    parsed_obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    start = raw.find("{")
+                    end = raw.rfind("}")
+                    if start == -1 or end == -1 or end <= start:
+                        raise
+                    parsed_obj = json.loads(raw[start : end + 1])
+
+                if not isinstance(parsed_obj, dict):
+                    raise ValueError("Classifier payload is not a JSON object")
+                parsed = parsed_obj
+
+            is_relevant = bool(parsed.get("is_relevant"))
+            confidence = float(parsed.get("confidence") or 0.0)
+            reason = str(parsed.get("reason") or "").strip() or "Classifier did not provide details."
+            doc_type = str(parsed.get("doc_type") or "unknown").strip() or "unknown"
+
+            # Enforce threshold.
+            is_relevant = is_relevant and confidence >= 0.70
+
+            return DocumentRelevance(
+                is_relevant=is_relevant,
+                confidence=round(max(0.0, min(1.0, confidence)), 3),
+                reason=reason,
+                doc_type=doc_type,
+                code="RELEVANT" if is_relevant else "IRRELEVANT_CONTENT",
+                source="llm",
+            )
+        except Exception as e:
+            logger.warning("LLM relevance classifier failed, using heuristic: %s", e)
+            return None
 
     async def import_file(
         self,
@@ -2725,6 +3084,19 @@ class PortfolioImportService:
                 enhanced_portfolio = self._convert_to_enhanced(portfolio)
 
             elif filename.lower().endswith(".pdf"):
+                relevance = await self.assess_document_relevance(
+                    file_content=file_content,
+                    filename=filename,
+                )
+                if not relevance.is_relevant:
+                    return ImportResult(
+                        success=False,
+                        error=(
+                            "Uploaded file does not appear to be a brokerage statement. "
+                            f"{relevance.reason}"
+                        ),
+                    )
+
                 # Use LLM-first comprehensive parser for PDFs
                 logger.info("=" * 60)
                 logger.info(f"Parsing PDF with LLM-First Comprehensive Parser: {filename}")
