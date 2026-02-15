@@ -132,7 +132,11 @@ def _looks_like_holding_row(value: Any) -> bool:
 
     if keys.intersection(strong_fields) and keys.intersection(id_fields):
         return True
-    if keys.intersection(id_fields) and keys.intersection(qty_fields) and keys.intersection(price_fields):
+    if (
+        keys.intersection(id_fields)
+        and keys.intersection(qty_fields)
+        and keys.intersection(price_fields)
+    ):
         return True
     if keys.intersection(_HOLDING_KEY_HINTS):
         return True
@@ -249,12 +253,14 @@ def _estimate_stream_holdings(full_response: str) -> int:
 
     lower = full_response.lower()
     anchor = -1
-    for key in ("\"detailed_holdings\"", "\"holdings\"", "\"positions\"", "\"securities\""):
+    for key in ('"detailed_holdings"', '"holdings"', '"positions"', '"securities"'):
         anchor = lower.rfind(key)
         if anchor != -1:
             break
     section = full_response[anchor:] if anchor != -1 else full_response
-    symbol_matches = re.findall(r'"(?:symbol|symbol_cusip|ticker)"\s*:', section, flags=re.IGNORECASE)
+    symbol_matches = re.findall(
+        r'"(?:symbol|symbol_cusip|ticker)"\s*:', section, flags=re.IGNORECASE
+    )
     if symbol_matches:
         return len(symbol_matches)
     row_markers = re.findall(
@@ -685,6 +691,16 @@ async def import_portfolio_stream(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
+    filename_lower = file.filename.lower()
+    content_type = (file.content_type or "").lower()
+    is_csv_upload = filename_lower.endswith(".csv") or "csv" in content_type
+    is_pdf_upload = filename_lower.endswith(".pdf") or "pdf" in content_type
+    if not (is_pdf_upload or is_csv_upload):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload a PDF or CSV statement.",
+        )
+
     # Read file content
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
@@ -774,18 +790,17 @@ Rules:
 - Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
 - Preserve numeric values exactly (including negatives)."""
 
-                # Create content with PDF
+                # Create content payload with source-aware MIME type.
+                upload_mime_type = "text/csv" if is_csv_upload else "application/pdf"
                 contents = [
                     types.Part.from_text(text=prompt),
-                    types.Part.from_bytes(data=content, mime_type="application/pdf"),
+                    types.Part.from_bytes(data=content, mime_type=upload_mime_type),
                 ]
 
                 config = types.GenerateContentConfig(
                     temperature=0.1,
                     max_output_tokens=12288,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 )
                 logger.info("SSE: Thinking mode disabled for stable streaming throughput")
 
@@ -1168,11 +1183,7 @@ Rules:
                             normalized["reconciliation"] = reconciliation
                         holdings.append(normalized)
 
-                        if (
-                            parsed_total <= 10
-                            or (idx + 1) == parsed_total
-                            or (idx + 1) % 5 == 0
-                        ):
+                        if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
                             yield stream.event(
                                 "progress",
                                 {
@@ -1202,7 +1213,9 @@ Rules:
                         if not h.get("symbol"):
                             derived_name = str(h.get("name", "")).strip()
                             if derived_name:
-                                fallback = re.sub(r"[^A-Za-z0-9]", "", derived_name.split()[0]).upper()
+                                fallback = re.sub(
+                                    r"[^A-Za-z0-9]", "", derived_name.split()[0]
+                                ).upper()
                                 if fallback:
                                     h["symbol"] = fallback[:10]
                             if not h.get("symbol"):
@@ -1304,9 +1317,7 @@ Rules:
                             "diagnostics": {
                                 "response_chars": len(full_response),
                                 "chunk_count": chunk_count,
-                                "parse_repair_actions": parse_diagnostics.get(
-                                    "repair_actions", []
-                                ),
+                                "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
                             },
                         },
                         terminal=True,

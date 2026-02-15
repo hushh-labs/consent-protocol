@@ -381,9 +381,7 @@ async def analyze_stream_generator(
         if "investment_style" in request_context:
             preference_container["investment_style"] = request_context.get("investment_style")
         full_user_context["preferences"] = {
-            key: value
-            for key, value in preference_container.items()
-            if value not in (None, "")
+            key: value for key, value in preference_container.items() if value not in (None, "")
         }
 
         # Yield thinking event about context retrieval
