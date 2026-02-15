@@ -7,15 +7,19 @@ Enables real-time visualization of the multi-agent debate process.
 """
 
 import asyncio
+import contextvars
 import json
 import logging
-from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from api.routes.kai._streaming import (
+    DEFAULT_STREAM_TIMEOUT_SECONDS,
+    CanonicalSSEStream,
+)
 from hushh_mcp.agents.kai.debate_engine import DebateEngine
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
@@ -50,23 +54,56 @@ class StreamAnalyzeRequest(BaseModel):
 # SSE EVENT HELPERS (sse_starlette format)
 # ============================================================================
 
+_stream_ctx: contextvars.ContextVar[CanonicalSSEStream | None] = contextvars.ContextVar(
+    "kai_stream_ctx",
+    default=None,
+)
 
-def create_event(event_type: str, data: dict) -> dict:
-    """Create SSE event with proper format for sse_starlette.
 
-    sse_starlette expects: {"event": "...", "data": {...}}
-    where data is a plain dict (NOT JSON-encoded string).
+def create_event(event_type: str, data: dict, *, terminal: bool = False) -> dict[str, str]:
+    """Create one canonical SSE event frame."""
+    ctx = _stream_ctx.get()
+    if ctx is None:
+        ctx = CanonicalSSEStream("stock_analyze")
+        _stream_ctx.set(ctx)
+    return ctx.event(event_type, data, terminal=terminal)
 
-    NOTE: The 'id' field MUST be a string, not an integer!
-    SSE protocol requires ID to be a string.
 
-    sse_starlette will automatically encode the dict to JSON and format as SSE.
-    """
-    return {
-        "event": event_type,
-        "data": json.dumps(data),  # Explicitly dump to string to avoid single-quote issues
-        "id": str(int(datetime.now().timestamp() * 1000)),
-    }
+def _safe_round(value: Any, fallback: int) -> int:
+    if isinstance(value, int) and value in (1, 2):
+        return value
+    if isinstance(value, str) and value.isdigit() and int(value) in (1, 2):
+        return int(value)
+    return fallback
+
+
+def _normalize_analyze_event_payload(
+    event_name: str,
+    payload: dict[str, Any],
+    *,
+    default_round: int,
+    default_phase: str,
+) -> dict[str, Any]:
+    """Attach explicit round/phase metadata so frontend never infers state."""
+    normalized = dict(payload)
+    if event_name in {"agent_start", "agent_token", "agent_complete", "agent_error"}:
+        round_value = _safe_round(normalized.get("round"), default_round)
+        phase_value = normalized.get("phase")
+        if not isinstance(phase_value, str) or not phase_value:
+            phase_value = "debate" if round_value == 2 else "analysis"
+        normalized["round"] = round_value
+        normalized["phase"] = phase_value
+    elif event_name == "debate_round":
+        round_value = _safe_round(normalized.get("round"), 2)
+        normalized["round"] = round_value
+        normalized.setdefault("phase", "debate")
+    elif event_name == "kai_thinking":
+        normalized.setdefault("phase", default_phase)
+        normalized.setdefault("round", default_round)
+    elif event_name == "insight_extracted":
+        normalized.setdefault("phase", default_phase)
+        normalized.setdefault("round", default_round)
+    return normalized
 
 
 async def stream_agent_thinking(
@@ -74,6 +111,9 @@ async def stream_agent_thinking(
     ticker: str,
     prompt_context: str,
     request: Request,
+    *,
+    round_number: int,
+    phase: str,
 ) -> AsyncGenerator[dict, None]:
     """
     Stream Gemini 3 thinking tokens for an agent analysis.
@@ -97,7 +137,13 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                 )
                 yield create_event(
                     "agent_token",
-                    {"agent": agent_name.lower(), "text": event.get("text", ""), "type": "token"},
+                    {
+                        "agent": agent_name.lower(),
+                        "text": event.get("text", ""),
+                        "type": "token",
+                        "round": round_number,
+                        "phase": phase,
+                    },
                 )
             elif event.get("type") == "error":
                 logger.error(f"[Kai Stream] Gemini error for {agent_name}: {event.get('message')}")
@@ -156,6 +202,19 @@ async def analyze_stream_generator(
 
     logger.info(f"[Kai Stream] Starting analysis for {ticker} - user {user_id}")
 
+    stream_token = _stream_ctx.set(CanonicalSSEStream("stock_analyze"))
+    loop = asyncio.get_running_loop()
+    stream_started_at = loop.time()
+
+    def remaining_timeout() -> float:
+        elapsed = loop.time() - stream_started_at
+        remaining = DEFAULT_STREAM_TIMEOUT_SECONDS - elapsed
+        if remaining <= 0:
+            raise asyncio.TimeoutError(
+                f"Analyze stream timed out after {DEFAULT_STREAM_TIMEOUT_SECONDS}s"
+            )
+        return remaining
+
     try:
         # =========================================================================
         # 1. FETCH FULL CONTEXT (The Omniscient Backend)
@@ -168,9 +227,11 @@ async def analyze_stream_generator(
         # B. User World Model Context (The Personalization)
         # We fetch the V2 index which contains summarized risk/holdings data
         world_model = get_world_model_service()
-        wm_index = await world_model.get_index_v2(user_id)
+        wm_index = await asyncio.wait_for(
+            world_model.get_index_v2(user_id), timeout=remaining_timeout()
+        )
 
-        full_user_context = {
+        full_user_context: Dict[str, Any] = {
             "risk_profile": risk_profile,
             "holdings_summary": [],
             "goals": [],
@@ -195,7 +256,9 @@ async def analyze_stream_generator(
         yield create_event(
             "kai_thinking",
             {
-                "text": f"Analyzing {ticker} with {renaissance_context.get('tier', 'Standard')} Tier context..."
+                "text": f"Analyzing {ticker} with {renaissance_context.get('tier', 'Standard')} Tier context...",
+                "phase": "analysis",
+                "round": 1,
             },
         )
 
@@ -226,14 +289,12 @@ async def analyze_stream_generator(
         # PHASE 1: Parallel Agent Analysis
         # =====================================================================
 
-        # Immediate connection acknowledgement
-        yield create_event("ping", {"message": "connected"})
-
         # Kai thinking - orchestration reasoning
         yield create_event(
             "kai_thinking",
             {
                 "phase": "analysis",
+                "round": 1,
                 "message": f"🧠 Initializing analysis pipeline for {ticker}...",
                 "tokens": [
                     "Activating",
@@ -253,6 +314,7 @@ async def analyze_stream_generator(
             "kai_thinking",
             {
                 "phase": "analysis",
+                "round": 1,
                 "message": "📊 Each agent will perform deep analysis using specialized tools and data sources...",
                 "tokens": [
                     "Fundamental:",
@@ -280,6 +342,8 @@ async def analyze_stream_generator(
                 "agent_name": "Fundamental Agent",
                 "color": "#3b82f6",
                 "message": f"Analyzing SEC filings for {ticker}...",
+                "round": 1,
+                "phase": "analysis",
             },
         )
 
@@ -289,7 +353,10 @@ async def analyze_stream_generator(
             ticker=ticker,
             prompt_context="Analyze SEC filings, revenue trends, cash flow, and business moat.",
             request=request,
+            round_number=1,
+            phase="analysis",
         ):
+            _ = remaining_timeout()
             yield token_event
 
             # Check for disconnection after each token
@@ -301,8 +368,11 @@ async def analyze_stream_generator(
 
         # Run actual fundamental analysis (this gets the structured data)
         try:
-            fundamental_insight = await fundamental_agent.analyze(
-                ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+            fundamental_insight = await asyncio.wait_for(
+                fundamental_agent.analyze(
+                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+                ),
+                timeout=remaining_timeout(),
             )
             yield create_event(
                 "agent_complete",
@@ -319,11 +389,16 @@ async def analyze_stream_generator(
                     "bull_case": fundamental_insight.bull_case,
                     "bear_case": fundamental_insight.bear_case,
                     "sources": fundamental_insight.sources,
+                    "round": 1,
+                    "phase": "analysis",
                 },
             )
         except Exception as e:
             logger.error(f"[Kai Stream] Fundamental agent error: {e}")
-            yield create_event("agent_error", {"agent": "fundamental", "error": str(e)})
+            yield create_event(
+                "agent_error",
+                {"agent": "fundamental", "error": str(e), "round": 1, "phase": "analysis"},
+            )
             # Use mock data to continue
             fundamental_insight = (
                 await fundamental_agent._mock_analysis(ticker)
@@ -345,6 +420,8 @@ async def analyze_stream_generator(
                 "agent_name": "Sentiment Agent",
                 "color": "#8b5cf6",
                 "message": f"Analyzing market sentiment for {ticker}...",
+                "round": 1,
+                "phase": "analysis",
             },
         )
 
@@ -354,7 +431,10 @@ async def analyze_stream_generator(
             ticker=ticker,
             prompt_context="Analyze news sentiment, market catalysts, and momentum signals.",
             request=request,
+            round_number=1,
+            phase="analysis",
         ):
+            _ = remaining_timeout()
             yield token_event
 
             # Check for disconnection after each token
@@ -366,8 +446,11 @@ async def analyze_stream_generator(
 
         # Run actual sentiment analysis
         try:
-            sentiment_insight = await sentiment_agent.analyze(
-                ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+            sentiment_insight = await asyncio.wait_for(
+                sentiment_agent.analyze(
+                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+                ),
+                timeout=remaining_timeout(),
             )
             yield create_event(
                 "agent_complete",
@@ -379,11 +462,16 @@ async def analyze_stream_generator(
                     "sentiment_score": sentiment_insight.sentiment_score,
                     "key_catalysts": sentiment_insight.key_catalysts,
                     "sources": sentiment_insight.sources,
+                    "round": 1,
+                    "phase": "analysis",
                 },
             )
         except Exception as e:
             logger.error(f"[Kai Stream] Sentiment agent error: {e}")
-            yield create_event("agent_error", {"agent": "sentiment", "error": str(e)})
+            yield create_event(
+                "agent_error",
+                {"agent": "sentiment", "error": str(e), "round": 1, "phase": "analysis"},
+            )
             sentiment_insight = await sentiment_agent._mock_analysis(ticker)
 
         if await request.is_disconnected():
@@ -397,6 +485,8 @@ async def analyze_stream_generator(
                 "agent_name": "Valuation Agent",
                 "color": "#10b981",
                 "message": f"Calculating valuation metrics for {ticker}...",
+                "round": 1,
+                "phase": "analysis",
             },
         )
 
@@ -406,7 +496,10 @@ async def analyze_stream_generator(
             ticker=ticker,
             prompt_context="Analyze P/E multiples, DCF valuation, and peer comparisons.",
             request=request,
+            round_number=1,
+            phase="analysis",
         ):
+            _ = remaining_timeout()
             yield token_event
 
             # Check for disconnection after each token
@@ -418,8 +511,11 @@ async def analyze_stream_generator(
 
         # Run actual valuation analysis
         try:
-            valuation_insight = await valuation_agent.analyze(
-                ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+            valuation_insight = await asyncio.wait_for(
+                valuation_agent.analyze(
+                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
+                ),
+                timeout=remaining_timeout(),
             )
             yield create_event(
                 "agent_complete",
@@ -432,11 +528,16 @@ async def analyze_stream_generator(
                     "peer_comparison": valuation_insight.peer_comparison,
                     "price_targets": valuation_insight.price_targets,
                     "sources": valuation_insight.sources,
+                    "round": 1,
+                    "phase": "analysis",
                 },
             )
         except Exception as e:
             logger.error(f"[Kai Stream] Valuation agent error: {e}")
-            yield create_event("agent_error", {"agent": "valuation", "error": str(e)})
+            yield create_event(
+                "agent_error",
+                {"agent": "valuation", "error": str(e), "round": 1, "phase": "analysis"},
+            )
             valuation_insight = await valuation_agent._mock_analysis(ticker)
 
         if await request.is_disconnected():
@@ -451,6 +552,7 @@ async def analyze_stream_generator(
             "kai_thinking",
             {
                 "phase": "debate",
+                "round": 2,
                 "message": "⚖️ Now orchestrating multi-agent debate to reach consensus...",
                 "tokens": [
                     "Each",
@@ -474,6 +576,8 @@ async def analyze_stream_generator(
         # We pipeline its generator directly to the output.
 
         debate_result = None
+        current_round = 2
+        current_phase = "debate"
 
         async for event in debate_engine.orchestrate_debate_stream(
             fundamental_insight=fundamental_insight,
@@ -484,12 +588,29 @@ async def analyze_stream_generator(
             # If client disconnected, stop yielding
             if await check_disconnected():
                 return
-            # DebateEngine yields dicts with 'event' and 'data'.
-            # We need to ensure 'data' is JSON stringified if we are enforcing strict mode.
-            if "data" in event and not isinstance(event["data"], str):
-                yield create_event(event["event"], event["data"])
-            else:
-                yield event
+            _ = remaining_timeout()
+            event_name = event.get("event", "message")
+            event_payload = event.get("data", {})
+            if isinstance(event_payload, str):
+                try:
+                    event_payload = json.loads(event_payload)
+                except json.JSONDecodeError:
+                    event_payload = {"message": event_payload}
+            elif not isinstance(event_payload, dict):
+                event_payload = {"value": event_payload}
+            normalized_payload = _normalize_analyze_event_payload(
+                event_name,
+                event_payload,
+                default_round=current_round,
+                default_phase=current_phase,
+            )
+            if event_name == "debate_round":
+                current_round = _safe_round(normalized_payload.get("round"), current_round)
+                current_phase = str(normalized_payload.get("phase") or "debate")
+            elif event_name in {"agent_start", "agent_token", "agent_complete", "agent_error"}:
+                current_round = _safe_round(normalized_payload.get("round"), current_round)
+                current_phase = str(normalized_payload.get("phase") or current_phase)
+            yield create_event(event_name, normalized_payload)
 
             # Check for disconnection after each event
             if await check_disconnected():
@@ -517,8 +638,11 @@ async def analyze_stream_generator(
         # The DebateEngine logic I wrote runs `_build_consensus` at the end.
         # I will call that here to get the final object for the "decision" event.
 
-        debate_result = await debate_engine._build_consensus(
-            fundamental_insight, sentiment_insight, valuation_insight
+        debate_result = await asyncio.wait_for(
+            debate_engine._build_consensus(
+                fundamental_insight, sentiment_insight, valuation_insight
+            ),
+            timeout=remaining_timeout(),
         )
         # Note: debate_engine.rounds is populated by the generator run!
         debate_result.rounds = debate_engine.rounds
@@ -532,6 +656,7 @@ async def analyze_stream_generator(
             "kai_thinking",
             {
                 "phase": "decision",
+                "round": 2,
                 "message": "🎯 Synthesizing final recommendation from debate outcomes...",
                 "tokens": [
                     "Weighting",
@@ -554,6 +679,7 @@ async def analyze_stream_generator(
                 "kai_thinking",
                 {
                     "phase": "decision",
+                    "round": 2,
                     "message": "✅ Consensus reached. All agents agree on the recommendation.",
                     "tokens": ["Unanimous", "agreement:", debate_result.decision.upper()],
                 },
@@ -563,6 +689,7 @@ async def analyze_stream_generator(
                 "kai_thinking",
                 {
                     "phase": "decision",
+                    "round": 2,
                     "message": f"⚠️ Majority decision with {len(debate_result.dissenting_opinions)} dissenting opinion(s).",
                     "tokens": [
                         "Majority",
@@ -624,14 +751,38 @@ async def analyze_stream_generator(
                 "sentiment_summary": sentiment_insight.summary,
                 "valuation_summary": valuation_insight.summary,
                 "raw_card": raw_card,
+                "round": 2,
+                "phase": "decision",
             },
+            terminal=True,
         )
 
         logger.info(f"[Kai Stream] Analysis complete for {ticker}: {debate_result.decision}")
 
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[Kai Stream] Hard timeout (%ss) reached for %s",
+            DEFAULT_STREAM_TIMEOUT_SECONDS,
+            ticker,
+        )
+        yield create_event(
+            "error",
+            {
+                "code": "ANALYZE_TIMEOUT",
+                "message": f"Analysis timed out after {DEFAULT_STREAM_TIMEOUT_SECONDS}s.",
+                "ticker": ticker,
+            },
+            terminal=True,
+        )
     except Exception as e:
         logger.exception(f"[Kai Stream] Error during analysis: {e}")
-        yield create_event("error", {"message": str(e), "ticker": ticker})
+        yield create_event(
+            "error",
+            {"code": "ANALYZE_STREAM_FAILED", "message": str(e), "ticker": ticker},
+            terminal=True,
+        )
+    finally:
+        _stream_ctx.reset(stream_token)
 
 
 # ============================================================================
@@ -645,7 +796,7 @@ async def analyze_stream(
     ticker: str,
     user_id: str,
     risk_profile: str = "balanced",
-    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token"),
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
 ):
     """
     SSE endpoint for streaming Kai analysis.
@@ -711,7 +862,7 @@ async def analyze_stream(
 async def analyze_stream_post(
     request: Request,
     body: StreamAnalyzeRequest,
-    authorization: str = Header(..., description="Bearer VAULT_OWNER consent token"),
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
 ):
     """
     POST version of streaming analysis (allows context in body).
