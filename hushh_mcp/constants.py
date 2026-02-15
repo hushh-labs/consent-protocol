@@ -234,9 +234,6 @@ GEMINI_MODEL_FULL = "models/gemini-3-flash-preview"
 # Vertex AI model (for Google Cloud deployments)
 GEMINI_MODEL_VERTEX = "gemini-3-flash-preview"
 
-# Stable model fallback (for production stability if preview has issues)
-GEMINI_MODEL_STABLE = "gemini-2.5-flash"
-
 # ==================== Exports ====================
 
 __all__ = [
@@ -251,5 +248,4 @@ __all__ = [
     "GEMINI_MODEL",
     "GEMINI_MODEL_FULL",
     "GEMINI_MODEL_VERTEX",
-    "GEMINI_MODEL_STABLE",
 ]
