@@ -50,35 +50,29 @@ class TestAnalyzeRequiresVaultOwnerToken:
         assert "Invalid token" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_analyze_mismatched_user_id_returns_403(self, client):
+    async def test_analyze_mismatched_user_id_returns_403(self, client, vault_owner_token_for_user):
         """Test that user_id mismatch returns 403."""
-        from tests.dev_test_token import generate_dev_vault_owner_token
-
-        # Generate token for user A
-        token_info = generate_dev_vault_owner_token("user_a")
+        token = vault_owner_token_for_user("user_a")
 
         # Try to use it for user B
         response = client.post(
             "/analyze",
             json={"user_id": "user_b", "ticker": "AAPL"},
-            headers={"Authorization": f"Bearer {token_info['token']}"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         assert response.status_code == 403
         assert "User ID does not match" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_analyze_valid_token_succeeds(self, client):
+    async def test_analyze_valid_token_succeeds(self, client, vault_owner_token_for_user):
         """Test that valid VAULT_OWNER token allows analysis."""
-        from tests.dev_test_token import generate_dev_vault_owner_token
-
-        # Generate valid token
-        token_info = generate_dev_vault_owner_token("test_user")
+        token = vault_owner_token_for_user("test_user")
 
         response = client.post(
             "/analyze",
             json={"user_id": "test_user", "ticker": "AAPL", "risk_profile": "balanced"},
-            headers={"Authorization": f"Bearer {token_info['token']}"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         # Should either succeed or fail with a server error (agent not configured)
@@ -92,31 +86,29 @@ class TestAnalyzeRequestValidation:
     """Test request validation and error handling."""
 
     @pytest.mark.asyncio
-    async def test_analyze_missing_ticker_returns_422(self, client):
+    async def test_analyze_missing_ticker_returns_422(self, client, vault_owner_token_for_user):
         """Test that missing ticker returns 422 validation error."""
-        from tests.dev_test_token import generate_dev_vault_owner_token
-
-        token_info = generate_dev_vault_owner_token("test_user")
+        token = vault_owner_token_for_user("test_user")
 
         response = client.post(
             "/analyze",
             json={"user_id": "test_user"},
-            headers={"Authorization": f"Bearer {token_info['token']}"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_analyze_invalid_risk_profile_returns_422(self, client):
+    async def test_analyze_invalid_risk_profile_returns_422(
+        self, client, vault_owner_token_for_user
+    ):
         """Test that invalid risk_profile returns 422."""
-        from tests.dev_test_token import generate_dev_vault_owner_token
-
-        token_info = generate_dev_vault_owner_token("test_user")
+        token = vault_owner_token_for_user("test_user")
 
         response = client.post(
             "/analyze",
             json={"user_id": "test_user", "ticker": "AAPL", "risk_profile": "invalid"},
-            headers={"Authorization": f"Bearer {token_info['token']}"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         assert response.status_code == 422

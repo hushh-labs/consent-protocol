@@ -14,13 +14,19 @@ import asyncio
 import json
 import logging
 from decimal import Decimal
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
+from api.routes.kai._streaming import (
+    DEFAULT_STREAM_TIMEOUT_SECONDS,
+    HEARTBEAT_INTERVAL_SECONDS,
+    CanonicalSSEStream,
+    parse_json_with_single_repair,
+)
 from hushh_mcp.services.renaissance_service import get_renaissance_service
 
 logger = logging.getLogger(__name__)
@@ -78,16 +84,6 @@ class AnalyzeLosersResponse(BaseModel):
     losers: list[dict]
     portfolio_level_takeaways: list[str]
     analytics: Optional[dict] = Field(None, description="Radar and sector distribution metrics")
-
-
-def _extract_json_object(text: str) -> dict[str, Any]:
-    """Extract the first JSON object from a model response."""
-    s = text.strip()
-    start = s.find("{")
-    end = s.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("No JSON object found in LLM output")
-    return cast(dict[str, Any], json.loads(s[start : end + 1]))
 
 
 def _convert_decimals(obj: Any) -> Any:
@@ -357,6 +353,7 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
         config = genai_types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=4096,
+            response_mime_type="application/json",
         )
         resp = await client.aio.models.generate_content(
             model=model_to_use,
@@ -364,7 +361,10 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
             config=config,
         )
         raw = (resp.text or "").strip()
-        payload = _extract_json_object(raw)
+        payload, _ = parse_json_with_single_repair(
+            raw,
+            required_keys={"summary", "losers", "portfolio_level_takeaways"},
+        )
     except Exception as e:
         logger.error(f"Losers analysis LLM failed: {e}")
         raise HTTPException(status_code=500, detail="Losers analysis failed")
@@ -630,8 +630,9 @@ async def analyze_portfolio_losers_stream(
 
     **Disconnection Handling (Production-Grade)**:
     - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
-    - Layer 3: raw_request.is_disconnected() checked per-chunk for fast cleanup
+    - Layer 2: asyncio.timeout(120) hard ceiling prevents runaway LLM calls
+    - Layer 3: backend heartbeats every 3-5s while waiting for model output
+    - Layer 4: raw_request.is_disconnected() checked per-chunk for fast cleanup
     """
     if token_data["user_id"] != request.user_id:
         raise HTTPException(
@@ -639,12 +640,16 @@ async def analyze_portfolio_losers_stream(
         )
 
     async def generate():
-        HARD_TIMEOUT_SECONDS = 180  # 3-minute hard ceiling
+        HARD_TIMEOUT_SECONDS = DEFAULT_STREAM_TIMEOUT_SECONDS
+        stream = CanonicalSSEStream("portfolio_optimize")
 
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
                 # Stage 1: Building context
-                yield f"data: {json.dumps({'type': 'stage', 'stage': 'analyzing', 'message': 'Analyzing portfolio positions...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {"stage": "analyzing", "message": "Analyzing portfolio positions..."},
+                )
 
                 (
                     losers_filtered,
@@ -669,7 +674,10 @@ async def analyze_portfolio_losers_stream(
                 )
 
                 # Stage 2: LLM reasoning
-                yield f"data: {json.dumps({'type': 'stage', 'stage': 'thinking', 'message': 'AI reasoning about portfolio health...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {"stage": "thinking", "message": "AI reasoning about portfolio health..."},
+                )
 
                 from google import genai
                 from google.genai import types as genai_types
@@ -681,10 +689,21 @@ async def analyze_portfolio_losers_stream(
                 model_to_use = GEMINI_MODEL
                 logger.info(f"Optimize Portfolio Stream: Using Vertex AI with model {model_to_use}")
 
-                # Configure with LOW thinking level for better reasoning
+                # Configure for deterministic JSON reliability.
                 config = genai_types.GenerateContentConfig(
-                    temperature=1,
+                    temperature=0.2,
                     max_output_tokens=8192,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "OBJECT",
+                        "properties": {
+                            "summary": {"type": "OBJECT"},
+                            "losers": {"type": "ARRAY"},
+                            "portfolio_level_takeaways": {"type": "ARRAY"},
+                            "analytics": {"type": "OBJECT"},
+                        },
+                        "required": ["summary", "losers", "portfolio_level_takeaways"],
+                    },
                     thinking_config=genai_types.ThinkingConfig(
                         include_thoughts=True,
                         thinking_level=genai_types.ThinkingLevel.MEDIUM,
@@ -695,9 +714,10 @@ async def analyze_portfolio_losers_stream(
                 full_response = ""
                 thought_count = 0
                 chunk_count = 0
+                stream_started_at = asyncio.get_running_loop().time()
 
                 # Get the stream object first (must await the coroutine)
-                stream = await client.aio.models.generate_content_stream(
+                gen_stream = await client.aio.models.generate_content_stream(
                     model=model_to_use,
                     contents=prompt,
                     config=config,
@@ -705,14 +725,37 @@ async def analyze_portfolio_losers_stream(
 
                 client_disconnected = False
 
-                # Then iterate over the stream
-                async for chunk in stream:
+                # Then iterate over the stream with heartbeat-safe polling
+                stream_iter = gen_stream.__aiter__()
+                while True:
                     # Check if client disconnected
                     if await raw_request.is_disconnected():
                         logger.info(
                             "[Losers Analysis] Client disconnected, stopping streaming — saving compute"
                         )
                         client_disconnected = True
+                        break
+
+                    try:
+                        chunk = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=HEARTBEAT_INTERVAL_SECONDS,
+                        )
+                    except asyncio.TimeoutError:
+                        elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
+                        yield stream.event(
+                            "stage",
+                            {
+                                "stage": "thinking",
+                                "message": "Still analyzing portfolio optimization options...",
+                                "heartbeat": True,
+                                "elapsed_seconds": elapsed,
+                                "chunk_count": chunk_count,
+                                "total_chars": len(full_response),
+                            },
+                        )
+                        continue
+                    except StopAsyncIteration:
                         break
 
                     # Check for thought summaries (Gemini thinking mode)
@@ -723,12 +766,25 @@ async def analyze_portfolio_losers_stream(
                                     # Check for thought content
                                     if hasattr(part, "thought") and part.thought:
                                         thought_count += 1
-                                        yield f"data: {json.dumps({'type': 'thinking', 'thought': part.text, 'count': thought_count})}\n\n"
+                                        yield stream.event(
+                                            "thinking",
+                                            {"thought": part.text, "count": thought_count},
+                                        )
                                     # Regular text content
                                     elif hasattr(part, "text") and part.text:
                                         chunk_count += 1
                                         full_response += part.text
-                                        yield f"data: {json.dumps({'type': 'chunk', 'text': part.text, 'count': chunk_count})}\n\n"
+                                        yield stream.event(
+                                            "chunk",
+                                            {"text": part.text, "chunk_count": chunk_count},
+                                        )
+                    elif getattr(chunk, "text", None):
+                        chunk_count += 1
+                        full_response += str(chunk.text)
+                        yield stream.event(
+                            "chunk",
+                            {"text": str(chunk.text), "chunk_count": chunk_count},
+                        )
 
                 # Skip all post-processing if client disconnected — no point parsing for nobody
                 if client_disconnected:
@@ -738,17 +794,41 @@ async def analyze_portfolio_losers_stream(
                     return
 
                 # Stage 3: Extracting results
-                yield f"data: {json.dumps({'type': 'stage', 'stage': 'extracting', 'message': 'Extracting optimization recommendations...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {
+                        "stage": "extracting",
+                        "message": "Extracting optimization recommendations...",
+                    },
+                )
 
                 # Parse the final JSON
                 try:
-                    payload = _extract_json_object(full_response)
+                    payload, diagnostics = parse_json_with_single_repair(
+                        full_response,
+                        required_keys={"summary", "losers", "portfolio_level_takeaways"},
+                    )
                     payload.setdefault("criteria_context", criteria_context)
+                    payload["parse_report"] = {
+                        "repair_applied": diagnostics.get("repair_applied", False),
+                        "repair_actions": diagnostics.get("repair_actions", []),
+                    }
 
-                    yield f"data: {json.dumps({'type': 'complete', 'data': payload})}\n\n"
+                    yield stream.event("complete", payload, terminal=True)
                 except Exception as parse_error:
                     logger.error(f"Failed to parse LLM response: {parse_error}")
-                    yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to parse AI response', 'raw': full_response[:500]})}\n\n"
+                    yield stream.event(
+                        "error",
+                        {
+                            "code": "OPTIMIZE_PARSE_FAILED",
+                            "message": "Failed to parse AI response after deterministic repair",
+                            "diagnostics": {
+                                "response_chars": len(full_response),
+                                "chunk_count": chunk_count,
+                            },
+                        },
+                        terminal=True,
+                    )
 
             # end of asyncio.timeout context
 
@@ -756,12 +836,32 @@ async def analyze_portfolio_losers_stream(
             logger.warning(
                 f"[Losers Analysis] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
             )
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Analysis timed out after {HARD_TIMEOUT_SECONDS}s. Please try again.'})}\n\n"
+            yield stream.event(
+                "error",
+                {
+                    "code": "OPTIMIZE_TIMEOUT",
+                    "message": f"Analysis timed out after {HARD_TIMEOUT_SECONDS}s. Please try again.",
+                },
+                terminal=True,
+            )
         except HTTPException as http_err:
-            yield f"data: {json.dumps({'type': 'error', 'message': http_err.detail})}\n\n"
+            detail = (
+                http_err.detail
+                if isinstance(http_err.detail, dict)
+                else {"message": http_err.detail}
+            )
+            yield stream.event(
+                "error",
+                {"code": "OPTIMIZE_HTTP_ERROR", **detail},
+                terminal=True,
+            )
         except Exception as e:
             logger.error(f"Streaming losers analysis failed: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield stream.event(
+                "error",
+                {"code": "OPTIMIZE_STREAM_FAILED", "message": str(e)},
+                terminal=True,
+            )
 
     return EventSourceResponse(
         generate(),
