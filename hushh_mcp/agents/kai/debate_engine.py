@@ -858,7 +858,9 @@ class DebateEngine:
         confidence = float(getattr(insight, "confidence", 0.5) or 0.5)
         summary = str(getattr(insight, "summary", "") or "").strip()
 
-        base = summary if summary else f"{agent_name.capitalize()} analysis supports {recommendation}."
+        base = (
+            summary if summary else f"{agent_name.capitalize()} analysis supports {recommendation}."
+        )
         extra = ""
 
         if agent_name == "fundamental":
@@ -880,9 +882,7 @@ class DebateEngine:
                     extra = f"Base valuation reference: {target}."
 
         reason = (
-            f" Live streaming unavailable ({stream_error_message})."
-            if stream_error_message
-            else ""
+            f" Live streaming unavailable ({stream_error_message})." if stream_error_message else ""
         )
         return (
             f"{base} Recommendation: {recommendation} ({confidence:.0%} confidence)."
