@@ -164,6 +164,21 @@ class SentimentAgent(HushhAgent):
             logger.error(f"[Sentiment] Deterministic analysis failed: {e}")
             raise
 
+    async def _mock_analysis(self, ticker: str) -> SentimentInsight:
+        """Lightweight fallback used when upstream streaming/analysis fails."""
+        return SentimentInsight(
+            summary=(
+                f"Sentiment fallback analysis for {ticker}: mixed short-term signals with"
+                " limited conviction."
+            ),
+            sentiment_score=0.0,
+            key_catalysts=[],
+            news_highlights=[],
+            sources=["Fallback Sentiment Model"],
+            confidence=0.35,
+            recommendation="neutral",
+        )
+
 
 # Export singleton for use in KaiAgent orchestration
 sentiment_agent = SentimentAgent()
