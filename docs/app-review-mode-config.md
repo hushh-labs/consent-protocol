@@ -33,3 +33,4 @@ Move app-review-mode control from frontend build-time variables to backend runti
 - This endpoint is included via the shared health router.
 - Frontend web requests can proxy through Next API routes.
 - Native iOS/Android clients can call backend directly.
+- Production deploy uses backend secrets/env only (no frontend build-time reviewer env).
