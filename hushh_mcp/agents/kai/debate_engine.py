@@ -165,7 +165,10 @@ class DebateEngine:
             1, "fundamental", "initial_analysis", round1_statements
         ):
             yield event
-        round1_statements["fundamental"] = self.current_statements["fundamental"]
+        round1_statements["fundamental"] = self.current_statements.get(
+            "fundamental",
+            self._build_deterministic_statement("fundamental", fundamental_insight),
+        )
 
         if self._disconnection_event and self._disconnection_event.is_set():
             return
@@ -181,7 +184,10 @@ class DebateEngine:
             1, "sentiment", "initial_analysis", round1_statements
         ):
             yield event
-        round1_statements["sentiment"] = self.current_statements["sentiment"]
+        round1_statements["sentiment"] = self.current_statements.get(
+            "sentiment",
+            self._build_deterministic_statement("sentiment", sentiment_insight),
+        )
 
         if self._disconnection_event and self._disconnection_event.is_set():
             return
@@ -207,7 +213,10 @@ class DebateEngine:
             1, "valuation", "initial_analysis", round1_statements
         ):
             yield event
-        round1_statements["valuation"] = self.current_statements["valuation"]
+        round1_statements["valuation"] = self.current_statements.get(
+            "valuation",
+            self._build_deterministic_statement("valuation", valuation_insight),
+        )
 
         if self._disconnection_event and self._disconnection_event.is_set():
             return
@@ -251,7 +260,10 @@ class DebateEngine:
             2, "fundamental", "challenge_positions", round2_statements
         ):
             yield event
-        round2_statements["fundamental"] = self.current_statements["fundamental"]
+        round2_statements["fundamental"] = self.current_statements.get(
+            "fundamental",
+            self._build_deterministic_statement("fundamental", fundamental_insight),
+        )
 
         if self._disconnection_event and self._disconnection_event.is_set():
             return
@@ -276,7 +288,10 @@ class DebateEngine:
             2, "sentiment", "challenge_positions", round2_statements
         ):
             yield event
-        round2_statements["sentiment"] = self.current_statements["sentiment"]
+        round2_statements["sentiment"] = self.current_statements.get(
+            "sentiment",
+            self._build_deterministic_statement("sentiment", sentiment_insight),
+        )
 
         if self._disconnection_event and self._disconnection_event.is_set():
             return
@@ -302,7 +317,10 @@ class DebateEngine:
             2, "valuation", "challenge_positions", round2_statements
         ):
             yield event
-        round2_statements["valuation"] = self.current_statements["valuation"]
+        round2_statements["valuation"] = self.current_statements.get(
+            "valuation",
+            self._build_deterministic_statement("valuation", valuation_insight),
+        )
 
         # Record Round 2
         self.rounds.append(DebateRound(2, round2_statements, datetime.utcnow()))
@@ -350,6 +368,7 @@ class DebateEngine:
             "sentiment": "Sentiment Agent",
             "valuation": "Valuation Agent",
         }
+        phase = "round2" if round_num == 2 else "round1"
 
         yield {
             "event": "agent_start",
@@ -357,6 +376,8 @@ class DebateEngine:
                 "agent": agent_name,
                 "agent_name": agent_display_names.get(agent_name, agent_name),
                 "message": f"Formulating arguments for Round {round_num}...",
+                "round": round_num,
+                "phase": phase,
             },
         }
 
@@ -369,22 +390,31 @@ class DebateEngine:
         )
 
         full_response = ""
+        used_fallback = False
 
         # Stream from Gemini
+        stream_error_message: Optional[str] = None
         async for chunk in stream_gemini_response(prompt, agent_name=agent_name):
             if chunk.get("type") == "token":
                 text = chunk.get("text", "")
                 full_response += text
                 yield {
                     "event": "agent_token",
-                    "data": {"agent": agent_name, "text": text, "type": "token"},
+                    "data": {
+                        "agent": agent_name,
+                        "text": text,
+                        "type": "token",
+                        "round": round_num,
+                        "phase": phase,
+                    },
                 }
                 # Check for disconnection after each token to stop LLM streaming
                 if self._disconnection_event is not None and self._disconnection_event.is_set():
                     logger.info(f"[{agent_name}] Client disconnected during streaming, stopping...")
                     return
             elif chunk.get("type") == "error":
-                logger.error(f"[{agent_name}] Stream error: {chunk.get('message')}")
+                stream_error_message = str(chunk.get("message") or "Unknown streaming error")
+                logger.error(f"[{agent_name}] Stream error: {stream_error_message}")
 
             # Artificial "Thinking" Delay to prevent "Dummy" feel
             await asyncio.sleep(0.05)
@@ -419,6 +449,8 @@ class DebateEngine:
                             "confidence": float(match.group(3)),
                             "content": match.group(4).strip(),
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
 
@@ -441,6 +473,8 @@ class DebateEngine:
                             "source": match.group(2),
                             "content": evidence_content,
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
 
@@ -463,6 +497,8 @@ class DebateEngine:
                             "score": int(match.group(3)),  # 0-10
                             "content": impact_content,
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
 
@@ -483,6 +519,8 @@ class DebateEngine:
                             "type": "bull_case_personalized",
                             "content": bull_content,
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
 
@@ -501,6 +539,8 @@ class DebateEngine:
                             "type": "bear_case_personalized",
                             "content": bear_content,
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
 
@@ -519,22 +559,102 @@ class DebateEngine:
                             "type": "renaissance_verdict",
                             "content": ren_content,
                             "agent": agent_name,
+                            "round": round_num,
+                            "phase": phase,
                         },
                     }
+
+        # One agent-local retry for transient provider throttling (429/resource exhausted).
+        if (
+            not full_response
+            and stream_error_message
+            and self._is_retryable_stream_error(stream_error_message)
+            and not (self._disconnection_event and self._disconnection_event.is_set())
+        ):
+            retry_delay = 2.0
+            yield {
+                "event": "agent_error",
+                "data": {
+                    "agent": agent_name,
+                    "error": stream_error_message,
+                    "retryable": True,
+                    "retrying": True,
+                    "retry_in_seconds": retry_delay,
+                    "round": round_num,
+                    "phase": phase,
+                },
+            }
+            logger.warning(
+                "[%s] Stream hit retryable limit, retrying from same turn in %.1fs",
+                agent_name,
+                retry_delay,
+            )
+            await asyncio.sleep(retry_delay)
+            stream_error_message = None
+            async for chunk in stream_gemini_response(prompt, agent_name=agent_name):
+                if chunk.get("type") == "token":
+                    text = chunk.get("text", "")
+                    full_response += text
+                    yield {
+                        "event": "agent_token",
+                        "data": {
+                            "agent": agent_name,
+                            "text": text,
+                            "type": "token",
+                            "round": round_num,
+                            "phase": phase,
+                        },
+                    }
+                    if self._disconnection_event is not None and self._disconnection_event.is_set():
+                        return
+                elif chunk.get("type") == "error":
+                    stream_error_message = str(chunk.get("message") or "Unknown streaming error")
+                    logger.error(f"[{agent_name}] Retry stream error: {stream_error_message}")
+                await asyncio.sleep(0.03)
 
         # Additional pause after full generation to let it sink in before next agent
         await asyncio.sleep(1.0)
 
         # Fallback if empty (Gemini error or timeout)
         if not full_response:
-            # STRICT NO-MOCK POLICY: If agent fails to produce output, we error out or return empty.
-            # We do NOT fallback to "I recommend..." templates anymore.
-            logger.error(f"[{agent_name}] Failed to generate response (Empty output)")
+            used_fallback = True
+            full_response = self._build_deterministic_statement(
+                agent_name,
+                self.insights[agent_name],
+                stream_error_message,
+            )
+            logger.warning(
+                "[%s] Falling back to deterministic debate statement: %s",
+                agent_name,
+                stream_error_message or "empty stream",
+            )
             yield {
                 "event": "agent_error",
-                "data": {"agent": agent_name, "error": "No data returned from analysis engine."},
+                "data": {
+                    "agent": agent_name,
+                    "error": stream_error_message or "No data returned from analysis engine.",
+                    "fallback_used": True,
+                    "round": round_num,
+                    "phase": phase,
+                },
             }
-            return
+            # Keep the stream visually alive even on fallback so UX does not "freeze".
+            words = full_response.split()
+            for idx, word in enumerate(words):
+                if self._disconnection_event is not None and self._disconnection_event.is_set():
+                    return
+                token_text = f"{word} " if idx < len(words) - 1 else word
+                yield {
+                    "event": "agent_token",
+                    "data": {
+                        "agent": agent_name,
+                        "text": token_text,
+                        "type": "token",
+                        "round": round_num,
+                        "phase": phase,
+                    },
+                }
+                await asyncio.sleep(0.012)
 
         self.current_statements[agent_name] = full_response
 
@@ -546,6 +666,9 @@ class DebateEngine:
                 "recommendation": self.insights[agent_name].recommendation,
                 "confidence": self.insights[agent_name].confidence,
                 "sentiment_score": getattr(self.insights[agent_name], "sentiment_score", None),
+                "fallback_used": used_fallback,
+                "round": round_num,
+                "phase": phase,
             },
         }
 
@@ -632,13 +755,20 @@ class DebateEngine:
         ren_context_str = ""
         if self.renaissance_context:
             tier = self.renaissance_context.get("tier", "Standard")
-            fcf = self.renaissance_context.get("fcf_projection", "N/A")
-            thesis = self.renaissance_context.get("thesis", "N/A")
+            fcf = self.renaissance_context.get("fcf_billions", "N/A")
+            thesis = self.renaissance_context.get("investment_thesis", "N/A")
+            screening_criteria = str(
+                self.renaissance_context.get("screening_criteria")
+                or self.renaissance_context.get("screening_context")
+                or ""
+            ).strip()
+            screening_excerpt = screening_criteria[:1800] if screening_criteria else ""
             ren_context_str = f"""
         RENAISSANCE DATA (THE MATHEMATICAL TRUTH):
         - Tier: {tier} (ACE/KING = Strong Buy, QUEEN/JACK = Watch/Hold)
-        - Free Cash Flow: {fcf}
+        - Free Cash Flow (Billions): {fcf}
         - Thesis: {thesis}
+        {"- Screening Criteria:\\n" + screening_excerpt if screening_excerpt else ""}
         
         MANDATE: You MUST reference this 'Renaissance' data. 
         If Tier is ACE/KING, respect the math even if sentiment is weak.
@@ -650,10 +780,17 @@ class DebateEngine:
             risk = self.user_context.get("risk_profile", self.risk_profile)
             holdings = self.user_context.get("holdings_summary", [])
             port_alloc = self.user_context.get("portfolio_allocation", {})
+            preferences = self.user_context.get("preferences", {})
+            investment_horizon = preferences.get("investment_horizon", "unknown")
+            investment_style = preferences.get("investment_style", "unknown")
+            holdings_count = len(holdings) if isinstance(holdings, list) else 0
             user_context_str = f"""
         USER CONTEXT (THE PERSON):
         - Risk Profile: {risk}
+        - Investment Horizon: {investment_horizon}
+        - Investment Style: {investment_style}
         - Portfolio Alloc: {port_alloc}
+        - Holdings Count: {holdings_count}
         - Current Holdings: {holdings}
         
         MANDATE: You MUST personalize your argument.
@@ -662,6 +799,12 @@ class DebateEngine:
 
         prompt = f"""
         {role_desc}
+        
+        DEBATE PROTOCOL (AlphaAgents 2508.11152):
+        - Round-robin, adversarial collaboration.
+        - Each specialist speaks at least twice and must challenge weak assumptions.
+        - Prefer evidence over narrative. Convert disagreements into explicit portfolio impact.
+        - Keep claims falsifiable and tied to available data.
         
         AUDIENCE CONTEXT:
         User Name: {self.user_context.get("user_name", "Value Investor")}
@@ -700,6 +843,62 @@ class DebateEngine:
         </analysis>
         """
         return prompt
+
+    def _build_deterministic_statement(
+        self,
+        agent_name: str,
+        insight: Any,
+        stream_error_message: Optional[str] = None,
+    ) -> str:
+        """
+        Build a deterministic debate statement from already-computed agent insights.
+        This prevents debate orchestration from failing when live LLM token streaming is unavailable.
+        """
+        recommendation = str(getattr(insight, "recommendation", "hold")).upper()
+        confidence = float(getattr(insight, "confidence", 0.5) or 0.5)
+        summary = str(getattr(insight, "summary", "") or "").strip()
+
+        base = summary if summary else f"{agent_name.capitalize()} analysis supports {recommendation}."
+        extra = ""
+
+        if agent_name == "fundamental":
+            moat = str(getattr(insight, "business_moat", "") or "").strip()
+            bull = str(getattr(insight, "bull_case", "") or "").strip()
+            bear = str(getattr(insight, "bear_case", "") or "").strip()
+            details = [val for val in (moat, bull, bear) if val]
+            if details:
+                extra = " ".join(details[:2])
+        elif agent_name == "sentiment":
+            catalysts = getattr(insight, "key_catalysts", None)
+            if isinstance(catalysts, list) and catalysts:
+                extra = f"Key catalyst: {str(catalysts[0])}."
+        elif agent_name == "valuation":
+            price_targets = getattr(insight, "price_targets", None)
+            if isinstance(price_targets, dict) and price_targets:
+                target = price_targets.get("base_case") or price_targets.get("fair_value")
+                if target is not None:
+                    extra = f"Base valuation reference: {target}."
+
+        reason = (
+            f" Live streaming unavailable ({stream_error_message})."
+            if stream_error_message
+            else ""
+        )
+        return (
+            f"{base} Recommendation: {recommendation} ({confidence:.0%} confidence)."
+            f"{(' ' + extra) if extra else ''}{reason}"
+        ).strip()
+
+    def _is_retryable_stream_error(self, message: str) -> bool:
+        text = str(message).lower()
+        markers = (
+            "429",
+            "too many requests",
+            "rate limit",
+            "resource_exhausted",
+            "quota",
+        )
+        return any(marker in text for marker in markers)
 
     async def _build_consensus(
         self,
@@ -778,6 +977,8 @@ class DebateEngine:
             + scores["sentiment"] * self.agent_weights["sentiment"]
             + scores["valuation"] * self.agent_weights["valuation"]
         )
+        weighted_score += self._context_score_shift(scores)
+        weighted_score = max(-1.0, min(1.0, weighted_score))
 
         # Calculate weighted confidence
         weighted_confidence = (
@@ -785,6 +986,7 @@ class DebateEngine:
             + sentiment.confidence * self.agent_weights["sentiment"]
             + valuation.confidence * self.agent_weights["valuation"]
         )
+        weighted_confidence = max(0.0, min(1.0, weighted_confidence))
 
         # Convert score to decision
         if weighted_score > 0.3:
@@ -795,6 +997,50 @@ class DebateEngine:
             decision = "hold"
 
         return decision, weighted_confidence
+
+    def _context_score_shift(self, scores: Dict[str, float]) -> float:
+        """
+        Apply bounded score overlays from Renaissance + user preferences.
+        This keeps core agent voting intact while honoring personalized context.
+        """
+        shift = 0.0
+
+        # Renaissance overlays from Supabase-backed screening tables.
+        tier = str((self.renaissance_context or {}).get("tier") or "").upper()
+        is_investable = bool((self.renaissance_context or {}).get("is_investable"))
+        is_avoid = bool((self.renaissance_context or {}).get("is_avoid"))
+        conviction_raw = (self.renaissance_context or {}).get("conviction_weight")
+        try:
+            conviction_weight = float(conviction_raw) if conviction_raw is not None else 0.0
+        except (TypeError, ValueError):
+            conviction_weight = 0.0
+
+        if is_avoid:
+            shift -= 0.35
+        elif is_investable and conviction_weight > 0:
+            # ACE/KING amplify upside modestly; QUEEN/JACK near-neutral.
+            shift += max(-0.2, min(0.2, (conviction_weight - 0.5) * 0.5))
+            if tier in {"ACE", "KING"} and scores["fundamental"] > 0:
+                shift += 0.05
+
+        # User preference overlays from world model context.
+        preferences = self.user_context.get("preferences", {}) if self.user_context else {}
+        style = str(preferences.get("investment_style") or "").lower()
+        horizon = str(preferences.get("investment_horizon") or "").lower()
+
+        if "growth" in style and scores["fundamental"] > 0:
+            shift += 0.05
+        if "value" in style and scores["valuation"] > 0:
+            shift += 0.05
+        if "income" in style or "preservation" in style:
+            shift += -0.05 if scores["sentiment"] < 0 else 0.0
+
+        if "short" in horizon:
+            shift += 0.05 * scores["sentiment"]
+        elif "long" in horizon:
+            shift += 0.05 * scores["fundamental"]
+
+        return max(-0.4, min(0.4, shift))
 
     def _rec_to_score(self, recommendation: str) -> float:
         """Convert recommendation to numeric score."""
