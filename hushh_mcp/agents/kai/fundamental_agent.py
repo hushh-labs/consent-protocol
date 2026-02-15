@@ -105,16 +105,23 @@ class FundamentalAgent(HushhAgent):
             raise
 
         # Step 2: Gemini Deep Analysis (HYBRID v2)
-        from hushh_mcp.config import GOOGLE_API_KEY
         from hushh_mcp.operons.kai.calculators import calculate_quant_metrics
-        from hushh_mcp.operons.kai.llm import analyze_stock_with_gemini
+        from hushh_mcp.operons.kai.llm import (
+            analyze_stock_with_gemini,
+            get_gemini_unavailable_reason,
+            is_gemini_ready,
+        )
 
         quant_metrics = calculate_quant_metrics(sec_filings)
 
         gemini_analysis = None
-        gemini_analysis = None
-        if GOOGLE_API_KEY and self.processing_mode == "hybrid":
+        if self.processing_mode == "hybrid":
             # Retry logic (Max 2 attempts)
+            if not is_gemini_ready():
+                logger.warning(
+                    "[Fundamental] Gemini unavailable, using deterministic analysis: %s",
+                    get_gemini_unavailable_reason(),
+                )
             for attempt in range(2):
                 try:
                     gemini_analysis = await analyze_stock_with_gemini(

@@ -93,12 +93,19 @@ class SentimentAgent(HushhAgent):
             news_articles = []
 
         # Operon 2: Gemini Deep Sentiment Analysis
-        from hushh_mcp.config import GOOGLE_API_KEY
-        from hushh_mcp.operons.kai.llm import analyze_sentiment_with_gemini
+        from hushh_mcp.operons.kai.llm import (
+            analyze_sentiment_with_gemini,
+            get_gemini_unavailable_reason,
+            is_gemini_ready,
+        )
 
         gemini_analysis = None
-        gemini_analysis = None
-        if GOOGLE_API_KEY and self.processing_mode == "hybrid" and consent_token:
+        if self.processing_mode == "hybrid" and consent_token:
+            if not is_gemini_ready():
+                logger.warning(
+                    "[Sentiment] Gemini unavailable, using deterministic analysis: %s",
+                    get_gemini_unavailable_reason(),
+                )
             for attempt in range(2):
                 try:
                     gemini_analysis = await analyze_sentiment_with_gemini(

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from api.routes.kai._streaming import (
-    DEFAULT_STREAM_TIMEOUT_SECONDS,
+    STOCK_ANALYZE_TIMEOUT_SECONDS,
     CanonicalSSEStream,
 )
 from hushh_mcp.agents.kai.debate_engine import DebateEngine
@@ -26,7 +26,12 @@ from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.operons.kai.llm import stream_gemini_response
+from hushh_mcp.operons.kai.llm import (
+    get_gemini_unavailable_reason,
+    is_gemini_ready,
+    stream_gemini_response,
+    synthesize_debate_recommendation_card,
+)
 from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.services.renaissance_service import get_renaissance_service
 from hushh_mcp.services.world_model_service import get_world_model_service
@@ -93,10 +98,11 @@ def _normalize_analyze_event_payload(
             phase_value = "debate" if round_value == 2 else "analysis"
         normalized["round"] = round_value
         normalized["phase"] = phase_value
-    elif event_name == "debate_round":
-        round_value = _safe_round(normalized.get("round"), 2)
+    elif event_name in {"debate_round", "round_start"}:
+        fallback_round = default_round if event_name == "round_start" else 2
+        round_value = _safe_round(normalized.get("round"), fallback_round)
         normalized["round"] = round_value
-        normalized.setdefault("phase", "debate")
+        normalized.setdefault("phase", "debate" if round_value == 2 else "analysis")
     elif event_name == "kai_thinking":
         normalized.setdefault("phase", default_phase)
         normalized.setdefault("round", default_round)
@@ -104,6 +110,18 @@ def _normalize_analyze_event_payload(
         normalized.setdefault("phase", default_phase)
         normalized.setdefault("round", default_round)
     return normalized
+
+
+def _is_retryable_rate_limit_error(error: Exception | str) -> bool:
+    message = str(error).lower()
+    markers = (
+        "429",
+        "too many requests",
+        "rate limit",
+        "resource_exhausted",
+        "quota",
+    )
+    return any(marker in message for marker in markers)
 
 
 async def stream_agent_thinking(
@@ -121,6 +139,7 @@ async def stream_agent_thinking(
     """
     logger.info(f"[Kai Stream] Starting stream_agent_thinking for {agent_name}")
     token_count = 0
+    stream_error_message: Optional[str] = None
     try:
         async for event in stream_gemini_response(
             prompt=f"""You are a {agent_name} analyst. Briefly think through your analysis approach for {ticker}.
@@ -146,7 +165,8 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                     },
                 )
             elif event.get("type") == "error":
-                logger.error(f"[Kai Stream] Gemini error for {agent_name}: {event.get('message')}")
+                stream_error_message = str(event.get("message") or "unknown stream error")
+                logger.error(f"[Kai Stream] Gemini error for {agent_name}: {stream_error_message}")
             elif event.get("type") == "complete":
                 logger.info(
                     f"[Kai Stream] Streaming complete for {agent_name}, total tokens: {token_count}"
@@ -158,6 +178,28 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                     f"[Kai Stream] Client disconnected during {agent_name} streaming, stopping..."
                 )
                 return
+
+        if token_count == 0 and stream_error_message:
+            fallback_text = (
+                f"Live stream unavailable ({stream_error_message}). "
+                "Proceeding with deterministic analysis so results still complete."
+            )
+            fallback_words = fallback_text.split()
+            for idx, word in enumerate(fallback_words):
+                token_text = f"{word} " if idx < len(fallback_words) - 1 else word
+                yield create_event(
+                    "agent_token",
+                    {
+                        "agent": agent_name.lower(),
+                        "text": token_text,
+                        "type": "token",
+                        "round": round_number,
+                        "phase": phase,
+                    },
+                )
+                if await request.is_disconnected():
+                    return
+                await asyncio.sleep(0.01)
     except Exception as e:
         logger.error(f"[Kai Stream] Streaming error for {agent_name}: {e}", exc_info=True)
         # Non-fatal - analysis will continue without streaming
@@ -208,34 +250,98 @@ async def analyze_stream_generator(
 
     def remaining_timeout() -> float:
         elapsed = loop.time() - stream_started_at
-        remaining = DEFAULT_STREAM_TIMEOUT_SECONDS - elapsed
+        remaining = STOCK_ANALYZE_TIMEOUT_SECONDS - elapsed
         if remaining <= 0:
             raise asyncio.TimeoutError(
-                f"Analyze stream timed out after {DEFAULT_STREAM_TIMEOUT_SECONDS}s"
+                f"Analyze stream timed out after {STOCK_ANALYZE_TIMEOUT_SECONDS}s"
             )
         return remaining
 
     try:
+        yield create_event(
+            "start",
+            {
+                "phase": "analysis",
+                "round": 1,
+                "progress_pct": 1,
+                "message": f"Starting Kai analysis stream for {ticker}.",
+            },
+        )
+        yield create_event(
+            "kai_thinking",
+            {
+                "phase": "analysis",
+                "round": 1,
+                "message": "Preparing world model context and Renaissance universe signals...",
+                "tokens": ["Connecting", "to", "context", "layers", "and", "screening", "data."],
+            },
+        )
+        if not is_gemini_ready():
+            yield create_event(
+                "warning",
+                {
+                    "phase": "analysis",
+                    "round": 1,
+                    "code": "LLM_STREAM_UNAVAILABLE",
+                    "retryable": False,
+                    "message": get_gemini_unavailable_reason()
+                    or "Gemini streaming unavailable. Continuing with deterministic fallback.",
+                },
+            )
+
         # =========================================================================
         # 1. FETCH FULL CONTEXT (The Omniscient Backend)
         # =========================================================================
 
-        # A. Renaissance Universe Data (The Math)
+        # A + B. Pull Renaissance + world model context in parallel.
         renaissance_service = get_renaissance_service()
-        renaissance_context = await renaissance_service.get_analysis_context(ticker)
-
-        # B. User World Model Context (The Personalization)
-        # We fetch the V2 index which contains summarized risk/holdings data
         world_model = get_world_model_service()
-        wm_index = await asyncio.wait_for(
-            world_model.get_index_v2(user_id), timeout=remaining_timeout()
+        context_results = await asyncio.wait_for(
+            asyncio.gather(
+                renaissance_service.get_analysis_context(ticker),
+                world_model.get_index_v2(user_id),
+                return_exceptions=True,
+            ),
+            timeout=remaining_timeout(),
         )
+        renaissance_result, wm_result = context_results
 
+        if isinstance(renaissance_result, Exception):
+            logger.warning(
+                "[Kai Stream] Renaissance context lookup failed for %s: %s",
+                ticker,
+                renaissance_result,
+            )
+            renaissance_context: Dict[str, Any] = {
+                "is_investable": False,
+                "tier": None,
+                "tier_description": "Unavailable",
+                "conviction_weight": 0.0,
+                "investment_thesis": "",
+                "sector_peers": [],
+                "recommendation_bias": "NEUTRAL",
+            }
+        else:
+            renaissance_context = renaissance_result or {}
+
+        if isinstance(wm_result, Exception):
+            logger.warning("[Kai Stream] World model fetch failed for %s: %s", user_id, wm_result)
+            wm_index = None
+        else:
+            wm_index = wm_result
+
+        request_context: Dict[str, Any] = context if isinstance(context, dict) else {}
         full_user_context: Dict[str, Any] = {
             "risk_profile": risk_profile,
             "holdings_summary": [],
             "goals": [],
             "learned_attributes": [],
+            "preferences": {},
+            "user_name": request_context.get("name")
+            or request_context.get("display_name")
+            or request_context.get("user_name")
+            or "Investor",
+            "request_context": request_context,
         }
 
         if wm_index and wm_index.domain_summaries:
@@ -246,11 +352,39 @@ async def analyze_stream_generator(
                 "equities": fin_summary.get("equities_pct", 0),
                 "cash": fin_summary.get("cash_pct", 0),
             }
+            full_user_context["financial_summary"] = fin_summary
+
+            # Extract Kai profile summary flags (stored from onboarding preferences flow)
+            kai_profile_summary = wm_index.domain_summaries.get("kai_profile", {})
+            if isinstance(kai_profile_summary, dict):
+                full_user_context["kai_profile_summary"] = kai_profile_summary
 
             # Extract Learned Attributes (across all domains)
             # In a real implementation, we might filter for relevant ones
             # For now, we pass the raw domain summaries
             full_user_context["domain_summaries"] = wm_index.domain_summaries
+
+        # Merge frontend-provided preference hints (decrypted client-side context where available).
+        preference_container = {}
+        if isinstance(request_context.get("preferences"), dict):
+            preference_container.update(request_context.get("preferences", {}))
+        if isinstance(request_context.get("kai_profile"), dict):
+            profile = request_context.get("kai_profile", {})
+            preference_container.update(
+                {
+                    "investment_horizon": profile.get("investment_horizon"),
+                    "investment_style": profile.get("investment_style"),
+                }
+            )
+        if "investment_horizon" in request_context:
+            preference_container["investment_horizon"] = request_context.get("investment_horizon")
+        if "investment_style" in request_context:
+            preference_container["investment_style"] = request_context.get("investment_style")
+        full_user_context["preferences"] = {
+            key: value
+            for key, value in preference_container.items()
+            if value not in (None, "")
+        }
 
         # Yield thinking event about context retrieval
         yield create_event(
@@ -368,12 +502,57 @@ async def analyze_stream_generator(
 
         # Run actual fundamental analysis (this gets the structured data)
         try:
-            fundamental_insight = await asyncio.wait_for(
-                fundamental_agent.analyze(
-                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
-                ),
-                timeout=remaining_timeout(),
-            )
+            max_agent_attempts = 3
+            fundamental_insight = None
+            fundamental_last_error: Optional[Exception] = None
+            for attempt in range(1, max_agent_attempts + 1):
+                try:
+                    fundamental_insight = await asyncio.wait_for(
+                        fundamental_agent.analyze(
+                            ticker=ticker,
+                            user_id=user_id,
+                            consent_token=consent_token,
+                            context=context,
+                        ),
+                        timeout=remaining_timeout(),
+                    )
+                    fundamental_last_error = None
+                    break
+                except Exception as agent_err:
+                    fundamental_last_error = agent_err
+                    if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_delay = min(8, 2**attempt)
+                        yield create_event(
+                            "warning",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "agent": "fundamental",
+                                "code": "AGENT_RATE_LIMIT_RETRY",
+                                "retryable": True,
+                                "retry_in_seconds": retry_delay,
+                                "message": (
+                                    "Fundamental agent hit provider rate limits. "
+                                    f"Retrying from the same step in {retry_delay}s."
+                                ),
+                            },
+                        )
+                        yield create_event(
+                            "kai_thinking",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "message": (
+                                    "Fundamental agent throttled by provider. "
+                                    f"Retrying in {retry_delay}s without restarting debate."
+                                ),
+                            },
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    break
+            if fundamental_last_error is not None or fundamental_insight is None:
+                raise fundamental_last_error or RuntimeError("Fundamental agent returned no output")
             yield create_event(
                 "agent_complete",
                 {
@@ -446,12 +625,57 @@ async def analyze_stream_generator(
 
         # Run actual sentiment analysis
         try:
-            sentiment_insight = await asyncio.wait_for(
-                sentiment_agent.analyze(
-                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
-                ),
-                timeout=remaining_timeout(),
-            )
+            max_agent_attempts = 3
+            sentiment_insight = None
+            sentiment_last_error: Optional[Exception] = None
+            for attempt in range(1, max_agent_attempts + 1):
+                try:
+                    sentiment_insight = await asyncio.wait_for(
+                        sentiment_agent.analyze(
+                            ticker=ticker,
+                            user_id=user_id,
+                            consent_token=consent_token,
+                            context=context,
+                        ),
+                        timeout=remaining_timeout(),
+                    )
+                    sentiment_last_error = None
+                    break
+                except Exception as agent_err:
+                    sentiment_last_error = agent_err
+                    if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_delay = min(8, 2**attempt)
+                        yield create_event(
+                            "warning",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "agent": "sentiment",
+                                "code": "AGENT_RATE_LIMIT_RETRY",
+                                "retryable": True,
+                                "retry_in_seconds": retry_delay,
+                                "message": (
+                                    "Sentiment agent hit provider rate limits. "
+                                    f"Retrying from the same step in {retry_delay}s."
+                                ),
+                            },
+                        )
+                        yield create_event(
+                            "kai_thinking",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "message": (
+                                    "Sentiment agent throttled by provider. "
+                                    f"Retrying in {retry_delay}s without restarting debate."
+                                ),
+                            },
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    break
+            if sentiment_last_error is not None or sentiment_insight is None:
+                raise sentiment_last_error or RuntimeError("Sentiment agent returned no output")
             yield create_event(
                 "agent_complete",
                 {
@@ -511,12 +735,57 @@ async def analyze_stream_generator(
 
         # Run actual valuation analysis
         try:
-            valuation_insight = await asyncio.wait_for(
-                valuation_agent.analyze(
-                    ticker=ticker, user_id=user_id, consent_token=consent_token, context=context
-                ),
-                timeout=remaining_timeout(),
-            )
+            max_agent_attempts = 3
+            valuation_insight = None
+            valuation_last_error: Optional[Exception] = None
+            for attempt in range(1, max_agent_attempts + 1):
+                try:
+                    valuation_insight = await asyncio.wait_for(
+                        valuation_agent.analyze(
+                            ticker=ticker,
+                            user_id=user_id,
+                            consent_token=consent_token,
+                            context=context,
+                        ),
+                        timeout=remaining_timeout(),
+                    )
+                    valuation_last_error = None
+                    break
+                except Exception as agent_err:
+                    valuation_last_error = agent_err
+                    if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_delay = min(8, 2**attempt)
+                        yield create_event(
+                            "warning",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "agent": "valuation",
+                                "code": "AGENT_RATE_LIMIT_RETRY",
+                                "retryable": True,
+                                "retry_in_seconds": retry_delay,
+                                "message": (
+                                    "Valuation agent hit provider rate limits. "
+                                    f"Retrying from the same step in {retry_delay}s."
+                                ),
+                            },
+                        )
+                        yield create_event(
+                            "kai_thinking",
+                            {
+                                "phase": "analysis",
+                                "round": 1,
+                                "message": (
+                                    "Valuation agent throttled by provider. "
+                                    f"Retrying in {retry_delay}s without restarting debate."
+                                ),
+                            },
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    break
+            if valuation_last_error is not None or valuation_insight is None:
+                raise valuation_last_error or RuntimeError("Valuation agent returned no output")
             yield create_event(
                 "agent_complete",
                 {
@@ -551,8 +820,8 @@ async def analyze_stream_generator(
         yield create_event(
             "kai_thinking",
             {
-                "phase": "debate",
-                "round": 2,
+                "phase": "round1",
+                "round": 1,
                 "message": "⚖️ Now orchestrating multi-agent debate to reach consensus...",
                 "tokens": [
                     "Each",
@@ -576,8 +845,9 @@ async def analyze_stream_generator(
         # We pipeline its generator directly to the output.
 
         debate_result = None
-        current_round = 2
-        current_phase = "debate"
+        current_round = 1
+        current_phase = "analysis"
+        debate_highlights: list[dict[str, Any]] = []
 
         async for event in debate_engine.orchestrate_debate_stream(
             fundamental_insight=fundamental_insight,
@@ -604,12 +874,29 @@ async def analyze_stream_generator(
                 default_round=current_round,
                 default_phase=current_phase,
             )
-            if event_name == "debate_round":
+            if event_name in {"debate_round", "round_start"}:
                 current_round = _safe_round(normalized_payload.get("round"), current_round)
-                current_phase = str(normalized_payload.get("phase") or "debate")
+                current_phase = str(
+                    normalized_payload.get("phase")
+                    or ("debate" if current_round == 2 else "analysis")
+                )
             elif event_name in {"agent_start", "agent_token", "agent_complete", "agent_error"}:
                 current_round = _safe_round(normalized_payload.get("round"), current_round)
                 current_phase = str(normalized_payload.get("phase") or current_phase)
+            elif event_name == "insight_extracted":
+                if len(debate_highlights) < 36:
+                    debate_highlights.append(
+                        {
+                            "type": normalized_payload.get("type"),
+                            "agent": normalized_payload.get("agent"),
+                            "content": str(normalized_payload.get("content") or "")[:360],
+                            "classification": normalized_payload.get("classification"),
+                            "confidence": normalized_payload.get("confidence"),
+                            "magnitude": normalized_payload.get("magnitude"),
+                            "score": normalized_payload.get("score"),
+                            "source": normalized_payload.get("source"),
+                        }
+                    )
             yield create_event(event_name, normalized_payload)
 
             # Check for disconnection after each event
@@ -703,6 +990,60 @@ async def analyze_stream_generator(
             )
         await asyncio.sleep(0.2)
 
+        synthesis_payload = await asyncio.wait_for(
+            synthesize_debate_recommendation_card(
+                ticker=ticker,
+                risk_profile=risk_profile,
+                user_context=full_user_context,
+                renaissance_context=renaissance_context,
+                fundamental_payload={
+                    "summary": fundamental_insight.summary,
+                    "recommendation": fundamental_insight.recommendation,
+                    "confidence": fundamental_insight.confidence,
+                    "business_moat": fundamental_insight.business_moat,
+                    "financial_resilience": fundamental_insight.financial_resilience,
+                    "growth_efficiency": fundamental_insight.growth_efficiency,
+                    "bull_case": fundamental_insight.bull_case,
+                    "bear_case": fundamental_insight.bear_case,
+                    "key_metrics": fundamental_insight.key_metrics,
+                    "quant_metrics": fundamental_insight.quant_metrics,
+                },
+                sentiment_payload={
+                    "summary": sentiment_insight.summary,
+                    "recommendation": sentiment_insight.recommendation,
+                    "confidence": sentiment_insight.confidence,
+                    "sentiment_score": sentiment_insight.sentiment_score,
+                    "key_catalysts": sentiment_insight.key_catalysts,
+                },
+                valuation_payload={
+                    "summary": valuation_insight.summary,
+                    "recommendation": valuation_insight.recommendation,
+                    "confidence": valuation_insight.confidence,
+                    "valuation_metrics": valuation_insight.valuation_metrics,
+                    "peer_comparison": valuation_insight.peer_comparison,
+                    "price_targets": valuation_insight.price_targets,
+                },
+                debate_payload={
+                    "decision": debate_result.decision,
+                    "confidence": debate_result.confidence,
+                    "consensus_reached": debate_result.consensus_reached,
+                    "agent_votes": debate_result.agent_votes,
+                    "dissenting_opinions": debate_result.dissenting_opinions,
+                    "final_statement": debate_result.final_statement,
+                },
+                highlights=debate_highlights,
+            ),
+            timeout=min(remaining_timeout(), 30.0),
+        )
+
+        world_model_context = {
+            "risk_profile": full_user_context.get("risk_profile"),
+            "preferences": full_user_context.get("preferences", {}),
+            "holdings_count": len(full_user_context.get("holdings_summary", []) or []),
+            "portfolio_allocation": full_user_context.get("portfolio_allocation", {}),
+            "has_domain_summaries": bool(full_user_context.get("domain_summaries")),
+        }
+
         # Build raw_card structure
         raw_card = {
             "fundamental_insight": {
@@ -724,6 +1065,7 @@ async def analyze_stream_generator(
                 },
                 "valuation": valuation_insight.valuation_metrics,
             },
+            "price_targets": valuation_insight.price_targets,
             "all_sources": list(
                 set(
                     fundamental_insight.sources
@@ -735,6 +1077,35 @@ async def analyze_stream_generator(
             "debate_digest": debate_result.final_statement,
             "consensus_reached": debate_result.consensus_reached,
             "dissenting_opinions": debate_result.dissenting_opinions,
+            "debate_highlights": debate_highlights[:20],
+            "world_model_context": world_model_context,
+            "renaissance_tier": renaissance_context.get("tier"),
+            "renaissance_score": float(renaissance_context.get("conviction_weight", 0.0) or 0.0)
+            * 100.0,
+            "renaissance_context": {
+                "tier": renaissance_context.get("tier"),
+                "tier_description": renaissance_context.get("tier_description"),
+                "conviction_weight": renaissance_context.get("conviction_weight"),
+                "investment_thesis": renaissance_context.get("investment_thesis"),
+                "fcf_billions": renaissance_context.get("fcf_billions"),
+                "sector": renaissance_context.get("sector"),
+                "sector_peers": renaissance_context.get("sector_peers", []),
+                "recommendation_bias": renaissance_context.get("recommendation_bias"),
+                "is_investable": renaissance_context.get("is_investable"),
+                "is_avoid": renaissance_context.get("is_avoid"),
+                "avoid_reason": renaissance_context.get("avoid_reason"),
+                "screening_criteria": renaissance_context.get("screening_criteria"),
+            },
+            "alphaagents_trace": {
+                "paper": "arXiv:2508.11152v1",
+                "protocol": "round_robin_adversarial_debate",
+                "rounds_executed": len(debate_engine.rounds),
+                "turns_per_agent": 2,
+                "consensus_method": "weighted_vote_by_risk_profile",
+                "consensus_threshold": 0.70,
+                "consensus_reached": debate_result.consensus_reached,
+            },
+            "llm_synthesis": synthesis_payload,
         }
 
         yield create_event(
@@ -762,14 +1133,14 @@ async def analyze_stream_generator(
     except asyncio.TimeoutError:
         logger.warning(
             "[Kai Stream] Hard timeout (%ss) reached for %s",
-            DEFAULT_STREAM_TIMEOUT_SECONDS,
+            STOCK_ANALYZE_TIMEOUT_SECONDS,
             ticker,
         )
         yield create_event(
             "error",
             {
                 "code": "ANALYZE_TIMEOUT",
-                "message": f"Analysis timed out after {DEFAULT_STREAM_TIMEOUT_SECONDS}s.",
+                "message": f"Analysis timed out after {STOCK_ANALYZE_TIMEOUT_SECONDS}s.",
                 "ticker": ticker,
             },
             terminal=True,
@@ -849,6 +1220,7 @@ async def analyze_stream(
             context=None,
             request=request,
         ),
+        ping=15,
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
@@ -905,6 +1277,7 @@ async def analyze_stream_post(
             context=body.context,
             request=request,
         ),
+        ping=15,
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
