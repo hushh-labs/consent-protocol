@@ -168,6 +168,21 @@ class ValuationAgent(HushhAgent):
             logger.error(f"[Valuation] Deterministic analysis failed: {e}")
             raise
 
+    async def _mock_analysis(self, ticker: str) -> ValuationInsight:
+        """Lightweight fallback used when upstream streaming/analysis fails."""
+        return ValuationInsight(
+            summary=(
+                f"Valuation fallback analysis for {ticker}: pricing appears near fair value"
+                " with limited margin of safety."
+            ),
+            valuation_metrics={},
+            peer_comparison={},
+            price_targets={},
+            sources=["Fallback Valuation Model"],
+            confidence=0.35,
+            recommendation="fair",
+        )
+
 
 # Export singleton for use in KaiAgent orchestration
 valuation_agent = ValuationAgent()

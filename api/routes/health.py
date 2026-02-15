@@ -26,9 +26,7 @@ def health():
 def app_review_mode_config():
     """Runtime app-review-mode config served from backend env (not frontend build env)."""
     enabled = str(
-        os.getenv("APP_REVIEW_MODE")
-        or os.getenv("HUSHH_APP_REVIEW_MODE")
-        or "false"
+        os.getenv("APP_REVIEW_MODE") or os.getenv("HUSHH_APP_REVIEW_MODE") or "false"
     ).lower() in {"1", "true", "yes", "on"}
     payload = {"enabled": enabled}
     if enabled:
