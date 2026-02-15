@@ -8,65 +8,246 @@ Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
 import asyncio
 import json
 import logging
+import os
+import subprocess
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-# Gemini SDK compatibility
-#
-# We support two possible SDKs:
-# - New: `google-genai`  -> `from google import genai` and `from google.genai import types`
-# - Legacy (deprecated): `google-generativeai` -> `import google.generativeai as genai`
-#
-# In dev environments, only the legacy package may be installed. We fall back
-# to it to avoid noisy runtime errors.
+# Gemini SDK (google-genai only).
 try:
     from google import genai  # type: ignore
     from google.genai import types  # type: ignore
 
     GEMINI_AVAILABLE = True
-    GEMINI_SDK = "google-genai"
 except ImportError:
-    try:
-        import google.generativeai as genai  # type: ignore
+    GEMINI_AVAILABLE = False
+    genai = None  # type: ignore
+    types = None  # type: ignore
+    logging.warning("⚠️ google-genai SDK not found. Kai LLM operons are unavailable.")
 
-        types = None  # type: ignore
-        GEMINI_AVAILABLE = True
-        GEMINI_SDK = "google-generativeai"
-        logging.warning(
-            "⚠️ Using deprecated google.generativeai SDK fallback. Install google-genai to remove this warning."
-        )
-    except ImportError:
-        GEMINI_AVAILABLE = False
-        GEMINI_SDK = "none"
-        genai = None  # type: ignore
-        types = None  # type: ignore
-        logging.warning(
-            "⚠️ No Gemini SDK found (google-genai or google-generativeai). Kai agent will run in logic-only mode."
-        )
-
-from hushh_mcp.config import GOOGLE_API_KEY
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import GEMINI_MODEL, GEMINI_MODEL_FULL, ConsentScope
+from hushh_mcp.constants import GEMINI_MODEL, ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini Client
-# NOTE: GOOGLE_API_KEY is sanitized (trimmed) in hushh_mcp/config.py to avoid Cloud Run
-# gRPC metadata errors ("Illegal header value") caused by trailing newlines.
+# Configure Gemini Client (Vertex-only path).
+# Explicit fail-fast configuration checks avoid silent runtime fallbacks.
 _gemini_client = None
-if GEMINI_AVAILABLE and GOOGLE_API_KEY:
+_gemini_unavailable_reason: Optional[str] = None
+_gemini_model_name = ""
+_gemini_use_vertex = True
+_gemini_project = ""
+_gemini_project_source: Optional[str] = None
+_gemini_location = "global"
+
+
+def _is_truthy(raw_value: str) -> bool:
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_vertex_mode() -> bool:
+    # Vertex-only by default for Kai (legacy non-Vertex path intentionally disabled).
+    raw_value = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    return _is_truthy(raw_value)
+
+
+def _resolve_project_from_credentials_file() -> tuple[str, Optional[str]]:
+    credentials_path = (os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+    if not credentials_path:
+        return "", None
+
     try:
-        if GEMINI_SDK == "google-genai":
-            _gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
-        else:
-            # google.generativeai uses module-level configuration
-            genai.configure(api_key=GOOGLE_API_KEY)
-            _gemini_client = None
-    except Exception as e:
-        logger.error(f"Failed to initialize Gemini Client: {e}")
-        GEMINI_AVAILABLE = False
-elif not GOOGLE_API_KEY:
-    logger.warning("⚠️ GOOGLE_API_KEY not found. Gemini operons will be unavailable.")
+        payload = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
+        project_id = payload.get("project_id")
+        if isinstance(project_id, str) and project_id.strip():
+            return project_id.strip(), "GOOGLE_APPLICATION_CREDENTIALS.project_id"
+    except Exception as creds_err:
+        logger.debug("[Kai LLM] Unable to parse GOOGLE_APPLICATION_CREDENTIALS: %s", creds_err)
+
+    return "", None
+
+
+def _resolve_project_from_gcloud() -> tuple[str, Optional[str]]:
+    try:
+        result = subprocess.run(
+            ["gcloud", "config", "get-value", "project"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+    except Exception as gcloud_err:
+        logger.debug("[Kai LLM] Unable to resolve project via gcloud CLI: %s", gcloud_err)
+        return "", None
+
+    if result.returncode != 0:
+        return "", None
+
+    project_id = (result.stdout or "").strip()
+    if project_id and project_id.lower() != "(unset)":
+        return project_id, "gcloud config"
+    return "", None
+
+
+def _resolve_vertex_project() -> tuple[str, Optional[str]]:
+    """Resolve Vertex project from env aliases first, then ADC/credentials metadata."""
+    env_project_keys = (
+        "GOOGLE_CLOUD_PROJECT",
+        "GCP_PROJECT",
+        "GOOGLE_PROJECT",
+        "GCLOUD_PROJECT",
+        "VERTEX_PROJECT_ID",
+    )
+    for key in env_project_keys:
+        value = (os.getenv(key) or "").strip()
+        if value:
+            return value, key
+
+    try:
+        import google.auth  # type: ignore
+
+        _, detected_project = google.auth.default()
+        if isinstance(detected_project, str) and detected_project.strip():
+            return detected_project.strip(), "google.auth.default()"
+    except Exception as adc_err:
+        logger.debug("[Kai LLM] Unable to resolve project from ADC: %s", adc_err)
+
+    file_project, file_source = _resolve_project_from_credentials_file()
+    if file_project:
+        return file_project, file_source
+
+    gcloud_project, gcloud_source = _resolve_project_from_gcloud()
+    if gcloud_project:
+        return gcloud_project, gcloud_source
+
+    return "", None
+
+
+def _resolve_vertex_location() -> str:
+    return (
+        os.getenv("GOOGLE_CLOUD_LOCATION")
+        or os.getenv("GCP_LOCATION")
+        or os.getenv("VERTEX_LOCATION")
+        or "global"
+    ).strip()
+
+
+def _initialize_gemini_client(force: bool = False) -> None:
+    """Initialize or refresh the shared Gemini Vertex client."""
+    global _gemini_client
+    global _gemini_unavailable_reason
+    global _gemini_model_name
+    global _gemini_use_vertex
+    global _gemini_project
+    global _gemini_project_source
+    global _gemini_location
+
+    if _gemini_client is not None and not force:
+        return
+
+    _gemini_client = None
+    _gemini_unavailable_reason = None
+    _gemini_model_name = (os.getenv("GEMINI_MODEL") or GEMINI_MODEL).strip()
+    _gemini_use_vertex = _resolve_vertex_mode()
+    _gemini_project, _gemini_project_source = _resolve_vertex_project()
+    _gemini_location = _resolve_vertex_location()
+
+    if not GEMINI_AVAILABLE:
+        _gemini_unavailable_reason = "LLM_SDK_MISSING: install google-genai"
+    elif not _gemini_model_name:
+        _gemini_unavailable_reason = "LLM_MODEL_MISSING: GEMINI_MODEL is empty"
+    elif not _gemini_use_vertex:
+        _gemini_unavailable_reason = (
+            "LLM_VERTEX_DISABLED: GOOGLE_GENAI_USE_VERTEXAI must be true for Kai operons"
+        )
+    elif not _gemini_project:
+        _gemini_unavailable_reason = (
+            "LLM_VERTEX_PROJECT_MISSING: set GOOGLE_CLOUD_PROJECT (or configure ADC/gcloud project)"
+        )
+    elif not _gemini_location:
+        _gemini_unavailable_reason = "LLM_VERTEX_LOCATION_MISSING: set GOOGLE_CLOUD_LOCATION"
+    else:
+        try:
+            # Keep env aligned for downstream libs/components that rely on canonical names.
+            os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
+            os.environ.setdefault("GOOGLE_CLOUD_PROJECT", _gemini_project)
+            os.environ.setdefault("GCP_PROJECT", _gemini_project)
+            os.environ.setdefault("GOOGLE_CLOUD_LOCATION", _gemini_location)
+            _gemini_client = genai.Client(
+                vertexai=True,
+                project=_gemini_project,
+                location=_gemini_location,
+            )
+            logger.info(
+                "[Kai LLM] Vertex client initialized (project=%s, location=%s, model=%s, source=%s)",
+                _gemini_project,
+                _gemini_location,
+                _gemini_model_name,
+                _gemini_project_source or "unknown",
+            )
+            return
+        except Exception as init_err:
+            _gemini_unavailable_reason = f"LLM_VERTEX_INIT_FAILED: {init_err}"
+
+    if _gemini_unavailable_reason:
+        logger.error("[Kai LLM] %s", _gemini_unavailable_reason)
+
+
+_initialize_gemini_client()
+
+
+def _gemini_unavailable_payload(default_message: str) -> Dict[str, Any]:
+    message = _gemini_unavailable_reason or default_message
+    return {"error": message, "fallback": True, "code": "GEMINI_UNAVAILABLE"}
+
+
+def _require_gemini_ready() -> bool:
+    if _gemini_client is None:
+        _initialize_gemini_client()
+    return bool(GEMINI_AVAILABLE and _gemini_client and _gemini_model_name)
+
+
+def is_gemini_ready() -> bool:
+    """Public readiness check for Kai agents/routes."""
+    return _require_gemini_ready()
+
+
+def get_gemini_unavailable_reason() -> Optional[str]:
+    """Public diagnostic helper for richer error surfaces."""
+    if _gemini_client is None and _gemini_unavailable_reason is None:
+        _initialize_gemini_client()
+    return _gemini_unavailable_reason
+
+
+async def _generate_content_text(
+    *,
+    prompt: str,
+    timeout_seconds: float,
+    temperature: float,
+    max_output_tokens: int,
+    response_mime_type: Optional[str] = None,
+) -> str:
+    if not _require_gemini_ready() or types is None:
+        raise RuntimeError(_gemini_unavailable_reason or "Gemini client unavailable")
+
+    config_kwargs: Dict[str, Any] = {
+        "temperature": temperature,
+        "max_output_tokens": max_output_tokens,
+    }
+    if response_mime_type:
+        config_kwargs["response_mime_type"] = response_mime_type
+
+    response = await asyncio.wait_for(
+        _gemini_client.aio.models.generate_content(
+            model=_gemini_model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
+        ),
+        timeout=timeout_seconds,
+    )
+
+    return (response.text or "").strip()
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -120,8 +301,8 @@ async def analyze_stock_with_gemini(
         logger.error(f"[Gemini Operon] Permission denied: {reason}")
         raise PermissionError(f"Gemini analysis denied: {reason}")
 
-    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        return {"error": "Gemini unavailable (Missing API Key or SDK)", "fallback": True}
+    if not _require_gemini_ready():
+        return _gemini_unavailable_payload("Gemini unavailable")
 
     logger.info(f"[Gemini Operon] Starting deep analyst session for {ticker}")
 
@@ -257,25 +438,15 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     # 3. Call Gemini
     try:
-        if GEMINI_SDK == "google-genai":
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            # Cloud calls can occasionally stall; hard-timebox so Kai can fall back to deterministic analysis.
-            response = await asyncio.wait_for(
-                model.generate_content_async(f"{system_instruction}\n\nCONTEXT DATA:\n{context}"),
-                timeout=40.0,
-            )
-        else:
-            # google.generativeai fallback
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    model.generate_content,
-                    f"{system_instruction}\n\nCONTEXT DATA:\n{context}",
-                ),
-                timeout=40.0,
-            )
+        response_text = await _generate_content_text(
+            prompt=f"{system_instruction}\n\nCONTEXT DATA:\n{context}",
+            timeout_seconds=40.0,
+            temperature=0.2,
+            max_output_tokens=4096,
+            response_mime_type="application/json",
+        )
 
-        analysis = _extract_json(response.text)
+        analysis = _extract_json(response_text)
         if not analysis:
             raise ValueError("Failed to parse JSON from Gemini response")
 
@@ -315,8 +486,8 @@ async def analyze_sentiment_with_gemini(
         logger.error(f"[Gemini Sentiment] Permission denied: {reason}")
         raise PermissionError(f"Sentiment analysis denied: {reason}")
 
-    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        return {"error": "Gemini unavailable", "fallback": True}
+    if not _require_gemini_ready():
+        return _gemini_unavailable_payload("Gemini unavailable")
 
     logger.info(f"[Gemini Sentiment] Analyzing sentiment for {ticker}")
 
@@ -366,23 +537,13 @@ Analyze the provided news articles and assess market sentiment for this stock.
 
     # 3. Call Gemini
     try:
-        if GEMINI_SDK == "google-genai":
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            response = await asyncio.wait_for(
-                model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
-                timeout=30.0,
-            )
-        else:
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    model.generate_content,
-                    f"{system_instruction}\n\nCONTEXT:\n{context}",
-                ),
-                timeout=30.0,
-            )
-
-        text = response.text.strip()
+        text = await _generate_content_text(
+            prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
+            timeout_seconds=30.0,
+            temperature=0.2,
+            max_output_tokens=4096,
+            response_mime_type="application/json",
+        )
         if text.startswith("```json"):
             text = text[7:-3].strip()
         elif text.startswith("```"):
@@ -420,8 +581,8 @@ async def analyze_valuation_with_gemini(
         logger.error(f"[Gemini Valuation] Permission denied: {reason}")
         raise PermissionError(f"Valuation analysis denied: {reason}")
 
-    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        return {"error": "Gemini unavailable", "fallback": True}
+    if not _require_gemini_ready():
+        return _gemini_unavailable_payload("Gemini unavailable")
 
     logger.info(f"[Gemini Valuation] Analyzing valuation for {ticker}")
 
@@ -484,23 +645,13 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 
     # 3. Call Gemini
     try:
-        if GEMINI_SDK == "google-genai":
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            response = await asyncio.wait_for(
-                model.generate_content_async(f"{system_instruction}\n\nCONTEXT:\n{context}"),
-                timeout=30.0,
-            )
-        else:
-            model = genai.GenerativeModel(GEMINI_MODEL_FULL)
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    model.generate_content,
-                    f"{system_instruction}\n\nCONTEXT:\n{context}",
-                ),
-                timeout=30.0,
-            )
-
-        text = response.text.strip()
+        text = await _generate_content_text(
+            prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
+            timeout_seconds=30.0,
+            temperature=0.2,
+            max_output_tokens=4096,
+            response_mime_type="application/json",
+        )
         if text.startswith("```json"):
             text = text[7:-3].strip()
         elif text.startswith("```"):
@@ -516,6 +667,78 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
     except Exception as e:
         logger.error(f"[Gemini Valuation] Error: {e}")
         return {"error": str(e), "fallback": True}
+
+
+async def synthesize_debate_recommendation_card(
+    *,
+    ticker: str,
+    risk_profile: str,
+    user_context: Dict[str, Any],
+    renaissance_context: Dict[str, Any],
+    fundamental_payload: Dict[str, Any],
+    sentiment_payload: Dict[str, Any],
+    valuation_payload: Dict[str, Any],
+    debate_payload: Dict[str, Any],
+    highlights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Build a rich post-debate synthesis card using Gemini.
+
+    Returns strict JSON fields for frontend decision-card rendering.
+    """
+    if not _require_gemini_ready():
+        return _gemini_unavailable_payload("Gemini synthesis unavailable")
+
+    synthesis_prompt = f"""
+You are Kai Chief Investment Strategist.
+You are given finalized multi-agent debate artifacts for {ticker}.
+
+Your task: produce a concise, institution-grade synthesis that unifies
+fundamental/sentiment/valuation, user context, and Renaissance screening.
+
+Return STRICT JSON with keys:
+- thesis: string (1 short paragraph)
+- key_drivers: string[] (3-6 bullets, specific and evidence-backed)
+- key_risks: string[] (3-6 bullets, concrete downside risks)
+- action_plan: string[] (3-5 practical next actions for this user)
+- watchlist_triggers: string[] (3-6 measurable triggers users should monitor)
+- horizon_fit: string (how this fits user's horizon/style/risk)
+
+Constraints:
+- No markdown.
+- No generic filler.
+- Mention Renaissance tier and at least one user-context personalization.
+- Keep each bullet <= 140 chars.
+
+INPUT:
+risk_profile={risk_profile}
+user_context={json.dumps(user_context, default=str)[:7000]}
+renaissance_context={json.dumps(renaissance_context, default=str)[:4000]}
+fundamental={json.dumps(fundamental_payload, default=str)[:5000]}
+sentiment={json.dumps(sentiment_payload, default=str)[:4000]}
+valuation={json.dumps(valuation_payload, default=str)[:4000]}
+debate={json.dumps(debate_payload, default=str)[:4000]}
+highlights={json.dumps(highlights[:24], default=str)[:4000]}
+"""
+
+    try:
+        text = await _generate_content_text(
+            prompt=synthesis_prompt,
+            timeout_seconds=25.0,
+            temperature=0.2,
+            max_output_tokens=2500,
+            response_mime_type="application/json",
+        )
+        parsed = _extract_json(text)
+        if not parsed:
+            raise ValueError("Empty synthesis JSON")
+        return parsed
+    except Exception as err:
+        logger.warning("[Kai LLM] Debate synthesis failed for %s: %s", ticker, err)
+        return {
+            "error": f"LLM_SYNTHESIS_FAILED: {err}",
+            "fallback": True,
+        }
 
 
 # ============================================================================
@@ -539,17 +762,12 @@ async def stream_gemini_response(
     Uses Gemini 3 Flash with synchronous streaming wrapped in async context.
     This is more reliable than async iteration which may not yield correctly.
     """
-    if GEMINI_SDK != "google-genai":
-        # Streaming is only implemented for the new google-genai client.
+    if not _require_gemini_ready():
+        logger.error("[Gemini Streaming] No client configured!")
         yield {
             "type": "error",
-            "message": "Gemini streaming unavailable (requires google-genai SDK)",
+            "message": _gemini_unavailable_reason or "Gemini client not configured",
         }
-        return
-
-    if not _gemini_client:
-        logger.error("[Gemini Streaming] No client configured!")
-        yield {"type": "error", "message": "Gemini API key not configured"}
         return
 
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
@@ -571,7 +789,7 @@ async def stream_gemini_response(
         # Call the ASYNC streaming method
         # Note: google.genai V1 SDK uses client.aio for async calls
         stream = await _gemini_client.aio.models.generate_content_stream(
-            model=GEMINI_MODEL,  # Use standardized model
+            model=_gemini_model_name,
             contents=prompt,
             config=config,
         )
@@ -638,8 +856,8 @@ async def analyze_fundamental_streaming(
         yield {"type": "error", "message": f"Permission denied: {reason}"}
         return
 
-    if not GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        yield {"type": "error", "message": "Gemini unavailable"}
+    if not _require_gemini_ready():
+        yield {"type": "error", "message": _gemini_unavailable_reason or "Gemini unavailable"}
         return
 
     logger.info(f"[Fundamental Streaming] Starting for {ticker}")
