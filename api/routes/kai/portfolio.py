@@ -15,6 +15,7 @@ Authentication:
 """
 
 import asyncio
+import json
 import logging
 import math
 import re
@@ -26,8 +27,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
 from api.routes.kai._streaming import (
-    DEFAULT_STREAM_TIMEOUT_SECONDS,
     HEARTBEAT_INTERVAL_SECONDS,
+    PORTFOLIO_IMPORT_TIMEOUT_SECONDS,
     CanonicalSSEStream,
     parse_json_with_single_repair,
 )
@@ -42,6 +43,329 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _NUMERIC_STRIP_RE = re.compile(r"[$,\s]")
+_LIVE_SYMBOL_RE = re.compile(
+    r'"(?:symbol|symbol_cusip|ticker|cusip|security_id|security)"\s*:\s*"([^"]{1,64})"',
+    flags=re.IGNORECASE,
+)
+_LIVE_NAME_RE = re.compile(
+    r'"(?:description|name|security_name|holding_name)"\s*:\s*"([^"]{1,180})"',
+    flags=re.IGNORECASE,
+)
+_LIVE_ASSET_RE = re.compile(
+    r'"(?:asset_class|asset_type|security_type|type)"\s*:\s*"([^"]{1,64})"',
+    flags=re.IGNORECASE,
+)
+_LIVE_QTY_RE = re.compile(
+    r'"(?:quantity|shares|units|qty)"\s*:\s*(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
+    flags=re.IGNORECASE,
+)
+_LIVE_VALUE_RE = re.compile(
+    r'"(?:market_value|current_value|value|position_value|marketValue)"\s*:\s*'
+    r'(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
+    flags=re.IGNORECASE,
+)
+_HOLDING_KEY_HINTS = frozenset(
+    {
+        "symbol",
+        "symbol_cusip",
+        "ticker",
+        "cusip",
+        "security_id",
+        "security",
+        "description",
+        "name",
+        "quantity",
+        "qty",
+        "shares",
+        "units",
+        "market_value",
+        "value",
+        "current_value",
+        "marketvalue",
+        "price",
+        "price_per_unit",
+        "last_price",
+        "unit_price",
+        "current_price",
+        "cost_basis",
+        "book_value",
+        "asset_class",
+        "asset_type",
+        "security_type",
+    }
+)
+
+
+def _looks_like_holding_row(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    keys = {str(key).lower() for key in value.keys()}
+    if not keys:
+        return False
+
+    strong_fields = {
+        "market_value",
+        "current_value",
+        "marketvalue",
+        "cost_basis",
+        "book_value",
+        "unrealized_gain_loss",
+        "asset_class",
+        "asset_type",
+        "security_type",
+        "symbol_cusip",
+    }
+    id_fields = {"symbol", "symbol_cusip", "ticker", "cusip", "security_id", "security"}
+    qty_fields = {"quantity", "qty", "shares", "units"}
+    price_fields = {"price", "price_per_unit", "last_price", "unit_price", "current_price"}
+    transaction_bias_fields = {
+        "transaction_type",
+        "settle_date",
+        "trade_date",
+        "amount",
+        "net_amount",
+    }
+
+    # Guard against transaction rows being misidentified as holdings.
+    if keys.intersection(transaction_bias_fields) and not keys.intersection(strong_fields):
+        return False
+
+    if keys.intersection(strong_fields) and keys.intersection(id_fields):
+        return True
+    if keys.intersection(id_fields) and keys.intersection(qty_fields) and keys.intersection(price_fields):
+        return True
+    if keys.intersection(_HOLDING_KEY_HINTS):
+        return True
+    # Some statements only return a security identifier + value fields.
+    identifier_keys = {"cusip", "security_id", "security"}
+    numeric_keys = {"market_value", "value", "current_value", "quantity", "shares", "units"}
+    return bool(keys.intersection(identifier_keys) and keys.intersection(numeric_keys))
+
+
+def _recursive_find_holdings_lists(
+    value: Any,
+    *,
+    _seen: set[int] | None = None,
+) -> list[list[dict[str, Any]]]:
+    seen = _seen if _seen is not None else set()
+    candidates: list[list[dict[str, Any]]] = []
+
+    if isinstance(value, (list, dict)):
+        obj_id = id(value)
+        if obj_id in seen:
+            return candidates
+        seen.add(obj_id)
+
+    if isinstance(value, list):
+        rows = [row for row in value if isinstance(row, dict)]
+        if rows and any(_looks_like_holding_row(row) for row in rows):
+            candidates.append(rows)
+        for row in value:
+            candidates.extend(_recursive_find_holdings_lists(row, _seen=seen))
+        return candidates
+
+    if isinstance(value, dict):
+        for nested_value in value.values():
+            candidates.extend(_recursive_find_holdings_lists(nested_value, _seen=seen))
+    return candidates
+
+
+def _merge_unique_holding_rows(candidates: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen_fingerprints: set[str] = set()
+    for rows in candidates:
+        for row in rows:
+            try:
+                fingerprint = json.dumps(row, sort_keys=True, default=str)
+            except Exception:
+                fingerprint = str(sorted((str(k), str(v)) for k, v in row.items()))
+            if fingerprint in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fingerprint)
+            merged.append(row)
+    return merged
+
+
+def _extract_holdings_list(parsed_data: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    collected_candidates: list[list[dict[str, Any]]] = []
+    source_fields: list[str] = []
+
+    detailed_holdings = parsed_data.get("detailed_holdings")
+    if isinstance(detailed_holdings, list):
+        rows = [row for row in detailed_holdings if isinstance(row, dict)]
+        if rows and any(_looks_like_holding_row(row) for row in rows):
+            collected_candidates.append(rows)
+            source_fields.append("detailed_holdings")
+
+    aliases = (
+        "holdings",
+        "positions",
+        "portfolio_holdings",
+        "securities",
+    )
+    for alias in aliases:
+        candidate = parsed_data.get(alias)
+        if isinstance(candidate, list):
+            rows = [row for row in candidate if isinstance(row, dict)]
+            if rows and any(_looks_like_holding_row(row) for row in rows):
+                collected_candidates.append(rows)
+                source_fields.append(alias)
+        if isinstance(candidate, dict):
+            nested = (
+                candidate.get("items")
+                or candidate.get("rows")
+                or candidate.get("data")
+                or candidate.get("holdings")
+                or candidate.get("positions")
+                or candidate.get("securities")
+            )
+            if isinstance(nested, list):
+                rows = [row for row in nested if isinstance(row, dict)]
+                if rows and any(_looks_like_holding_row(row) for row in rows):
+                    collected_candidates.append(rows)
+                    source_fields.append(f"{alias}.items")
+
+    recursive_candidates = _recursive_find_holdings_lists(parsed_data)
+    if recursive_candidates:
+        collected_candidates.extend(recursive_candidates)
+
+    if not collected_candidates:
+        return [], "none"
+
+    merged = _merge_unique_holding_rows(collected_candidates)
+    if not merged:
+        return [], "none"
+
+    if "detailed_holdings" in source_fields:
+        return merged, "detailed_holdings"
+    if source_fields:
+        return merged, source_fields[0]
+    return merged, "recursive_scan"
+
+
+def _estimate_stream_holdings(full_response: str) -> int:
+    if not full_response:
+        return 0
+
+    lower = full_response.lower()
+    anchor = -1
+    for key in ("\"detailed_holdings\"", "\"holdings\"", "\"positions\"", "\"securities\""):
+        anchor = lower.rfind(key)
+        if anchor != -1:
+            break
+    section = full_response[anchor:] if anchor != -1 else full_response
+    symbol_matches = re.findall(r'"(?:symbol|symbol_cusip|ticker)"\s*:', section, flags=re.IGNORECASE)
+    if symbol_matches:
+        return len(symbol_matches)
+    row_markers = re.findall(
+        r'"(?:quantity|market_value|cost_basis|price|price_per_unit)"\s*:',
+        section,
+        flags=re.IGNORECASE,
+    )
+    return max(0, len(row_markers) // 2)
+
+
+def _extract_live_holdings_preview_from_text(
+    full_response: str,
+    *,
+    max_items: int = 40,
+) -> list[dict[str, Any]]:
+    if not full_response:
+        return []
+
+    lower = full_response.lower()
+    anchors = [
+        lower.rfind('"detailed_holdings"'),
+        lower.rfind('"holdings"'),
+        lower.rfind('"positions"'),
+        lower.rfind('"securities"'),
+    ]
+    anchor = max(anchors)
+    section = full_response[anchor:] if anchor >= 0 else full_response
+
+    preview: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for symbol_match in _LIVE_SYMBOL_RE.finditer(section):
+        symbol = symbol_match.group(1).strip()
+        if not symbol:
+            continue
+
+        window_start = symbol_match.start()
+        window_end = min(len(section), window_start + 700)
+        window = section[window_start:window_end]
+
+        name_match = _LIVE_NAME_RE.search(window)
+        asset_match = _LIVE_ASSET_RE.search(window)
+        qty_match = _LIVE_QTY_RE.search(window)
+        value_match = _LIVE_VALUE_RE.search(window)
+
+        name = name_match.group(1).strip() if name_match else ""
+        asset_type = asset_match.group(1).strip() if asset_match else ""
+        quantity_raw = (
+            (qty_match.group(1) or qty_match.group(2)).strip()
+            if qty_match and (qty_match.group(1) or qty_match.group(2))
+            else None
+        )
+        market_value_raw = (
+            (value_match.group(1) or value_match.group(2)).strip()
+            if value_match and (value_match.group(1) or value_match.group(2))
+            else None
+        )
+
+        quantity = _coerce_optional_number(quantity_raw)
+        market_value = _coerce_optional_number(market_value_raw)
+
+        fingerprint = f"{symbol}|{name}|{quantity}|{market_value}|{asset_type}"
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+
+        preview.append(
+            {
+                "symbol": symbol,
+                "name": name or None,
+                "quantity": quantity,
+                "market_value": market_value,
+                "asset_type": asset_type or None,
+            }
+        )
+        if len(preview) >= max_items:
+            break
+
+    return preview
+
+
+def _build_holdings_preview(
+    holdings: list[dict[str, Any]],
+    *,
+    max_items: Optional[int] = None,
+) -> list[dict[str, Any]]:
+    preview: list[dict[str, Any]] = []
+    rows = holdings
+    if isinstance(max_items, int) and max_items > 0:
+        rows = holdings[:max_items]
+
+    for holding in rows:
+        symbol = holding.get("symbol") or holding.get("symbol_cusip")
+        name = holding.get("name") or holding.get("description")
+        preview.append(
+            {
+                "symbol": str(symbol).strip() if symbol is not None else "",
+                "name": str(name).strip() if name is not None else "",
+                "market_value": _coerce_optional_number(holding.get("market_value")),
+                "quantity": _coerce_optional_number(holding.get("quantity")),
+                "asset_type": str(holding.get("asset_type", "")).strip() or None,
+            }
+        )
+    return preview
+
+
+def _first_present(row: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in row and row.get(key) not in (None, ""):
+            return row.get(key)
+    return None
 
 
 def _coerce_optional_number(value: Any) -> Optional[float]:
@@ -233,6 +557,19 @@ async def import_portfolio(
         filename=file.filename,
     )
 
+    if (
+        not result.success
+        and result.error
+        and "does not appear to be a brokerage statement" in result.error.lower()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "IRRELEVANT_CONTENT",
+                "message": result.error,
+            },
+        )
+
     return PortfolioImportResponse(
         success=result.success,
         holdings_count=result.holdings_count,
@@ -325,6 +662,7 @@ async def import_portfolio_stream(
     - `stage`: Current processing stage + heartbeat metadata
     - `thinking`: Best-effort thought summaries
     - `chunk`: Streamed JSON text chunks from extraction
+    - `aborted`: Graceful terminal halt (e.g., irrelevant content)
     - `complete`: Final parsed portfolio payload
     - `error`: Structured terminal error payload
 
@@ -332,7 +670,7 @@ async def import_portfolio_stream(
 
     **Disconnection Handling (Production-Grade)**:
     - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(120) hard ceiling prevents runaway LLM calls
+    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
     - Layer 3: backend heartbeats every 3-5s while waiting for model output
     - Layer 4: request.is_disconnected() checked per-chunk for fast cleanup
     """
@@ -354,9 +692,7 @@ async def import_portfolio_stream(
 
     async def event_generator():
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
-        import base64
-
-        HARD_TIMEOUT_SECONDS = DEFAULT_STREAM_TIMEOUT_SECONDS
+        HARD_TIMEOUT_SECONDS = PORTFOLIO_IMPORT_TIMEOUT_SECONDS
         stream = CanonicalSSEStream("portfolio_import")
 
         from google import genai
@@ -365,7 +701,7 @@ async def import_portfolio_stream(
 
         from hushh_mcp.constants import GEMINI_MODEL
 
-        thinking_enabled = True  # Flag to track if thinking is available
+        thinking_enabled = False  # Disabled for latency + stream reliability on large PDFs.
 
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
@@ -387,142 +723,84 @@ async def import_portfolio_stream(
                     {"stage": "analyzing", "message": "AI analyzing document..."},
                 )
 
-                # Encode PDF as base64
-                pdf_base64 = base64.b64encode(content).decode("utf-8")
+                import_service = get_portfolio_import_service()
+                relevance = await import_service.assess_document_relevance(
+                    file_content=content,
+                    filename=file.filename or "uploaded_document",
+                )
+                if not relevance.is_relevant:
+                    logger.info(
+                        "[Portfolio Import] Rejected irrelevant upload (confidence=%.3f, source=%s)",
+                        relevance.confidence,
+                        relevance.source,
+                    )
+                    yield stream.event(
+                        "aborted",
+                        {
+                            "code": "IRRELEVANT_CONTENT",
+                            "reason": "irrelevant_content",
+                            "message": (
+                                "Uploaded document does not look like a brokerage statement. "
+                                "Please upload a brokerage account PDF/CSV statement."
+                            ),
+                            "doc_type": relevance.doc_type,
+                            "confidence": relevance.confidence,
+                            "classifier_source": relevance.source,
+                            "classifier_reason": relevance.reason,
+                        },
+                        terminal=True,
+                    )
+                    return
 
-                # Keep extraction schema focused for deterministic, <=120s parse/runtime behavior.
-                prompt = """Extract the uploaded brokerage statement into ONE valid JSON object.
+                # Keep prompt concise for lower latency and better stream yield behavior.
+                prompt = """Extract this brokerage statement to JSON only.
+
+Return one JSON object with keys:
+- account_metadata
+- portfolio_summary
+- asset_allocation
+- detailed_holdings
+- income_summary
+- realized_gain_loss
+- activity_and_transactions
+- cash_balance
+- total_value
 
 Rules:
-- Return JSON only. No markdown.
-- Use null for missing/unreadable fields.
+- No markdown, no prose.
+- Return compact minified JSON (no indentation).
+- Use null for unknown fields.
 - Do not invent ticker symbols.
-- Preserve numbers exactly from the statement (currency, commas, negatives in parentheses).
-
-Required top-level fields:
-{
-  "account_metadata": {
-    "institution_name": string|null,
-    "account_holder": string|null,
-    "account_number": string|null,
-    "statement_period_start": string|null,
-    "statement_period_end": string|null,
-    "account_type": string|null
-  },
-  "portfolio_summary": {
-    "beginning_value": number|null,
-    "ending_value": number|null,
-    "total_change": number|null,
-    "net_deposits_withdrawals": number|null,
-    "investment_gain_loss": number|null
-  },
-  "asset_allocation": [
-    {"category": string|null, "market_value": number|null, "percentage": number|null}
-  ],
-  "detailed_holdings": [
-    {
-      "asset_class": string|null,
-      "description": string|null,
-      "symbol_cusip": string|null,
-      "quantity": number|null,
-      "price": number|null,
-      "market_value": number|null,
-      "cost_basis": number|null,
-      "unrealized_gain_loss": number|null,
-      "unrealized_gain_loss_pct": number|null,
-      "acquisition_date": string|null,
-      "estimated_annual_income": number|null,
-      "est_yield": number|null
-    }
-  ],
-  "income_summary": object|null,
-  "realized_gain_loss": object|null,
-  "activity_and_transactions": array|null,
-  "cash_balance": number|null,
-  "total_value": number|null
-}"""
+- Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
+- Preserve numeric values exactly (including negatives)."""
 
                 # Create content with PDF
                 contents = [
-                    prompt,
-                    types.Part(
-                        inline_data=types.Blob(mime_type="application/pdf", data=pdf_base64)
-                    ),
+                    types.Part.from_text(text=prompt),
+                    types.Part.from_bytes(data=content, mime_type="application/pdf"),
                 ]
 
-                response_schema = {
-                    "type": "OBJECT",
-                    "properties": {
-                        "account_metadata": {"type": "OBJECT"},
-                        "portfolio_summary": {"type": "OBJECT"},
-                        "asset_allocation": {"type": "ARRAY"},
-                        "detailed_holdings": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "description": {"type": "STRING"},
-                                    "symbol_cusip": {"type": "STRING"},
-                                    "quantity": {"type": "NUMBER"},
-                                    "price": {"type": "NUMBER"},
-                                    "market_value": {"type": "NUMBER"},
-                                },
-                            },
-                        },
-                        "income_summary": {"type": "OBJECT"},
-                        "realized_gain_loss": {"type": "OBJECT"},
-                        "activity_and_transactions": {"type": "ARRAY"},
-                        "cash_balance": {"type": "NUMBER"},
-                        "total_value": {"type": "NUMBER"},
-                    },
-                    "required": ["detailed_holdings"],
-                }
+                config = types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=12288,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                )
+                logger.info("SSE: Thinking mode disabled for stable streaming throughput")
 
-                # Configure with thinking enabled for Gemini 3 Flash
-                try:
-                    config = types.GenerateContentConfig(
-                        temperature=0.1,
-                        max_output_tokens=12288,
-                        response_mime_type="application/json",
-                        response_schema=response_schema,
-                        thinking_config=types.ThinkingConfig(
-                            include_thoughts=True,
-                            thinking_level=types.ThinkingLevel.MEDIUM,
-                        ),
-                    )
-                    logger.info("SSE: Thinking mode enabled with level=MEDIUM")
-                except Exception as thinking_error:
-                    # Fallback if thinking config not supported
-                    logger.warning(
-                        f"SSE: Thinking config not supported, falling back: {thinking_error}"
-                    )
-                    thinking_enabled = False
-                    config = types.GenerateContentConfig(
-                        temperature=0.1,
-                        max_output_tokens=12288,
-                        response_mime_type="application/json",
-                        response_schema=response_schema,
-                    )
-
-                # Stage 3: Thinking/Streaming
-                if thinking_enabled:
-                    yield stream.event(
-                        "stage",
-                        {
-                            "stage": "thinking",
-                            "message": "AI reasoning about document structure...",
-                        },
-                    )
-                else:
-                    yield stream.event(
-                        "stage",
-                        {"stage": "extracting", "message": "Extracting financial data..."},
-                    )
+                # Stage 3: Streaming extraction
+                yield stream.event(
+                    "stage",
+                    {"stage": "extracting", "message": "Extracting financial data..."},
+                )
 
                 full_response = ""
                 chunk_count = 0
                 thought_count = 0
                 in_extraction_phase = False
+                streamed_holdings_estimate = 0
+                latest_live_holdings_preview: list[dict[str, Any]] = []
                 stream_started_at = asyncio.get_running_loop().time()
 
                 # Use official Gemini streaming API with thinking support
@@ -535,6 +813,7 @@ Required top-level fields:
                 client_disconnected = False
 
                 stream_iter = gen_stream.__aiter__()
+                next_chunk_task: asyncio.Task | None = None
                 while True:
                     # Check for disconnection after each chunk
                     if await request.is_disconnected():
@@ -542,13 +821,18 @@ Required top-level fields:
                             "[Portfolio Import] Client disconnected, stopping streaming — saving compute"
                         )
                         client_disconnected = True
+                        if next_chunk_task and not next_chunk_task.done():
+                            next_chunk_task.cancel()
                         break
 
                     try:
+                        if next_chunk_task is None:
+                            next_chunk_task = asyncio.create_task(stream_iter.__anext__())
                         chunk = await asyncio.wait_for(
-                            stream_iter.__anext__(),
+                            asyncio.shield(next_chunk_task),
                             timeout=HEARTBEAT_INTERVAL_SECONDS,
                         )
+                        next_chunk_task = None
                     except asyncio.TimeoutError:
                         elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
                         heartbeat_stage = (
@@ -570,13 +854,17 @@ Required top-level fields:
                                 "elapsed_seconds": elapsed,
                                 "chunk_count": chunk_count,
                                 "total_chars": len(full_response),
+                                "holdings_detected": streamed_holdings_estimate,
+                                "holdings_preview": latest_live_holdings_preview,
                             },
                         )
                         continue
                     except StopAsyncIteration:
+                        next_chunk_task = None
                         break
 
                     # Handle chunks with thinking support
+                    appended_response_text = False
                     if hasattr(chunk, "candidates") and chunk.candidates:
                         candidate = chunk.candidates[0]
                         if hasattr(candidate, "content") and candidate.content:
@@ -608,6 +896,16 @@ Required top-level fields:
 
                                     full_response += part.text
                                     chunk_count += 1
+                                    appended_response_text = True
+                                    streamed_holdings_estimate = max(
+                                        streamed_holdings_estimate,
+                                        _estimate_stream_holdings(full_response),
+                                    )
+                                    latest_live_holdings_preview = (
+                                        _extract_live_holdings_preview_from_text(
+                                            full_response, max_items=40
+                                        )
+                                    )
 
                                     # Stream extraction progress
                                     yield stream.event(
@@ -616,21 +914,43 @@ Required top-level fields:
                                             "text": part.text,
                                             "total_chars": len(full_response),
                                             "chunk_count": chunk_count,
+                                            "holdings_detected": streamed_holdings_estimate,
+                                            "holdings_preview": latest_live_holdings_preview,
                                         },
                                     )
-                    else:
-                        # Fallback for non-thinking response format
-                        if chunk.text:
-                            full_response += chunk.text
-                            chunk_count += 1
+
+                    # Fallback for response shapes where chunk.text is populated even if candidates exist.
+                    if not appended_response_text and getattr(chunk, "text", None):
+                        if not in_extraction_phase:
+                            in_extraction_phase = True
                             yield stream.event(
-                                "chunk",
+                                "stage",
                                 {
-                                    "text": chunk.text,
-                                    "total_chars": len(full_response),
-                                    "chunk_count": chunk_count,
+                                    "stage": "extracting",
+                                    "message": "Extracting structured data...",
                                 },
                             )
+
+                        text_chunk = chunk.text
+                        full_response += text_chunk
+                        chunk_count += 1
+                        streamed_holdings_estimate = max(
+                            streamed_holdings_estimate,
+                            _estimate_stream_holdings(full_response),
+                        )
+                        latest_live_holdings_preview = _extract_live_holdings_preview_from_text(
+                            full_response, max_items=40
+                        )
+                        yield stream.event(
+                            "chunk",
+                            {
+                                "text": text_chunk,
+                                "total_chars": len(full_response),
+                                "chunk_count": chunk_count,
+                                "holdings_detected": streamed_holdings_estimate,
+                                "holdings_preview": latest_live_holdings_preview,
+                            },
+                        )
 
                 # Skip all post-processing if client disconnected — no point parsing for nobody
                 if client_disconnected:
@@ -638,6 +958,10 @@ Required top-level fields:
                         "[Portfolio Import] Skipping post-processing, client gone — LLM compute saved"
                     )
                     return
+
+                # Strict LLM streaming only: no secondary generation fallback.
+                if not full_response.strip():
+                    raise ValueError("Empty model response from streaming call")
 
                 # Final extraction complete
                 yield stream.event(
@@ -648,6 +972,8 @@ Required top-level fields:
                         "total_chars": len(full_response),
                         "chunk_count": chunk_count,
                         "thought_count": thought_count,
+                        "holdings_detected": streamed_holdings_estimate,
+                        "holdings_preview": latest_live_holdings_preview,
                     },
                 )
 
@@ -658,11 +984,25 @@ Required top-level fields:
                 )
 
                 # Parse JSON from response
+                parse_diagnostics: dict[str, Any] = {}
                 try:
-                    parsed_data, parse_diagnostics = parse_json_with_single_repair(
-                        full_response,
-                        required_keys={"detailed_holdings"},
-                    )
+                    parsed_data, parse_diagnostics = parse_json_with_single_repair(full_response)
+                    detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
+                    parsed_data["detailed_holdings"] = detailed_holdings
+                    if holdings_source != "detailed_holdings":
+                        yield stream.event(
+                            "warning",
+                            {
+                                "code": "HOLDINGS_ALIAS_USED",
+                                "message": (
+                                    "Structured holdings were recovered from an alternative field."
+                                    if holdings_source != "none"
+                                    else "No holdings array found in model output; continuing with empty holdings."
+                                ),
+                                "source_field": holdings_source,
+                                "holdings_count": len(detailed_holdings),
+                            },
+                        )
 
                     # Transform Gemini response to match frontend expected structure
                     account_metadata = parsed_data.get("account_metadata", {})
@@ -698,22 +1038,127 @@ Required top-level fields:
 
                     detailed_holdings = parsed_data.get("detailed_holdings", [])
                     holdings = []
-                    for h in detailed_holdings:
+                    parsed_total = len(detailed_holdings)
+                    if parsed_total > 0:
+                        yield stream.event(
+                            "progress",
+                            {
+                                "phase": "parsing",
+                                "message": f"Normalizing {parsed_total} extracted holdings...",
+                                "holdings_extracted": 0,
+                                "holdings_total": parsed_total,
+                                "holdings_preview": [],
+                                "progress_pct": 92,
+                            },
+                        )
+                    for idx, h in enumerate(detailed_holdings):
+                        if await request.is_disconnected():
+                            logger.info(
+                                "[Portfolio Import] Client disconnected during parsing, stopping stream cleanup"
+                            )
+                            return
+                        raw_symbol = _first_present(
+                            h,
+                            "symbol_cusip",
+                            "symbol",
+                            "ticker",
+                            "cusip",
+                            "security_id",
+                            "security",
+                        )
+                        if not raw_symbol:
+                            raw_name = str(
+                                _first_present(
+                                    h,
+                                    "description",
+                                    "name",
+                                    "security_name",
+                                    "holding_name",
+                                )
+                                or ""
+                            ).strip()
+                            if raw_name:
+                                token = raw_name.split()[0]
+                                normalized_token = re.sub(r"[^A-Za-z0-9]", "", token).upper()
+                                raw_symbol = normalized_token[:10] if normalized_token else None
+                            else:
+                                raw_symbol = f"HOLDING_{idx + 1}"
+
+                        quantity = _first_present(h, "quantity", "shares", "units", "qty")
+                        price = _first_present(
+                            h,
+                            "price",
+                            "price_per_unit",
+                            "last_price",
+                            "unit_price",
+                            "current_price",
+                        )
+                        market_value = _first_present(
+                            h,
+                            "market_value",
+                            "current_value",
+                            "marketValue",
+                            "value",
+                            "position_value",
+                        )
+                        cost_basis = _first_present(
+                            h,
+                            "cost_basis",
+                            "book_value",
+                            "cost",
+                            "total_cost",
+                        )
+                        unrealized_gain_loss = _first_present(
+                            h,
+                            "unrealized_gain_loss",
+                            "gain_loss",
+                            "unrealized_pnl",
+                            "pnl",
+                        )
+                        unrealized_gain_loss_pct = _first_present(
+                            h,
+                            "unrealized_gain_loss_pct",
+                            "gain_loss_pct",
+                            "unrealized_return_pct",
+                            "return_pct",
+                        )
+                        asset_type = _first_present(
+                            h,
+                            "asset_class",
+                            "asset_type",
+                            "security_type",
+                            "type",
+                        )
+                        estimated_annual_income = _first_present(
+                            h,
+                            "estimated_annual_income",
+                            "est_annual_income",
+                            "annual_income",
+                        )
+                        est_yield = _first_present(h, "est_yield", "yield", "current_yield")
+
                         normalized, reconciliation = _reconcile_holding_numeric_fields(
                             {
-                                "symbol": h.get("symbol_cusip", h.get("symbol")),
-                                "name": h.get("description", h.get("name", "Unknown")),
-                                "quantity": h.get("quantity"),
-                                "price": h.get("price"),
-                                "price_per_unit": h.get("price"),
-                                "market_value": h.get("market_value"),
-                                "cost_basis": h.get("cost_basis"),
-                                "unrealized_gain_loss": h.get("unrealized_gain_loss"),
-                                "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
-                                "asset_type": h.get("asset_class"),
+                                "symbol": raw_symbol,
+                                "name": _first_present(
+                                    h,
+                                    "description",
+                                    "name",
+                                    "security_name",
+                                    "holding_name",
+                                )
+                                or "Unknown",
+                                "quantity": quantity,
+                                "price": price,
+                                "price_per_unit": price,
+                                "market_value": market_value,
+                                "cost_basis": cost_basis,
+                                "unrealized_gain_loss": unrealized_gain_loss,
+                                "unrealized_gain_loss_pct": unrealized_gain_loss_pct,
+                                "asset_type": asset_type,
                                 "acquisition_date": h.get("acquisition_date"),
-                                "estimated_annual_income": h.get("estimated_annual_income"),
-                                "est_yield": h.get("est_yield"),
+                                "estimated_annual_income": estimated_annual_income,
+                                "est_yield": est_yield,
                             }
                         )
                         if (
@@ -723,6 +1168,30 @@ Required top-level fields:
                             normalized["reconciliation"] = reconciliation
                         holdings.append(normalized)
 
+                        if (
+                            parsed_total <= 10
+                            or (idx + 1) == parsed_total
+                            or (idx + 1) % 5 == 0
+                        ):
+                            yield stream.event(
+                                "progress",
+                                {
+                                    "phase": "parsing",
+                                    "message": (
+                                        f"Parsed {idx + 1} of {parsed_total} holdings"
+                                        if parsed_total > 0
+                                        else "Parsing holdings..."
+                                    ),
+                                    "holdings_extracted": idx + 1,
+                                    "holdings_total": parsed_total,
+                                    "holdings_preview": _build_holdings_preview(
+                                        holdings, max_items=40
+                                    ),
+                                    "progress_pct": 92
+                                    + min(7.0, ((idx + 1) / max(parsed_total, 1)) * 7.0),
+                                },
+                            )
+
                     # ---- Validation pass: reject hallucinated or incomplete entries ----
                     raw_count = len(holdings)
                     dropped_count = 0
@@ -730,13 +1199,18 @@ Required top-level fields:
                     mismatch_count = 0
                     validated_holdings = []
                     for h in holdings:
-                        # Drop entries with no symbol at all
                         if not h.get("symbol"):
-                            logger.warning(
-                                f"[Portfolio Validation] Dropping holding with no symbol: {h.get('name', 'unnamed')}"
-                            )
-                            dropped_count += 1
-                            continue
+                            derived_name = str(h.get("name", "")).strip()
+                            if derived_name:
+                                fallback = re.sub(r"[^A-Za-z0-9]", "", derived_name.split()[0]).upper()
+                                if fallback:
+                                    h["symbol"] = fallback[:10]
+                            if not h.get("symbol"):
+                                logger.warning(
+                                    f"[Portfolio Validation] Dropping holding with no identifier: {h.get('name', 'unnamed')}"
+                                )
+                                dropped_count += 1
+                                continue
                         # Drop entries with all-null financials (nothing useful extracted)
                         if (
                             h.get("quantity") is None
@@ -830,6 +1304,9 @@ Required top-level fields:
                             "diagnostics": {
                                 "response_chars": len(full_response),
                                 "chunk_count": chunk_count,
+                                "parse_repair_actions": parse_diagnostics.get(
+                                    "repair_actions", []
+                                ),
                             },
                         },
                         terminal=True,
