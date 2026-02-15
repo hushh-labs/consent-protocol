@@ -10,6 +10,8 @@ Kai implements the AlphaAgents framework -- three specialist agents debate acros
 
 **Output**: A `DecisionCard` with a recommendation (Buy / Hold / Reduce), confidence score, supporting evidence, and sourced reasoning from all three agents.
 
+Kai intro personalization is optional and managed in encrypted world-model domain `kai_profile`. Legacy `/api/kai/preferences/*` routes are removed.
+
 ---
 
 ## Three Specialists
@@ -96,18 +98,45 @@ class DebateResult:
 ## SSE Streaming Protocol
 
 The analysis endpoint (`GET /api/kai/analyze/stream`) streams real-time debate progress via Server-Sent Events.
+Kai streaming now uses one strict canonical contract shared with Import/Optimize.
 
-### Event Types
+Contract source of truth:
+- `docs/reference/streaming-contract.md`
 
-| Event              | Payload                                      | When                          |
-| ------------------ | -------------------------------------------- | ----------------------------- |
-| `agent_start`      | `{ agent, round, status: "reasoning" }`      | Agent begins analysis         |
-| `agent_token`      | `{ agent, round, token, accumulated }`       | Each LLM token streamed       |
-| `agent_complete`   | `{ agent, round, summary, recommendation }`  | Agent finishes speaking       |
-| `round_complete`   | `{ round, agent_summaries }`                 | All agents done for this round|
-| `decision`         | `{ decision, confidence, consensus, votes }` | Final synthesized result      |
-| `error`            | `{ message, agent?, recoverable }`           | Error during processing       |
-| `done`             | `{}`                                          | Stream complete               |
+### Canonical Envelope
+
+All frames carry a canonical envelope:
+
+```json
+{
+  "schema_version": "1.0",
+  "stream_id": "strm_<uuid>",
+  "stream_kind": "stock_analyze",
+  "seq": 1,
+  "event": "agent_start",
+  "terminal": false,
+  "payload": {}
+}
+```
+
+### Analyze Event Types
+
+| Event              | Payload Requirements                                | Terminal |
+| ------------------ | --------------------------------------------------- | -------- |
+| `kai_thinking`     | telemetry only; optional                            | no       |
+| `agent_start`      | `agent`, `round`, `phase`                           | no       |
+| `agent_token`      | `agent`, `round`, `phase`, `token`                  | no       |
+| `agent_complete`   | `agent`, `round`, `phase`, `summary`                | no       |
+| `agent_error`      | `agent`, `round`, `phase`, `error`                  | no       |
+| `debate_round`     | `round`, `phase=debate`, debate statements          | no       |
+| `insight_extracted`| optional extracted insight metadata                 | no       |
+| `decision`         | final recommendation + `phase=decision`             | yes      |
+| `error`            | stable error code/message                           | yes      |
+
+Rules:
+- `event:` line must match envelope `event`.
+- `round`/`phase` are explicit producer metadata; frontend must not infer them.
+- Every stream ends with exactly one terminal `decision` or `error`.
 
 ### Agent Execution Order
 
@@ -168,7 +197,7 @@ The `RenaissanceService` provides lookup methods used by the losers analysis end
 
 | Parameter          | Value                      |
 | ------------------ | -------------------------- |
-| Model              | Gemini 2.5/3 Flash         |
+| Model              | Gemini 3 Flash             |
 | SDK                | `google.genai` (new SDK)   |
 | Thinking Mode      | HIGH (full reasoning)      |
 | API Key            | `GOOGLE_API_KEY` from env  |
@@ -199,7 +228,7 @@ Analysis results are stored in the world model under the `kai_decisions` domain.
 | External API failure    | Fallback to cached/static data where available     |
 | All agents fail         | Return error event with `recoverable: false`       |
 
-The SSE stream always terminates cleanly with either a `decision` event or an `error` event, followed by `done`.
+The SSE stream always terminates cleanly with either a terminal `decision` event or terminal `error` event.
 
 ---
 
