@@ -85,6 +85,19 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 
 **Key Principle**: VAULT_OWNER token proves both identity AND consent. Firebase is ONLY used to bootstrap the VAULT_OWNER token issuance.
 
+### Automated Test Token Policy
+
+- Automated test suites must use fixture-issued tokens from `consent-protocol/tests/conftest.py`.
+- `consent-protocol/tests/dev_test_token.py` is for manual/debug workflows only.
+- CI must not depend on `.env` token helpers or `MCP_DEVELOPER_TOKEN` for consent-route coverage.
+
+### Streaming Contract Policy
+
+- All Kai streaming routes use canonical SSE envelopes (`schema_version`, `stream_id`, `stream_kind`, `seq`, `event`, `terminal`, `payload`).
+- Route producers must emit explicit `event:` frames with envelope `event` parity.
+- No legacy stream shape support is permitted for new work.
+- Contract reference: `docs/reference/streaming-contract.md`.
+
 ---
 
 ## Route Categories
@@ -129,6 +142,10 @@ GET  /api/consent/active                # MCP: List active tokens
 POST /api/consent/request-consent       # MCP: Request token
 GET  /api/consent/pending               # Dashboard: View pending
 POST /api/consent/pending/approve      # Dashboard: Approve request
+
+# Kai personalization storage
+# Optional intro data is stored in encrypted world-model domain `kai_profile`.
+# No `/api/kai/preferences/*` endpoints exist.
 
 # MCP Server Data Access
 # MCP tools access vault data via the consent-gated endpoint:
