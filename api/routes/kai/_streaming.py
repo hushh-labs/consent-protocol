@@ -164,12 +164,8 @@ class CanonicalSSEStream:
 
 
 _TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
-_MISSING_COMMA_AFTER_STRING_RE = re.compile(
-    r'("(?:[^"\\]|\\.)*")\s+("[^"]+"\s*:)'
-)
-_MISSING_COMMA_AFTER_VALUE_RE = re.compile(
-    r"([0-9}\]])\s+(\"[^\"]+\"\s*:)"
-)
+_MISSING_COMMA_AFTER_STRING_RE = re.compile(r'("(?:[^"\\]|\\.)*")\s+("[^"]+"\s*:)')
+_MISSING_COMMA_AFTER_VALUE_RE = re.compile(r"([0-9}\]])\s+(\"[^\"]+\"\s*:)")
 
 
 def _strip_code_fences(text: str) -> str:
