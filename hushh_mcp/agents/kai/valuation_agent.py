@@ -95,12 +95,19 @@ class ValuationAgent(HushhAgent):
             peer_data = []
 
         # Operon 2: Gemini Deep Valuation Analysis
-        from hushh_mcp.config import GOOGLE_API_KEY
-        from hushh_mcp.operons.kai.llm import analyze_valuation_with_gemini
+        from hushh_mcp.operons.kai.llm import (
+            analyze_valuation_with_gemini,
+            get_gemini_unavailable_reason,
+            is_gemini_ready,
+        )
 
         gemini_analysis = None
-        gemini_analysis = None
-        if GOOGLE_API_KEY and self.processing_mode == "hybrid" and consent_token:
+        if self.processing_mode == "hybrid" and consent_token:
+            if not is_gemini_ready():
+                logger.warning(
+                    "[Valuation] Gemini unavailable, using deterministic analysis: %s",
+                    get_gemini_unavailable_reason(),
+                )
             for attempt in range(2):
                 try:
                     gemini_analysis = await analyze_valuation_with_gemini(
