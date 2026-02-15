@@ -15,15 +15,22 @@ Authentication:
 """
 
 import asyncio
-import json
 import logging
-from typing import Optional
+import math
+import re
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
+from api.routes.kai._streaming import (
+    DEFAULT_STREAM_TIMEOUT_SECONDS,
+    HEARTBEAT_INTERVAL_SECONDS,
+    CanonicalSSEStream,
+    parse_json_with_single_repair,
+)
 from hushh_mcp.services.portfolio_import_service import (
     ImportResult,
     get_portfolio_import_service,
@@ -33,6 +40,97 @@ from hushh_mcp.services.world_model_service import get_world_model_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_NUMERIC_STRIP_RE = re.compile(r"[$,\s]")
+
+
+def _coerce_optional_number(value: Any) -> Optional[float]:
+    """Parse currency-like values to float; return None for blanks/invalid numbers."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        num = float(value)
+        return num if math.isfinite(num) else None
+
+    text = str(value).strip()
+    if not text or text.lower() in {"n/a", "na", "null", "none", "--", "-"}:
+        return None
+
+    negative = text.startswith("(") and text.endswith(")")
+    if negative:
+        text = text[1:-1]
+    text = _NUMERIC_STRIP_RE.sub("", text).replace("%", "")
+    if negative:
+        text = f"-{text}"
+
+    try:
+        num = float(text)
+        return num if math.isfinite(num) else None
+    except ValueError:
+        return None
+
+
+def _reconcile_holding_numeric_fields(
+    holding: dict[str, Any], tolerance: float = 0.10
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply deterministic market-value-first reconciliation for holding numeric fields."""
+    normalized = dict(holding)
+    reconciled_fields: list[str] = []
+    mismatch_detected = False
+
+    qty = _coerce_optional_number(normalized.get("quantity"))
+    price = _coerce_optional_number(normalized.get("price"))
+    market_value = _coerce_optional_number(normalized.get("market_value"))
+    has_qty = qty is not None and qty != 0.0
+
+    # Fill missing market value when quantity and price are available.
+    if market_value is None and has_qty and price is not None:
+        qty_value = qty if qty is not None else 0.0
+        market_value = qty_value * price
+        reconciled_fields.append("market_value")
+
+    # Market value is authoritative: derive/recompute price when possible.
+    if has_qty and market_value is not None:
+        qty_value = qty if qty is not None else 1.0
+        derived_price = market_value / qty_value
+        if price is None:
+            price = derived_price
+            reconciled_fields.append("price")
+        elif derived_price != 0:
+            rel_delta = abs(price - derived_price) / abs(derived_price)
+            if rel_delta > tolerance:
+                mismatch_detected = True
+                price = derived_price
+                reconciled_fields.append("price")
+
+    if qty is not None and price is not None and market_value is not None and market_value != 0:
+        expected_market_value = qty * price
+        rel_delta = abs(expected_market_value - market_value) / abs(market_value)
+        if rel_delta > tolerance:
+            mismatch_detected = True
+
+    normalized["quantity"] = qty
+    normalized["price"] = price
+    normalized["price_per_unit"] = price
+    normalized["market_value"] = market_value
+    normalized["cost_basis"] = _coerce_optional_number(normalized.get("cost_basis"))
+    normalized["unrealized_gain_loss"] = _coerce_optional_number(
+        normalized.get("unrealized_gain_loss")
+    )
+    normalized["unrealized_gain_loss_pct"] = _coerce_optional_number(
+        normalized.get("unrealized_gain_loss_pct")
+    )
+    normalized["estimated_annual_income"] = _coerce_optional_number(
+        normalized.get("estimated_annual_income")
+    )
+    normalized["est_yield"] = _coerce_optional_number(normalized.get("est_yield"))
+
+    return normalized, {
+        "reconciled_fields": sorted(set(reconciled_fields)),
+        "mismatch_detected": mismatch_detected,
+    }
 
 
 class PortfolioImportResponse(BaseModel):
@@ -221,22 +319,22 @@ async def import_portfolio_stream(
     SSE streaming endpoint for portfolio import with real-time progress.
 
     Streams Gemini parsing progress as Server-Sent Events (SSE).
-    Uses Gemini 2.5 Flash thinking mode for visible AI reasoning.
+    Uses Gemini 3 Flash thinking mode for visible AI reasoning.
 
-    **Event Types**:
-    - `stage`: Current processing stage (uploading, analyzing, thinking, extracting, parsing, complete)
-    - `thought`: AI reasoning/thinking summary (visible to user)
-    - `text`: Streamed text chunk from Gemini (JSON extraction)
-    - `progress`: Character count and chunk count
-    - `complete`: Final parsed portfolio data
-    - `error`: Error message if parsing fails
+    **Event Types (canonical)**:
+    - `stage`: Current processing stage + heartbeat metadata
+    - `thinking`: Best-effort thought summaries
+    - `chunk`: Streamed JSON text chunks from extraction
+    - `complete`: Final parsed portfolio payload
+    - `error`: Structured terminal error payload
 
     **Authentication**: Requires valid VAULT_OWNER token.
 
     **Disconnection Handling (Production-Grade)**:
     - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
-    - Layer 3: request.is_disconnected() checked per-chunk for fast cleanup
+    - Layer 2: asyncio.timeout(120) hard ceiling prevents runaway LLM calls
+    - Layer 3: backend heartbeats every 3-5s while waiting for model output
+    - Layer 4: request.is_disconnected() checked per-chunk for fast cleanup
     """
     # Verify user_id matches token
     if token_data["user_id"] != user_id:
@@ -258,7 +356,8 @@ async def import_portfolio_stream(
         """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
         import base64
 
-        HARD_TIMEOUT_SECONDS = 180  # 3-minute hard ceiling
+        HARD_TIMEOUT_SECONDS = DEFAULT_STREAM_TIMEOUT_SECONDS
+        stream = CanonicalSSEStream("portfolio_import")
 
         from google import genai
         from google.genai import types
@@ -271,7 +370,10 @@ async def import_portfolio_stream(
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
                 # Stage 1: Uploading
-                yield f"data: {json.dumps({'stage': 'uploading', 'message': 'Processing uploaded file...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {"stage": "uploading", "message": "Processing uploaded file..."},
+                )
                 await asyncio.sleep(0.1)  # Small delay for UI feedback
 
                 # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
@@ -280,164 +382,65 @@ async def import_portfolio_stream(
                 logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
 
                 # Stage 2: Analyzing
-                yield f"data: {json.dumps({'stage': 'analyzing', 'message': 'AI analyzing document...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {"stage": "analyzing", "message": "AI analyzing document..."},
+                )
 
                 # Encode PDF as base64
                 pdf_base64 = base64.b64encode(content).decode("utf-8")
 
-                # Build prompt for comprehensive forensic extraction
-                prompt = """Act as a forensic document parser. Your task is to extract every single piece of information from this financial statement into a structured JSON format.
+                # Keep extraction schema focused for deterministic, <=120s parse/runtime behavior.
+                prompt = """Extract the uploaded brokerage statement into ONE valid JSON object.
 
-### INSTRUCTIONS:
-1. DO NOT SUMMARIZE. Extract all text, numbers, and dates verbatim.
-2. CAPTURE ALL TABLES: If a table spans multiple pages, merge the rows into a single list in the JSON.
-3. IGNORE LAYOUT: Do not provide coordinates, but preserve the logical grouping of data.
-4. HANDLE NULLS: If a field is blank or "N/A", use null. Do not hallucinate values.
-5. DISCLAIMERS & FOOTNOTES: Extract the full text of all legal messages, footnotes, and fine print.
-6. Parse negative numbers correctly: (1,234.56) means -1234.56
-7. Return ONLY valid JSON, no explanation or markdown.
+Rules:
+- Return JSON only. No markdown.
+- Use null for missing/unreadable fields.
+- Do not invent ticker symbols.
+- Preserve numbers exactly from the statement (currency, commas, negatives in parentheses).
 
-### CRITICAL ACCURACY RULES:
-8. TICKER SYMBOLS: The 'symbol_cusip' field MUST contain ONLY the actual stock ticker symbol as printed on the document (e.g., 'AAPL', 'MSFT'). Do NOT invent, guess, or fabricate tickers. If a ticker is not visible, use null.
-9. NUMERIC PRECISION: For 'quantity', 'price', and 'market_value' — ONLY use the exact numbers printed on the document. Do NOT estimate, round, or calculate approximate values. If a number is not clearly readable, use null.
-10. CROSS-VALIDATION: After extraction, verify that for each holding, market_value should approximately equal quantity × price. If they don't match, re-examine the document to resolve the discrepancy.
-
-### JSON STRUCTURE REQUIREMENTS:
-Extract data into the following nested objects:
-
+Required top-level fields:
 {
   "account_metadata": {
-    "institution_name": "string - e.g., J.P. Morgan or Fidelity",
-    "account_holder": "string - Full name and address",
-    "account_number": "string - Full number (may be partially masked)",
-    "statement_period_start": "string - Start date",
-    "statement_period_end": "string - End date",
-    "account_type": "string - e.g., Individual TOD, Traditional IRA, 401k"
+    "institution_name": string|null,
+    "account_holder": string|null,
+    "account_number": string|null,
+    "statement_period_start": string|null,
+    "statement_period_end": string|null,
+    "account_type": string|null
   },
-
   "portfolio_summary": {
-    "beginning_value": number,
-    "ending_value": number,
-    "total_change": number,
-    "net_deposits_withdrawals": number,
-    "investment_gain_loss": number
+    "beginning_value": number|null,
+    "ending_value": number|null,
+    "total_change": number|null,
+    "net_deposits_withdrawals": number|null,
+    "investment_gain_loss": number|null
   },
-
   "asset_allocation": [
-    { "category": "string - e.g., Equities, Bonds, Cash", "market_value": number, "percentage": number }
+    {"category": string|null, "market_value": number|null, "percentage": number|null}
   ],
-
   "detailed_holdings": [
     {
-      "asset_class": "string - e.g., Equities, Fixed Income, Cash",
-      "description": "string - Full security name",
-      "symbol_cusip": "string - Ticker symbol or CUSIP",
-      "quantity": number,
-      "price": number,
-      "market_value": number,
-      "cost_basis": number,
-      "unrealized_gain_loss": number,
-      "unrealized_gain_loss_pct": number,
-      "acquisition_date": "string or null",
-      "estimated_annual_income": number,
-      "est_yield": number
+      "asset_class": string|null,
+      "description": string|null,
+      "symbol_cusip": string|null,
+      "quantity": number|null,
+      "price": number|null,
+      "market_value": number|null,
+      "cost_basis": number|null,
+      "unrealized_gain_loss": number|null,
+      "unrealized_gain_loss_pct": number|null,
+      "acquisition_date": string|null,
+      "estimated_annual_income": number|null,
+      "est_yield": number|null
     }
   ],
-
-  "activity_and_transactions": [
-    {
-      "date": "string",
-      "transaction_type": "string - e.g., Buy, Sell, Dividend, Reinvest, Transfer",
-      "description": "string - Full text description",
-      "quantity": number,
-      "price": number,
-      "amount": number,
-      "realized_gain_loss": number or null
-    }
-  ],
-
-  "cash_management": {
-    "checking_activity": [
-      { "date": "string", "check_number": "string", "payee": "string", "amount": number }
-    ],
-    "debit_card_activity": [
-      { "date": "string", "merchant": "string", "amount": number }
-    ],
-    "deposits_and_withdrawals": [
-      { "date": "string", "type": "string - ACH, Wire, Transfer", "description": "string", "amount": number }
-    ]
-  },
-
-  "income_summary": {
-    "taxable_dividends": number,
-    "qualified_dividends": number,
-    "tax_exempt_interest": number,
-    "taxable_interest": number,
-    "capital_gains_distributions": number,
-    "total_income": number,
-    "year_to_date_totals": {
-      "dividends_ytd": number,
-      "interest_ytd": number,
-      "capital_gains_ytd": number,
-      "total_income_ytd": number
-    }
-  },
-
-  "realized_gain_loss": {
-    "short_term_gain": number,
-    "short_term_loss": number,
-    "long_term_gain": number,
-    "long_term_loss": number,
-    "net_short_term": number,
-    "net_long_term": number,
-    "net_realized": number
-  },
-
-  "projections_and_mrd": {
-    "estimated_cash_flow": [
-      { "month": "string - e.g., Jan 2024", "projected_income": number }
-    ],
-    "mrd_estimate": {
-      "year": number,
-      "required_amount": number,
-      "amount_taken": number,
-      "remaining": number
-    }
-  },
-
-  "historical_values": [
-    { "date": "string - e.g., Mar 2020, Q1 2021", "value": number }
-  ],
-
-  "cash_flow": {
-    "opening_balance": number,
-    "deposits": number,
-    "withdrawals": number,
-    "dividends_received": number,
-    "interest_received": number,
-    "trades_proceeds": number,
-    "trades_cost": number,
-    "fees_paid": number,
-    "closing_balance": number
-  },
-
-  "ytd_metrics": {
-    "net_deposits_ytd": number,
-    "withdrawals_ytd": number,
-    "income_ytd": number,
-    "realized_gain_loss_ytd": number,
-    "fees_ytd": number
-  },
-
-  "legal_and_disclosures": [
-    "string - Full verbatim text of all disclaimers, USA PATRIOT ACT notices, SIPC information, and fine print"
-  ],
-
-  "cash_balance": number,
-  "total_value": number
-}
-
-CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no explanation or markdown."""
+  "income_summary": object|null,
+  "realized_gain_loss": object|null,
+  "activity_and_transactions": array|null,
+  "cash_balance": number|null,
+  "total_value": number|null
+}"""
 
                 # Create content with PDF
                 contents = [
@@ -447,11 +450,41 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     ),
                 ]
 
+                response_schema = {
+                    "type": "OBJECT",
+                    "properties": {
+                        "account_metadata": {"type": "OBJECT"},
+                        "portfolio_summary": {"type": "OBJECT"},
+                        "asset_allocation": {"type": "ARRAY"},
+                        "detailed_holdings": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "description": {"type": "STRING"},
+                                    "symbol_cusip": {"type": "STRING"},
+                                    "quantity": {"type": "NUMBER"},
+                                    "price": {"type": "NUMBER"},
+                                    "market_value": {"type": "NUMBER"},
+                                },
+                            },
+                        },
+                        "income_summary": {"type": "OBJECT"},
+                        "realized_gain_loss": {"type": "OBJECT"},
+                        "activity_and_transactions": {"type": "ARRAY"},
+                        "cash_balance": {"type": "NUMBER"},
+                        "total_value": {"type": "NUMBER"},
+                    },
+                    "required": ["detailed_holdings"],
+                }
+
                 # Configure with thinking enabled for Gemini 3 Flash
                 try:
                     config = types.GenerateContentConfig(
-                        temperature=1,
-                        max_output_tokens=32768,
+                        temperature=0.1,
+                        max_output_tokens=12288,
+                        response_mime_type="application/json",
+                        response_schema=response_schema,
                         thinking_config=types.ThinkingConfig(
                             include_thoughts=True,
                             thinking_level=types.ThinkingLevel.MEDIUM,
@@ -466,22 +499,34 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     thinking_enabled = False
                     config = types.GenerateContentConfig(
                         temperature=0.1,
-                        max_output_tokens=32768,
+                        max_output_tokens=12288,
+                        response_mime_type="application/json",
+                        response_schema=response_schema,
                     )
 
                 # Stage 3: Thinking/Streaming
                 if thinking_enabled:
-                    yield f"data: {json.dumps({'stage': 'thinking', 'message': 'AI reasoning about document structure...'})}\n\n"
+                    yield stream.event(
+                        "stage",
+                        {
+                            "stage": "thinking",
+                            "message": "AI reasoning about document structure...",
+                        },
+                    )
                 else:
-                    yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting financial data...'})}\n\n"
+                    yield stream.event(
+                        "stage",
+                        {"stage": "extracting", "message": "Extracting financial data..."},
+                    )
 
                 full_response = ""
                 chunk_count = 0
                 thought_count = 0
                 in_extraction_phase = False
+                stream_started_at = asyncio.get_running_loop().time()
 
                 # Use official Gemini streaming API with thinking support
-                stream = await client.aio.models.generate_content_stream(
+                gen_stream = await client.aio.models.generate_content_stream(
                     model=model_to_use,
                     contents=contents,
                     config=config,
@@ -489,13 +534,46 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
 
                 client_disconnected = False
 
-                async for chunk in stream:
+                stream_iter = gen_stream.__aiter__()
+                while True:
                     # Check for disconnection after each chunk
                     if await request.is_disconnected():
                         logger.info(
                             "[Portfolio Import] Client disconnected, stopping streaming — saving compute"
                         )
                         client_disconnected = True
+                        break
+
+                    try:
+                        chunk = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=HEARTBEAT_INTERVAL_SECONDS,
+                        )
+                    except asyncio.TimeoutError:
+                        elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
+                        heartbeat_stage = (
+                            "extracting"
+                            if in_extraction_phase
+                            else ("thinking" if thinking_enabled else "analyzing")
+                        )
+                        heartbeat_message = (
+                            "Still extracting structured data..."
+                            if in_extraction_phase
+                            else "Still processing statement..."
+                        )
+                        yield stream.event(
+                            "stage",
+                            {
+                                "stage": heartbeat_stage,
+                                "message": heartbeat_message,
+                                "heartbeat": True,
+                                "elapsed_seconds": elapsed,
+                                "chunk_count": chunk_count,
+                                "total_chars": len(full_response),
+                            },
+                        )
+                        continue
+                    except StopAsyncIteration:
                         break
 
                     # Handle chunks with thinking support
@@ -512,24 +590,47 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                                 if is_thought:
                                     # Stream thought summary to frontend
                                     thought_count += 1
-                                    yield f"data: {json.dumps({'stage': 'thinking', 'thought': part.text, 'thought_count': thought_count, 'is_thought': True})}\n\n"
+                                    yield stream.event(
+                                        "thinking",
+                                        {"thought": part.text, "count": thought_count},
+                                    )
                                 else:
                                     # This is the actual JSON response
                                     if not in_extraction_phase:
                                         in_extraction_phase = True
-                                        yield f"data: {json.dumps({'stage': 'extracting', 'message': 'Extracting structured data...'})}\n\n"
+                                        yield stream.event(
+                                            "stage",
+                                            {
+                                                "stage": "extracting",
+                                                "message": "Extracting structured data...",
+                                            },
+                                        )
 
                                     full_response += part.text
                                     chunk_count += 1
 
                                     # Stream extraction progress
-                                    yield f"data: {json.dumps({'stage': 'extracting', 'text': part.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                                    yield stream.event(
+                                        "chunk",
+                                        {
+                                            "text": part.text,
+                                            "total_chars": len(full_response),
+                                            "chunk_count": chunk_count,
+                                        },
+                                    )
                     else:
                         # Fallback for non-thinking response format
                         if chunk.text:
                             full_response += chunk.text
                             chunk_count += 1
-                            yield f"data: {json.dumps({'stage': 'extracting', 'text': chunk.text, 'total_chars': len(full_response), 'chunk_count': chunk_count, 'is_thought': False})}\n\n"
+                            yield stream.event(
+                                "chunk",
+                                {
+                                    "text": chunk.text,
+                                    "total_chars": len(full_response),
+                                    "chunk_count": chunk_count,
+                                },
+                            )
 
                 # Skip all post-processing if client disconnected — no point parsing for nobody
                 if client_disconnected:
@@ -539,24 +640,29 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     return
 
                 # Final extraction complete
-                yield f"data: {json.dumps({'stage': 'extracting', 'text': '', 'total_chars': len(full_response), 'chunk_count': chunk_count, 'thought_count': thought_count, 'streaming_complete': True})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {
+                        "stage": "extracting",
+                        "message": "Extraction stream complete",
+                        "total_chars": len(full_response),
+                        "chunk_count": chunk_count,
+                        "thought_count": thought_count,
+                    },
+                )
 
                 # Stage 4: Parsing
-                yield f"data: {json.dumps({'stage': 'parsing', 'message': 'Processing extracted data...'})}\n\n"
+                yield stream.event(
+                    "stage",
+                    {"stage": "parsing", "message": "Processing extracted data..."},
+                )
 
                 # Parse JSON from response
                 try:
-                    # Clean up response
-                    json_text = full_response.strip()
-                    if json_text.startswith("```json"):
-                        json_text = json_text[7:]
-                    if json_text.startswith("```"):
-                        json_text = json_text[3:]
-                    if json_text.endswith("```"):
-                        json_text = json_text[:-3]
-                    json_text = json_text.strip()
-
-                    parsed_data = json.loads(json_text)
+                    parsed_data, parse_diagnostics = parse_json_with_single_repair(
+                        full_response,
+                        required_keys={"detailed_holdings"},
+                    )
 
                     # Transform Gemini response to match frontend expected structure
                     account_metadata = parsed_data.get("account_metadata", {})
@@ -571,38 +677,57 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
 
                     portfolio_summary = parsed_data.get("portfolio_summary", {})
                     account_summary = {
-                        "beginning_value": portfolio_summary.get("beginning_value"),
-                        "ending_value": portfolio_summary.get("ending_value"),
-                        "change_in_value": portfolio_summary.get("total_change"),
-                        "cash_balance": parsed_data.get("cash_balance", 0),
-                        "net_deposits_withdrawals": portfolio_summary.get(
-                            "net_deposits_withdrawals"
+                        "beginning_value": _coerce_optional_number(
+                            portfolio_summary.get("beginning_value")
                         ),
-                        "investment_gain_loss": portfolio_summary.get("investment_gain_loss"),
+                        "ending_value": _coerce_optional_number(
+                            portfolio_summary.get("ending_value")
+                        ),
+                        "change_in_value": _coerce_optional_number(
+                            portfolio_summary.get("total_change")
+                        ),
+                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance"))
+                        or 0.0,
+                        "net_deposits_withdrawals": _coerce_optional_number(
+                            portfolio_summary.get("net_deposits_withdrawals")
+                        ),
+                        "investment_gain_loss": _coerce_optional_number(
+                            portfolio_summary.get("investment_gain_loss")
+                        ),
                     }
 
                     detailed_holdings = parsed_data.get("detailed_holdings", [])
                     holdings = []
                     for h in detailed_holdings:
-                        holding = {
-                            "symbol": h.get("symbol_cusip", h.get("symbol")),
-                            "name": h.get("description", h.get("name", "Unknown")),
-                            "quantity": h.get("quantity"),
-                            "price": h.get("price"),
-                            "price_per_unit": h.get("price"),
-                            "market_value": h.get("market_value"),
-                            "cost_basis": h.get("cost_basis"),
-                            "unrealized_gain_loss": h.get("unrealized_gain_loss"),
-                            "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
-                            "asset_type": h.get("asset_class"),
-                            "acquisition_date": h.get("acquisition_date"),
-                            "estimated_annual_income": h.get("estimated_annual_income"),
-                            "est_yield": h.get("est_yield"),
-                        }
-                        holdings.append(holding)
+                        normalized, reconciliation = _reconcile_holding_numeric_fields(
+                            {
+                                "symbol": h.get("symbol_cusip", h.get("symbol")),
+                                "name": h.get("description", h.get("name", "Unknown")),
+                                "quantity": h.get("quantity"),
+                                "price": h.get("price"),
+                                "price_per_unit": h.get("price"),
+                                "market_value": h.get("market_value"),
+                                "cost_basis": h.get("cost_basis"),
+                                "unrealized_gain_loss": h.get("unrealized_gain_loss"),
+                                "unrealized_gain_loss_pct": h.get("unrealized_gain_loss_pct"),
+                                "asset_type": h.get("asset_class"),
+                                "acquisition_date": h.get("acquisition_date"),
+                                "estimated_annual_income": h.get("estimated_annual_income"),
+                                "est_yield": h.get("est_yield"),
+                            }
+                        )
+                        if (
+                            reconciliation["reconciled_fields"]
+                            or reconciliation["mismatch_detected"]
+                        ):
+                            normalized["reconciliation"] = reconciliation
+                        holdings.append(normalized)
 
                     # ---- Validation pass: reject hallucinated or incomplete entries ----
                     raw_count = len(holdings)
+                    dropped_count = 0
+                    reconciled_count = 0
+                    mismatch_count = 0
                     validated_holdings = []
                     for h in holdings:
                         # Drop entries with no symbol at all
@@ -610,6 +735,7 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                             logger.warning(
                                 f"[Portfolio Validation] Dropping holding with no symbol: {h.get('name', 'unnamed')}"
                             )
+                            dropped_count += 1
                             continue
                         # Drop entries with all-null financials (nothing useful extracted)
                         if (
@@ -620,22 +746,16 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                             logger.warning(
                                 f"[Portfolio Validation] Dropping holding with no financial data: {h['symbol']}"
                             )
+                            dropped_count += 1
                             continue
-                        # Cross-validate: quantity * price ≈ market_value (within 10%)
-                        qty = h.get("quantity")
-                        price = h.get("price")
-                        mv = h.get("market_value")
-                        if qty is not None and price is not None and mv is not None:
-                            try:
-                                expected = float(qty) * float(price)
-                                actual = float(mv)
-                                if actual != 0 and abs(expected - actual) / abs(actual) > 0.10:
-                                    logger.warning(
-                                        f"[Portfolio Validation] Market value mismatch for {h['symbol']}: "
-                                        f"qty({qty})*price({price})={expected:.2f} vs mv={actual:.2f}"
-                                    )
-                            except (ValueError, TypeError):
-                                pass  # Non-numeric values, skip validation
+
+                        reconciliation = h.get("reconciliation")
+                        if isinstance(reconciliation, dict):
+                            if reconciliation.get("reconciled_fields"):
+                                reconciled_count += 1
+                            if reconciliation.get("mismatch_detected"):
+                                mismatch_count += 1
+
                         validated_holdings.append(h)
                     holdings = validated_holdings
                     logger.info(
@@ -643,11 +763,23 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     )
 
                     # Calculate total_value if not provided
-                    total_value = parsed_data.get("total_value", 0)
+                    total_value = _coerce_optional_number(parsed_data.get("total_value")) or 0.0
                     if not total_value and account_summary.get("ending_value"):
-                        total_value = account_summary["ending_value"]
+                        total_value = account_summary["ending_value"] or 0.0
                     if not total_value and holdings:
-                        total_value = sum(h.get("market_value", 0) or 0 for h in holdings)
+                        total_value = sum(
+                            _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
+                        )
+
+                    quality_report = {
+                        "raw": raw_count,
+                        "validated": len(holdings),
+                        "dropped": dropped_count,
+                        "reconciled": reconciled_count,
+                        "mismatch_detected": mismatch_count,
+                        "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
+                        "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
+                    }
 
                     # Build portfolio_data structure for frontend
                     portfolio_data = {
@@ -663,8 +795,10 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                         "historical_values": parsed_data.get("historical_values"),
                         "ytd_metrics": parsed_data.get("ytd_metrics"),
                         "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
-                        "cash_balance": parsed_data.get("cash_balance", 0),
+                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance"))
+                        or 0.0,
                         "total_value": total_value,
+                        "quality_report": quality_report,
                         "kpis": {
                             "holdings_count": len(holdings),
                             "total_value": total_value,
@@ -676,11 +810,30 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
                     )
 
                     # Stage 5: Complete
-                    yield f"data: {json.dumps({'stage': 'complete', 'portfolio_data': portfolio_data, 'success': True, 'thought_count': thought_count})}\n\n"
+                    yield stream.event(
+                        "complete",
+                        {
+                            "portfolio_data": portfolio_data,
+                            "success": True,
+                            "thought_count": thought_count,
+                        },
+                        terminal=True,
+                    )
 
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parse error: {e}")
-                    yield f"data: {json.dumps({'stage': 'error', 'message': f'Failed to parse AI response: {str(e)}'})}\n\n"
+                except Exception as parse_error:
+                    logger.error(f"JSON parse error: {parse_error}")
+                    yield stream.event(
+                        "error",
+                        {
+                            "code": "IMPORT_PARSE_FAILED",
+                            "message": "Failed to parse AI response after deterministic repair",
+                            "diagnostics": {
+                                "response_chars": len(full_response),
+                                "chunk_count": chunk_count,
+                            },
+                        },
+                        terminal=True,
+                    )
 
             # end of asyncio.timeout context
 
@@ -688,13 +841,27 @@ CRITICAL: Extract ALL holdings and transactions. Return ONLY valid JSON, no expl
             logger.warning(
                 f"[Portfolio Import] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
             )
-            yield f"data: {json.dumps({'stage': 'error', 'message': f'Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. Please try again with a smaller file.'})}\n\n"
+            yield stream.event(
+                "error",
+                {
+                    "code": "IMPORT_TIMEOUT",
+                    "message": (
+                        f"Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. "
+                        "Please try again with a smaller file."
+                    ),
+                },
+                terminal=True,
+            )
         except Exception as e:
             logger.error(f"SSE streaming error: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
-            yield f"data: {json.dumps({'stage': 'error', 'message': str(e)})}\n\n"
+            yield stream.event(
+                "error",
+                {"code": "IMPORT_STREAM_FAILED", "message": str(e)},
+                terminal=True,
+            )
 
     return EventSourceResponse(
         event_generator(),
