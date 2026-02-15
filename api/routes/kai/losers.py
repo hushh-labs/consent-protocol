@@ -76,6 +76,13 @@ class AnalyzeLosersRequest(BaseModel):
             "optimization universe instead of returning an error."
         ),
     )
+    user_preferences: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Optional user-level portfolio preferences from world model context "
+            "(e.g., investment_horizon, investment_style, concentration guardrails)."
+        ),
+    )
 
 
 class AnalyzeLosersResponse(BaseModel):
@@ -225,6 +232,7 @@ async def analyze_portfolio_losers(
         "mode": "losers" if optimize_from_losers else "full_portfolio",
         "total_positions_market_value": total_mv,
         "positions": per_loser_context,
+        "user_preferences": request.user_preferences or {},
     }
 
     prompt = f"""
@@ -270,6 +278,9 @@ Use their market values and weight_pct fields to reason about risk and concentra
 
 INSTRUCTIONS
 ------------
+0) Personalize to `user_preferences` inside USER_PORTFOLIO_SNAPSHOT when present
+   (investment horizon/style, concentration tolerance, and any risk cues).
+
 1) Diagnose portfolio health focusing on these losers:
    - Classify each loser as one of: "core_keep", "trim", "exit", "rotate", "watchlist".
    - Compute how much risk is in:
@@ -667,6 +678,7 @@ async def analyze_portfolio_losers_stream(
                     "mode": "losers" if optimize_from_losers else "full_portfolio",
                     "total_positions_market_value": total_mv,
                     "positions": per_loser_context,
+                    "user_preferences": request.user_preferences or {},
                 }
 
                 prompt = _build_optimization_prompt(
@@ -727,6 +739,7 @@ async def analyze_portfolio_losers_stream(
 
                 # Then iterate over the stream with heartbeat-safe polling
                 stream_iter = gen_stream.__aiter__()
+                next_chunk_task: asyncio.Task | None = None
                 while True:
                     # Check if client disconnected
                     if await raw_request.is_disconnected():
@@ -734,13 +747,18 @@ async def analyze_portfolio_losers_stream(
                             "[Losers Analysis] Client disconnected, stopping streaming — saving compute"
                         )
                         client_disconnected = True
+                        if next_chunk_task and not next_chunk_task.done():
+                            next_chunk_task.cancel()
                         break
 
                     try:
+                        if next_chunk_task is None:
+                            next_chunk_task = asyncio.create_task(stream_iter.__anext__())
                         chunk = await asyncio.wait_for(
-                            stream_iter.__anext__(),
+                            asyncio.shield(next_chunk_task),
                             timeout=HEARTBEAT_INTERVAL_SECONDS,
                         )
+                        next_chunk_task = None
                     except asyncio.TimeoutError:
                         elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
                         yield stream.event(
@@ -756,8 +774,10 @@ async def analyze_portfolio_losers_stream(
                         )
                         continue
                     except StopAsyncIteration:
+                        next_chunk_task = None
                         break
 
+                    appended_response_text = False
                     # Check for thought summaries (Gemini thinking mode)
                     if hasattr(chunk, "candidates") and chunk.candidates:
                         for candidate in chunk.candidates:
@@ -774,11 +794,14 @@ async def analyze_portfolio_losers_stream(
                                     elif hasattr(part, "text") and part.text:
                                         chunk_count += 1
                                         full_response += part.text
+                                        appended_response_text = True
                                         yield stream.event(
                                             "chunk",
                                             {"text": part.text, "chunk_count": chunk_count},
                                         )
-                    elif getattr(chunk, "text", None):
+
+                    # Some SDK responses include text on chunk.text even when candidates are present.
+                    if not appended_response_text and getattr(chunk, "text", None):
                         chunk_count += 1
                         full_response += str(chunk.text)
                         yield stream.event(
