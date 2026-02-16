@@ -17,6 +17,7 @@ import httpx
 from mcp.types import TextContent
 
 from mcp_modules.config import (
+    DEVELOPER_API_ENABLED,
     FASTAPI_URL,
     FRONTEND_URL,
     MCP_DEVELOPER_TOKEN,
@@ -113,6 +114,34 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             )
         ]
 
+    if not DEVELOPER_API_ENABLED:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "developer_api_disabled",
+                        "error_code": "DEVELOPER_API_DISABLED_IN_PRODUCTION",
+                        "message": "Developer API is disabled in production.",
+                    }
+                ),
+            )
+        ]
+
+    if not MCP_DEVELOPER_TOKEN:
+        logger.error("request_consent aborted: MCP_DEVELOPER_TOKEN missing")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "error",
+                        "error": "MCP developer token is not configured",
+                    }
+                ),
+            )
+        ]
+
     if not PRODUCTION_MODE:
         return [
             TextContent(
@@ -144,7 +173,34 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             )
 
             if create_response.status_code != 200:
-                error_detail = create_response.json().get("detail", "Unknown error")
+                response_payload = create_response.json()
+                detail = response_payload.get("detail")
+                error_code = response_payload.get("error_code")
+                message = response_payload.get("message")
+
+                if isinstance(detail, dict):
+                    error_code = detail.get("error_code", error_code)
+                    message = detail.get("message", message)
+
+                if (
+                    create_response.status_code == 410
+                    and error_code == "DEVELOPER_API_DISABLED_IN_PRODUCTION"
+                ):
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps(
+                                {
+                                    "status": "developer_api_disabled",
+                                    "error_code": "DEVELOPER_API_DISABLED_IN_PRODUCTION",
+                                    "message": message
+                                    or "Developer API is disabled in production.",
+                                }
+                            ),
+                        )
+                    ]
+
+                error_detail = message or detail or "Unknown error"
                 return [
                     TextContent(
                         type="text",
@@ -236,6 +292,20 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     user_id = args.get("user_id")
     scope_str = args.get("scope")
 
+    if not DEVELOPER_API_ENABLED:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "developer_api_unavailable",
+                        "error_code": "DEVELOPER_API_DISABLED_IN_PRODUCTION",
+                        "message": "Developer API is disabled in production.",
+                    }
+                ),
+            )
+        ]
+
     original_identifier = user_id
     user_id, _user_email, _user_display_name = await resolve_email_to_uid(user_id)
 
@@ -314,4 +384,9 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
         ]
     except Exception as e:
         logger.error("Error checking consent status: %s", e)
-        return [TextContent(type="text", text=json.dumps({"status": "error", "error": str(e)}))]
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"status": "error", "error": "Failed to check consent status"}),
+            )
+        ]

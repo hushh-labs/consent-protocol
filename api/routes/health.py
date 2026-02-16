@@ -7,6 +7,7 @@ import logging
 import os
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from api.middlewares.rate_limit import limiter
 from api.utils.firebase_admin import ensure_firebase_admin
@@ -14,6 +15,7 @@ from api.utils.firebase_admin import ensure_firebase_admin
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Health"])
+NO_STORE_HEADERS = {"Cache-Control": "no-store"}
 
 
 def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -55,17 +57,29 @@ async def issue_app_review_mode_session(request: Request):
     - Never returns reviewer password to clients
     """
     if not _is_app_review_mode_enabled():
-        raise HTTPException(status_code=403, detail="App review mode is disabled")
+        raise HTTPException(
+            status_code=403,
+            detail="App review mode is disabled",
+            headers=NO_STORE_HEADERS,
+        )
 
     reviewer_uid = str(os.getenv("REVIEWER_UID", "")).strip()
     if not reviewer_uid:
         logger.error("app_review_mode.session_failed reason=missing_reviewer_uid")
-        raise HTTPException(status_code=503, detail="Reviewer identity not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="Reviewer identity not configured",
+            headers=NO_STORE_HEADERS,
+        )
 
     configured, project_id = ensure_firebase_admin()
     if not configured:
         logger.error("app_review_mode.session_failed reason=firebase_admin_not_configured")
-        raise HTTPException(status_code=503, detail="Firebase Admin not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="Firebase Admin not configured",
+            headers=NO_STORE_HEADERS,
+        )
 
     try:
         from firebase_admin import auth as firebase_auth
@@ -74,9 +88,13 @@ async def issue_app_review_mode_session(request: Request):
         token_str = (
             custom_token.decode("utf-8") if isinstance(custom_token, bytes) else str(custom_token)
         )
-    except Exception as e:
-        logger.exception("app_review_mode.session_failed reason=token_mint_error error=%s", e)
-        raise HTTPException(status_code=500, detail="Failed to issue review session token")
+    except Exception:
+        logger.exception("app_review_mode.session_failed reason=token_mint_error")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to issue review session token",
+            headers=NO_STORE_HEADERS,
+        )
 
     client_ip = request.client.host if request.client else "unknown"
     logger.info(
@@ -85,4 +103,4 @@ async def issue_app_review_mode_session(request: Request):
         project_id or "unknown",
         client_ip,
     )
-    return {"token": token_str}
+    return JSONResponse({"token": token_str}, headers=NO_STORE_HEADERS)

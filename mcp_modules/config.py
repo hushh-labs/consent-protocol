@@ -5,6 +5,12 @@ MCP Server configuration.
 
 import os
 
+
+def _env_truthy(name: str, fallback: str = "false") -> bool:
+    raw = str(os.environ.get(name, fallback)).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 # FastAPI backend URL (for consent API calls)
 FASTAPI_URL = os.environ.get("CONSENT_API_URL", "http://localhost:8000")
 
@@ -13,9 +19,13 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # Production mode: requires user approval via dashboard
 PRODUCTION_MODE = os.environ.get("PRODUCTION_MODE", "true").lower() == "true"
+ENVIRONMENT = str(os.environ.get("ENVIRONMENT", "development")).strip().lower()
+DEVELOPER_API_ENABLED = (
+    False if ENVIRONMENT == "production" else _env_truthy("DEVELOPER_API_ENABLED", "true")
+)
 
 # MCP developer token (registered in FastAPI)
-MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desktop")
+MCP_DEVELOPER_TOKEN = str(os.environ.get("MCP_DEVELOPER_TOKEN", "")).strip()
 
 # How long to wait for user to approve consent (in seconds)
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
