@@ -120,7 +120,7 @@ Once connected, the MCP host has access to these 9 tools:
 | `delegate_to_agent`        | Create a TrustLink for agent-to-agent (A2A) delegation                          |
 | `list_scopes`              | List available consent scope categories (static reference)                      |
 | `discover_user_domains`    | Discover which domains a user has and the scope strings to request              |
-| `check_consent_status`     | Poll a pending consent request until granted or denied                          |
+| `check_consent_status`     | Check current status of a pending consent request                               |
 
 ## MCP Resources (3 resources)
 
@@ -140,7 +140,7 @@ Scopes are **dynamic** -- they are derived from the world model registry (`world
 
 1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and the corresponding scope strings (e.g. `attr.financial.*`, `attr.food.*`).
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
-3. **Wait for approval** -- If the response status is `pending`, poll `check_consent_status(user_id, scope)` until it returns `granted` or `denied`. The server uses SSE internally. Timeout is 120 seconds; poll interval is 5 seconds.
+3. **Wait for approval** -- If the response status is `pending`, return control to the caller and wait for user action in the Hushh app. Re-check later using `check_consent_status(user_id, scope)`.
 4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_financial_profile`, `get_food_preferences`, `get_professional_profile`, or other data tools.
 
 ### Scope model
@@ -162,7 +162,7 @@ When `PRODUCTION_MODE=true` (the default), consent requests require real user ap
 - The user must have the Hushh app installed.
 - `request_consent` sends an FCM push notification to the user's device.
 - The user reviews and approves (or denies) the request in the Hushh app consent dashboard.
-- The MCP server polls via SSE until the user responds or the timeout elapses.
+- Consent delivery is FCM-first in production; consent SSE/poll endpoints are disabled for this flow.
 
 Set `PRODUCTION_MODE=false` only for local development without a real user device.
 
@@ -175,7 +175,6 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
 | `MCP_DEVELOPER_TOKEN`          | `mcp_dev_claude_desktop` | Developer token registered in FastAPI                 |
 | `CONSENT_TIMEOUT_SECONDS`      | `120`                    | Max wait time for user to approve consent             |
-| `CONSENT_POLL_INTERVAL_SECONDS`| `5`                      | Polling interval for consent status checks            |
 
 ## Demo Script
 
@@ -205,10 +204,10 @@ You: "Request consent to access financial data for user@example.com"
 -> Returns status: "pending" (or "granted" if auto-approved in dev mode)
 ```
 
-### Step 4: Wait for Approval (production mode)
+### Step 4: Re-check Status Later (production mode)
 
 ```
--> Agent polls check_consent_status("user@example.com", "attr.financial.*")
+-> Agent checks check_consent_status("user@example.com", "attr.financial.*")
 -> User approves in Hushh app dashboard
 -> Returns consent token (HCT:...)
 ```
