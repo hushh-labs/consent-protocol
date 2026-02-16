@@ -148,6 +148,12 @@ class ConsentDBService:
         if response.data and len(response.data) > 0:
             row = response.data[0]
             if row.get("action") == "REQUESTED":
+                metadata = row.get("metadata") or {}
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata) if metadata else {}
+                    except json.JSONDecodeError:
+                        metadata = {}
                 return {
                     "request_id": row.get("request_id"),
                     "developer": row.get("agent_id"),
@@ -155,6 +161,7 @@ class ConsentDBService:
                     "scope_description": row.get("scope_description"),
                     "poll_timeout_at": row.get("poll_timeout_at"),
                     "issued_at": row.get("issued_at"),
+                    "metadata": metadata,
                 }
         return None
 
@@ -162,12 +169,18 @@ class ConsentDBService:
     # Active Tokens
     # =========================================================================
 
-    async def get_active_tokens(self, user_id: str) -> List[Dict]:
+    async def get_active_tokens(
+        self,
+        user_id: str,
+        agent_id: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> List[Dict]:
         """
         Get active consent tokens for a user.
         Active = CONSENT_GRANTED with no subsequent REVOKED and not expired.
 
         Note: Uses Python post-processing to handle DISTINCT ON logic.
+        Uniqueness is keyed by (agent_id, scope), not just scope.
         """
         supabase = self._get_supabase()
         now_ms = int(datetime.now().timestamp() * 1000)
@@ -182,26 +195,32 @@ class ConsentDBService:
             .execute()
         )
 
-        # Post-process to get latest per scope (DISTINCT ON equivalent)
-        latest_per_scope = {}
+        # Post-process to get latest per (agent_id, scope) (DISTINCT ON equivalent)
+        latest_per_agent_scope = {}
         for row in response.data:
-            scope = row.get("scope")
-            if not scope:
+            row_scope = row.get("scope")
+            row_agent_id = row.get("agent_id") or ""
+            if not row_scope:
                 continue
 
-            # Keep only the latest entry per scope
-            if scope not in latest_per_scope:
-                latest_per_scope[scope] = row
-            else:
-                # Compare issued_at timestamps
-                current_issued = latest_per_scope[scope].get("issued_at", 0)
-                new_issued = row.get("issued_at", 0)
-                if new_issued > current_issued:
-                    latest_per_scope[scope] = row
+            if agent_id and row_agent_id != agent_id:
+                continue
+            if scope and row_scope != scope:
+                continue
+
+            key = (row_agent_id, row_scope)
+            if key not in latest_per_agent_scope:
+                latest_per_agent_scope[key] = row
+                continue
+
+            current_issued = latest_per_agent_scope[key].get("issued_at", 0)
+            new_issued = row.get("issued_at", 0)
+            if new_issued > current_issued:
+                latest_per_agent_scope[key] = row
 
         # Filter to only active (CONSENT_GRANTED and not expired)
         results = []
-        for row in latest_per_scope.values():
+        for row in latest_per_agent_scope.values():
             if row.get("action") == "CONSENT_GRANTED":
                 expires_at = row.get("expires_at")
                 if expires_at is None or expires_at > now_ms:
@@ -224,21 +243,24 @@ class ConsentDBService:
 
         return results
 
-    async def is_token_active(self, user_id: str, scope: str) -> bool:
-        """Check if there's an active token for user+scope."""
+    async def is_token_active(
+        self, user_id: str, scope: str, agent_id: Optional[str] = None
+    ) -> bool:
+        """Check if there's an active token for user+scope (+agent_id when provided)."""
         supabase = self._get_supabase()
         now_ms = int(datetime.now().timestamp() * 1000)
 
-        response = (
+        query = (
             supabase.table("consent_audit")
             .select("action,expires_at")
             .eq("user_id", user_id)
             .eq("scope", scope)
             .in_("action", ["CONSENT_GRANTED", "REVOKED"])
-            .order("issued_at", desc=True)
-            .limit(1)
-            .execute()
         )
+        if agent_id:
+            query = query.eq("agent_id", agent_id)
+
+        response = query.order("issued_at", desc=True).limit(1).execute()
 
         if response.data and len(response.data) > 0:
             row = response.data[0]

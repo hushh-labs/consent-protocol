@@ -22,7 +22,7 @@ Consent requests are delivered to users via **Firebase Cloud Messaging (FCM)** u
 5. Enriches FCM payload: { request_id, scope, agent_id, scope_description }
 6. Sends FCM message to user's registered tokens
 7. Client receives push → renders toast from payload data
-8. No polling, no SSE, no frontend API calls for notification data
+8. No polling and no production SSE requirement for notification data
 ```
 
 ### Stale Token Handling
@@ -85,13 +85,13 @@ Consent requests reach the user only when the following chain is in place:
 
 1. **Trigger** – When a row is inserted into `consent_audit`, a Postgres trigger runs and sends **NOTIFY consent_audit_new** with a JSON payload (user_id, request_id, action, etc.). The trigger is defined in `db/migrations/011_consent_audit_notify_trigger.sql` and in `scripts/init_supabase_schema.sql`. **The trigger must be applied to the same database the app uses at runtime** (the one pointed to by `DB_HOST` / `DB_NAME`). If the trigger is missing on that database, NOTIFY never fires and neither FCM nor in-app SSE will receive consent events.
 
-2. **Listener** – The consent-protocol backend starts a background task that **LISTEN**s to `consent_audit_new` on an asyncpg connection to the same DB. When NOTIFY is received, it (a) pushes the event into a per-user queue for SSE, and (b) calls the FCM path to send push to the user’s registered tokens. If the DB pool is unavailable at startup (e.g. missing `DB_*` env), the listener does not start and no NOTIFY is ever handled; check logs for `Consent listener: DB pool not available` and ensure `GET /debug/consent-listener` shows `listener_active: true` after startup.
+2. **Listener** – The consent-protocol backend starts a background task that **LISTEN**s to `consent_audit_new` on an asyncpg connection to the same DB. When NOTIFY is received, it (a) optionally pushes the event into a per-user queue for non-production SSE debugging, and (b) calls the FCM path to send push to the user’s registered tokens. If the DB pool is unavailable at startup (e.g. missing `DB_*` env), the listener does not start and no NOTIFY is ever handled; check logs for `Consent listener: DB pool not available` and ensure `GET /debug/consent-listener` shows `listener_active: true` after startup.
 
-3. **Queue → SSE** – The in-app SSE generator creates a queue per user when the first SSE connection for that user is opened. Events from NOTIFY are put into that queue and streamed as `consent_update` to the client. If the user connects after the request was created, a one-time backfill (last 2 minutes) sends recent events on connect.
+3. **Queue → SSE (non-production only)** – The in-app SSE generator creates a queue per user when the first SSE connection for that user is opened. In production, consent SSE is disabled by default (`CONSENT_SSE_ENABLED=false`) and `/api/consent/events/{user_id}/poll/{request_id}` is hard-disabled.
 
 4. **UI** – The frontend (ConsentSSEProvider, ConsentNotificationProvider) subscribes to SSE and shows toasts / refreshes the pending list when it receives a consent event.
 
-**Diagnostic:** Call `GET /debug/consent-listener` to see `listener_active`, `queue_count`, and `notify_received_count`. If `notify_received_count` never increases after creating a consent request, NOTIFY is not reaching the process (trigger not on runtime DB or listener not running). If it increases but FCM/SSE show no hit, the issue is downstream (no tokens, Firebase not configured, or send failure; check backend logs for "FCM skipped" or "FCM send failed").
+**Diagnostic:** Call `GET /debug/consent-listener` to see `listener_active`, `queue_count`, and `notify_received_count`. If `notify_received_count` never increases after creating a consent request, NOTIFY is not reaching the process (trigger not on runtime DB or listener not running). If it increases but users see no push, the issue is downstream (no tokens, Firebase not configured, or send failure; check backend logs for "FCM skipped" or "FCM send failed").
 
 ---
 

@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import Header, HTTPException, status
 
 from api.utils.firebase_auth import verify_firebase_bearer
-from hushh_mcp.consent.token import validate_token
+from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
 
 logger = logging.getLogger(__name__)
@@ -128,8 +128,8 @@ async def require_vault_owner_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Validate token with VAULT_OWNER scope requirement
-    valid, reason, token_obj = validate_token(token, ConsentScope.VAULT_OWNER)
+    # Validate token with VAULT_OWNER scope and DB-backed revocation check.
+    valid, reason, token_obj = await validate_token_with_db(token, ConsentScope.VAULT_OWNER)
 
     if not valid or not token_obj:
         logger.warning(f"Token validation failed: {reason}")

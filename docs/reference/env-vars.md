@@ -33,6 +33,11 @@ What is in `.env` / GCP Secret Manager must match exactly what the code reads --
 | `AGENT_ID` | `hushh_mcp/config.py` | No | Default: `agent_hushh_default`. |
 | `HUSHH_HACKATHON` | `hushh_mcp/config.py` | No | Feature flag (default: disabled). |
 | `CONSENT_TIMEOUT_SECONDS` | `api/routes/sse.py`, `developer.py` | No | Consent wait timeout. |
+| `APP_REVIEW_MODE` / `HUSHH_APP_REVIEW_MODE` | `api/routes/health.py` | No | App review mode toggle. |
+| `REVIEWER_UID` | `api/routes/health.py` | If app review | Firebase UID used for custom token minting. |
+| `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Defaults off in production. |
+| `SYNC_REMOTE_ENABLED` | `api/routes/sync.py` | No | Defaults false; sync endpoints return 501 when disabled. |
+| `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` | Recommended | Service auth token for `/api/user/lookup`. |
 | `ROOT_PATH` | `server.py` | No | FastAPI root path for reverse proxy. |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env | No | Set `True` for Vertex AI in production. |
 
@@ -49,7 +54,6 @@ These are read by `mcp_server.py` (separate from the main FastAPI server):
 | `PRODUCTION_MODE` | `true` | Require real user approval via Hushh app. |
 | `MCP_DEVELOPER_TOKEN` | `mcp_dev_claude_desktop` | Developer token registered in FastAPI. |
 | `CONSENT_TIMEOUT_SECONDS` | `120` | Max wait for user consent approval. |
-| `CONSENT_POLL_INTERVAL_SECONDS` | `5` | Polling interval for consent status. |
 
 ---
 
