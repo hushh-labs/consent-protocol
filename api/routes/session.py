@@ -4,6 +4,7 @@ Session token and user management endpoints.
 """
 
 import logging
+import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -214,7 +215,10 @@ async def get_active_consents(
 
 
 @router.get("/user/lookup")
-async def lookup_user_by_email(email: str):
+async def lookup_user_by_email(
+    email: str,
+    x_mcp_developer_token: Optional[str] = Header(None, alias="X-MCP-Developer-Token"),
+):
     """
     Look up a user by email and return their Firebase UID.
 
@@ -241,11 +245,17 @@ async def lookup_user_by_email(email: str):
         cred = credentials.ApplicationDefault()
         firebase_admin.initialize_app(cred)
 
-    logger.info(f"🔍 Looking up user by email: {email}")
+    required_token = os.getenv("MCP_DEVELOPER_TOKEN", "").strip()
+    if not required_token:
+        raise HTTPException(status_code=503, detail="Lookup endpoint not configured")
+    if not x_mcp_developer_token or x_mcp_developer_token != required_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    logger.info("user_lookup.requested")
 
     try:
         user_record = auth.get_user_by_email(email)
-        logger.info(f"✅ Found user: {user_record.uid}")
+        logger.info("user_lookup.found")
 
         return {
             "exists": True,
@@ -257,7 +267,7 @@ async def lookup_user_by_email(email: str):
         }
 
     except auth.UserNotFoundError:
-        logger.info(f"⚠️ User not found with email: {email}")
+        logger.info("user_lookup.not_found")
         return {
             "exists": False,
             "email": email,
@@ -266,5 +276,5 @@ async def lookup_user_by_email(email: str):
         }
 
     except Exception as e:
-        logger.error(f"❌ Error looking up user: {e}")
-        raise HTTPException(status_code=500, detail=f"Error looking up user: {str(e)}")
+        logger.error("user_lookup.error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to look up user")

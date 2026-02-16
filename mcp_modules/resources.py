@@ -97,7 +97,7 @@ async def read_resource(uri: str) -> str:
                 },
                 {
                     "name": "check_consent_status",
-                    "purpose": "Poll pending consent until granted/denied",
+                    "purpose": "Check current status of pending consent",
                     "when_to_use": "After request_consent when status is pending",
                 },
                 {
@@ -119,14 +119,14 @@ async def read_resource(uri: str) -> str:
             "recommended_flow": [
                 "1. discover_user_domains(user_id) to get domains and scope strings for this user",
                 "2. request_consent(user_id, scope) for each scope needed (e.g. world_model.read or attr.food.*)",
-                "3. If status is pending, poll check_consent_status(user_id, scope) until granted or denied",
+                "3. If status is pending, return control to caller; user approves in app and caller can re-check status later",
                 "4. Use the returned consent_token with get_* tools or world-model data APIs",
             ],
             "scopes_are_dynamic": True,
             "supported_scopes": "world_model.read, world_model.write, and attr.{domain}.* where {domain} is from the world model (discover_user_domains or GET /api/world-model/scopes/{user_id}). No fixed list - domains come from domain registry and per-user world model index.",
             "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/world-model/scopes/{user_id} (from world_model_index_v2.available_domains).",
             "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
-            "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). The app must be open or polling GET /api/consent/pending so the user sees the request. SSE then notifies the MCP when the user approves or denies.",
+            "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). Delivery is FCM-first in production; consent SSE/polling is disabled for this flow.",
         }
         return json.dumps(connector_info, indent=2)
 

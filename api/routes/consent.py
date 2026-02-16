@@ -116,9 +116,8 @@ async def approve_consent(
         logger.error(f"Failed to resolve scope {requested_scope}: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid scope: {requested_scope}")
 
-    # Get developer token from metadata or use developer name
+    # Optional metadata on pending request (used for expiry hints)
     metadata = pending_request.get("metadata", {})
-    developer_token = metadata.get("developer_token", pending_request["developer"])
     expiry_hours = metadata.get("expiry_hours", 24)
 
     # MODULAR COMPLIANCE CHECK: Idempotency
@@ -126,25 +125,19 @@ async def approve_consent(
     # This prevents duplication and ensures a clean audit log.
 
     service = ConsentDBService()
-    active_tokens = await service.get_active_tokens(userId)
+    active_tokens = await service.get_active_tokens(
+        userId,
+        agent_id=pending_request["developer"],
+        scope=requested_scope,
+    )
     existing_token = None
 
-    # 1. Filter active tokens for the requested scope and agent (match on requested scope string, e.g. attr.food.*)
+    # 1. Filter active tokens for the requested scope and agent.
     for t in active_tokens:
-        if t.get("scope") != requested_scope:
-            continue
-
-        # Check Agent Match (Normalize developer token format)
-        t_agent = t.get("agent_id") or t.get("developer")
-        req_agent = f"developer:{developer_token}"
-
-        # Simple match or exact match
-        if t_agent == req_agent or t_agent == developer_token:
-            # Check Expiry (ensure it has reasonable life left, e.g., > 1 hour)
-            expires_at = t.get("expires_at", 0)
-            if expires_at > (time.time() * 1000) + (60 * 60 * 1000):
-                existing_token = t
-                break
+        expires_at = t.get("expires_at", 0)
+        if expires_at > (time.time() * 1000) + (60 * 60 * 1000):
+            existing_token = t
+            break
 
     if existing_token:
         # IDEMPOTENT RETURN: Reuse existing token
@@ -169,7 +162,9 @@ async def approve_consent(
     # The enum was validated above, but the token must preserve the exact scope
     token = issue_token(
         user_id=userId,
-        agent_id=f"developer:{developer_token}",
+        # Keep token agent_id aligned with consent_audit agent_id so DB revocation
+        # checks are deterministic across instances.
+        agent_id=pending_request["developer"],
         scope=requested_scope,  # ✅ Pass string, not enum
         expires_in_ms=expiry_hours * 60 * 60 * 1000,
     )

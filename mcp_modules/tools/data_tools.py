@@ -16,7 +16,7 @@ from mcp.types import TextContent
 
 from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
-from mcp_modules.config import FASTAPI_URL
+from mcp_modules.config import FASTAPI_URL, MCP_DEVELOPER_TOKEN
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -25,11 +25,17 @@ async def resolve_email_to_uid(user_id: str) -> str:
     """If user_id is an email, resolve to Firebase UID."""
     if not user_id or "@" not in user_id:
         return user_id
+    if not MCP_DEVELOPER_TOKEN:
+        logger.warning("⚠️ Email lookup skipped: MCP_DEVELOPER_TOKEN not configured")
+        return user_id
 
     try:
         async with httpx.AsyncClient() as client:
             lookup_response = await client.get(
-                f"{FASTAPI_URL}/api/user/lookup", params={"email": user_id}, timeout=5.0
+                f"{FASTAPI_URL}/api/user/lookup",
+                params={"email": user_id},
+                headers={"X-MCP-Developer-Token": MCP_DEVELOPER_TOKEN},
+                timeout=5.0,
             )
             if lookup_response.status_code == 200:
                 lookup_data = lookup_response.json()
