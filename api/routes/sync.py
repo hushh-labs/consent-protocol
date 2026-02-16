@@ -1,102 +1,60 @@
 # consent-protocol/api/routes/sync.py
 """
-Sync API Routes
-===============
+Sync API Routes (disabled)
+==========================
 
-Endpoints for data synchronization between client and server.
-Supports HushhSyncPlugin.
-
-Routes:
-    POST /api/sync/vault - Trigger vault sync (placeholder)
-    POST /api/sync/batch - Push batch of changes
-    GET  /api/sync/pull  - Pull changes since timestamp
-
-Security:
-    ALL routes require VAULT_OWNER token.
+Remote sync is intentionally disabled during regulated cutover.
+All routes return explicit feature-disabled responses.
 """
 
-import logging
-from typing import List
+import os
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, Query
 
 from api.middleware import require_vault_owner_token
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/api/sync", tags=["Sync"])
 
-# ==================== Models ====================
+
+def _sync_enabled() -> bool:
+    raw = str(os.getenv("SYNC_REMOTE_ENABLED", "false")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
-class SyncItem(BaseModel):
-    id: int
-    tableName: str
-    operation: str
-    userId: str
-    data: str
-    createdAt: int
+def _disabled_payload() -> dict:
+    return {
+        "success": False,
+        "error_code": "SYNC_DISABLED",
+        "message": "Remote sync is disabled in this release.",
+        "sync_remote_enabled": _sync_enabled(),
+    }
 
 
-class SyncBatchRequest(BaseModel):
-    items: List[SyncItem]
-
-
-# ==================== Routes ====================
-
-
-@router.post("/vault")
+@router.post("/vault", status_code=501)
 async def sync_vault(
     user_id: str = Body(..., embed=True, alias="userId"),
     token_data: dict = Depends(require_vault_owner_token),
 ):
-    """
-    Trigger vault sync.
-    Current implementation is a placeholder that returns success to satisfy the plugin.
-    Real sync happens via specific domain services (WorldModel, etc).
-    """
-    # Verify user_id matches token
-    if user_id != token_data["user_id"]:
-        raise HTTPException(status_code=403, detail="User ID mismatch")
-
-    return {"success": True, "message": "Vault sync received"}
+    _ = user_id
+    _ = token_data
+    return _disabled_payload()
 
 
-@router.post("/batch")
+@router.post("/batch", status_code=501)
 async def sync_batch(
-    request: SyncBatchRequest, token_data: dict = Depends(require_vault_owner_token)
+    token_data: dict = Depends(require_vault_owner_token),
 ):
-    """
-    Receive batch of changes from client.
-    """
-    # Ensure all items belong to the authenticated user
-    for item in request.items:
-        if item.userId != token_data["user_id"]:
-            raise HTTPException(status_code=403, detail=f"User ID mismatch in sync item {item.id}")
-
-    # TODO: Implement actual data merging logic here
-    # For now, we acknowledge receipt so client clears pending queue
-
-    synced_ids = [item.id for item in request.items]
-
-    logger.info(f"🔄 Sync batch received: {len(synced_ids)} items for {token_data['user_id']}")
-
-    return {"success": True, "syncedIds": synced_ids}
+    _ = token_data
+    return _disabled_payload()
 
 
-@router.get("/pull")
+@router.get("/pull", status_code=501)
 async def pull_changes(
     userId: str = Query(...),
     since: int = Query(0),
     token_data: dict = Depends(require_vault_owner_token),
 ):
-    """
-    Get changes since timestamp.
-    """
-    if userId != token_data["user_id"]:
-        raise HTTPException(status_code=403, detail="User ID mismatch")
-
-    # TODO: Implement pull logic
-
-    return {"changes": [], "timestamp": 0}
+    _ = userId
+    _ = since
+    _ = token_data
+    return _disabled_payload()

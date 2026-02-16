@@ -118,18 +118,25 @@ async def request_consent(request: ConsentRequest):
 
     # Check if consent already granted (query database with dot notation)
     service = ConsentDBService()
-    is_active = await service.is_token_active(request.user_id, scope_dot)
+    is_active = await service.is_token_active(
+        request.user_id,
+        scope_dot,
+        dev_info["name"],
+    )
     if is_active:
         # Fetch the active token to return it
-        active_tokens = await service.get_active_tokens(request.user_id)
+        active_tokens = await service.get_active_tokens(
+            request.user_id,
+            agent_id=dev_info["name"],
+            scope=scope_dot,
+        )
         existing_token = None
         expires_at = None
 
         for t in active_tokens:
-            if t.get("scope") == scope_dot:
-                existing_token = t.get("token_id")
-                expires_at = t.get("expires_at")
-                break
+            existing_token = t.get("token_id")
+            expires_at = t.get("expires_at")
+            break
 
         if existing_token:
             return ConsentResponse(

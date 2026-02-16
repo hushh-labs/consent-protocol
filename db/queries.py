@@ -81,6 +81,9 @@ async def get_pending_by_request_id(user_id: str, request_id: str) -> Optional[D
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, user_id, request_id)
         if row and row["action"] == "REQUESTED":
+            metadata = row["metadata"] or {}
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata) if metadata else {}
             return {
                 "request_id": row["request_id"],
                 "developer": row["agent_id"],
@@ -88,6 +91,7 @@ async def get_pending_by_request_id(user_id: str, request_id: str) -> Optional[D
                 "scope_description": row["scope_description"],
                 "poll_timeout_at": row["poll_timeout_at"],
                 "issued_at": row["issued_at"],
+                "metadata": metadata,
             }
         return None
 
@@ -97,7 +101,11 @@ async def get_pending_by_request_id(user_id: str, request_id: str) -> Optional[D
 # ============================================================================
 
 
-async def get_active_tokens(user_id: str) -> List[Dict]:
+async def get_active_tokens(
+    user_id: str,
+    agent_id: Optional[str] = None,
+    scope: Optional[str] = None,
+) -> List[Dict]:
     """
     Get active consent tokens for a user.
     Active = CONSENT_GRANTED with no subsequent REVOKED and not expired.
@@ -107,20 +115,23 @@ async def get_active_tokens(user_id: str) -> List[Dict]:
     now_ms = int(datetime.now().timestamp() * 1000)
 
     query = """
-        WITH latest_per_scope AS (
-            SELECT DISTINCT ON (scope)
+        WITH latest_per_agent_scope AS (
+            SELECT DISTINCT ON (agent_id, scope)
                 id, user_id, agent_id, scope, action, token_id,
                 expires_at, issued_at, request_id
             FROM consent_audit
-            WHERE user_id = $1 AND action IN ('CONSENT_GRANTED', 'REVOKED')
-            ORDER BY scope, issued_at DESC
+            WHERE user_id = $1
+              AND action IN ('CONSENT_GRANTED', 'REVOKED')
+              AND ($2::text IS NULL OR agent_id = $2)
+              AND ($3::text IS NULL OR scope = $3)
+            ORDER BY agent_id, scope, issued_at DESC
         )
-        SELECT * FROM latest_per_scope
-        WHERE action = 'CONSENT_GRANTED' AND (expires_at IS NULL OR expires_at > $2)
+        SELECT * FROM latest_per_agent_scope
+        WHERE action = 'CONSENT_GRANTED' AND (expires_at IS NULL OR expires_at > $4)
     """
 
     async with pool.acquire() as conn:
-        rows = await conn.fetch(query, user_id, now_ms)
+        rows = await conn.fetch(query, user_id, agent_id, scope, now_ms)
         return [
             {
                 "id": row["token_id"][:20] + "..." if row["token_id"] else str(row["id"]),
@@ -137,21 +148,24 @@ async def get_active_tokens(user_id: str) -> List[Dict]:
         ]
 
 
-async def is_token_active(user_id: str, scope: str) -> bool:
-    """Check if there's an active token for user+scope."""
+async def is_token_active(user_id: str, scope: str, agent_id: Optional[str] = None) -> bool:
+    """Check if there's an active token for user+scope (+agent_id when provided)."""
     pool = await get_pool()
 
     now_ms = int(datetime.now().timestamp() * 1000)
 
     query = """
         SELECT action, expires_at FROM consent_audit
-        WHERE user_id = $1 AND scope = $2 AND action IN ('CONSENT_GRANTED', 'REVOKED')
+        WHERE user_id = $1
+          AND scope = $2
+          AND action IN ('CONSENT_GRANTED', 'REVOKED')
+          AND ($3::text IS NULL OR agent_id = $3)
         ORDER BY issued_at DESC
         LIMIT 1
     """
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(query, user_id, scope)
+        row = await conn.fetchrow(query, user_id, scope, agent_id)
         if row and row["action"] == "CONSENT_GRANTED":
             return row["expires_at"] is None or row["expires_at"] > now_ms
         return False
