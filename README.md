@@ -46,6 +46,12 @@ Health check: `curl http://localhost:8000/health`
 
 **Available commands:** Run `make help` to see all available targets (dev, lint, test, format, typecheck, security, ci-local).
 
+## Using This In a Host Monorepo
+
+If your frontend/backend live in one monorepo and this repository is vendored as a subtree, use the shared monorepo toolkit in `ops/monorepo/`.
+
+See: [docs/monorepo-integration.md](docs/monorepo-integration.md)
+
 ---
 
 ## Architecture
@@ -140,6 +146,7 @@ consent-protocol/
 | [docs/reference/consent-protocol.md](docs/reference/consent-protocol.md) | Consent token lifecycle |
 | [docs/reference/fcm-notifications.md](docs/reference/fcm-notifications.md) | FCM push notifications |
 | [docs/mcp-setup.md](docs/mcp-setup.md) | MCP server for Claude Desktop |
+| [docs/monorepo-integration.md](docs/monorepo-integration.md) | Host monorepo subtree + hook setup |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide |
 
 ---
