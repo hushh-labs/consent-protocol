@@ -3,14 +3,14 @@
 ## Purpose
 Move app-review-mode control from frontend build-time variables to backend runtime configuration.
 
-## Endpoint
+## Endpoints
 - `GET /api/app-config/review-mode`
+- `POST /api/app-config/review-mode/session`
 
 ## Environment Variables (backend)
 - `APP_REVIEW_MODE` (or `HUSHH_APP_REVIEW_MODE`)  
   Truthy values: `1`, `true`, `yes`, `on`
-- `REVIEWER_EMAIL`
-- `REVIEWER_PASSWORD`
+- `REVIEWER_UID` (required only when app review mode is enabled)
 
 ## Response
 - When disabled:
@@ -23,9 +23,17 @@ Move app-review-mode control from frontend build-time variables to backend runti
 - When enabled:
 ```json
 {
-  "enabled": true,
-  "reviewer_email": "reviewer@example.com",
-  "reviewer_password": "••••••••"
+  "enabled": true
+}
+```
+
+## Session mint response
+
+`POST /api/app-config/review-mode/session`
+
+```json
+{
+  "token": "<firebase-custom-token>"
 }
 ```
 
@@ -33,4 +41,5 @@ Move app-review-mode control from frontend build-time variables to backend runti
 - This endpoint is included via the shared health router.
 - Frontend web requests can proxy through Next API routes.
 - Native iOS/Android clients can call backend directly.
+- No reviewer password is exposed to clients.
 - Production deploy uses backend secrets/env only (no frontend build-time reviewer env).
