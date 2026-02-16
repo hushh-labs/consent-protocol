@@ -76,6 +76,7 @@ Health check: `curl http://localhost:8000/health`
 | Understand the consent token model | [reference/consent-protocol.md](./reference/consent-protocol.md) |
 | FCM push notification architecture | [reference/fcm-notifications.md](./reference/fcm-notifications.md) |
 | Set up the MCP server | [mcp-setup.md](./mcp-setup.md) |
+| Integrate into a host monorepo (subtree) | [monorepo-integration.md](./monorepo-integration.md) |
 | Read the Hushh philosophy | [manifesto.md](./manifesto.md) |
 
 ---
