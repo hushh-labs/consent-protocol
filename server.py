@@ -15,12 +15,51 @@ from dotenv import load_dotenv
 # Load .env file before any other imports that might depend on it
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _env_truthy(name: str, fallback: str = "false") -> bool:
+    raw = str(os.getenv(name, fallback)).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _environment() -> str:
+    return str(os.getenv("ENVIRONMENT", "development")).strip().lower()
+
+
+def _is_production() -> bool:
+    return _environment() == "production"
+
+
+def _is_app_review_mode_enabled() -> bool:
+    return _env_truthy("APP_REVIEW_MODE") or _env_truthy("HUSHH_APP_REVIEW_MODE")
+
+
+def _parse_cors_allowed_origins() -> list[str]:
+    explicit = str(os.getenv("CORS_ALLOWED_ORIGINS", "")).strip()
+    origins = [item.strip() for item in explicit.split(",") if item.strip()]
+
+    frontend_url = str(os.getenv("FRONTEND_URL", "")).strip()
+    if frontend_url and frontend_url not in origins:
+        origins.append(frontend_url)
+
+    if origins:
+        return origins
+
+    if _is_production():
+        return []
+
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://10.0.0.177:3000",
+    ]
+
 
 # Import route modules
 # Import rate limiting
@@ -57,24 +96,15 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS - Dynamic origins based on environment
-# Add FRONTEND_URL env var for production deployments
-cors_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://10.0.0.177:3000",
-]
-
-# Add production frontend URL if set
-frontend_url = os.environ.get("FRONTEND_URL")
-if frontend_url:
-    cors_origins.append(frontend_url)
-    logger.info(f"✅ Added CORS origin from FRONTEND_URL: {frontend_url}")
+# CORS allowlist: explicit origins only (no wildcard regex).
+cors_origins = _parse_cors_allowed_origins()
+logger.info("cors.allowed_origins_count=%s", len(cors_origins))
+if _is_production() and not cors_origins:
+    logger.warning("cors.no_allowed_origins_configured_in_production")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_origin_regex=r"https://.*\.run\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,7 +140,10 @@ app.include_router(sse.router)
 app.include_router(notifications.router)
 
 # Dev-only debug routes (/api/_debug/...)
-app.include_router(debug_firebase.router)
+if not _is_production():
+    app.include_router(debug_firebase.router)
+else:
+    logger.info("debug.routes_disabled environment=production")
 
 # Kai investor analysis routes (/api/kai/...) - NEW MODULAR STRUCTURE
 # This imports the combined router from the kai package which includes:
@@ -191,14 +224,34 @@ async def startup_ticker_cache():
         logger.warning("[startup] Ticker cache preload failed (routes will fall back to DB): %s", e)
 
 
+@app.on_event("startup")
+async def startup_regulated_runtime_guards():
+    """Emit explicit startup security warnings for risky production flags."""
+    if not _is_production():
+        return
+
+    if _is_app_review_mode_enabled():
+        logger.warning("security.review_mode_enabled_in_production")
+        logger.info("metric.review_mode_enabled environment=production value=1")
+
+    if _env_truthy("DEVELOPER_API_ENABLED", "false"):
+        logger.warning("security.developer_api_enabled_in_production")
+
+
 # ============================================================================
 # RUN
 # ============================================================================
 
 
+def _require_debug_access() -> None:
+    if _is_production():
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 @app.get("/debug/diagnostics", tags=["Debug"])
 async def diagnostics():
     """List all registered routes to debug 404s."""
+    _require_debug_access()
     routes = []
     for route in app.routes:
         if hasattr(route, "path"):
@@ -222,6 +275,7 @@ async def diagnostics():
 async def debug_consent_listener():
     """Consent NOTIFY listener status: listener_active, queue_count, notify_received_count.
     Use to confirm the listener is running and that NOTIFY is being received."""
+    _require_debug_access()
     from api.consent_listener import get_consent_listener_status
 
     return get_consent_listener_status()

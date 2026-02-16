@@ -38,13 +38,13 @@ async def issue_session_token(
 
         # Ensure request userId matches verified token
         if request.userId != verified_uid:
-            logger.warning(f"⚠️ userId mismatch: request={request.userId}, token={verified_uid}")
+            logger.warning("session_token.user_mismatch")
             raise HTTPException(status_code=403, detail="userId does not match authenticated user")
 
-        logger.info(f"🔐 Verified user {verified_uid}, issuing session token...")
+        logger.info("session_token.firebase_verified")
 
     except Exception as e:
-        logger.error(f"❌ Token verification failed: {e}")
+        logger.error("session_token.verification_failed: %s", e)
         raise HTTPException(status_code=401, detail="Token verification failed")
 
     try:
@@ -62,9 +62,7 @@ async def issue_session_token(
             expires_in_ms=24 * 60 * 60 * 1000,  # 24 hours
         )
 
-        logger.info(
-            f"✅ Session token issued for {request.userId}, expires at {token_obj.expires_at}"
-        )
+        logger.info("session_token.issued")
 
         return SessionTokenResponse(
             sessionToken=token_obj.token,
@@ -73,8 +71,8 @@ async def issue_session_token(
             scope=request.scope,
         )
     except Exception as e:
-        logger.error(f"❌ Failed to issue session token: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("session_token.issue_failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to issue session token")
 
 
 @router.post("/consent/logout")
@@ -86,7 +84,7 @@ async def logout_session(request: LogoutRequest):
     External API tokens are NOT affected.
     """
 
-    logger.info(f"🚪 Logging out user: {request.userId}")
+    logger.info("session.logout")
 
     # In production, this would query the database for all session tokens
     # and revoke them. For now, we just log the action.
@@ -94,7 +92,7 @@ async def logout_session(request: LogoutRequest):
 
     return {
         "status": "success",
-        "message": f"Session tokens for {request.userId} marked for revocation",
+        "message": "Session tokens marked for revocation",
     }
 
 
@@ -121,11 +119,12 @@ async def get_consent_history(
     token = authorization.replace("Bearer ", "")
     valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
     if not valid or not payload:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+        _ = reason
+        raise HTTPException(status_code=401, detail="Invalid token")
     if payload.user_id != userId:
         raise HTTPException(status_code=403, detail="Token user mismatch")
 
-    logger.info(f"📜 Fetching consent history for user: {userId}, page: {page}")
+    logger.info("consent_history.fetch page=%s", page)
 
     try:
         service = ConsentDBService()
@@ -149,7 +148,7 @@ async def get_consent_history(
         }
     except Exception as e:
         # SECURITY: Log error details server-side, return generic message (CodeQL fix)
-        logger.error(f"❌ Failed to fetch consent history: {e}")
+        logger.error("consent_history.fetch_failed: %s", e)
         return {
             "userId": userId,
             "page": page,
@@ -181,11 +180,12 @@ async def get_active_consents(
     token = authorization.replace("Bearer ", "")
     valid, reason, payload = validate_token(token, ConsentScope.VAULT_OWNER)
     if not valid or not payload:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+        _ = reason
+        raise HTTPException(status_code=401, detail="Invalid token")
     if payload.user_id != userId:
         raise HTTPException(status_code=403, detail="Token user mismatch")
 
-    logger.info(f"🔓 Fetching active consents for user: {userId}")
+    logger.info("consent_active.fetch")
 
     try:
         service = ConsentDBService()
@@ -210,7 +210,7 @@ async def get_active_consents(
         return {"grouped": grouped, "active": active_tokens}
     except Exception as e:
         # SECURITY: Log error details server-side, return generic message (CodeQL fix)
-        logger.error(f"❌ Failed to fetch active consents: {e}")
+        logger.error("consent_active.fetch_failed: %s", e)
         return {"grouped": {}, "active": [], "error": "Failed to fetch active consents"}
 
 
