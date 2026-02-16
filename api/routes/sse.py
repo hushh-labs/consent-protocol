@@ -1,26 +1,61 @@
 # api/routes/sse.py
 """
-Server-Sent Events (SSE) for Real-time Consent Notifications
+Server-Sent Events (SSE) for real-time consent notifications.
 
-Replaces expensive polling with efficient server-push.
-Single persistent connection per user for consent updates.
+Regulated cutover rules:
+- Consent SSE is disabled in production by default.
+- When enabled, caller must provide Firebase bearer token and matching user_id.
+- Consent polling endpoint is deprecated and disabled.
 """
 
 import asyncio
 import json
 import logging
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
+
+from api.utils.firebase_auth import verify_firebase_bearer
 
 logger = logging.getLogger(__name__)
 
-# Consent timeout from env var (synced with frontend via CONSENT_TIMEOUT_SECONDS)
-CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
-
 router = APIRouter(prefix="/api/consent", tags=["SSE"])
+
+
+def _env_truthy(name: str, fallback: str = "false") -> bool:
+    raw = str(os.getenv(name, fallback)).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _consent_sse_enabled() -> bool:
+    explicit = os.getenv("CONSENT_SSE_ENABLED")
+    if explicit is not None:
+        return _env_truthy("CONSENT_SSE_ENABLED")
+
+    # Secure default: off in production, on elsewhere.
+    environment = str(os.getenv("ENVIRONMENT", "development")).strip().lower()
+    return environment != "production"
+
+
+def _ensure_consent_sse_enabled() -> None:
+    if _consent_sse_enabled():
+        return
+
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "error_code": "CONSENT_SSE_DISABLED",
+            "message": "Consent SSE is disabled. Use FCM notifications.",
+        },
+    )
+
+
+def _authorize_sse_user(user_id: str, authorization: Optional[str]) -> None:
+    firebase_uid = verify_firebase_bearer(authorization)
+    if firebase_uid != user_id:
+        raise HTTPException(status_code=403, detail="User ID mismatch")
 
 
 async def consent_event_generator(user_id: str, request: Request) -> AsyncGenerator[dict, None]:
@@ -34,51 +69,51 @@ async def consent_event_generator(user_id: str, request: Request) -> AsyncGenera
     from datetime import datetime
 
     from api.consent_listener import get_consent_queue
+    from hushh_mcp.services.consent_db import ConsentDBService
 
-    logger.info(f"SSE connection opened for user: {user_id}")
+    logger.info("consent_sse.open user_id=%s", user_id)
     connection_start_ms = int(datetime.now().timestamp() * 1000)
-    # Backfill window: last 2 minutes so events that just happened are sent on connect
-    BACKFILL_WINDOW_MS = 2 * 60 * 1000
-    after_timestamp_ms = connection_start_ms - BACKFILL_WINDOW_MS
+    backfill_window_ms = 2 * 60 * 1000
+    after_timestamp_ms = connection_start_ms - backfill_window_ms
     notified_event_ids = set()
-    HEARTBEAT_INTERVAL = 30
+    heartbeat_interval = 30
     queue = get_consent_queue(user_id)
 
     try:
-        # Backfill once: any events in the last 2 minutes (so late-connecting clients get recent NOTIFYs)
-        from hushh_mcp.services.consent_db import ConsentDBService
-
         service = ConsentDBService()
         recent_events = await service.get_recent_consent_events(
-            user_id=user_id, after_timestamp_ms=after_timestamp_ms, limit=10
+            user_id=user_id,
+            after_timestamp_ms=after_timestamp_ms,
+            limit=10,
         )
         for event in recent_events:
             event_id = event.get("request_id") or event.get("token_id")
             request_id = event.get("request_id")
-            if event_id and event_id not in notified_event_ids:
-                notified_event_ids.add(event_id)
-                yield {
-                    "event": "consent_update",
-                    "id": event_id,
-                    "data": json.dumps(
-                        {
-                            "request_id": request_id,
-                            "action": event["action"],
-                            "scope": event["scope"],
-                            "agent_id": event["agent_id"],
-                            "timestamp": event["issued_at"],
-                        }
-                    ),
-                }
-                logger.info(f"SSE event sent (backfill): {event['action']} for {request_id}")
+            if not event_id or event_id in notified_event_ids:
+                continue
 
-        # Event-driven loop: wait on queue (heartbeat on timeout)
+            notified_event_ids.add(event_id)
+            yield {
+                "event": "consent_update",
+                "id": event_id,
+                "data": json.dumps(
+                    {
+                        "request_id": request_id,
+                        "action": event["action"],
+                        "scope": event["scope"],
+                        "agent_id": event["agent_id"],
+                        "timestamp": event["issued_at"],
+                    }
+                ),
+            }
+
         while True:
             if await request.is_disconnected():
-                logger.info(f"SSE client disconnected: {user_id}")
+                logger.info("consent_sse.disconnected user_id=%s", user_id)
                 break
+
             try:
-                data = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL)
+                data = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
             except asyncio.TimeoutError:
                 import time
 
@@ -87,131 +122,70 @@ async def consent_event_generator(user_id: str, request: Request) -> AsyncGenera
                     "data": json.dumps({"timestamp": int(time.time() * 1000)}),
                 }
                 continue
+
             request_id = data.get("request_id") or ""
             event_id = request_id
-            if event_id and event_id not in notified_event_ids:
-                notified_event_ids.add(event_id)
-                yield {
-                    "event": "consent_update",
-                    "id": event_id,
-                    "data": json.dumps(
-                        {
-                            "request_id": request_id,
-                            "action": data.get("action", "REQUESTED"),
-                            "scope": data.get("scope", ""),
-                            "agent_id": data.get("agent_id", ""),
-                            "timestamp": data.get("issued_at", 0),
-                        }
-                    ),
-                }
-                logger.info(f"SSE event sent: {data.get('action')} for {request_id}")
+            if not event_id or event_id in notified_event_ids:
+                continue
+
+            notified_event_ids.add(event_id)
+            yield {
+                "event": "consent_update",
+                "id": event_id,
+                "data": json.dumps(
+                    {
+                        "request_id": request_id,
+                        "action": data.get("action", "REQUESTED"),
+                        "scope": data.get("scope", ""),
+                        "agent_id": data.get("agent_id", ""),
+                        "timestamp": data.get("issued_at", 0),
+                    }
+                ),
+            }
     except asyncio.CancelledError:
-        logger.info(f"SSE connection cancelled for user: {user_id}")
+        logger.info("consent_sse.cancelled user_id=%s", user_id)
     except Exception as e:
-        logger.error(f"SSE error for user {user_id}: {e}")
+        logger.error("consent_sse.error user_id=%s error=%s", user_id, e)
         raise
 
 
 @router.get("/events/{user_id}")
-async def consent_events(user_id: str, request: Request):
+async def consent_events(
+    user_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None, description="Bearer Firebase ID token"),
+):
     """
-    SSE endpoint for consent notifications.
+    Authenticated SSE endpoint for consent notifications.
 
-    Connect to receive real-time updates when consent requests
-    are approved or denied.
-
-    Example client usage:
-    ```javascript
-    const evtSource = new EventSource('/api/consent/events/user_123');
-    evtSource.addEventListener('consent_update', (e) => {
-        const data = JSON.parse(e.data);
-        console.log('Consent updated:', data.action);
-    });
-    ```
+    Disabled by default in production; FCM is the primary notification path.
     """
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id required")
+
+    _ensure_consent_sse_enabled()
+    _authorize_sse_user(user_id, authorization)
 
     return EventSourceResponse(
         consent_event_generator(user_id, request),
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-            "Access-Control-Allow-Origin": "*",  # CORS for SSE
-            "Access-Control-Allow-Credentials": "true",
+            "X-Accel-Buffering": "no",
         },
     )
 
 
 @router.get("/events/{user_id}/poll/{request_id}")
 async def poll_specific_request(user_id: str, request_id: str, request: Request):
-    """
-    SSE endpoint for a specific consent request.
-
-    More efficient than general events when waiting for a specific decision.
-    Closes automatically when the request is resolved.
-    """
-
-    async def specific_event_generator():
-        elapsed = 0
-
-        while elapsed < CONSENT_TIMEOUT_SECONDS:
-            if await request.is_disconnected():
-                break
-
-            from hushh_mcp.services.consent_db import ConsentDBService
-
-            service = ConsentDBService()
-
-            # Use service method to check for resolution
-            result = await service.get_resolved_request(user_id, request_id)
-
-            if result:
-                yield {
-                    "event": "consent_resolved",
-                    "id": request_id,
-                    "data": json.dumps(
-                        {
-                            "request_id": request_id,
-                            "action": result["action"],
-                            "scope": result["scope"],
-                            "resolved": True,
-                        }
-                    ),
-                }
-                # Wait briefly to ensure client receives the event before we close connection
-                logger.info(
-                    f"✅ Consent resolved for {request_id}, keeping connection open briefly"
-                )
-                await asyncio.sleep(2.0)
-                break
-
-            await asyncio.sleep(0.5)
-            elapsed += 0.5
-
-            # Keep connection alive every 15s
-            if elapsed % 15 == 0:
-                yield {"comment": "keepalive"}
-
-        # Timeout event
-        if elapsed >= CONSENT_TIMEOUT_SECONDS:
-            yield {
-                "event": "consent_timeout",
-                "id": request_id,
-                "data": json.dumps(
-                    {
-                        "request_id": request_id,
-                        "timeout": True,
-                        "message": "Consent request timed out",
-                    }
-                ),
-            }
-
-    return EventSourceResponse(
-        specific_event_generator(),
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+    """Deprecated consent poll endpoint (disabled)."""
+    _ = user_id
+    _ = request_id
+    _ = request
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "error_code": "CONSENT_POLL_DEPRECATED",
+            "message": "Consent polling endpoint is disabled. Use FCM notifications.",
         },
     )
