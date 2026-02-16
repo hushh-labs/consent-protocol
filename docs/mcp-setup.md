@@ -173,7 +173,8 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | `CONSENT_API_URL`              | `http://localhost:8000`  | FastAPI backend URL for consent API calls             |
 | `FRONTEND_URL`                 | `http://localhost:3000`  | Frontend URL for user-facing links                    |
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
-| `MCP_DEVELOPER_TOKEN`          | `mcp_dev_claude_desktop` | Developer token registered in FastAPI                 |
+| `DEVELOPER_API_ENABLED`        | `true` (dev), `false` (prod) | Controls `/api/v1/*` developer API availability |
+| `MCP_DEVELOPER_TOKEN`          | _(none)_                 | Developer token for service-auth `/api/user/lookup`   |
 | `CONSENT_TIMEOUT_SECONDS`      | `120`                    | Max wait time for user to approve consent             |
 
 ## Demo Script
