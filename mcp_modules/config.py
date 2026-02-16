@@ -17,15 +17,8 @@ PRODUCTION_MODE = os.environ.get("PRODUCTION_MODE", "true").lower() == "true"
 # MCP developer token (registered in FastAPI)
 MCP_DEVELOPER_TOKEN = os.environ.get("MCP_DEVELOPER_TOKEN", "mcp_dev_claude_desktop")
 
-# ============================================================================
-# CONSENT POLLING CONFIGURATION
-# ============================================================================
-
 # How long to wait for user to approve consent (in seconds)
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
-
-# How often to poll for consent approval (in seconds)
-CONSENT_POLL_INTERVAL_SECONDS = int(os.environ.get("CONSENT_POLL_INTERVAL_SECONDS", "5"))
 
 # ============================================================================
 # SERVER INFO
@@ -54,7 +47,7 @@ SERVER_INFO = {
         },
         {
             "name": "check_consent_status",
-            "purpose": "Poll status of a pending consent request until granted or denied",
+            "purpose": "Check status of a pending consent request",
         },
         {
             "name": "get_food_preferences",
