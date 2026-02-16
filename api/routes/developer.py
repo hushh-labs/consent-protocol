@@ -5,6 +5,7 @@ Developer API v1 endpoints for external access with consent.
 Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
 """
 
+import json
 import logging
 import os
 import re
@@ -12,12 +13,12 @@ import time
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_enum
 from hushh_mcp.services.consent_db import ConsentDBService
-from shared import REGISTERED_DEVELOPERS
 
 # Well-known world-model scopes (dot notation).
 # API also accepts any dynamic attr.{domain}.* scope based on available_domains.
@@ -44,10 +45,65 @@ def _is_valid_world_model_scope(scope: str) -> bool:
 
 logger = logging.getLogger(__name__)
 
-# Consent timeout from env var (synced with frontend and SSE)
-CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))
-
 router = APIRouter(prefix="/api/v1", tags=["Developer API"])
+_DEVELOPER_API_DISABLED_PAYLOAD = {
+    "error_code": "DEVELOPER_API_DISABLED_IN_PRODUCTION",
+    "message": "Developer API is disabled in production.",
+}
+
+
+def _env_truthy(name: str, fallback: str = "false") -> bool:
+    raw = str(os.getenv(name, fallback)).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_production() -> bool:
+    environment = str(os.getenv("ENVIRONMENT", "development")).strip().lower()
+    return environment == "production"
+
+
+def _developer_api_enabled() -> bool:
+    if _is_production():
+        return False
+    return _env_truthy("DEVELOPER_API_ENABLED", "true")
+
+
+def _disabled_response_if_needed() -> JSONResponse | None:
+    if _developer_api_enabled():
+        return None
+    return JSONResponse(status_code=410, content=_DEVELOPER_API_DISABLED_PAYLOAD)
+
+
+def _load_registered_developers() -> dict[str, dict]:
+    raw = str(os.getenv("DEVELOPER_REGISTRY_JSON", "")).strip()
+    if not raw:
+        return {}
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("developer_api.registry_invalid_json")
+        return {}
+
+    if not isinstance(payload, dict):
+        logger.error("developer_api.registry_invalid_shape")
+        return {}
+
+    registry: dict[str, dict] = {}
+    for token, config in payload.items():
+        if not isinstance(token, str) or not isinstance(config, dict):
+            continue
+
+        name = str(config.get("name", "")).strip()
+        approved_scopes = config.get("approved_scopes")
+        if not name or not isinstance(approved_scopes, list):
+            continue
+        if not all(isinstance(scope, str) and scope for scope in approved_scopes):
+            continue
+
+        registry[token] = {"name": name, "approved_scopes": approved_scopes}
+
+    return registry
 
 
 def get_scope_description(scope: str) -> str:
@@ -62,6 +118,9 @@ def get_scope_description(scope: str) -> str:
 @router.get("")
 async def developer_api_root():
     """Welcome to Hushh Developer API."""
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
     return {
         "message": "Welcome to Hushh Developer API",
         "version": "1.0.0",
@@ -88,15 +147,22 @@ async def request_consent(request: ConsentRequest):
     IMPORTANT: This does NOT auto-approve. User must explicitly approve
     via the /api/consent/pending/approve endpoint.
     """
-    logger.info(
-        f"🔐 Consent Request: dev={request.developer_token}, user={request.user_id}, scope={request.scope}"
-    )
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
+
+    logger.info("developer_api.request_consent scope=%s", request.scope)
+
+    registered_developers = _load_registered_developers()
+    if not registered_developers:
+        logger.error("developer_api.registry_missing_or_empty")
+        raise HTTPException(status_code=503, detail="Developer registry is not configured")
 
     # Verify developer
-    if request.developer_token not in REGISTERED_DEVELOPERS:
+    if request.developer_token not in registered_developers:
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid developer token")
 
-    dev_info = REGISTERED_DEVELOPERS[request.developer_token]
+    dev_info = registered_developers[request.developer_token]
 
     # Normalize to dot notation for storage and validation (e.g. attr_food -> attr.food.*)
     scope_dot = normalize_scope(request.scope)
@@ -114,7 +180,7 @@ async def request_consent(request: ConsentRequest):
         )
 
     # Resolve to enum for token issuance
-    _scope_enum = resolve_scope_to_enum(scope_dot)
+    resolve_scope_to_enum(scope_dot)
 
     # Check if consent already granted (query database with dot notation)
     service = ConsentDBService()
@@ -176,11 +242,9 @@ async def request_consent(request: ConsentRequest):
         request_id=request_id,
         scope_description=get_scope_description(scope_dot),
         poll_timeout_at=poll_timeout_at,
-        metadata={"developer_token": request.developer_token, "expiry_hours": request.expiry_hours},
+        metadata={"developer_name": dev_info["name"], "expiry_hours": request.expiry_hours},
     )
-    logger.info(
-        f"📋 Consent request saved to DB: {request.user_id}:{scope_dot} (request_id={request_id})"
-    )
+    logger.info("developer_api.request_created request_id=%s scope=%s", request_id, scope_dot)
 
     return ConsentResponse(
         status="pending",
@@ -192,12 +256,18 @@ async def request_consent(request: ConsentRequest):
 @router.post("/food-data")
 async def get_food_data(_request: DataAccessRequest):
     """Removed: use world-model for domain data."""
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
     raise HTTPException(status_code=410, detail="Gone. Use world-model API for domain data.")
 
 
 @router.post("/professional-data")
 async def get_professional_data(_request: DataAccessRequest):
     """Removed: use world-model for domain data."""
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
     raise HTTPException(status_code=410, detail="Gone. Use world-model API for domain data.")
 
 
@@ -210,6 +280,10 @@ async def list_available_scopes():
     Dynamic ``attr.{domain}.*`` scopes are accepted for any domain registered
     in the user's world model.
     """
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
+
     return {
         "scopes": [
             {"name": "world_model.read", "description": "Read full world model (all domains)"},
