@@ -47,7 +47,12 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             LOG_OPTS="--ancestry-path ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
           elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            LOG_OPTS="--ancestry-path ${{ github.event.before }}..${{ github.sha }}"
+            if git merge-base --is-ancestor "${{ github.event.before }}" "${{ github.sha }}"; then
+              LOG_OPTS="--ancestry-path ${{ github.event.before }}..${{ github.sha }}"
+            else
+              # Force-push/history-rewrite event: before SHA is no longer ancestor.
+              LOG_OPTS="${{ github.sha }}"
+            fi
           elif [ "${{ github.event_name }}" = "push" ]; then
             DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
             git fetch origin "$DEFAULT_BRANCH" --quiet || true
