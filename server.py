@@ -177,18 +177,11 @@ from api.routes import world_model  # noqa: E402
 
 app.include_router(world_model.router)
 
-# Onboarding Tour (User onboarding completion tracking)
-from api.routes import onboarding  # noqa: E402
-
-app.include_router(onboarding.router)
-
 # Account deletion and management
 app.include_router(account.router)
 
 # Data synchronization
 app.include_router(sync.router)
-
-# Force reload check - onboarding registered
 
 logger.info(
     "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED"
