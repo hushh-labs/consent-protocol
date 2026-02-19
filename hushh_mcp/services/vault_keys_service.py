@@ -79,7 +79,7 @@ class VaultKeysService:
         response = (
             supabase.table("vault_keys")
             .select(
-                "auth_method,encrypted_vault_key,salt,iv,recovery_encrypted_vault_key,recovery_salt,recovery_iv"
+                "auth_method,key_mode,encrypted_vault_key,salt,iv,recovery_encrypted_vault_key,recovery_salt,recovery_iv,passkey_credential_id,passkey_prf_salt"
             )
             .eq("user_id", user_id)
             .limit(1)
@@ -92,24 +92,30 @@ class VaultKeysService:
         row = response.data[0]
         return {
             "authMethod": row.get("auth_method"),
+            "keyMode": row.get("key_mode"),
             "encryptedVaultKey": row.get("encrypted_vault_key"),
             "salt": row.get("salt"),
             "iv": row.get("iv"),
             "recoveryEncryptedVaultKey": row.get("recovery_encrypted_vault_key"),
             "recoverySalt": row.get("recovery_salt"),
             "recoveryIv": row.get("recovery_iv"),
+            "passkeyCredentialId": row.get("passkey_credential_id"),
+            "passkeyPrfSalt": row.get("passkey_prf_salt"),
         }
 
     async def setup_vault(
         self,
         user_id: str,
         auth_method: str,
+        key_mode: Optional[str],
         encrypted_vault_key: str,
         salt: str,
         iv: str,
         recovery_encrypted_vault_key: str,
         recovery_salt: str,
         recovery_iv: str,
+        passkey_credential_id: Optional[str] = None,
+        passkey_prf_salt: Optional[str] = None,
     ) -> bool:
         """
         Store encrypted vault key data.
@@ -136,12 +142,15 @@ class VaultKeysService:
         data = {
             "user_id": user_id,
             "auth_method": auth_method,
+            "key_mode": key_mode,
             "encrypted_vault_key": encrypted_vault_key,
             "salt": salt,
             "iv": iv,
             "recovery_encrypted_vault_key": recovery_encrypted_vault_key,
             "recovery_salt": recovery_salt,
             "recovery_iv": recovery_iv,
+            "passkey_credential_id": passkey_credential_id,
+            "passkey_prf_salt": passkey_prf_salt,
             "created_at": now_ms,
             "updated_at": now_ms,
         }
