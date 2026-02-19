@@ -50,23 +50,29 @@ class VaultGetRequest(BaseModel):
 
 class VaultKeyData(BaseModel):
     authMethod: str
+    keyMode: str | None = None
     encryptedVaultKey: str
     salt: str
     iv: str
     recoveryEncryptedVaultKey: str
     recoverySalt: str
     recoveryIv: str
+    passkeyCredentialId: str | None = None
+    passkeyPrfSalt: str | None = None
 
 
 class VaultSetupRequest(BaseModel):
     userId: str
     authMethod: str = "passphrase"
+    keyMode: str | None = None
     encryptedVaultKey: str
     salt: str
     iv: str
     recoveryEncryptedVaultKey: str
     recoverySalt: str
     recoveryIv: str
+    passkeyCredentialId: str | None = None
+    passkeyPrfSalt: str | None = None
 
 
 class SuccessResponse(BaseModel):
@@ -129,12 +135,15 @@ async def vault_get(
 
         return VaultKeyData(
             authMethod=vault_data["authMethod"],
+            keyMode=vault_data.get("keyMode"),
             encryptedVaultKey=vault_data["encryptedVaultKey"],
             salt=vault_data["salt"],
             iv=vault_data["iv"],
             recoveryEncryptedVaultKey=vault_data["recoveryEncryptedVaultKey"],
             recoverySalt=vault_data["recoverySalt"],
             recoveryIv=vault_data["recoveryIv"],
+            passkeyCredentialId=vault_data.get("passkeyCredentialId"),
+            passkeyPrfSalt=vault_data.get("passkeyPrfSalt"),
         )
 
     except HTTPException:
@@ -164,12 +173,15 @@ async def vault_setup(
         await service.setup_vault(
             user_id=request.userId,
             auth_method=request.authMethod,
+            key_mode=request.keyMode,
             encrypted_vault_key=request.encryptedVaultKey,
             salt=request.salt,
             iv=request.iv,
             recovery_encrypted_vault_key=request.recoveryEncryptedVaultKey,
             recovery_salt=request.recoverySalt,
             recovery_iv=request.recoveryIv,
+            passkey_credential_id=request.passkeyCredentialId,
+            passkey_prf_salt=request.passkeyPrfSalt,
         )
         return SuccessResponse(success=True)
 

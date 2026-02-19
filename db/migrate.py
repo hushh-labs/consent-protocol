@@ -48,17 +48,26 @@ async def create_vault_keys(pool: asyncpg.Pool):
         CREATE TABLE IF NOT EXISTS vault_keys (
             user_id TEXT PRIMARY KEY,
             auth_method TEXT NOT NULL DEFAULT 'passphrase',
+            key_mode TEXT,
             encrypted_vault_key TEXT NOT NULL,
             salt TEXT NOT NULL,
             iv TEXT NOT NULL,
             recovery_encrypted_vault_key TEXT NOT NULL,
             recovery_salt TEXT NOT NULL,
             recovery_iv TEXT NOT NULL,
+            passkey_credential_id TEXT,
+            passkey_prf_salt TEXT,
             onboarding_completed BOOLEAN DEFAULT FALSE,
             created_at BIGINT NOT NULL,
             updated_at BIGINT
         )
     """)
+
+    # Backfill compatibility for existing deployments where vault_keys was
+    # created before key_mode/passkey metadata fields existed.
+    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS key_mode TEXT")
+    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS passkey_credential_id TEXT")
+    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS passkey_prf_salt TEXT")
     print("✅ vault_keys ready!")
 
 
