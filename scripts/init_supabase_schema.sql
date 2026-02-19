@@ -10,12 +10,15 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE TABLE IF NOT EXISTS vault_keys (
     user_id TEXT PRIMARY KEY,
     auth_method TEXT NOT NULL DEFAULT 'passphrase',
+    key_mode TEXT,
     encrypted_vault_key TEXT NOT NULL,
     salt TEXT NOT NULL,
     iv TEXT NOT NULL,
     recovery_encrypted_vault_key TEXT NOT NULL,
     recovery_salt TEXT NOT NULL,
     recovery_iv TEXT NOT NULL,
+    passkey_credential_id TEXT,
+    passkey_prf_salt TEXT,
     created_at BIGINT NOT NULL,
     updated_at BIGINT
 );
