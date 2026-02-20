@@ -90,7 +90,11 @@ class FundamentalAgent(HushhAgent):
         logger.info(f"[Fundamental] Orchestrating analysis for {ticker}")
 
         # Step 1: Fetch SEC filings (operon validates consent internally)
-        from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_sec_filings
+        from hushh_mcp.operons.kai.fetchers import (
+            RealtimeDataUnavailable,
+            fetch_market_data,
+            fetch_sec_filings,
+        )
 
         try:
             sec_filings = await fetch_sec_filings(
@@ -102,6 +106,14 @@ class FundamentalAgent(HushhAgent):
             )
         except PermissionError as e:
             logger.error(f"[Fundamental] External data access denied: {e}")
+            raise
+        except RealtimeDataUnavailable as e:
+            logger.warning(
+                "[Fundamental] Realtime dependency unavailable for %s: source=%s detail=%s",
+                ticker,
+                e.source,
+                e.detail,
+            )
             raise
 
         # Step 2: Gemini Deep Analysis (HYBRID v2)

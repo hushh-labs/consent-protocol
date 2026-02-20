@@ -81,7 +81,11 @@ class ValuationAgent(HushhAgent):
         logger.info(f"[Valuation] Orchestrating analysis for {ticker} - user {user_id}")
 
         # Operon 1: Fetch market data (with consent check)
-        from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_peer_data
+        from hushh_mcp.operons.kai.fetchers import (
+            RealtimeDataUnavailable,
+            fetch_market_data,
+            fetch_peer_data,
+        )
 
         try:
             market_data = await fetch_market_data(ticker, user_id, consent_token)
@@ -89,10 +93,12 @@ class ValuationAgent(HushhAgent):
         except PermissionError as e:
             logger.error(f"[Valuation] Market data access denied: {e}")
             raise
+        except RealtimeDataUnavailable as e:
+            logger.error(f"[Valuation] Realtime market dependency unavailable: {e.detail}")
+            raise
         except Exception as e:
-            logger.warning(f"[Valuation] Data fetch failed: {e}, using defaults")
-            market_data = {"ticker": ticker, "price": 0.0}
-            peer_data = []
+            logger.error(f"[Valuation] Data fetch failed: {e}")
+            raise
 
         # Operon 2: Gemini Deep Valuation Analysis
         from hushh_mcp.operons.kai.llm import (
@@ -167,21 +173,6 @@ class ValuationAgent(HushhAgent):
         except Exception as e:
             logger.error(f"[Valuation] Deterministic analysis failed: {e}")
             raise
-
-    async def _mock_analysis(self, ticker: str) -> ValuationInsight:
-        """Lightweight fallback used when upstream streaming/analysis fails."""
-        return ValuationInsight(
-            summary=(
-                f"Valuation fallback analysis for {ticker}: pricing appears near fair value"
-                " with limited margin of safety."
-            ),
-            valuation_metrics={},
-            peer_comparison={},
-            price_targets={},
-            sources=["Fallback Valuation Model"],
-            confidence=0.35,
-            recommendation="fair",
-        )
 
 
 # Export singleton for use in KaiAgent orchestration

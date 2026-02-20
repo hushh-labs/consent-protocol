@@ -28,6 +28,7 @@ from api.routes.kai._streaming import (
     CanonicalSSEStream,
     parse_json_with_single_repair,
 )
+from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable, fetch_market_data
 from hushh_mcp.services.renaissance_service import get_renaissance_service
 
 logger = logging.getLogger(__name__)
@@ -145,99 +146,19 @@ async def analyze_portfolio_losers(
             status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
 
-    losers_in = request.losers or []
-    holdings_in = request.holdings or []
-
-    # ------------------------------------------------------------------
-    # Build optimization universe:
-    # - Prefer explicit losers that meet the threshold.
-    # - If none and force_optimize + holdings, fall back to top holdings.
-    # ------------------------------------------------------------------
-    losers_filtered: list[PortfolioLoser] = []
-    for loser in losers_in:
-        pct = loser.gain_loss_pct
-        if pct is None or pct <= request.threshold_pct:
-            losers_filtered.append(loser)
-    losers_filtered = losers_filtered[: request.max_positions]
-
-    optimize_from_losers = bool(losers_filtered)
-
-    if not optimize_from_losers:
-        if request.force_optimize and holdings_in:
-            sorted_holdings = sorted(
-                holdings_in,
-                key=lambda h: h.market_value or 0.0,
-                reverse=True,
-            )[: request.max_positions]
-            losers_filtered = [
-                PortfolioLoser(
-                    symbol=h.symbol,
-                    name=h.name,
-                    gain_loss_pct=h.gain_loss_pct,
-                    gain_loss=h.gain_loss,
-                    market_value=h.market_value,
-                )
-                for h in sorted_holdings
-            ]
-            optimize_from_losers = False
-        else:
-            # Preserve legacy error behaviour when we truly have no input.
-            if not losers_in:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No losers provided. Provide loser positions from the client portfolio.",
-                )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No losers met the threshold. Lower threshold_pct or provide more losers.",
-            )
-
-    renaissance = get_renaissance_service()
-    criteria_context = await renaissance.get_screening_context()
-    criteria_rows = await renaissance.get_screening_criteria()
-
-    # Build investable replacement candidates: fetch EVERY investable stock
-    all_investable = await renaissance.get_all_investable()
-    replacement_pool = [
-        {
-            "ticker": s.ticker,
-            "tier": s.tier,
-            "sector": s.sector,
-            "thesis": s.investment_thesis,
-            "name": s.company_name,
-        }
-        for s in all_investable
-    ]
-
-    # Per-position Renaissance context (optimization universe)
-    total_mv = sum((loser.market_value or 0.0) for loser in losers_filtered) or 0.0
-    per_loser_context: list[dict[str, Any]] = []
-    for loser in losers_filtered:
-        ticker = loser.symbol.upper().strip()
-        ren_ctx = await renaissance.get_analysis_context(ticker)
-        weight_pct = (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
-        per_loser_context.append(
-            {
-                "symbol": ticker,
-                "name": loser.name,
-                "gain_loss_pct": loser.gain_loss_pct,
-                "gain_loss": loser.gain_loss,
-                "market_value": loser.market_value,
-                "weight_pct": weight_pct,
-                "renaissance": {
-                    "is_investable": ren_ctx.get("is_investable", False),
-                    "tier": ren_ctx.get("tier"),
-                    "tier_description": ren_ctx.get("tier_description"),
-                    "investment_thesis": ren_ctx.get("investment_thesis"),
-                    "fcf_billions": ren_ctx.get("fcf_billions"),
-                    "conviction_weight": ren_ctx.get("conviction_weight"),
-                    "is_avoid": ren_ctx.get("is_avoid", False),
-                    "avoid_category": ren_ctx.get("avoid_category"),
-                    "avoid_reason": ren_ctx.get("avoid_reason"),
-                    "avoid_source": ren_ctx.get("avoid_source"),
-                },
-            }
-        )
+    (
+        _losers_filtered,
+        criteria_context,
+        criteria_rows,
+        replacement_pool,
+        per_loser_context,
+        optimize_from_losers,
+        total_mv,
+    ) = await _build_optimization_context(
+        request=request,
+        user_id=request.user_id,
+        consent_token=token_data["token"],
+    )
 
     # LLM synthesis (Optimize Portfolio: criteria-first, JSON-only output)
     # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
@@ -260,130 +181,12 @@ async def analyze_portfolio_losers(
         "user_preferences": request.user_preferences or {},
     }
 
-    prompt = f"""
-You are Kai's **Optimize Portfolio** investment committee.
-
-ROLE AND CONSTRAINTS
---------------------
-- You apply the Renaissance screening rubric, tiers, and avoid rules to optimize a REAL portfolio.
-- BYOK / consent-first: you NEVER place trades. You only propose illustrative, auditable rebalancing plans.
-- You must act like a cautious CIO:
-  - No leverage, margin, derivatives, or shorting.
-  - No market timing or price targets. Focus on allocation quality and risk.
-- Prefer **moving capital from avoid / low-quality names into ACE/KING investable names**.
-- Respect diversification: avoid extreme concentration in any single name or sector.
-- REAL DATA: Use the actual `market_value` and `weight_pct` provided. Propose real, data-driven weight changes.
-- NO MOCK DATA: Do not use placeholders. If you lack data, say so, but utilize everything you have.
-
-DATA YOU HAVE
--------------
-<<RENAISSANCE_RUBRIC>>
-{criteria_context}
-
-<<RENAISSANCE_CRITERIA_TABLE>>
-{json.dumps(_convert_decimals(criteria_rows), ensure_ascii=False)}
-
-<<RENAISSANCE_TIERS>>
-ACE: conviction_weight 1.0  — highest quality, very rare, default bias STRONG_BUY.
-KING: conviction_weight 0.85 — high quality, bias BUY.
-QUEEN: conviction_weight 0.70 — solid but with more questions, bias HOLD_TO_BUY.
-JACK: conviction_weight 0.55 — acceptable but lower quality, bias HOLD.
-Any ticker not in the investable universe has conviction_weight 0.0.
-If a ticker is in the Renaissance avoid list, conviction_weight is effectively NEGATIVE regardless of tier.
-
-<<REPLACEMENT_POOL>>
-{json.dumps(_convert_decimals(replacement_pool), ensure_ascii=False)}
-
-<<USER_PORTFOLIO_SNAPSHOT>>
-Depending on mode, this is either:
-- Mode \"losers\": positions currently losing beyond the given threshold.
-- Mode \"full_portfolio\": top positions by market value to optimize around.
-Use their market values and weight_pct fields to reason about risk and concentration.
-{json.dumps(_convert_decimals(portfolio_snapshot), ensure_ascii=False)}
-
-INSTRUCTIONS
-------------
-0) Personalize to `user_preferences` inside USER_PORTFOLIO_SNAPSHOT when present
-   (investment horizon/style, concentration tolerance, and any risk cues).
-
-1) Diagnose portfolio health focusing on these losers:
-   - Classify each loser as one of: "core_keep", "trim", "exit", "rotate", "watchlist".
-   - Compute how much risk is in:
-     * Renaissance AVOID names.
-     * Non-investable names (neither investable nor avoid).
-     * ACE/KING investable names.
-   - Comment on concentration and drawdowns using the data available (do NOT invent missing holdings).
-
-2) Design target allocations (conceptual, not exact trading instructions):
-   - For each loser, propose a **target_weight_delta** (relative importance) and an `action`:
-     * "HOLD", "ADD", "TRIM", "EXIT", or "ROTATE".
-   - When suggesting EXIT or ROTATE, pick 1–3 candidates from the replacement pool that better fit the Renaissance rubric.
-   - Keep plans self-funded: assume sells in losers finance buys in higher-quality names.
-
-3) Build three plan flavours:
-   - \"minimal\": only obvious, high-conviction changes (e.g., exit avoid names, small trims).
-   - \"standard\": reasonable diversification and risk clean-up.
-   - \"maximal\": aggressively apply the Renaissance funnel, accepting more turnover (still no leverage).
-
-RULES
------
-- Ground EVERY claim in the provided data (loser inputs + Renaissance context + criteria table + replacement pool).
-- If you lack key data, set `needs_more_data=true` and say exactly what is missing.
-- If a stock is in the avoid list, treat it as a **hard negative prior** and explain why (avoid_category + avoid_reason).
-- If a stock is ACE/KING, treat it as a **quality prior**; consider trimming rather than exiting unless the position is extremely large or breaks diversification rules.
-- Use the screening criteria rubric to justify recommendations. Whenever possible, reference specific criteria IDs or titles.
-- NEVER recommend options, margin, or shorting. NEVER guarantee outcomes.
-
-OUTPUT FORMAT
--------------
-Return ONLY valid JSON with this shape (no prose, no markdown):
-{{
-  "criteria_context": string,
-  "summary": {{
-    "health_score": number,                     // 0–100 current portfolio health score
-    "projected_health_score": number,           // 0–100 PROJECTED health score after plans are executed
-    "health_reasons": [string],                 // bullets explaining the score
-    "portfolio_diagnostics": {{
-      "total_losers_value": number,             // sum of losers market_value
-      "avoid_weight_estimate_pct": number,      // approximate % of losers value in avoid names
-      "investable_weight_estimate_pct": number, // approximate % of losers value in ACE/KING
-      "concentration_notes": [string]
-    }},
-    "plans": {{
-      "minimal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
-      "standard": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }},
-      "maximal": {{ "actions": [ {{ "symbol": string, "name": string, "action": string, "rationale": string, "current_weight_pct": number, "target_weight_pct": number }} ] }}
-    }}
-  }},
-  "losers": [
-    {{
-      "symbol": string,
-      "name": string,
-      "renaissance_tier": string | null,
-      "avoid_category": string | null,
-      "criteria_flags": [string],
-      "needs_more_data": boolean,
-      "likely_driver": "fundamental" | "sentiment" | "macro_rates" | "idiosyncratic" | "unknown",
-      "confidence": number,
-      "action": "hold" | "add" | "trim" | "exit" | "rotate",
-      "rationale": string,
-      "replacement_candidates": [{{ "ticker": string, "tier": string, "why": string }}],
-      "current_weight_pct": number | null,
-      "target_weight_pct": number | null
-    }}
-  ],
-  "portfolio_level_takeaways": [string],
-  "analytics": {{
-    "health_radar": {{
-      "current": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }},
-      "optimized": {{ "Growth": number, "Moat": number, "Quality": number, "Income": number, "Resilience": number, "Diversification": number }}
-    }},
-    "sector_shift": [
-      {{ "sector": string, "before_pct": number, "after_pct": number }}
-    ]
-  }}
-}}
-""".strip()
+    prompt = _build_optimization_prompt(
+        criteria_context=criteria_context,
+        criteria_rows=criteria_rows,
+        replacement_pool=replacement_pool,
+        portfolio_snapshot=portfolio_snapshot,
+    )
 
     try:
         config = genai_types.GenerateContentConfig(
@@ -401,6 +204,16 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
             raw,
             required_keys={"summary", "losers", "portfolio_level_takeaways"},
         )
+    except RealtimeDataUnavailable as e:
+        logger.warning(
+            "Optimize Portfolio realtime dependency unavailable for user=%s dependency=%s",
+            request.user_id,
+            e.dependency,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=e.to_payload(),
+        ) from e
     except Exception as e:
         logger.error(f"Losers analysis LLM failed: {e}")
         raise HTTPException(status_code=500, detail="Losers analysis failed")
@@ -412,6 +225,8 @@ Return ONLY valid JSON with this shape (no prose, no markdown):
 
 async def _build_optimization_context(
     request: AnalyzeLosersRequest,
+    user_id: str,
+    consent_token: str,
 ) -> tuple[list[PortfolioLoser], str, list[dict], list[dict], list[dict], bool, float]:
     """
     Build the optimization context (shared between streaming and non-streaming endpoints).
@@ -480,33 +295,76 @@ async def _build_optimization_context(
     ]
 
     total_mv = sum((loser.market_value or 0.0) for loser in losers_filtered) or 0.0
-    per_loser_context: list[dict[str, Any]] = []
-    for loser in losers_filtered:
+    quote_semaphore = asyncio.Semaphore(6)
+
+    async def _build_position_context(loser: PortfolioLoser) -> dict[str, Any]:
         ticker = loser.symbol.upper().strip()
-        ren_ctx = await renaissance.get_analysis_context(ticker)
-        weight_pct = (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
-        per_loser_context.append(
-            {
-                "symbol": ticker,
-                "name": loser.name,
-                "gain_loss_pct": loser.gain_loss_pct,
-                "gain_loss": loser.gain_loss,
-                "market_value": loser.market_value,
-                "weight_pct": weight_pct,
-                "renaissance": {
-                    "is_investable": ren_ctx.get("is_investable", False),
-                    "tier": ren_ctx.get("tier"),
-                    "tier_description": ren_ctx.get("tier_description"),
-                    "investment_thesis": ren_ctx.get("investment_thesis"),
-                    "fcf_billions": ren_ctx.get("fcf_billions"),
-                    "conviction_weight": ren_ctx.get("conviction_weight"),
-                    "is_avoid": ren_ctx.get("is_avoid", False),
-                    "avoid_category": ren_ctx.get("avoid_category"),
-                    "avoid_reason": ren_ctx.get("avoid_reason"),
-                    "avoid_source": ren_ctx.get("avoid_source"),
-                },
-            }
+        if not ticker:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each position must include a ticker symbol.",
+            )
+
+        ren_task = asyncio.create_task(renaissance.get_analysis_context(ticker))
+        async with quote_semaphore:
+            market_ctx = await fetch_market_data(ticker, user_id, consent_token)
+        ren_ctx = await ren_task
+
+        quote = market_ctx.get("quote", {}) if isinstance(market_ctx, dict) else {}
+        price = quote.get("price") if isinstance(quote, dict) else None
+        if price is None and isinstance(market_ctx, dict):
+            price = market_ctx.get("price")
+        change_pct = (
+            quote.get("change_pct") or quote.get("change_percent")
+            if isinstance(quote, dict)
+            else None
         )
+        if change_pct is None and isinstance(market_ctx, dict):
+            change_pct = market_ctx.get("change_pct") or market_ctx.get("change_percent")
+
+        weight_pct = (loser.market_value or 0.0) / total_mv * 100.0 if total_mv > 0 else None
+        return {
+            "symbol": ticker,
+            "name": loser.name,
+            "gain_loss_pct": loser.gain_loss_pct,
+            "gain_loss": loser.gain_loss,
+            "market_value": loser.market_value,
+            "weight_pct": weight_pct,
+            "realtime": {
+                "source": (
+                    market_ctx.get("provider") or market_ctx.get("source") or "unknown"
+                    if isinstance(market_ctx, dict)
+                    else "unknown"
+                ),
+                "fetched_at": market_ctx.get("fetched_at")
+                if isinstance(market_ctx, dict)
+                else None,
+                "ttl_seconds": market_ctx.get("ttl_seconds")
+                if isinstance(market_ctx, dict)
+                else None,
+                "is_stale": bool(market_ctx.get("is_stale"))
+                if isinstance(market_ctx, dict)
+                else True,
+                "price": price,
+                "change_pct": change_pct,
+            },
+            "renaissance": {
+                "is_investable": ren_ctx.get("is_investable", False),
+                "tier": ren_ctx.get("tier"),
+                "tier_description": ren_ctx.get("tier_description"),
+                "investment_thesis": ren_ctx.get("investment_thesis"),
+                "fcf_billions": ren_ctx.get("fcf_billions"),
+                "conviction_weight": ren_ctx.get("conviction_weight"),
+                "is_avoid": ren_ctx.get("is_avoid", False),
+                "avoid_category": ren_ctx.get("avoid_category"),
+                "avoid_reason": ren_ctx.get("avoid_reason"),
+                "avoid_source": ren_ctx.get("avoid_source"),
+            },
+        }
+
+    per_loser_context = await asyncio.gather(
+        *(_build_position_context(loser) for loser in losers_filtered)
+    )
 
     return (
         losers_filtered,
@@ -695,7 +553,11 @@ async def analyze_portfolio_losers_stream(
                     per_loser_context,
                     optimize_from_losers,
                     total_mv,
-                ) = await _build_optimization_context(request)
+                ) = await _build_optimization_context(
+                    request=request,
+                    user_id=request.user_id,
+                    consent_token=token_data["token"],
+                )
 
                 portfolio_snapshot = {
                     "threshold_pct": request.threshold_pct,
@@ -936,6 +798,12 @@ async def analyze_portfolio_losers_stream(
                     "code": "OPTIMIZE_TIMEOUT",
                     "message": f"Analysis timed out after {HARD_TIMEOUT_SECONDS}s. Please try again.",
                 },
+                terminal=True,
+            )
+        except RealtimeDataUnavailable as realtime_error:
+            yield stream.event(
+                "error",
+                realtime_error.to_payload(),
                 terminal=True,
             )
         except HTTPException as http_err:

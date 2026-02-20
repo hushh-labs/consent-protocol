@@ -81,16 +81,19 @@ class SentimentAgent(HushhAgent):
         logger.info(f"[Sentiment] Orchestrating analysis for {ticker} - user {user_id}")
 
         # Operon 1: Fetch news articles (with consent check)
-        from hushh_mcp.operons.kai.fetchers import fetch_market_news
+        from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable, fetch_market_news
 
         try:
             news_articles = await fetch_market_news(ticker, user_id, consent_token)
         except PermissionError as e:
             logger.error(f"[Sentiment] News access denied: {e}")
             raise
+        except RealtimeDataUnavailable as e:
+            logger.error(f"[Sentiment] Realtime news unavailable: {e.detail}")
+            raise
         except Exception as e:
-            logger.warning(f"[Sentiment] News fetch failed: {e}, using empty list")
-            news_articles = []
+            logger.error(f"[Sentiment] News fetch failed: {e}")
+            raise
 
         # Operon 2: Gemini Deep Sentiment Analysis
         from hushh_mcp.operons.kai.llm import (
@@ -163,21 +166,6 @@ class SentimentAgent(HushhAgent):
         except Exception as e:
             logger.error(f"[Sentiment] Deterministic analysis failed: {e}")
             raise
-
-    async def _mock_analysis(self, ticker: str) -> SentimentInsight:
-        """Lightweight fallback used when upstream streaming/analysis fails."""
-        return SentimentInsight(
-            summary=(
-                f"Sentiment fallback analysis for {ticker}: mixed short-term signals with"
-                " limited conviction."
-            ),
-            sentiment_score=0.0,
-            key_catalysts=[],
-            news_highlights=[],
-            sources=["Fallback Sentiment Model"],
-            confidence=0.35,
-            recommendation="neutral",
-        )
 
 
 # Export singleton for use in KaiAgent orchestration
