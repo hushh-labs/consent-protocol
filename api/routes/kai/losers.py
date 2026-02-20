@@ -13,6 +13,7 @@ Authentication:
 import asyncio
 import json
 import logging
+import re
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -102,6 +103,30 @@ def _convert_decimals(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_convert_decimals(i) for i in obj]
     return obj
+
+
+def _extract_likely_json_object(text: str) -> str | None:
+    """
+    Conservative salvage pass: trim code fences / prose around a root JSON object.
+    Returns None when no viable object window is found.
+    """
+    if not text:
+        return None
+
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+    if candidate.endswith("```"):
+        candidate = candidate[:-3]
+    candidate = candidate.strip()
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    trimmed = candidate[start : end + 1].strip()
+    return trimmed or None
 
 
 @router.post("/portfolio/analyze-losers", response_model=AnalyzeLosersResponse)
@@ -831,20 +856,66 @@ async def analyze_portfolio_losers_stream(
                         full_response,
                         required_keys={"summary", "losers", "portfolio_level_takeaways"},
                     )
+                    diagnostics["salvage_applied"] = False
+                except Exception as parse_error:
+                    salvage_candidate = _extract_likely_json_object(full_response)
+                    if not salvage_candidate or salvage_candidate == full_response:
+                        logger.error(f"Failed to parse LLM response: {parse_error}")
+                        yield stream.event(
+                            "error",
+                            {
+                                "code": "OPTIMIZE_PARSE_FAILED",
+                                "message": "Unable to normalize optimization output. Please retry.",
+                                "diagnostics": {
+                                    "response_chars": len(full_response),
+                                    "chunk_count": chunk_count,
+                                },
+                            },
+                            terminal=True,
+                        )
+                        return
+
+                    logger.warning(
+                        "[Losers Analysis] Primary parse failed, attempting conservative salvage parse"
+                    )
+                    try:
+                        payload, diagnostics = parse_json_with_single_repair(
+                            salvage_candidate,
+                            required_keys={"summary", "losers", "portfolio_level_takeaways"},
+                        )
+                        diagnostics["salvage_applied"] = True
+                    except Exception as salvage_error:
+                        logger.error(f"Failed to parse LLM response after salvage: {salvage_error}")
+                        yield stream.event(
+                            "error",
+                            {
+                                "code": "OPTIMIZE_PARSE_FAILED",
+                                "message": "Unable to normalize optimization output. Please retry.",
+                                "diagnostics": {
+                                    "response_chars": len(full_response),
+                                    "chunk_count": chunk_count,
+                                },
+                            },
+                            terminal=True,
+                        )
+                        return
+
+                try:
                     payload.setdefault("criteria_context", criteria_context)
                     payload["parse_report"] = {
                         "repair_applied": diagnostics.get("repair_applied", False),
                         "repair_actions": diagnostics.get("repair_actions", []),
+                        "salvage_applied": diagnostics.get("salvage_applied", False),
                     }
 
                     yield stream.event("complete", payload, terminal=True)
-                except Exception as parse_error:
-                    logger.error(f"Failed to parse LLM response: {parse_error}")
+                except Exception as payload_error:
+                    logger.error(f"Failed to finalize parsed payload: {payload_error}")
                     yield stream.event(
                         "error",
                         {
                             "code": "OPTIMIZE_PARSE_FAILED",
-                            "message": "Failed to parse AI response after deterministic repair",
+                            "message": "Unable to normalize optimization output. Please retry.",
                             "diagnostics": {
                                 "response_chars": len(full_response),
                                 "chunk_count": chunk_count,

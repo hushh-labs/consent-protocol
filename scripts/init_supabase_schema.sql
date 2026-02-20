@@ -9,19 +9,31 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- 1. vault_keys (user authentication keys)
 CREATE TABLE IF NOT EXISTS vault_keys (
     user_id TEXT PRIMARY KEY,
-    auth_method TEXT NOT NULL DEFAULT 'passphrase',
-    key_mode TEXT,
-    encrypted_vault_key TEXT NOT NULL,
-    salt TEXT NOT NULL,
-    iv TEXT NOT NULL,
+    vault_key_hash TEXT NOT NULL,
+    primary_method TEXT NOT NULL DEFAULT 'passphrase',
     recovery_encrypted_vault_key TEXT NOT NULL,
     recovery_salt TEXT NOT NULL,
     recovery_iv TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+-- 1b. vault_key_wrappers (one wrapper per method per user)
+CREATE TABLE IF NOT EXISTS vault_key_wrappers (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+    method TEXT NOT NULL,
+    encrypted_vault_key TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    iv TEXT NOT NULL,
     passkey_credential_id TEXT,
     passkey_prf_salt TEXT,
     created_at BIGINT NOT NULL,
-    updated_at BIGINT
+    updated_at BIGINT NOT NULL,
+    UNIQUE (user_id, method)
 );
+CREATE INDEX IF NOT EXISTS idx_vkw_user_id ON vault_key_wrappers(user_id);
+CREATE INDEX IF NOT EXISTS idx_vkw_method ON vault_key_wrappers(method);
 
 -- 2. investor_profiles (public discovery layer)
 CREATE TABLE IF NOT EXISTS investor_profiles (
