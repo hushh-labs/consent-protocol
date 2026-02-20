@@ -31,6 +31,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/db", tags=["Database Proxy (DEPRECATED)"])
 
 
+def _mask_user_id(user_id: str) -> str:
+    if not user_id:
+        return "<unknown>"
+    if len(user_id) <= 8:
+        return user_id
+    return f"{user_id[:4]}...{user_id[-4:]}"
+
+
 # ============================================================================
 # Request/Response Models
 # ============================================================================
@@ -48,35 +56,61 @@ class VaultGetRequest(BaseModel):
     userId: str
 
 
-class VaultKeyData(BaseModel):
-    authMethod: str
-    keyMode: str | None = None
+class VaultWrapperData(BaseModel):
+    method: str
     encryptedVaultKey: str
     salt: str
     iv: str
-    recoveryEncryptedVaultKey: str
-    recoverySalt: str
-    recoveryIv: str
     passkeyCredentialId: str | None = None
     passkeyPrfSalt: str | None = None
 
 
-class VaultSetupRequest(BaseModel):
+class VaultStateData(BaseModel):
+    vaultKeyHash: str
+    primaryMethod: str
+    recoveryEncryptedVaultKey: str
+    recoverySalt: str
+    recoveryIv: str
+    wrappers: list[VaultWrapperData]
+
+
+class VaultSetupStateRequest(BaseModel):
     userId: str
-    authMethod: str = "passphrase"
-    keyMode: str | None = None
-    encryptedVaultKey: str
-    salt: str
-    iv: str
+    vaultKeyHash: str
+    primaryMethod: str
     recoveryEncryptedVaultKey: str
     recoverySalt: str
     recoveryIv: str
+    wrappers: list[VaultWrapperData]
+
+
+class VaultWrapperUpsertRequest(BaseModel):
+    userId: str
+    vaultKeyHash: str
+    method: str
+    encryptedVaultKey: str
+    salt: str
+    iv: str
     passkeyCredentialId: str | None = None
     passkeyPrfSalt: str | None = None
+
+
+class VaultPrimaryMethodSetRequest(BaseModel):
+    userId: str
+    primaryMethod: str
 
 
 class SuccessResponse(BaseModel):
     success: bool
+
+
+class VaultIntegrityResponse(BaseModel):
+    valid: bool
+    hasVault: bool
+    wrapperCount: int
+    hasPassphraseWrapper: bool
+    primaryMethodEnrolled: bool
+    methods: list[str]
 
 
 # ============================================================================
@@ -111,7 +145,7 @@ async def vault_check(
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.post("/vault/get", response_model=VaultKeyData)
+@router.post("/vault/get", response_model=VaultStateData)
 async def vault_get(
     request: VaultGetRequest,
     firebase_uid: str = Depends(require_firebase_auth),
@@ -128,23 +162,12 @@ async def vault_get(
 
     try:
         service = VaultKeysService()
-        vault_data = await service.get_vault_key(request.userId)
+        vault_data = await service.get_vault_state(request.userId)
 
         if not vault_data:
             raise HTTPException(status_code=404, detail="Vault not found")
 
-        return VaultKeyData(
-            authMethod=vault_data["authMethod"],
-            keyMode=vault_data.get("keyMode"),
-            encryptedVaultKey=vault_data["encryptedVaultKey"],
-            salt=vault_data["salt"],
-            iv=vault_data["iv"],
-            recoveryEncryptedVaultKey=vault_data["recoveryEncryptedVaultKey"],
-            recoverySalt=vault_data["recoverySalt"],
-            recoveryIv=vault_data["recoveryIv"],
-            passkeyCredentialId=vault_data.get("passkeyCredentialId"),
-            passkeyPrfSalt=vault_data.get("passkeyPrfSalt"),
-        )
+        return VaultStateData(**vault_data)
 
     except HTTPException:
         raise
@@ -155,7 +178,7 @@ async def vault_get(
 
 @router.post("/vault/setup", response_model=SuccessResponse)
 async def vault_setup(
-    request: VaultSetupRequest,
+    request: VaultSetupStateRequest,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     """
@@ -167,26 +190,160 @@ async def vault_setup(
     """
     # Verify user is setting up their own vault
     verify_user_id_match(firebase_uid, request.userId)
+    methods = [wrapper.method for wrapper in request.wrappers]
+    logger.info(
+        "vault/setup request user=%s wrappers=%s methods=%s primary=%s",
+        _mask_user_id(request.userId),
+        len(request.wrappers),
+        methods,
+        request.primaryMethod,
+    )
 
     try:
         service = VaultKeysService()
-        await service.setup_vault(
+        await service.setup_vault_state(
             user_id=request.userId,
-            auth_method=request.authMethod,
-            key_mode=request.keyMode,
-            encrypted_vault_key=request.encryptedVaultKey,
-            salt=request.salt,
-            iv=request.iv,
+            vault_key_hash=request.vaultKeyHash,
+            primary_method=request.primaryMethod,
             recovery_encrypted_vault_key=request.recoveryEncryptedVaultKey,
             recovery_salt=request.recoverySalt,
             recovery_iv=request.recoveryIv,
+            wrappers=[wrapper.model_dump() for wrapper in request.wrappers],
+        )
+        return SuccessResponse(success=True)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            "vault/setup error user=%s wrappers=%s methods=%s: %s",
+            _mask_user_id(request.userId),
+            len(request.wrappers),
+            methods,
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/vault/wrapper/upsert", response_model=SuccessResponse)
+async def vault_wrapper_upsert(
+    request: VaultWrapperUpsertRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """Add or update a single vault wrapper for an enrolled method."""
+    verify_user_id_match(firebase_uid, request.userId)
+    logger.info(
+        "vault/wrapper/upsert request user=%s method=%s",
+        _mask_user_id(request.userId),
+        request.method,
+    )
+
+    try:
+        service = VaultKeysService()
+        await service.upsert_wrapper(
+            user_id=request.userId,
+            vault_key_hash=request.vaultKeyHash,
+            method=request.method,
+            encrypted_vault_key=request.encryptedVaultKey,
+            salt=request.salt,
+            iv=request.iv,
             passkey_credential_id=request.passkeyCredentialId,
             passkey_prf_salt=request.passkeyPrfSalt,
         )
         return SuccessResponse(success=True)
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"vault/setup error: {e}")
+        logger.error(
+            "vault/wrapper/upsert error user=%s method=%s: %s",
+            _mask_user_id(request.userId),
+            request.method,
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/vault/primary/set", response_model=SuccessResponse)
+async def vault_primary_set(
+    request: VaultPrimaryMethodSetRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """Set default vault unlock method among already enrolled wrappers."""
+    verify_user_id_match(firebase_uid, request.userId)
+    logger.info(
+        "vault/primary/set request user=%s primary=%s",
+        _mask_user_id(request.userId),
+        request.primaryMethod,
+    )
+
+    try:
+        service = VaultKeysService()
+        await service.set_primary_method(
+            user_id=request.userId,
+            primary_method=request.primaryMethod,
+        )
+        return SuccessResponse(success=True)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            "vault/primary/set error user=%s primary=%s: %s",
+            _mask_user_id(request.userId),
+            request.primaryMethod,
+            e,
+        )
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/vault/integrity", response_model=VaultIntegrityResponse)
+async def vault_integrity(
+    request: VaultGetRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """
+    Validate vault invariants for the authenticated user.
+    Intended for internal/dev diagnostics.
+    """
+    verify_user_id_match(firebase_uid, request.userId)
+
+    try:
+        service = VaultKeysService()
+        vault_state = await service.get_vault_state(request.userId)
+        if not vault_state:
+            return VaultIntegrityResponse(
+                valid=False,
+                hasVault=False,
+                wrapperCount=0,
+                hasPassphraseWrapper=False,
+                primaryMethodEnrolled=False,
+                methods=[],
+            )
+
+        wrappers = vault_state.get("wrappers") or []
+        methods = sorted(
+            {
+                (wrapper.get("method") or "").strip()
+                for wrapper in wrappers
+                if isinstance(wrapper, dict)
+            }
+        )
+        has_passphrase = "passphrase" in methods
+        primary_method = (vault_state.get("primaryMethod") or "passphrase").strip()
+        primary_enrolled = primary_method in methods
+        valid = len(methods) > 0 and has_passphrase and primary_enrolled
+
+        return VaultIntegrityResponse(
+            valid=valid,
+            hasVault=True,
+            wrapperCount=len(wrappers),
+            hasPassphraseWrapper=has_passphrase,
+            primaryMethodEnrolled=primary_enrolled,
+            methods=methods,
+        )
+    except Exception as e:
+        logger.error("vault/integrity error user=%s: %s", _mask_user_id(request.userId), e)
         raise HTTPException(status_code=500, detail="Database error")
 
 

@@ -34,6 +34,22 @@ logger = logging.getLogger(__name__)
 _engine: Optional[Engine] = None
 
 
+class DatabaseExecutionError(RuntimeError):
+    """Raised when a database operation fails and must not be silently ignored."""
+
+    def __init__(
+        self,
+        *,
+        table_name: str,
+        operation: str,
+        details: str,
+    ):
+        self.table_name = table_name
+        self.operation = operation
+        self.details = details
+        super().__init__(f"DB operation failed [{table_name}.{operation}]: {details}")
+
+
 def get_db_engine() -> Engine:
     """
     Get SQLAlchemy engine using session pooler credentials.
@@ -287,10 +303,20 @@ class TableQuery:
                 elif self._operation == "delete":
                     return self._execute_delete(conn)
                 else:
-                    return QueryResult(data=[], error=f"Unknown operation: {self._operation}")
+                    raise DatabaseExecutionError(
+                        table_name=self.table_name,
+                        operation=self._operation,
+                        details=f"Unknown operation: {self._operation}",
+                    )
+        except DatabaseExecutionError:
+            raise
         except Exception as e:
             logger.error(f"Database error: {e}")
-            return QueryResult(data=[], error=str(e))
+            raise DatabaseExecutionError(
+                table_name=self.table_name,
+                operation=self._operation,
+                details=str(e),
+            ) from e
 
     def _execute_select(self, conn) -> QueryResult:
         """Execute SELECT query."""
@@ -337,14 +363,14 @@ class TableQuery:
     def _execute_insert(self, conn) -> QueryResult:
         """Execute INSERT query."""
         if not self._insert_data:
-            return QueryResult(data=[], error="No data to insert")
+            raise ValueError("No data to insert")
 
         data_list = (
             self._insert_data if isinstance(self._insert_data, list) else [self._insert_data]
         )
 
         if not data_list:
-            return QueryResult(data=[], error="Empty data list")
+            raise ValueError("Empty data list")
 
         columns = list(data_list[0].keys())
         col_names = ", ".join(f'"{c}"' for c in columns)
@@ -366,7 +392,7 @@ class TableQuery:
     def _execute_update(self, conn) -> QueryResult:
         """Execute UPDATE query."""
         if not self._update_data:
-            return QueryResult(data=[], error="No data to update")
+            raise ValueError("No data to update")
 
         params = {}
         set_clauses = []
@@ -387,21 +413,28 @@ class TableQuery:
     def _execute_upsert(self, conn) -> QueryResult:
         """Execute UPSERT (INSERT ... ON CONFLICT UPDATE) query."""
         if not self._upsert_data:
-            return QueryResult(data=[], error="No data to upsert")
+            raise ValueError("No data to upsert")
 
         data_list = (
             self._upsert_data if isinstance(self._upsert_data, list) else [self._upsert_data]
         )
 
         if not data_list:
-            return QueryResult(data=[], error="Empty data list")
+            raise ValueError("Empty data list")
 
         columns = list(data_list[0].keys())
         col_names = ", ".join(f'"{c}"' for c in columns)
-        conflict_col = self._on_conflict or "id"
+        conflict_cols = [
+            field.strip() for field in (self._on_conflict or "id").split(",") if field.strip()
+        ]
+        if not conflict_cols:
+            raise ValueError("At least one conflict column is required for upsert")
 
-        # Build update clause for non-conflict columns
-        update_cols = [c for c in columns if c != conflict_col]
+        conflict_cols_quoted = ", ".join(f'"{c}"' for c in conflict_cols)
+        immutable_cols = {"created_at"}
+        update_cols = [
+            c for c in columns if c not in set(conflict_cols) and c not in immutable_cols
+        ]
         update_clause = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
 
         upserted_rows = []
@@ -409,12 +442,20 @@ class TableQuery:
             param_names = ", ".join(f":v{i}_{c}" for c in columns)
             params = {f"v{i}_{c}": row_data[c] for c in columns}
 
-            sql = f'''
-                INSERT INTO "{self.table_name}" ({col_names}) 
-                VALUES ({param_names}) 
-                ON CONFLICT ("{conflict_col}") DO UPDATE SET {update_clause}
-                RETURNING *
-            '''
+            if update_clause:
+                sql = f'''
+                    INSERT INTO "{self.table_name}" ({col_names}) 
+                    VALUES ({param_names}) 
+                    ON CONFLICT ({conflict_cols_quoted}) DO UPDATE SET {update_clause}
+                    RETURNING *
+                '''
+            else:
+                sql = f'''
+                    INSERT INTO "{self.table_name}" ({col_names}) 
+                    VALUES ({param_names}) 
+                    ON CONFLICT ({conflict_cols_quoted}) DO NOTHING
+                    RETURNING *
+                '''
             result = conn.execute(text(sql), params)
             upserted_rows.extend([dict(row._mapping) for row in result])
 
@@ -494,9 +535,15 @@ class DatabaseClient:
                 else:
                     conn.commit()
                     return QueryResult(data=[], count=result.rowcount)
+        except DatabaseExecutionError:
+            raise
         except Exception as e:
             logger.error(f"Raw SQL error: {e}")
-            return QueryResult(data=[], error=str(e))
+            raise DatabaseExecutionError(
+                table_name="<raw_sql>",
+                operation="execute_raw",
+                details=str(e),
+            ) from e
 
     def rpc(self, function_name: str, params: Optional[dict] = None) -> QueryResult:
         """
@@ -520,9 +567,15 @@ class DatabaseClient:
                 result = conn.execute(text(sql), params or {})
                 rows = [dict(row._mapping) for row in result]
                 return QueryResult(data=rows, count=len(rows))
+        except DatabaseExecutionError:
+            raise
         except Exception as e:
             logger.error(f"RPC error: {e}")
-            return QueryResult(data=[], error=str(e))
+            raise DatabaseExecutionError(
+                table_name="<rpc>",
+                operation=function_name,
+                details=str(e),
+            ) from e
 
 
 # Singleton client instance

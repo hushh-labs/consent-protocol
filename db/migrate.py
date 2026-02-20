@@ -42,33 +42,44 @@ except EnvironmentError as e:
 
 
 async def create_vault_keys(pool: asyncpg.Pool):
-    """Create vault_keys table (user authentication keys)."""
+    """Create vault_keys table (vault header + recovery wrapper)."""
     print("📦 Creating vault_keys table...")
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS vault_keys (
             user_id TEXT PRIMARY KEY,
-            auth_method TEXT NOT NULL DEFAULT 'passphrase',
-            key_mode TEXT,
-            encrypted_vault_key TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            iv TEXT NOT NULL,
+            vault_key_hash TEXT NOT NULL,
+            primary_method TEXT NOT NULL DEFAULT 'passphrase',
             recovery_encrypted_vault_key TEXT NOT NULL,
             recovery_salt TEXT NOT NULL,
             recovery_iv TEXT NOT NULL,
-            passkey_credential_id TEXT,
-            passkey_prf_salt TEXT,
-            onboarding_completed BOOLEAN DEFAULT FALSE,
             created_at BIGINT NOT NULL,
-            updated_at BIGINT
+            updated_at BIGINT NOT NULL
         )
     """)
-
-    # Backfill compatibility for existing deployments where vault_keys was
-    # created before key_mode/passkey metadata fields existed.
-    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS key_mode TEXT")
-    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS passkey_credential_id TEXT")
-    await pool.execute("ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS passkey_prf_salt TEXT")
     print("✅ vault_keys ready!")
+
+
+async def create_vault_key_wrappers(pool: asyncpg.Pool):
+    """Create vault_key_wrappers table (one wrapper per method per user)."""
+    print("🔐 Creating vault_key_wrappers table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS vault_key_wrappers (
+            id BIGSERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
+            method TEXT NOT NULL,
+            encrypted_vault_key TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            iv TEXT NOT NULL,
+            passkey_credential_id TEXT,
+            passkey_prf_salt TEXT,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            UNIQUE(user_id, method)
+        )
+    """)
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_user_id ON vault_key_wrappers(user_id)")
+    await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_method ON vault_key_wrappers(method)")
+    print("✅ vault_key_wrappers ready!")
 
 
 async def create_consent_audit(pool: asyncpg.Pool):
@@ -308,6 +319,7 @@ async def create_tickers(pool: asyncpg.Pool):
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
+    "vault_key_wrappers": create_vault_key_wrappers,
     "consent_audit": create_consent_audit,
     "world_model_data": create_world_model_data,
     "world_model_index_v2": create_world_model_index_v2,
@@ -329,6 +341,7 @@ async def run_full_migration(pool: asyncpg.Pool):
 
     # Drop current tables
     for table in [
+        "vault_key_wrappers",
         "vault_keys",
         "consent_audit",
         "world_model_data",
@@ -339,22 +352,25 @@ async def run_full_migration(pool: asyncpg.Pool):
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
     # Create in dependency order
-    print("\n[1/6] Creating vault_keys (user authentication)...")
+    print("\n[1/7] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/6] Creating consent_audit (consent tracking)...")
+    print("[2/7] Creating vault_key_wrappers (enrolled unlock methods)...")
+    await create_vault_key_wrappers(pool)
+
+    print("[3/7] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[3/6] Creating world_model_data (encrypted user data blob)...")
+    print("[4/7] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/7] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[5/6] Creating domain_registry (dynamic domain registry)...")
+    print("[6/7] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/7] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
 
     print("\n✅ Full migration complete!")
@@ -376,22 +392,25 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
 
     # Create in dependency order
-    print("\n[1/6] Creating vault_keys (user authentication)...")
+    print("\n[1/7] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/6] Creating consent_audit (consent tracking)...")
+    print("[2/7] Creating vault_key_wrappers (enrolled unlock methods)...")
+    await create_vault_key_wrappers(pool)
+
+    print("[3/7] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[3/6] Creating world_model_data (encrypted user data blob)...")
+    print("[4/7] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[4/6] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/7] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[5/6] Creating domain_registry (dynamic domain registry)...")
+    print("[6/7] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[6/6] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/7] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
 
     print("\nAll tables initialized successfully!")
@@ -419,6 +438,7 @@ async def show_status(pool: asyncpg.Pool):
 
     for table in [
         "vault_keys",
+        "vault_key_wrappers",
         "consent_audit",
         "world_model_data",
         "world_model_index_v2",
@@ -461,7 +481,7 @@ Examples:
     parser.add_argument(
         "--table",
         choices=list(TABLE_CREATORS.keys()),
-        help="Create a specific table (vault_keys, consent_audit, world_model_data, world_model_index_v2, domain_registry)",
+        help="Create a specific table (vault_keys, vault_key_wrappers, consent_audit, world_model_data, world_model_index_v2, domain_registry)",
     )
     parser.add_argument("--consent", action="store_true", help="Create all consent-related tables")
     parser.add_argument(
