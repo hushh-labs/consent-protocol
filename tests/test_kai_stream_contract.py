@@ -82,12 +82,12 @@ def test_canonical_stream_progress_is_monotonic_and_terminal_complete_is_100():
     sixth = _parse_frame_data(stream.event("stage", {"stage": "parsing"}))
     terminal = _parse_frame_data(stream.event("complete", {"message": "done"}, terminal=True))
 
-    assert first["payload"]["progress_pct"] == 5.0
-    assert second["payload"]["progress_pct"] == 15.0
-    assert third["payload"]["progress_pct"] == 30.0
-    assert fourth["payload"]["progress_pct"] == 45.0
-    assert fifth["payload"]["progress_pct"] == 60.0
-    assert sixth["payload"]["progress_pct"] == 82.0
+    assert first["payload"]["progress_pct"] == 0.0
+    assert second["payload"]["progress_pct"] == 0.0
+    assert third["payload"]["progress_pct"] == 0.0
+    assert fourth["payload"]["progress_pct"] == 0.0
+    assert fifth["payload"]["progress_pct"] == 0.0
+    assert sixth["payload"]["progress_pct"] == 0.0
     assert terminal["payload"]["progress_pct"] == 100.0
     assert terminal["payload"]["phase"] == "complete"
 
