@@ -241,7 +241,7 @@ async def _run_model_for_pdf(
 
 
 async def _evaluate(pdfs: list[Path], *, timeout_seconds: float) -> dict[str, Any]:
-    client = genai.Client(http_options=HttpOptions(api_version="v1"))
+    client: genai.Client | None = None
     results: list[dict[str, Any]] = []
 
     for path in pdfs:
@@ -260,6 +260,8 @@ async def _evaluate(pdfs: list[Path], *, timeout_seconds: float) -> dict[str, An
             )
             continue
         try:
+            if client is None:
+                client = genai.Client(http_options=HttpOptions(api_version="v1"))
             results.append(
                 await _run_model_for_pdf(
                     client,
