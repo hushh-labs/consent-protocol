@@ -88,3 +88,6 @@ google-auth>=2.14.1
 
 # 📈 Market Data
 yfinance>=0.2.36
+
+# 🔒 Secure XML parsing (Bandit-safe RSS parsing)
+defusedxml>=0.7.1
