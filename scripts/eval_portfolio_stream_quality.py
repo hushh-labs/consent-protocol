@@ -56,8 +56,35 @@ Rules:
 - Preserve numeric values exactly (including negatives)."""
 
 
+def _discover_brokerage_pdfs(corpus_dir: Path) -> list[Path]:
+    if not corpus_dir.exists():
+        return []
+    pdfs = sorted(
+        [
+            *corpus_dir.glob("*.pdf"),
+            *corpus_dir.glob("*.PDF"),
+            *corpus_dir.rglob("*.pdf"),
+            *corpus_dir.rglob("*.PDF"),
+        ]
+    )
+    # De-duplicate while preserving order.
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in pdfs:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(resolved)
+    return unique
+
+
 def _default_pdfs() -> list[Path]:
     repo_root = Path(__file__).resolve().parents[2]
+    discovered = _discover_brokerage_pdfs(repo_root / "data" / "brokerage_statements")
+    if discovered:
+        return discovered
+    # Fallback to known samples if corpus folder is empty.
     return [
         repo_root / "data" / "Brokerage_March2021.pdf",
         repo_root / "data" / "sample-new-fidelity-acnt-stmt.pdf",
@@ -181,9 +208,32 @@ async def _evaluate(pdfs: list[Path]) -> dict[str, Any]:
                 }
             )
 
+    successful = [row for row in results if not row.get("error")]
+    aggregate = {
+        "documents_total": len(results),
+        "documents_successful": len(successful),
+        "raw_holdings_total": sum(int(row.get("raw_holdings_count", 0)) for row in successful),
+        "validated_holdings_total": sum(
+            int(row.get("validated_holdings_count", 0)) for row in successful
+        ),
+        "aggregated_holdings_total": sum(
+            int(row.get("aggregated_holdings_count", 0)) for row in successful
+        ),
+        "placeholder_symbol_total": sum(
+            int(row.get("placeholder_symbol_count", 0)) for row in successful
+        ),
+        "account_header_row_total": sum(
+            int(row.get("account_header_row_count", 0)) for row in successful
+        ),
+        "zero_qty_zero_price_nonzero_value_total": sum(
+            int(row.get("zero_qty_zero_price_nonzero_value_count", 0)) for row in successful
+        ),
+    }
+
     return {
         "model": GEMINI_MODEL,
         "documents": results,
+        "aggregate": aggregate,
         "all_quality_gates_passed": all(bool(row.get("passes_quality_gates")) for row in results),
     }
 
@@ -194,7 +244,21 @@ def parse_args() -> argparse.Namespace:
         "--pdf",
         dest="pdfs",
         action="append",
-        help="Path to PDF file (repeatable). Defaults to project benchmark PDFs.",
+        help="Path to PDF file (repeatable). If omitted, auto-discovers corpus PDFs.",
+    )
+    parser.add_argument(
+        "--corpus-dir",
+        dest="corpus_dir",
+        help=(
+            "Optional corpus directory to auto-discover PDFs when --pdf is omitted. "
+            "Defaults to data/brokerage_statements."
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Optional max number of auto-discovered PDFs to evaluate.",
     )
     parser.add_argument(
         "--json-out",
@@ -211,9 +275,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    pdf_paths = (
-        [Path(p).expanduser().resolve() for p in args.pdfs] if args.pdfs else _default_pdfs()
-    )
+    if args.pdfs:
+        pdf_paths = [Path(p).expanduser().resolve() for p in args.pdfs]
+    else:
+        if args.corpus_dir:
+            pdf_paths = _discover_brokerage_pdfs(Path(args.corpus_dir).expanduser().resolve())
+        else:
+            pdf_paths = _default_pdfs()
+        if args.limit and args.limit > 0:
+            pdf_paths = pdf_paths[: args.limit]
 
     report = asyncio.run(_evaluate(pdf_paths))
 

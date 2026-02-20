@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
+from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,17 @@ async def analyze_ticker(
     except ValueError as e:
         logger.error(f"[Kai] Analysis failed: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except RealtimeDataUnavailable as e:
+        logger.error(f"[Kai] Realtime dependency unavailable: {e.detail}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": e.code,
+                "message": "Required realtime market inputs are unavailable.",
+                "dependency": e.source,
+                "retryable": e.retryable,
+            },
+        )
     except Exception as e:
         logger.exception("[Kai] Unexpected error during analysis")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

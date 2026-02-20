@@ -480,6 +480,12 @@ _ACCOUNT_HEADER_HINTS = (
     "joint",
     "account",
 )
+_CASH_EQUIVALENT_HINTS = (
+    "cash",
+    "money market",
+    "sweep",
+    "core position",
+)
 
 
 def _normalize_symbol_token(raw_value: Any) -> str:
@@ -512,6 +518,60 @@ def _is_non_holding_row(row: dict[str, Any]) -> bool:
     if not has_numeric and symbol == "" and name:
         return True
     return False
+
+
+def _is_cash_equivalent_row(row: dict[str, Any]) -> bool:
+    symbol = str(row.get("symbol") or "").strip().upper()
+    if symbol in {"CASH", "MMF", "SWEEP"}:
+        return True
+    asset_type = str(row.get("asset_type") or "").strip().lower()
+    if asset_type in {"cash", "cash_equivalent", "money_market"}:
+        return True
+    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    return any(hint in name for hint in _CASH_EQUIVALENT_HINTS)
+
+
+def _compute_holding_confidence(row: dict[str, Any]) -> float:
+    """
+    Compute a deterministic row confidence score in [0, 1].
+
+    This score is intentionally simple and auditable:
+    - Strongly rewards explicit symbols and complete numeric fields.
+    - Penalizes synthetic/derived identifiers and reconciliation mismatches.
+    """
+    score = 0.2
+    symbol_quality = str(row.get("symbol_quality") or "").lower().strip()
+    if symbol_quality == "provided":
+        score += 0.35
+    elif symbol_quality == "derived_from_name":
+        score += 0.2
+    elif symbol_quality == "aggregated":
+        score += 0.25
+    else:
+        score += 0.05
+
+    name = str(row.get("name") or "").strip()
+    if not _is_unknown_name(name):
+        score += 0.1
+
+    quantity = _coerce_optional_number(row.get("quantity"))
+    price = _coerce_optional_number(row.get("price"))
+    market_value = _coerce_optional_number(row.get("market_value"))
+    if quantity is not None:
+        score += 0.1
+    if price is not None:
+        score += 0.1
+    if market_value is not None:
+        score += 0.1
+
+    reconciliation = row.get("reconciliation")
+    if isinstance(reconciliation, dict) and reconciliation.get("mismatch_detected"):
+        score -= 0.15
+
+    if str(row.get("symbol") or "").startswith("HOLDING_"):
+        score = min(score, 0.35)
+
+    return max(0.0, min(1.0, round(score, 4)))
 
 
 def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
@@ -623,6 +683,13 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     )
     if reconciliation["reconciled_fields"] or reconciliation["mismatch_detected"]:
         normalized["reconciliation"] = reconciliation
+    normalized["confidence"] = _compute_holding_confidence(normalized)
+    normalized["provenance"] = {
+        "source": "statement_llm_parse",
+        "symbol_quality": symbol_quality,
+        "reconciled_fields": reconciliation.get("reconciled_fields", []),
+        "mismatch_detected": bool(reconciliation.get("mismatch_detected")),
+    }
     return normalized
 
 
@@ -664,6 +731,7 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
         and market_value is not None
         and abs(market_value) >= 1.0
         and symbol_quality != "provided"
+        and not _is_cash_equivalent_row(row)
     ):
         return False, "zero_qty_zero_price_nonzero_value"
 
@@ -682,14 +750,32 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
                 **row,
                 "symbol": symbol,
                 "lots_count": 1,
+                "confidence": _coerce_optional_number(row.get("confidence")) or 0.0,
                 "quantity": _coerce_optional_number(row.get("quantity")),
                 "market_value": _coerce_optional_number(row.get("market_value")),
                 "cost_basis": _coerce_optional_number(row.get("cost_basis")),
                 "unrealized_gain_loss": _coerce_optional_number(row.get("unrealized_gain_loss")),
+                "provenance": {
+                    "source": "statement_llm_parse",
+                    "aggregated_from_lots": 1,
+                },
             }
             continue
 
         existing["lots_count"] = int(existing.get("lots_count") or 1) + 1
+        existing["provenance"] = {
+            "source": "statement_llm_parse",
+            "aggregated_from_lots": existing["lots_count"],
+        }
+
+        incoming_confidence = _coerce_optional_number(row.get("confidence")) or 0.0
+        existing_confidence = _coerce_optional_number(existing.get("confidence")) or 0.0
+        lot_count_before = max(1, existing["lots_count"] - 1)
+        existing["confidence"] = round(
+            ((existing_confidence * lot_count_before) + incoming_confidence)
+            / existing["lots_count"],
+            4,
+        )
 
         for field in ("quantity", "market_value", "cost_basis", "unrealized_gain_loss"):
             current_value = _coerce_optional_number(existing.get(field))
@@ -716,6 +802,7 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
             row["price"] = market_value / qty
             row["price_per_unit"] = row["price"]
         row["symbol_quality"] = "aggregated"
+        row["confidence"] = _compute_holding_confidence(row)
     return aggregated
 
 
@@ -733,6 +820,7 @@ def _build_holdings_quality_report(
     zero_qty_zero_price_nonzero_value_count: int,
     account_header_row_count: int,
     duplicate_symbol_lot_count: int,
+    average_confidence: float,
 ) -> dict[str, Any]:
     return {
         "raw": raw_count,
@@ -747,6 +835,7 @@ def _build_holdings_quality_report(
         "zero_qty_zero_price_nonzero_value_count": zero_qty_zero_price_nonzero_value_count,
         "account_header_row_count": account_header_row_count,
         "duplicate_symbol_lot_count": duplicate_symbol_lot_count,
+        "average_confidence": average_confidence,
         "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
         "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
     }
@@ -1550,6 +1639,18 @@ Rules:
                         zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
                         account_header_row_count=account_header_row_count,
                         duplicate_symbol_lot_count=duplicate_symbol_lot_count,
+                        average_confidence=(
+                            round(
+                                sum(
+                                    _coerce_optional_number(row.get("confidence")) or 0.0
+                                    for row in holdings
+                                )
+                                / max(len(holdings), 1),
+                                4,
+                            )
+                            if holdings
+                            else 0.0
+                        ),
                     )
 
                     yield stream.event(

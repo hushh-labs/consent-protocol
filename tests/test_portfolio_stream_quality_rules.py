@@ -117,6 +117,9 @@ def test_aggregation_math_merges_symbol_rows_correctly():
     assert result["cost_basis"] == 800
     assert result["unrealized_gain_loss"] == 260
     assert result["lots_count"] == 2
+    assert "confidence" in result
+    assert 0.0 <= result["confidence"] <= 1.0
+    assert isinstance(result.get("provenance"), dict)
 
 
 def test_quality_report_includes_required_quality_counters():
@@ -133,6 +136,7 @@ def test_quality_report_includes_required_quality_counters():
         zero_qty_zero_price_nonzero_value_count=0,
         account_header_row_count=1,
         duplicate_symbol_lot_count=1,
+        average_confidence=0.84,
     )
 
     assert report["raw"] == 10
@@ -141,4 +145,5 @@ def test_quality_report_includes_required_quality_counters():
     assert report["dropped"] == 3
     assert report["dropped_reasons"]["account_header_row"] == 1
     assert report["duplicate_symbol_lot_count"] == 1
+    assert report["average_confidence"] == 0.84
     assert report["parse_repair_applied"] is True
