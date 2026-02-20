@@ -23,10 +23,20 @@ BOOKMARK_SYNC=""
 HISTORY_SYNC=""
 EFFECTIVE_SYNC=""
 EFFECTIVE_AHEAD=""
+LOCAL_SPLIT=""
 
 latest_subtree_split_from_history() {
   git log --format='%B' --grep="git-subtree-dir: ${SUBTREE_PREFIX}" -n 1 2>/dev/null \
     | sed -n 's/^git-subtree-split: //p' | head -n 1
+}
+
+compute_local_split() {
+  SPLIT_HASH=$(git subtree split --prefix="$SUBTREE_PREFIX" HEAD 2>/dev/null || true)
+  if [ -z "$SPLIT_HASH" ]; then
+    # Fallback for histories where old subtree joins reference unavailable split hashes.
+    SPLIT_HASH=$(git subtree split --ignore-joins --prefix="$SUBTREE_PREFIX" HEAD 2>/dev/null || true)
+  fi
+  printf "%s" "$SPLIT_HASH" | tail -n 1
 }
 
 choose_effective_sync_anchor() {
@@ -82,6 +92,39 @@ run_sync_gate() {
     printf "\033[31m[pre-push]\033[0m Could not resolve %s/%s.\n" "$UPSTREAM_REMOTE" "$UPSTREAM_BRANCH"
     [ "$STRICT_MODE" -eq 1 ] && return 1
     return 0
+  fi
+
+  LOCAL_SPLIT=$(compute_local_split)
+  if [ -n "$LOCAL_SPLIT" ]; then
+    if [ "$LOCAL_SPLIT" = "$CURRENT_UPSTREAM" ]; then
+      :
+    elif git merge-base --is-ancestor "$CURRENT_UPSTREAM" "$LOCAL_SPLIT" 2>/dev/null; then
+      :
+    elif git merge-base --is-ancestor "$LOCAL_SPLIT" "$CURRENT_UPSTREAM" 2>/dev/null; then
+      BEHIND_COUNT=$(git rev-list "$LOCAL_SPLIT".."$CURRENT_UPSTREAM" --count 2>/dev/null || echo "unknown")
+      printf "\n\033[31m[pre-push] BLOCKED\033[0m Local subtree split is behind upstream by %s commit(s).\n" "$BEHIND_COUNT"
+      printf "         Local split:     %s\n" "$(echo "$LOCAL_SPLIT" | cut -c1-8)"
+      printf "         Current upstream:%s\n\n" " $(echo "$CURRENT_UPSTREAM" | cut -c1-8)"
+      printf "  Run:\n"
+      printf "    \033[36mmake sync-protocol\033[0m    # pull upstream + refresh bookmark\n"
+      printf "    \033[36mgit push\033[0m              # try again\n\n"
+      return 1
+    elif trees_match_upstream; then
+      printf "\033[32m[pre-push]\033[0m Subtree trees match upstream (history diverged, content equivalent). ✓\n"
+      if git update-ref "$SYNC_REF" "$CURRENT_UPSTREAM" 2>/dev/null; then
+        printf "         Bookmark healed to %s.\n\n" "$(echo "$CURRENT_UPSTREAM" | cut -c1-8)"
+      fi
+      return 0
+    else
+      printf "\n\033[31m[pre-push] BLOCKED\033[0m Local subtree split diverged from upstream.\n"
+      printf "         Local split:     %s\n" "$(echo "$LOCAL_SPLIT" | cut -c1-8)"
+      printf "         Current upstream:%s\n\n" " $(echo "$CURRENT_UPSTREAM" | cut -c1-8)"
+      printf "  Run:\n"
+      printf "    \033[36mmake sync-protocol\033[0m    # reconcile subtree history\n"
+      printf "    \033[36m# resolve conflicts if any\033[0m\n"
+      printf "    \033[36mgit push\033[0m              # try again\n\n"
+      return 1
+    fi
   fi
 
   if git show-ref --verify --quiet "$SYNC_REF" 2>/dev/null; then
