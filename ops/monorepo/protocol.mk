@@ -6,8 +6,9 @@ CONSENT_UPSTREAM_BRANCH ?= main
 CONSENT_SUBTREE_PREFIX ?= consent-protocol
 CONSENT_SYNC_REF ?= refs/subtree-sync/consent-protocol
 CONSENT_MONOREPO_OPS ?= consent-protocol/ops/monorepo
+CONSENT_UPSTREAM_VERIFY_CI ?= 1
 
-.PHONY: sync-protocol check-protocol-sync push-protocol push-protocol-force setup verify-setup
+.PHONY: sync-protocol check-protocol-sync push-protocol push-protocol-force verify-protocol-upstream-ci setup verify-setup
 
 sync-protocol: ## Pull latest consent-protocol from upstream
 	@echo "Pulling $(CONSENT_SUBTREE_PREFIX) from upstream..."
@@ -28,13 +29,28 @@ check-protocol-sync: ## Check if consent-protocol is in sync with upstream
 push-protocol: check-protocol-sync ## Push consent-protocol changes to upstream (sync check first)
 	@echo "Pushing $(CONSENT_SUBTREE_PREFIX)/ to upstream..."
 	git subtree push --prefix=$(CONSENT_SUBTREE_PREFIX) $(CONSENT_UPSTREAM_REMOTE) $(CONSENT_UPSTREAM_BRANCH)
+	@if [ "$(CONSENT_UPSTREAM_VERIFY_CI)" = "1" ]; then \
+		$(MAKE) --no-print-directory verify-protocol-upstream-ci; \
+	else \
+		echo "Skipping upstream CI verification (CONSENT_UPSTREAM_VERIFY_CI=$(CONSENT_UPSTREAM_VERIFY_CI))."; \
+	fi
 	@echo "Done. Upstream consent-protocol repo is now updated."
 
 push-protocol-force: ## Push consent-protocol to upstream (skip sync check)
 	@echo "⚠  Skipping upstream sync check (force mode)..."
 	@echo "Pushing $(CONSENT_SUBTREE_PREFIX)/ to upstream..."
 	git subtree push --prefix=$(CONSENT_SUBTREE_PREFIX) $(CONSENT_UPSTREAM_REMOTE) $(CONSENT_UPSTREAM_BRANCH)
+	@if [ "$(CONSENT_UPSTREAM_VERIFY_CI)" = "1" ]; then \
+		$(MAKE) --no-print-directory verify-protocol-upstream-ci; \
+	else \
+		echo "Skipping upstream CI verification (CONSENT_UPSTREAM_VERIFY_CI=$(CONSENT_UPSTREAM_VERIFY_CI))."; \
+	fi
 	@echo "Done. Upstream consent-protocol repo is now updated."
+
+verify-protocol-upstream-ci: ## Verify upstream consent-protocol CI run for current upstream HEAD
+	@CONSENT_UPSTREAM_REPO=hushh-labs/consent-protocol \
+	CONSENT_UPSTREAM_BRANCH=$(CONSENT_UPSTREAM_BRANCH) \
+	bash scripts/ci/verify-protocol-upstream-ci.sh
 
 setup: ## First-time setup (hooks + remote + verification)
 	@CONSENT_UPSTREAM_REMOTE=$(CONSENT_UPSTREAM_REMOTE) \
