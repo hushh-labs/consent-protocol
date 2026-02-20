@@ -8,9 +8,12 @@ CONSENT_SYNC_REF ?= refs/subtree-sync/consent-protocol
 CONSENT_MONOREPO_OPS ?= consent-protocol/ops/monorepo
 CONSENT_UPSTREAM_VERIFY_CI ?= 1
 
-.PHONY: sync-protocol check-protocol-sync push-protocol push-protocol-force verify-protocol-upstream-ci setup verify-setup
+.PHONY: sync-protocol check-protocol-sync push-protocol push-protocol-force verify-protocol-upstream-ci verify-protocol-ci-parity setup verify-setup
 
-sync-protocol: ## Pull latest consent-protocol from upstream
+verify-protocol-ci-parity: ## Ensure monorepo and upstream backend CI checks stay aligned
+	@bash scripts/ci/verify-protocol-ci-parity.sh
+
+sync-protocol: verify-protocol-ci-parity ## Pull latest consent-protocol from upstream
 	@echo "Pulling $(CONSENT_SUBTREE_PREFIX) from upstream..."
 	git fetch $(CONSENT_UPSTREAM_REMOTE) $(CONSENT_UPSTREAM_BRANCH) --quiet
 	git subtree pull --prefix=$(CONSENT_SUBTREE_PREFIX) $(CONSENT_UPSTREAM_REMOTE) $(CONSENT_UPSTREAM_BRANCH) --squash
@@ -19,7 +22,7 @@ sync-protocol: ## Pull latest consent-protocol from upstream
 	@echo "Done. $(CONSENT_SUBTREE_PREFIX)/ is now in sync with upstream."
 	@echo "Bookmark: $$(git rev-parse $(CONSENT_SYNC_REF) | cut -c1-8)"
 
-check-protocol-sync: ## Check if consent-protocol is in sync with upstream
+check-protocol-sync: verify-protocol-ci-parity ## Check if consent-protocol is in sync with upstream
 	@CONSENT_UPSTREAM_REMOTE=$(CONSENT_UPSTREAM_REMOTE) \
 	CONSENT_UPSTREAM_BRANCH=$(CONSENT_UPSTREAM_BRANCH) \
 	CONSENT_SUBTREE_PREFIX=$(CONSENT_SUBTREE_PREFIX) \
@@ -36,7 +39,7 @@ push-protocol: check-protocol-sync ## Push consent-protocol changes to upstream 
 	fi
 	@echo "Done. Upstream consent-protocol repo is now updated."
 
-push-protocol-force: ## Push consent-protocol to upstream (skip sync check)
+push-protocol-force: verify-protocol-ci-parity ## Push consent-protocol to upstream (skip sync check)
 	@echo "⚠  Skipping upstream sync check (force mode)..."
 	@echo "Pushing $(CONSENT_SUBTREE_PREFIX)/ to upstream..."
 	git subtree push --prefix=$(CONSENT_SUBTREE_PREFIX) $(CONSENT_UPSTREAM_REMOTE) $(CONSENT_UPSTREAM_BRANCH)
