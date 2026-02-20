@@ -22,17 +22,6 @@ PORTFOLIO_IMPORT_TIMEOUT_SECONDS = 180
 STOCK_ANALYZE_TIMEOUT_SECONDS = 300
 HEARTBEAT_INTERVAL_SECONDS = 4.0
 
-_DEFAULT_STAGE_PROGRESS_PCT: dict[str, float] = {
-    "uploading": 5.0,
-    "indexing": 15.0,
-    "scanning": 30.0,
-    "analyzing": 20.0,
-    "thinking": 45.0,
-    "extracting": 60.0,
-    "parsing": 82.0,
-    "complete": 100.0,
-}
-
 
 def _json_default(value: Any) -> Any:
     """JSON serializer for non-primitive payload values used in stream envelopes."""
@@ -99,14 +88,6 @@ class CanonicalSSEStream:
         explicit = self._sanitize_progress(payload.get("progress_pct"))
         if explicit is not None:
             return explicit
-
-        if event == "stage":
-            stage = payload.get("stage")
-            if isinstance(stage, str):
-                return _DEFAULT_STAGE_PROGRESS_PCT.get(stage, self._last_progress_pct)
-
-        if event == "chunk":
-            return max(self._last_progress_pct, 60.0)
 
         if event == "complete":
             return 100.0
