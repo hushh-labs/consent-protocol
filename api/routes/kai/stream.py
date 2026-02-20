@@ -26,6 +26,7 @@ from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
 from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable
 from hushh_mcp.operons.kai.llm import (
     get_gemini_unavailable_reason,
     is_gemini_ready,
@@ -576,14 +577,32 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "fundamental", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            # Use mock data to continue
-            fundamental_insight = (
-                await fundamental_agent._mock_analysis(ticker)
-                if hasattr(fundamental_agent, "_mock_analysis")
-                else None
+            if isinstance(e, RealtimeDataUnavailable):
+                yield create_event(
+                    "error",
+                    {
+                        "code": e.code,
+                        "message": (
+                            "Required realtime market inputs are unavailable. "
+                            "Retry when providers are reachable."
+                        ),
+                        "dependency": e.source,
+                        "retryable": e.retryable,
+                    },
+                    terminal=True,
+                )
+                return
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_AGENT_FAILED",
+                    "message": "Fundamental analysis failed before debate could start.",
+                    "agent": "fundamental",
+                    "retryable": True,
+                },
+                terminal=True,
             )
-            if not fundamental_insight:
-                raise
+            return
 
         # Check if client disconnected
         if await request.is_disconnected():
@@ -694,7 +713,32 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "sentiment", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            sentiment_insight = await sentiment_agent._mock_analysis(ticker)
+            if isinstance(e, RealtimeDataUnavailable):
+                yield create_event(
+                    "error",
+                    {
+                        "code": e.code,
+                        "message": (
+                            "Required realtime market inputs are unavailable. "
+                            "Retry when providers are reachable."
+                        ),
+                        "dependency": e.source,
+                        "retryable": e.retryable,
+                    },
+                    terminal=True,
+                )
+                return
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_AGENT_FAILED",
+                    "message": "Sentiment analysis failed before debate could start.",
+                    "agent": "sentiment",
+                    "retryable": True,
+                },
+                terminal=True,
+            )
+            return
 
         if await request.is_disconnected():
             return
@@ -805,7 +849,32 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "valuation", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            valuation_insight = await valuation_agent._mock_analysis(ticker)
+            if isinstance(e, RealtimeDataUnavailable):
+                yield create_event(
+                    "error",
+                    {
+                        "code": e.code,
+                        "message": (
+                            "Required realtime market inputs are unavailable. "
+                            "Retry when providers are reachable."
+                        ),
+                        "dependency": e.source,
+                        "retryable": e.retryable,
+                    },
+                    terminal=True,
+                )
+                return
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_AGENT_FAILED",
+                    "message": "Valuation analysis failed before debate could start.",
+                    "agent": "valuation",
+                    "retryable": True,
+                },
+                terminal=True,
+            )
+            return
 
         if await request.is_disconnected():
             return

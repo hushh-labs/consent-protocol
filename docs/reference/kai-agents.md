@@ -20,7 +20,7 @@ Kai intro personalization is optional and managed in encrypted world-model domai
 | -------------- | ------------------------- | ------------------------------------- | ------------------------------------------ |
 | **Fundamental**| Business health and moat  | SEC 10-K/10-Q filings, EDGAR         | `analyze_fundamentals`, `calculate_financial_ratios`, `assess_fundamental_health` |
 | **Sentiment**  | Market mood and momentum  | Financial news, analyst ratings       | `analyze_sentiment`, `calculate_sentiment_score`, `extract_catalysts_from_news` |
-| **Valuation**  | Fair value and multiples  | Market data (yfinance), peer comps    | `analyze_valuation`, `calculate_financial_ratios` |
+| **Valuation**  | Fair value and multiples  | Market data (Finnhub -> PMP/FMP -> yfinance), peer comps | `analyze_valuation`, `calculate_financial_ratios` |
 
 Each agent is implemented as a sub-module under `hushh_mcp/agents/kai/`:
 

@@ -140,10 +140,10 @@ Each requires consent validation. No DB access.
 | Function              | Source                | Description                   |
 | --------------------- | --------------------- | ----------------------------- |
 | `fetch_sec_filings`   | SEC EDGAR (free)      | 10-K/10-Q financial data      |
-| `fetch_market_news`   | NewsAPI / Google News  | Recent financial news         |
-| `fetch_market_data`   | Yahoo Finance          | Price, volume, fundamentals   |
-| `fetch_peer_data`     | Yahoo Finance          | Peer company comparisons      |
-| `_fetch_yahoo_quote_fast` | Yahoo v7 API      | Fast quote fallback           |
+| `fetch_market_news`   | Finnhub -> PMP/FMP -> NewsAPI -> Google News RSS | Recent financial news |
+| `fetch_market_data`   | Finnhub -> PMP/FMP -> yfinance -> Yahoo quote     | Price, volume, fundamentals |
+| `fetch_peer_data`     | Finnhub peers -> Yahoo Finance                          | Peer company comparisons |
+| `_fetch_yahoo_quote_fast` | Yahoo v7 API                                       | Fast quote fallback |
 
 ### analysis.py -- Analysis Orchestrators (3 public + helpers, IMPURE)
 
@@ -420,6 +420,20 @@ Agent-to-agent communication uses the `KaiA2AServer` pattern:
 - Delegation uses `@hushh_tool` wrappers
 
 See the Kai agent for the reference implementation.
+
+### ADK/A2A Compliance Verification
+
+Run static contract checks before release:
+
+```bash
+python scripts/verify_adk_a2a_compliance.py
+```
+
+The verifier checks:
+- `X-Consent-Token` enforcement in A2A entry points.
+- Token validation using `ConsentScope.VAULT_OWNER`.
+- Google A2A compatibility flag and route wiring.
+- Required agent -> operon data-source calls for fundamental/sentiment/valuation paths.
 
 ---
 
