@@ -13,6 +13,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 from google import genai
@@ -28,6 +29,7 @@ from api.routes.kai.portfolio import (  # noqa: E402
     _aggregate_holdings_by_symbol,
     _coerce_optional_number,
     _extract_holdings_list,
+    _is_cash_equivalent_row,
     _is_unknown_name,
     _normalize_raw_holding_row,
     _validate_holding_row,
@@ -94,6 +96,8 @@ def _default_pdfs() -> list[Path]:
 def _zero_qty_zero_price_nonzero_value_count(rows: list[dict[str, Any]]) -> int:
     count = 0
     for row in rows:
+        if _is_cash_equivalent_row(row):
+            continue
         qty = _coerce_optional_number(row.get("quantity")) or 0.0
         price = _coerce_optional_number(row.get("price")) or 0.0
         market_value = _coerce_optional_number(row.get("market_value")) or 0.0
@@ -102,7 +106,29 @@ def _zero_qty_zero_price_nonzero_value_count(rows: list[dict[str, Any]]) -> int:
     return count
 
 
-async def _run_model_for_pdf(client: genai.Client, pdf_path: Path) -> dict[str, Any]:
+def _is_statement_candidate(pdf_path: Path) -> bool:
+    """
+    Identify portfolio-statement candidates from filename.
+
+    The brokerage corpus may include onboarding/guide PDFs that are not statements.
+    We exclude those from hard quality gating so benchmark gates stay signal-accurate.
+    """
+    name = pdf_path.name.lower()
+    non_statement_markers = (
+        "how-to-read",
+        "guide",
+        "understanding",
+        "read-",
+    )
+    return not any(marker in name for marker in non_statement_markers)
+
+
+async def _run_model_for_pdf(
+    client: genai.Client,
+    pdf_path: Path,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
     contents = [
         types.Part.from_text(text=PROMPT),
         types.Part.from_bytes(data=pdf_path.read_bytes(), mime_type="application/pdf"),
@@ -118,11 +144,30 @@ async def _run_model_for_pdf(client: genai.Client, pdf_path: Path) -> dict[str, 
         ),
     )
 
-    response = await client.aio.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=contents,
-        config=config,
-    )
+    response = None
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=contents,
+                    config=config,
+                ),
+                timeout=timeout_seconds,
+            )
+            break
+        except Exception as exc:  # pragma: no cover - runtime diagnostics
+            last_error = exc
+            message = str(exc).upper()
+            is_retryable_quota = "RESOURCE_EXHAUSTED" in message or "429" in message
+            if is_retryable_quota and attempt < 3:
+                await asyncio.sleep(float(attempt) * 2.0)
+                continue
+            raise
+
+    if response is None:
+        raise RuntimeError(str(last_error).strip() or "model_response_missing")
 
     text = (response.text or "").strip()
     parsed, diagnostics = parse_json_with_single_repair(text)
@@ -143,9 +188,16 @@ async def _run_model_for_pdf(client: genai.Client, pdf_path: Path) -> dict[str, 
         validated_rows.append(row)
 
     aggregated_rows = _aggregate_holdings_by_symbol(validated_rows)
+    statement_candidate = _is_statement_candidate(pdf_path)
+    average_confidence = (
+        mean([float(row.get("confidence") or 0.0) for row in aggregated_rows])
+        if aggregated_rows
+        else 0.0
+    )
 
     scorecard: dict[str, Any] = {
         "document": str(pdf_path),
+        "statement_candidate": statement_candidate,
         "extract_source": source,
         "parse_repair_applied": bool(diagnostics.get("repair_applied", False)),
         "raw_holdings_count": len(normalized_rows),
@@ -165,11 +217,12 @@ async def _run_model_for_pdf(client: genai.Client, pdf_path: Path) -> dict[str, 
         ),
         "account_header_row_count": int(dropped_reasons.get("account_header_row", 0)),
         "duplicate_symbol_lot_count": max(0, len(validated_rows) - len(aggregated_rows)),
+        "average_confidence": round(average_confidence, 4),
         "dropped_reasons": dict(dropped_reasons),
         "sample_aggregated_holdings": aggregated_rows[:10],
     }
 
-    scorecard["passes_quality_gates"] = (
+    quality_gates_pass = (
         scorecard["placeholder_symbol_count"] == 0
         and scorecard["account_header_row_count"] == 0
         and scorecard["zero_qty_zero_price_nonzero_value_count"] == 0
@@ -179,39 +232,69 @@ async def _run_model_for_pdf(client: genai.Client, pdf_path: Path) -> dict[str, 
             for row in aggregated_rows
         )
     )
+    scorecard["passes_quality_gates"] = quality_gates_pass if statement_candidate else True
+    scorecard["quality_gate_scope"] = (
+        "statement_candidate" if statement_candidate else "non_statement"
+    )
 
     return scorecard
 
 
-async def _evaluate(pdfs: list[Path]) -> dict[str, Any]:
+async def _evaluate(pdfs: list[Path], *, timeout_seconds: float) -> dict[str, Any]:
     client = genai.Client(http_options=HttpOptions(api_version="v1"))
     results: list[dict[str, Any]] = []
 
     for path in pdfs:
         if not path.exists():
+            statement_candidate = _is_statement_candidate(path)
             results.append(
                 {
                     "document": str(path),
+                    "statement_candidate": statement_candidate,
+                    "quality_gate_scope": (
+                        "statement_candidate" if statement_candidate else "non_statement"
+                    ),
                     "error": "file_not_found",
                     "passes_quality_gates": False,
                 }
             )
             continue
         try:
-            results.append(await _run_model_for_pdf(client, path))
+            results.append(
+                await _run_model_for_pdf(
+                    client,
+                    path,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
         except Exception as exc:  # pragma: no cover - runtime diagnostics
+            detail = str(exc).strip() or exc.__class__.__name__
+            statement_candidate = _is_statement_candidate(path)
             results.append(
                 {
                     "document": str(path),
-                    "error": str(exc),
+                    "statement_candidate": statement_candidate,
+                    "quality_gate_scope": (
+                        "statement_candidate" if statement_candidate else "non_statement"
+                    ),
+                    "error": detail,
                     "passes_quality_gates": False,
                 }
             )
 
     successful = [row for row in results if not row.get("error")]
+    statement_docs_all = [row for row in results if row.get("statement_candidate")]
+    statement_docs_successful = [row for row in statement_docs_all if not row.get("error")]
+    non_statement_docs = [row for row in results if not row.get("statement_candidate")]
     aggregate = {
         "documents_total": len(results),
         "documents_successful": len(successful),
+        "statement_candidate_documents": len(statement_docs_all),
+        "statement_candidate_successful": len(statement_docs_successful),
+        "statement_candidate_errors": len(
+            [row for row in statement_docs_all if bool(row.get("error"))]
+        ),
+        "non_statement_documents": len(non_statement_docs),
         "raw_holdings_total": sum(int(row.get("raw_holdings_count", 0)) for row in successful),
         "validated_holdings_total": sum(
             int(row.get("validated_holdings_count", 0)) for row in successful
@@ -228,13 +311,36 @@ async def _evaluate(pdfs: list[Path]) -> dict[str, Any]:
         "zero_qty_zero_price_nonzero_value_total": sum(
             int(row.get("zero_qty_zero_price_nonzero_value_count", 0)) for row in successful
         ),
+        "average_confidence_mean": round(
+            mean(
+                [
+                    float(row.get("average_confidence") or 0.0)
+                    for row in successful
+                    if int(row.get("aggregated_holdings_count") or 0) > 0
+                ]
+            ),
+            4,
+        )
+        if any(int(row.get("aggregated_holdings_count") or 0) > 0 for row in successful)
+        else 0.0,
+        "statement_quality_pass_count": sum(
+            1 for row in statement_docs_successful if bool(row.get("passes_quality_gates"))
+        ),
+        "statement_quality_fail_count": sum(
+            1 for row in statement_docs_successful if not bool(row.get("passes_quality_gates"))
+        ),
     }
 
     return {
         "model": GEMINI_MODEL,
         "documents": results,
         "aggregate": aggregate,
-        "all_quality_gates_passed": all(bool(row.get("passes_quality_gates")) for row in results),
+        "all_quality_gates_passed": all(
+            (not bool(row.get("error"))) and bool(row.get("passes_quality_gates"))
+            for row in statement_docs_all
+        )
+        if statement_docs_all
+        else False,
     }
 
 
@@ -270,6 +376,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not return non-zero exit code when quality gates fail.",
     )
+    parser.add_argument(
+        "--per-doc-timeout-sec",
+        type=float,
+        default=90.0,
+        help="Timeout per PDF model call (seconds).",
+    )
+    parser.add_argument(
+        "--include-non-statements",
+        action="store_true",
+        help="Include guide/how-to PDFs during auto-discovery.",
+    )
     return parser.parse_args()
 
 
@@ -282,10 +399,12 @@ def main() -> int:
             pdf_paths = _discover_brokerage_pdfs(Path(args.corpus_dir).expanduser().resolve())
         else:
             pdf_paths = _default_pdfs()
+        if not args.include_non_statements:
+            pdf_paths = [path for path in pdf_paths if _is_statement_candidate(path)]
         if args.limit and args.limit > 0:
             pdf_paths = pdf_paths[: args.limit]
 
-    report = asyncio.run(_evaluate(pdf_paths))
+    report = asyncio.run(_evaluate(pdf_paths, timeout_seconds=max(5.0, args.per_doc_timeout_sec)))
 
     output = json.dumps(report, indent=2, ensure_ascii=False)
     print(output)

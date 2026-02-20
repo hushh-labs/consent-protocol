@@ -3,7 +3,7 @@
 # For the standalone backend repository.
 # Run `make help` to see all available targets.
 
-.PHONY: help dev lint format format-check fix typecheck test security ci-local clean
+.PHONY: help dev lint format format-check fix typecheck test security accuracy ci-local clean
 
 help: ## Show this help
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -42,9 +42,12 @@ test: ## Run tests (pytest)
 security: ## Run security scan (bandit, Medium+ severity)
 	bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
+accuracy: ## Run Kai accuracy/compliance suite (benchmark + compliance + contract tests)
+	python scripts/run_kai_accuracy_suite.py
+
 # === Combined Checks ===
 
-ci-local: lint format-check typecheck test security ## Run all CI checks locally
+ci-local: lint format-check typecheck test security accuracy ## Run all CI checks locally
 	@echo ""
 	@echo "All CI checks passed!"
 

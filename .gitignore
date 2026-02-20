@@ -183,5 +183,8 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Generated benchmark/suite artifacts
+artifacts/*.json
+
 # External Repositories
 claude_desktop_config.generated.json

@@ -15,8 +15,10 @@ Runtime provider priority (for realtime market/news flows):
 import asyncio
 import logging
 import os
+import time
 import urllib.parse
 import xml.etree.ElementTree as ET
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
@@ -203,6 +205,17 @@ def _provider_error(provider: str, exc: Exception) -> str:
             return f"{provider}:{status_code}:{detail}"
         return f"{provider}:{status_code}:{exc}"
     return f"{provider}:{exc}"
+
+
+def _emit_realtime_telemetry(event: str, **fields: Any) -> None:
+    """
+    Emit structured telemetry for realtime provider reliability.
+
+    This intentionally logs compact JSON-like dictionaries so downstream log sinks
+    can aggregate p50/p95 latencies, source failures, and staleness rates.
+    """
+    payload = {"event": event, **fields}
+    logger.info("[RealtimeTelemetry] %s", payload)
 
 
 async def _fetch_finnhub_quote(ticker: str) -> Dict[str, Any]:
@@ -880,14 +893,38 @@ async def fetch_market_news(
     if _finnhub_api_key():
         try:
             articles.extend(await _fetch_finnhub_company_news(ticker, days_back))
+            _emit_realtime_telemetry(
+                "news_provider_success",
+                ticker=ticker.upper(),
+                provider="finnhub",
+                rows=len(articles),
+            )
         except Exception as exc:
             errors.append(_provider_error("finnhub_news", exc))
+            _emit_realtime_telemetry(
+                "news_provider_failure",
+                ticker=ticker.upper(),
+                provider="finnhub",
+                error=str(exc)[:200],
+            )
 
     if _pmp_api_key():
         try:
             articles.extend(await _fetch_pmp_news(ticker))
+            _emit_realtime_telemetry(
+                "news_provider_success",
+                ticker=ticker.upper(),
+                provider="pmp_fmp",
+                rows=len(articles),
+            )
         except Exception as exc:
             errors.append(_provider_error("pmp_news", exc))
+            _emit_realtime_telemetry(
+                "news_provider_failure",
+                ticker=ticker.upper(),
+                provider="pmp_fmp",
+                error=str(exc)[:200],
+            )
 
     try:
         articles.extend(await _fetch_newsapi_articles(ticker, days_back))
@@ -909,12 +946,24 @@ async def fetch_market_news(
         deduped.append(row)
 
     if not deduped:
+        _emit_realtime_telemetry(
+            "news_all_providers_failed",
+            ticker=ticker.upper(),
+            errors=errors,
+        )
         raise RealtimeDataUnavailable(
             "news",
             f"No realtime news data available for {ticker}. providers={'; '.join(errors) or 'none'}",
             retryable=True,
         )
 
+    provider_counts = Counter(str(row.get("provider") or "unknown") for row in deduped)
+    _emit_realtime_telemetry(
+        "news_fetch_success",
+        ticker=ticker.upper(),
+        providers=dict(provider_counts),
+        returned_rows=len(deduped[:25]),
+    )
     return deduped[:25]
 
 
@@ -987,14 +1036,46 @@ async def fetch_market_data(
     providers.append(("yahoo_quote_fast", _fetch_yahoo_quote_fast))
 
     for provider_name, provider_fetch in providers:
+        started_at = time.perf_counter()
         try:
             payload = await provider_fetch(ticker)
             if payload and float(payload.get("price") or 0) > 0:
+                fetched_at = payload.get("fetched_at")
+                ttl_seconds = payload.get("ttl_seconds")
+                is_stale = bool(payload.get("is_stale", False))
+                _emit_realtime_telemetry(
+                    "market_data_provider_success",
+                    ticker=ticker.upper(),
+                    provider=provider_name,
+                    source=payload.get("source"),
+                    fetched_at=fetched_at,
+                    ttl_seconds=ttl_seconds,
+                    is_stale=is_stale,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
                 return payload
             errors.append(f"{provider_name}:invalid_price")
+            _emit_realtime_telemetry(
+                "market_data_provider_invalid",
+                ticker=ticker.upper(),
+                provider=provider_name,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
         except Exception as exc:
             errors.append(_provider_error(provider_name, exc))
+            _emit_realtime_telemetry(
+                "market_data_provider_failure",
+                ticker=ticker.upper(),
+                provider=provider_name,
+                error=str(exc)[:200],
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
+            )
 
+    _emit_realtime_telemetry(
+        "market_data_all_providers_failed",
+        ticker=ticker.upper(),
+        errors=errors,
+    )
     raise RealtimeDataUnavailable(
         "market_data",
         f"Realtime quote unavailable for {ticker}. providers={'; '.join(errors) or 'none'}",
@@ -1072,6 +1153,11 @@ async def fetch_peer_data(
             deduped_peers.append(cleaned)
 
     if not deduped_peers:
+        _emit_realtime_telemetry(
+            "peer_data_all_providers_failed",
+            ticker=ticker.upper(),
+            errors=errors,
+        )
         raise RealtimeDataUnavailable(
             "peer_data",
             f"No realtime peers available for {ticker}. providers={'; '.join(errors) or 'none'}",
@@ -1080,9 +1166,19 @@ async def fetch_peer_data(
 
     quotes = await _fetch_yahoo_quotes(deduped_peers[:8])
     if not quotes:
+        _emit_realtime_telemetry(
+            "peer_quote_fetch_failed",
+            ticker=ticker.upper(),
+            peers=deduped_peers[:8],
+        )
         raise RealtimeDataUnavailable(
             "peer_data",
             f"Peer quotes unavailable for {ticker}. peers={','.join(deduped_peers[:8])}",
             retryable=True,
         )
+    _emit_realtime_telemetry(
+        "peer_data_fetch_success",
+        ticker=ticker.upper(),
+        peer_count=len(quotes),
+    )
     return quotes
