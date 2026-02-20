@@ -5,6 +5,9 @@
 
 .PHONY: help dev lint format format-check fix typecheck test security accuracy ci-local clean
 
+# Prefer project venv python, then python3, then python.
+PYTHON_BIN := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
+
 help: ## Show this help
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -12,7 +15,7 @@ help: ## Show this help
 # === Development ===
 
 dev: ## Start the backend server (port 8000)
-	python -m uvicorn server:app --reload --port 8000
+	$(PYTHON_BIN) -m uvicorn server:app --reload --port 8000
 
 # === Quality Checks ===
 
@@ -43,7 +46,7 @@ security: ## Run security scan (bandit, Medium+ severity)
 	bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
 accuracy: ## Run Kai accuracy/compliance suite (benchmark + compliance + contract tests)
-	python scripts/run_kai_accuracy_suite.py
+	$(PYTHON_BIN) scripts/run_kai_accuracy_suite.py
 
 # === Combined Checks ===
 
