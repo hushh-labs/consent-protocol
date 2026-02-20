@@ -24,6 +24,8 @@ HEARTBEAT_INTERVAL_SECONDS = 4.0
 
 _DEFAULT_STAGE_PROGRESS_PCT: dict[str, float] = {
     "uploading": 5.0,
+    "indexing": 18.0,
+    "scanning": 35.0,
     "analyzing": 20.0,
     "thinking": 45.0,
     "extracting": 70.0,

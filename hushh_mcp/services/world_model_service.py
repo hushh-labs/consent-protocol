@@ -135,6 +135,22 @@ class WorldModelService:
             self._supabase = get_db()
         return self._supabase
 
+    @staticmethod
+    def _clean_text(value: Optional[str], *, default: str = "") -> str:
+        if not isinstance(value, str):
+            return default
+        cleaned = value.strip()
+        if cleaned.lower() in {"", "null", "undefined", "none"}:
+            return default
+        return cleaned
+
+    @staticmethod
+    def _clean_base64ish(value: Optional[str], *, default: str = "") -> str:
+        cleaned = WorldModelService._clean_text(value, default=default)
+        if not cleaned:
+            return default
+        return "".join(cleaned.split())
+
     @property
     def domain_registry(self):
         if self._domain_registry is None:
@@ -552,10 +568,13 @@ class WorldModelService:
 
             data = {
                 "user_id": user_id,
-                "encrypted_data_ciphertext": encrypted_blob["ciphertext"],
-                "encrypted_data_iv": encrypted_blob["iv"],
-                "encrypted_data_tag": encrypted_blob["tag"],
-                "algorithm": encrypted_blob.get("algorithm", "aes-256-gcm"),
+                "encrypted_data_ciphertext": self._clean_base64ish(encrypted_blob["ciphertext"]),
+                "encrypted_data_iv": self._clean_base64ish(encrypted_blob["iv"]),
+                "encrypted_data_tag": self._clean_base64ish(encrypted_blob["tag"]),
+                "algorithm": self._clean_text(
+                    encrypted_blob.get("algorithm", "aes-256-gcm"),
+                    default="aes-256-gcm",
+                ).lower(),
                 "data_version": current_version + 1,
                 "updated_at": datetime.utcnow().isoformat(),
             }

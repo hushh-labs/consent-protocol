@@ -717,7 +717,7 @@ async def import_portfolio_stream(
 
         from hushh_mcp.constants import GEMINI_MODEL
 
-        thinking_enabled = False  # Disabled for latency + stream reliability on large PDFs.
+        thinking_enabled = True
 
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
@@ -733,10 +733,10 @@ async def import_portfolio_stream(
                 model_to_use = GEMINI_MODEL
                 logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
 
-                # Stage 2: Analyzing
+                # Stage 2: Indexing
                 yield stream.event(
                     "stage",
-                    {"stage": "analyzing", "message": "AI analyzing document..."},
+                    {"stage": "indexing", "message": "Indexing document structure..."},
                 )
 
                 import_service = get_portfolio_import_service()
@@ -797,14 +797,40 @@ Rules:
                     types.Part.from_bytes(data=content, mime_type=upload_mime_type),
                 ]
 
-                config = types.GenerateContentConfig(
-                    temperature=0.1,
-                    max_output_tokens=12288,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                )
-                logger.info("SSE: Thinking mode disabled for stable streaming throughput")
+                config_kwargs: dict[str, Any] = {
+                    "temperature": 0.1,
+                    "max_output_tokens": 12288,
+                    "automatic_function_calling": types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                }
+                if thinking_enabled:
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=True,
+                        thinking_level=types.ThinkingLevel.MEDIUM,
+                    )
+                    logger.info("SSE: Thinking mode enabled for token-level reasoning stream")
+                else:
+                    logger.info("SSE: Thinking mode disabled for stable streaming throughput")
 
-                # Stage 3: Streaming extraction
+                config = types.GenerateContentConfig(**config_kwargs)
+
+                # Stage 3: Scanning
+                yield stream.event(
+                    "stage",
+                    {"stage": "scanning", "message": "Scanning statement pages..."},
+                )
+
+                # Stage 4: Thinking
+                yield stream.event(
+                    "stage",
+                    {
+                        "stage": "thinking",
+                        "message": "Reasoning through account sections...",
+                    },
+                )
+
+                # Stage 5: Streaming extraction
                 yield stream.event(
                     "stage",
                     {"stage": "extracting", "message": "Extracting financial data..."},
@@ -813,7 +839,8 @@ Rules:
                 full_response = ""
                 chunk_count = 0
                 thought_count = 0
-                in_extraction_phase = False
+                in_extraction_phase = True
+                pre_extraction_stage = "thinking"
                 streamed_holdings_estimate = 0
                 latest_live_holdings_preview: list[dict[str, Any]] = []
                 stream_started_at = asyncio.get_running_loop().time()
@@ -851,14 +878,12 @@ Rules:
                     except asyncio.TimeoutError:
                         elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
                         heartbeat_stage = (
-                            "extracting"
-                            if in_extraction_phase
-                            else ("thinking" if thinking_enabled else "analyzing")
+                            "extracting" if in_extraction_phase else pre_extraction_stage
                         )
                         heartbeat_message = (
                             "Still extracting structured data..."
                             if in_extraction_phase
-                            else "Still processing statement..."
+                            else "Still preparing extraction context..."
                         )
                         yield stream.event(
                             "stage",
@@ -883,7 +908,8 @@ Rules:
                     if hasattr(chunk, "candidates") and chunk.candidates:
                         candidate = chunk.candidates[0]
                         if hasattr(candidate, "content") and candidate.content:
-                            for part in candidate.content.parts:
+                            parts = getattr(candidate.content, "parts", None) or []
+                            for part in parts:
                                 if not hasattr(part, "text") or not part.text:
                                     continue
 
@@ -893,9 +919,14 @@ Rules:
                                 if is_thought:
                                     # Stream thought summary to frontend
                                     thought_count += 1
+                                    pre_extraction_stage = "thinking"
                                     yield stream.event(
                                         "thinking",
-                                        {"thought": part.text, "count": thought_count},
+                                        {
+                                            "thought": part.text,
+                                            "count": thought_count,
+                                            "token_source": "thought",
+                                        },
                                     )
                                 else:
                                     # This is the actual JSON response
@@ -931,6 +962,7 @@ Rules:
                                             "chunk_count": chunk_count,
                                             "holdings_detected": streamed_holdings_estimate,
                                             "holdings_preview": latest_live_holdings_preview,
+                                            "token_source": "response",
                                         },
                                     )
 
@@ -964,6 +996,7 @@ Rules:
                                 "chunk_count": chunk_count,
                                 "holdings_detected": streamed_holdings_estimate,
                                 "holdings_preview": latest_live_holdings_preview,
+                                "token_source": "response",
                             },
                         )
 
@@ -1020,7 +1053,10 @@ Rules:
                         )
 
                     # Transform Gemini response to match frontend expected structure
-                    account_metadata = parsed_data.get("account_metadata", {})
+                    account_metadata_raw = parsed_data.get("account_metadata")
+                    account_metadata = (
+                        account_metadata_raw if isinstance(account_metadata_raw, dict) else {}
+                    )
                     account_info = {
                         "holder_name": account_metadata.get("account_holder"),
                         "account_number": account_metadata.get("account_number"),
@@ -1030,7 +1066,10 @@ Rules:
                         "statement_period_end": account_metadata.get("statement_period_end"),
                     }
 
-                    portfolio_summary = parsed_data.get("portfolio_summary", {})
+                    portfolio_summary_raw = parsed_data.get("portfolio_summary")
+                    portfolio_summary = (
+                        portfolio_summary_raw if isinstance(portfolio_summary_raw, dict) else {}
+                    )
                     account_summary = {
                         "beginning_value": _coerce_optional_number(
                             portfolio_summary.get("beginning_value")
@@ -1051,7 +1090,10 @@ Rules:
                         ),
                     }
 
-                    detailed_holdings = parsed_data.get("detailed_holdings", [])
+                    detailed_holdings_raw = parsed_data.get("detailed_holdings")
+                    detailed_holdings = (
+                        detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
+                    )
                     holdings = []
                     parsed_total = len(detailed_holdings)
                     if parsed_total > 0:
@@ -1072,6 +1114,13 @@ Rules:
                                 "[Portfolio Import] Client disconnected during parsing, stopping stream cleanup"
                             )
                             return
+                        if not isinstance(h, dict):
+                            logger.warning(
+                                "[Portfolio Import] Skipping non-dict holding row at index %s: %r",
+                                idx,
+                                type(h).__name__,
+                            )
+                            continue
                         raw_symbol = _first_present(
                             h,
                             "symbol_cusip",
@@ -1313,7 +1362,7 @@ Rules:
                         "error",
                         {
                             "code": "IMPORT_PARSE_FAILED",
-                            "message": "Failed to parse AI response after deterministic repair",
+                            "message": "Unable to normalize extracted statement output. Please retry.",
                             "diagnostics": {
                                 "response_chars": len(full_response),
                                 "chunk_count": chunk_count,
