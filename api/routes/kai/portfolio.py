@@ -1105,7 +1105,6 @@ async def import_portfolio_stream(
                     {
                         "stage": "uploading",
                         "message": "Processing uploaded file...",
-                        "progress_pct": 5,
                     },
                 )
                 await asyncio.sleep(0.1)  # Small delay for UI feedback
@@ -1121,7 +1120,6 @@ async def import_portfolio_stream(
                     {
                         "stage": "indexing",
                         "message": "Indexing document structure...",
-                        "progress_pct": 15,
                     },
                 )
 
@@ -1201,44 +1199,33 @@ Rules:
 
                 config = types.GenerateContentConfig(**config_kwargs)
 
-                # Stage 3: Scanning
+                # Stage 3: Scanning (real runtime milestone: handoff to model stream request)
                 yield stream.event(
                     "stage",
                     {
                         "stage": "scanning",
-                        "message": "Scanning statement pages...",
-                        "progress_pct": 30,
-                    },
-                )
-
-                # Stage 4: Thinking
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "thinking",
-                        "message": "Reasoning through account sections...",
-                        "progress_pct": 45,
-                    },
-                )
-
-                # Stage 5: Streaming extraction
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "extracting",
-                        "message": "Extracting financial data...",
-                        "progress_pct": 60,
+                        "message": "Submitting statement to Vertex model...",
                     },
                 )
 
                 full_response = ""
                 chunk_count = 0
                 thought_count = 0
-                in_extraction_phase = True
-                pre_extraction_stage = "thinking"
+                current_stream_stage: str = "scanning"
+                thinking_stage_emitted = False
+                extracting_stage_emitted = False
                 streamed_holdings_estimate = 0
                 latest_live_holdings_preview: list[dict[str, Any]] = []
                 stream_started_at = asyncio.get_running_loop().time()
+                last_extract_progress_emit_at = stream_started_at
+
+                def extraction_progress_from_chunks(chunks: int) -> float | None:
+                    if chunks <= 0:
+                        return None
+                    return min(
+                        80.0,
+                        35.0 + min(45.0, math.log1p(max(chunks, 1)) * 12.0),
+                    )
 
                 # Use official Gemini streaming API with thinking support
                 gen_stream = await client.aio.models.generate_content_stream(
@@ -1272,14 +1259,17 @@ Rules:
                         next_chunk_task = None
                     except asyncio.TimeoutError:
                         elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
-                        heartbeat_stage = (
-                            "extracting" if in_extraction_phase else pre_extraction_stage
-                        )
-                        heartbeat_message = (
-                            "Still extracting structured data..."
-                            if in_extraction_phase
-                            else "Still preparing extraction context..."
-                        )
+                        heartbeat_stage = current_stream_stage
+                        if heartbeat_stage == "extracting":
+                            heartbeat_message = (
+                                f"Streaming extracted JSON payload... ({elapsed}s elapsed)"
+                            )
+                        elif heartbeat_stage == "thinking":
+                            heartbeat_message = f"Model is still reasoning over account sections... ({elapsed}s elapsed)"
+                        else:
+                            heartbeat_message = (
+                                f"Awaiting first model tokens... ({elapsed}s elapsed)"
+                            )
                         yield stream.event(
                             "stage",
                             {
@@ -1289,15 +1279,11 @@ Rules:
                                 "elapsed_seconds": elapsed,
                                 "chunk_count": chunk_count,
                                 "total_chars": len(full_response),
-                                "holdings_detected": streamed_holdings_estimate,
-                                "holdings_preview": latest_live_holdings_preview,
-                                "progress_pct": (
-                                    45
-                                    if heartbeat_stage == "thinking"
-                                    else min(
-                                        79.0,
-                                        60.0 + min(19.0, math.log1p(max(chunk_count, 1)) * 4.5),
-                                    )
+                                **(
+                                    {"progress_pct": extraction_progress_from_chunks(chunk_count)}
+                                    if heartbeat_stage == "extracting"
+                                    and extraction_progress_from_chunks(chunk_count) is not None
+                                    else {}
                                 ),
                             },
                         )
@@ -1322,7 +1308,16 @@ Rules:
                                 if is_thought:
                                     # Stream thought summary to frontend
                                     thought_count += 1
-                                    pre_extraction_stage = "thinking"
+                                    current_stream_stage = "thinking"
+                                    if not thinking_stage_emitted:
+                                        thinking_stage_emitted = True
+                                        yield stream.event(
+                                            "stage",
+                                            {
+                                                "stage": "thinking",
+                                                "message": "Reasoning through account sections...",
+                                            },
+                                        )
                                     yield stream.event(
                                         "thinking",
                                         {
@@ -1330,21 +1325,18 @@ Rules:
                                             "count": thought_count,
                                             "token_source": "thought",
                                             "message": "Reasoning through account sections...",
-                                            "progress_pct": min(
-                                                59.0,
-                                                45.0 + min(14.0, thought_count * 1.5),
-                                            ),
                                         },
                                     )
                                 else:
                                     # This is the actual JSON response
-                                    if not in_extraction_phase:
-                                        in_extraction_phase = True
+                                    if not extracting_stage_emitted:
+                                        extracting_stage_emitted = True
+                                        current_stream_stage = "extracting"
                                         yield stream.event(
                                             "stage",
                                             {
                                                 "stage": "extracting",
-                                                "message": "Extracting structured data...",
+                                                "message": "Extracting financial data...",
                                             },
                                         )
 
@@ -1371,26 +1363,44 @@ Rules:
                                             "holdings_detected": streamed_holdings_estimate,
                                             "holdings_preview": latest_live_holdings_preview,
                                             "token_source": "response",
-                                            "progress_pct": min(
-                                                79.0,
-                                                60.0
-                                                + min(
-                                                    19.0,
-                                                    math.log1p(max(chunk_count, 1)) * 4.5,
-                                                ),
+                                            "progress_pct": extraction_progress_from_chunks(
+                                                chunk_count
                                             ),
                                         },
                                     )
+                                    now = asyncio.get_running_loop().time()
+                                    if (
+                                        chunk_count > 1
+                                        and (now - last_extract_progress_emit_at)
+                                        >= HEARTBEAT_INTERVAL_SECONDS
+                                    ):
+                                        last_extract_progress_emit_at = now
+                                        yield stream.event(
+                                            "progress",
+                                            {
+                                                "phase": "extracting",
+                                                "message": (
+                                                    "Streaming response: "
+                                                    f"{chunk_count} chunks, {len(full_response):,} chars"
+                                                ),
+                                                "chunk_count": chunk_count,
+                                                "total_chars": len(full_response),
+                                                "progress_pct": extraction_progress_from_chunks(
+                                                    chunk_count
+                                                ),
+                                            },
+                                        )
 
                     # Fallback for response shapes where chunk.text is populated even if candidates exist.
                     if not appended_response_text and getattr(chunk, "text", None):
-                        if not in_extraction_phase:
-                            in_extraction_phase = True
+                        if not extracting_stage_emitted:
+                            extracting_stage_emitted = True
+                            current_stream_stage = "extracting"
                             yield stream.event(
                                 "stage",
                                 {
                                     "stage": "extracting",
-                                    "message": "Extracting structured data...",
+                                    "message": "Extracting financial data...",
                                 },
                             )
 
@@ -1413,12 +1423,28 @@ Rules:
                                 "holdings_detected": streamed_holdings_estimate,
                                 "holdings_preview": latest_live_holdings_preview,
                                 "token_source": "response",
-                                "progress_pct": min(
-                                    79.0,
-                                    60.0 + min(19.0, math.log1p(max(chunk_count, 1)) * 4.5),
-                                ),
+                                "progress_pct": extraction_progress_from_chunks(chunk_count),
                             },
                         )
+                        now = asyncio.get_running_loop().time()
+                        if (
+                            chunk_count > 1
+                            and (now - last_extract_progress_emit_at) >= HEARTBEAT_INTERVAL_SECONDS
+                        ):
+                            last_extract_progress_emit_at = now
+                            yield stream.event(
+                                "progress",
+                                {
+                                    "phase": "extracting",
+                                    "message": (
+                                        "Streaming response: "
+                                        f"{chunk_count} chunks, {len(full_response):,} chars"
+                                    ),
+                                    "chunk_count": chunk_count,
+                                    "total_chars": len(full_response),
+                                    "progress_pct": extraction_progress_from_chunks(chunk_count),
+                                },
+                            )
 
                 # Skip all post-processing if client disconnected — no point parsing for nobody
                 if client_disconnected:
@@ -1442,7 +1468,11 @@ Rules:
                         "thought_count": thought_count,
                         "holdings_detected": streamed_holdings_estimate,
                         "holdings_preview": latest_live_holdings_preview,
-                        "progress_pct": 80,
+                        **(
+                            {"progress_pct": extraction_progress_from_chunks(chunk_count)}
+                            if extraction_progress_from_chunks(chunk_count) is not None
+                            else {}
+                        ),
                     },
                 )
 
@@ -1452,7 +1482,6 @@ Rules:
                     {
                         "stage": "parsing",
                         "message": "Processing extracted data...",
-                        "progress_pct": 82,
                     },
                 )
 
