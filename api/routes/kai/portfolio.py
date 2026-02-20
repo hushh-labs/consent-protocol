@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import re
+from collections import Counter
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
@@ -463,6 +464,294 @@ def _reconcile_holding_numeric_fields(
     }
 
 
+_UNKNOWN_NAMES = {
+    "",
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "unnamed",
+}
+_ACCOUNT_HEADER_HINTS = (
+    "individual",
+    "traditional ira",
+    "education account",
+    "tod",
+    "joint",
+    "account",
+)
+
+
+def _normalize_symbol_token(raw_value: Any) -> str:
+    if raw_value is None:
+        return ""
+    token = re.sub(r"[^A-Za-z0-9]", "", str(raw_value)).upper()
+    return token[:12]
+
+
+def _is_unknown_name(value: Any) -> bool:
+    if value is None:
+        return True
+    name = str(value).strip().lower()
+    return name in _UNKNOWN_NAMES
+
+
+def _is_non_holding_row(row: dict[str, Any]) -> bool:
+    """
+    Detect rows that look like account/profile headers instead of holdings.
+    """
+    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    symbol = str(row.get("symbol") or "").strip().lower()
+
+    has_numeric = any(
+        _coerce_optional_number(row.get(key)) is not None
+        for key in ("quantity", "price", "market_value", "cost_basis")
+    )
+    if not has_numeric and any(hint in name for hint in _ACCOUNT_HEADER_HINTS):
+        return True
+    if not has_numeric and symbol == "" and name:
+        return True
+    return False
+
+
+def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
+    raw_symbol = _first_present(
+        row,
+        "symbol_cusip",
+        "symbol",
+        "ticker",
+        "cusip",
+        "security_id",
+        "security",
+    )
+    symbol_quality = "provided"
+    normalized_symbol = _normalize_symbol_token(raw_symbol)
+    if not normalized_symbol:
+        raw_name = str(
+            _first_present(
+                row,
+                "description",
+                "name",
+                "security_name",
+                "holding_name",
+            )
+            or ""
+        ).strip()
+        if raw_name:
+            fallback = _normalize_symbol_token(raw_name.split()[0])
+            normalized_symbol = fallback
+            symbol_quality = "derived_from_name" if fallback else "synthetic"
+        else:
+            symbol_quality = "synthetic"
+    if not normalized_symbol and symbol_quality == "synthetic":
+        normalized_symbol = f"HOLDING_{idx + 1}"
+
+    normalized, reconciliation = _reconcile_holding_numeric_fields(
+        {
+            "symbol": normalized_symbol,
+            "symbol_quality": symbol_quality,
+            "name": _first_present(
+                row,
+                "description",
+                "name",
+                "security_name",
+                "holding_name",
+            )
+            or "Unknown",
+            "quantity": _first_present(row, "quantity", "shares", "units", "qty"),
+            "price": _first_present(
+                row,
+                "price",
+                "price_per_unit",
+                "last_price",
+                "unit_price",
+                "current_price",
+            ),
+            "price_per_unit": _first_present(
+                row,
+                "price",
+                "price_per_unit",
+                "last_price",
+                "unit_price",
+                "current_price",
+            ),
+            "market_value": _first_present(
+                row,
+                "market_value",
+                "current_value",
+                "marketValue",
+                "value",
+                "position_value",
+            ),
+            "cost_basis": _first_present(
+                row,
+                "cost_basis",
+                "book_value",
+                "cost",
+                "total_cost",
+            ),
+            "unrealized_gain_loss": _first_present(
+                row,
+                "unrealized_gain_loss",
+                "gain_loss",
+                "unrealized_pnl",
+                "pnl",
+            ),
+            "unrealized_gain_loss_pct": _first_present(
+                row,
+                "unrealized_gain_loss_pct",
+                "gain_loss_pct",
+                "unrealized_return_pct",
+                "return_pct",
+            ),
+            "asset_type": _first_present(
+                row,
+                "asset_class",
+                "asset_type",
+                "security_type",
+                "type",
+            ),
+            "acquisition_date": row.get("acquisition_date"),
+            "estimated_annual_income": _first_present(
+                row,
+                "estimated_annual_income",
+                "est_annual_income",
+                "annual_income",
+            ),
+            "est_yield": _first_present(row, "est_yield", "yield", "current_yield"),
+        }
+    )
+    if reconciliation["reconciled_fields"] or reconciliation["mismatch_detected"]:
+        normalized["reconciliation"] = reconciliation
+    return normalized
+
+
+def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
+    symbol = str(row.get("symbol") or "").strip()
+    symbol_quality = str(row.get("symbol_quality") or "").strip().lower()
+    name = str(row.get("name") or "").strip()
+    quantity = _coerce_optional_number(row.get("quantity"))
+    price = _coerce_optional_number(row.get("price"))
+    market_value = _coerce_optional_number(row.get("market_value"))
+
+    if _is_non_holding_row(row):
+        return False, "account_header_row"
+
+    if symbol.startswith("HOLDING_") or not symbol:
+        if symbol_quality == "synthetic":
+            return False, "placeholder_symbol"
+        if not symbol:
+            return False, "missing_symbol"
+
+    if symbol in {"UNKNOWN", "NA", "NONE", "N/A"}:
+        return False, "placeholder_symbol"
+
+    if _is_unknown_name(name) and symbol_quality != "provided":
+        return False, "unknown_name"
+
+    if _is_unknown_name(name) and (symbol.startswith("HOLDING_") or not symbol):
+        return False, "unknown_name"
+
+    if quantity is None and price is None and market_value is None:
+        return False, "missing_financial_data"
+
+    # Reject impossible rows that still leak through LLM output:
+    # quantity=0, price~0, huge market value and no strong symbol.
+    if (
+        quantity is not None
+        and abs(quantity) < 1e-9
+        and (price is None or abs(price) < 1e-9)
+        and market_value is not None
+        and abs(market_value) >= 1.0
+        and symbol_quality != "provided"
+    ):
+        return False, "zero_qty_zero_price_nonzero_value"
+
+    return True, None
+
+
+def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        symbol = _normalize_symbol_token(row.get("symbol"))
+        if not symbol:
+            continue
+        existing = grouped.get(symbol)
+        if not existing:
+            grouped[symbol] = {
+                **row,
+                "symbol": symbol,
+                "lots_count": 1,
+                "quantity": _coerce_optional_number(row.get("quantity")),
+                "market_value": _coerce_optional_number(row.get("market_value")),
+                "cost_basis": _coerce_optional_number(row.get("cost_basis")),
+                "unrealized_gain_loss": _coerce_optional_number(row.get("unrealized_gain_loss")),
+            }
+            continue
+
+        existing["lots_count"] = int(existing.get("lots_count") or 1) + 1
+
+        for field in ("quantity", "market_value", "cost_basis", "unrealized_gain_loss"):
+            current_value = _coerce_optional_number(existing.get(field))
+            incoming_value = _coerce_optional_number(row.get(field))
+            if incoming_value is None:
+                continue
+            if current_value is None:
+                existing[field] = incoming_value
+            else:
+                existing[field] = current_value + incoming_value
+
+        existing_name = str(existing.get("name") or "").strip()
+        incoming_name = str(row.get("name") or "").strip()
+        if _is_unknown_name(existing_name) and incoming_name:
+            existing["name"] = incoming_name
+        if not existing.get("asset_type") and row.get("asset_type"):
+            existing["asset_type"] = row.get("asset_type")
+
+    aggregated = list(grouped.values())
+    for row in aggregated:
+        qty = _coerce_optional_number(row.get("quantity"))
+        market_value = _coerce_optional_number(row.get("market_value"))
+        if qty is not None and abs(qty) > 1e-9 and market_value is not None:
+            row["price"] = market_value / qty
+            row["price_per_unit"] = row["price"]
+        row["symbol_quality"] = "aggregated"
+    return aggregated
+
+
+def _build_holdings_quality_report(
+    *,
+    raw_count: int,
+    validated_count: int,
+    aggregated_count: int,
+    dropped_reasons: Counter[str],
+    reconciled_count: int,
+    mismatch_count: int,
+    parse_diagnostics: dict[str, Any],
+    unknown_name_count: int,
+    placeholder_symbol_count: int,
+    zero_qty_zero_price_nonzero_value_count: int,
+    account_header_row_count: int,
+    duplicate_symbol_lot_count: int,
+) -> dict[str, Any]:
+    return {
+        "raw": raw_count,
+        "validated": validated_count,
+        "aggregated": aggregated_count,
+        "dropped": raw_count - validated_count,
+        "reconciled": reconciled_count,
+        "mismatch_detected": mismatch_count,
+        "dropped_reasons": dict(dropped_reasons),
+        "unknown_name_count": unknown_name_count,
+        "placeholder_symbol_count": placeholder_symbol_count,
+        "zero_qty_zero_price_nonzero_value_count": zero_qty_zero_price_nonzero_value_count,
+        "account_header_row_count": account_header_row_count,
+        "duplicate_symbol_lot_count": duplicate_symbol_lot_count,
+        "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
+        "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
+    }
+
+
 class PortfolioImportResponse(BaseModel):
     """Response from portfolio import endpoint."""
 
@@ -724,7 +1013,11 @@ async def import_portfolio_stream(
                 # Stage 1: Uploading
                 yield stream.event(
                     "stage",
-                    {"stage": "uploading", "message": "Processing uploaded file..."},
+                    {
+                        "stage": "uploading",
+                        "message": "Processing uploaded file...",
+                        "progress_pct": 5,
+                    },
                 )
                 await asyncio.sleep(0.1)  # Small delay for UI feedback
 
@@ -736,7 +1029,11 @@ async def import_portfolio_stream(
                 # Stage 2: Indexing
                 yield stream.event(
                     "stage",
-                    {"stage": "indexing", "message": "Indexing document structure..."},
+                    {
+                        "stage": "indexing",
+                        "message": "Indexing document structure...",
+                        "progress_pct": 15,
+                    },
                 )
 
                 import_service = get_portfolio_import_service()
@@ -818,7 +1115,11 @@ Rules:
                 # Stage 3: Scanning
                 yield stream.event(
                     "stage",
-                    {"stage": "scanning", "message": "Scanning statement pages..."},
+                    {
+                        "stage": "scanning",
+                        "message": "Scanning statement pages...",
+                        "progress_pct": 30,
+                    },
                 )
 
                 # Stage 4: Thinking
@@ -827,13 +1128,18 @@ Rules:
                     {
                         "stage": "thinking",
                         "message": "Reasoning through account sections...",
+                        "progress_pct": 45,
                     },
                 )
 
                 # Stage 5: Streaming extraction
                 yield stream.event(
                     "stage",
-                    {"stage": "extracting", "message": "Extracting financial data..."},
+                    {
+                        "stage": "extracting",
+                        "message": "Extracting financial data...",
+                        "progress_pct": 60,
+                    },
                 )
 
                 full_response = ""
@@ -896,6 +1202,14 @@ Rules:
                                 "total_chars": len(full_response),
                                 "holdings_detected": streamed_holdings_estimate,
                                 "holdings_preview": latest_live_holdings_preview,
+                                "progress_pct": (
+                                    45
+                                    if heartbeat_stage == "thinking"
+                                    else min(
+                                        79.0,
+                                        60.0 + min(19.0, math.log1p(max(chunk_count, 1)) * 4.5),
+                                    )
+                                ),
                             },
                         )
                         continue
@@ -926,6 +1240,11 @@ Rules:
                                             "thought": part.text,
                                             "count": thought_count,
                                             "token_source": "thought",
+                                            "message": "Reasoning through account sections...",
+                                            "progress_pct": min(
+                                                59.0,
+                                                45.0 + min(14.0, thought_count * 1.5),
+                                            ),
                                         },
                                     )
                                 else:
@@ -963,6 +1282,14 @@ Rules:
                                             "holdings_detected": streamed_holdings_estimate,
                                             "holdings_preview": latest_live_holdings_preview,
                                             "token_source": "response",
+                                            "progress_pct": min(
+                                                79.0,
+                                                60.0
+                                                + min(
+                                                    19.0,
+                                                    math.log1p(max(chunk_count, 1)) * 4.5,
+                                                ),
+                                            ),
                                         },
                                     )
 
@@ -997,6 +1324,10 @@ Rules:
                                 "holdings_detected": streamed_holdings_estimate,
                                 "holdings_preview": latest_live_holdings_preview,
                                 "token_source": "response",
+                                "progress_pct": min(
+                                    79.0,
+                                    60.0 + min(19.0, math.log1p(max(chunk_count, 1)) * 4.5),
+                                ),
                             },
                         )
 
@@ -1022,13 +1353,18 @@ Rules:
                         "thought_count": thought_count,
                         "holdings_detected": streamed_holdings_estimate,
                         "holdings_preview": latest_live_holdings_preview,
+                        "progress_pct": 80,
                     },
                 )
 
                 # Stage 4: Parsing
                 yield stream.event(
                     "stage",
-                    {"stage": "parsing", "message": "Processing extracted data..."},
+                    {
+                        "stage": "parsing",
+                        "message": "Processing extracted data...",
+                        "progress_pct": 82,
+                    },
                 )
 
                 # Parse JSON from response
@@ -1094,7 +1430,7 @@ Rules:
                     detailed_holdings = (
                         detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
                     )
-                    holdings = []
+                    normalized_holdings: list[dict[str, Any]] = []
                     parsed_total = len(detailed_holdings)
                     if parsed_total > 0:
                         yield stream.event(
@@ -1104,8 +1440,9 @@ Rules:
                                 "message": f"Normalizing {parsed_total} extracted holdings...",
                                 "holdings_extracted": 0,
                                 "holdings_total": parsed_total,
+                                "holdings_raw_count": parsed_total,
                                 "holdings_preview": [],
-                                "progress_pct": 92,
+                                "progress_pct": 82,
                             },
                         )
                     for idx, h in enumerate(detailed_holdings):
@@ -1121,116 +1458,8 @@ Rules:
                                 type(h).__name__,
                             )
                             continue
-                        raw_symbol = _first_present(
-                            h,
-                            "symbol_cusip",
-                            "symbol",
-                            "ticker",
-                            "cusip",
-                            "security_id",
-                            "security",
-                        )
-                        if not raw_symbol:
-                            raw_name = str(
-                                _first_present(
-                                    h,
-                                    "description",
-                                    "name",
-                                    "security_name",
-                                    "holding_name",
-                                )
-                                or ""
-                            ).strip()
-                            if raw_name:
-                                token = raw_name.split()[0]
-                                normalized_token = re.sub(r"[^A-Za-z0-9]", "", token).upper()
-                                raw_symbol = normalized_token[:10] if normalized_token else None
-                            else:
-                                raw_symbol = f"HOLDING_{idx + 1}"
-
-                        quantity = _first_present(h, "quantity", "shares", "units", "qty")
-                        price = _first_present(
-                            h,
-                            "price",
-                            "price_per_unit",
-                            "last_price",
-                            "unit_price",
-                            "current_price",
-                        )
-                        market_value = _first_present(
-                            h,
-                            "market_value",
-                            "current_value",
-                            "marketValue",
-                            "value",
-                            "position_value",
-                        )
-                        cost_basis = _first_present(
-                            h,
-                            "cost_basis",
-                            "book_value",
-                            "cost",
-                            "total_cost",
-                        )
-                        unrealized_gain_loss = _first_present(
-                            h,
-                            "unrealized_gain_loss",
-                            "gain_loss",
-                            "unrealized_pnl",
-                            "pnl",
-                        )
-                        unrealized_gain_loss_pct = _first_present(
-                            h,
-                            "unrealized_gain_loss_pct",
-                            "gain_loss_pct",
-                            "unrealized_return_pct",
-                            "return_pct",
-                        )
-                        asset_type = _first_present(
-                            h,
-                            "asset_class",
-                            "asset_type",
-                            "security_type",
-                            "type",
-                        )
-                        estimated_annual_income = _first_present(
-                            h,
-                            "estimated_annual_income",
-                            "est_annual_income",
-                            "annual_income",
-                        )
-                        est_yield = _first_present(h, "est_yield", "yield", "current_yield")
-
-                        normalized, reconciliation = _reconcile_holding_numeric_fields(
-                            {
-                                "symbol": raw_symbol,
-                                "name": _first_present(
-                                    h,
-                                    "description",
-                                    "name",
-                                    "security_name",
-                                    "holding_name",
-                                )
-                                or "Unknown",
-                                "quantity": quantity,
-                                "price": price,
-                                "price_per_unit": price,
-                                "market_value": market_value,
-                                "cost_basis": cost_basis,
-                                "unrealized_gain_loss": unrealized_gain_loss,
-                                "unrealized_gain_loss_pct": unrealized_gain_loss_pct,
-                                "asset_type": asset_type,
-                                "acquisition_date": h.get("acquisition_date"),
-                                "estimated_annual_income": estimated_annual_income,
-                                "est_yield": est_yield,
-                            }
-                        )
-                        if (
-                            reconciliation["reconciled_fields"]
-                            or reconciliation["mismatch_detected"]
-                        ):
-                            normalized["reconciliation"] = reconciliation
-                        holdings.append(normalized)
+                        normalized = _normalize_raw_holding_row(h, idx)
+                        normalized_holdings.append(normalized)
 
                         if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
                             yield stream.event(
@@ -1244,58 +1473,59 @@ Rules:
                                     ),
                                     "holdings_extracted": idx + 1,
                                     "holdings_total": parsed_total,
+                                    "holdings_raw_count": parsed_total,
                                     "holdings_preview": _build_holdings_preview(
-                                        holdings, max_items=40
+                                        normalized_holdings, max_items=40
                                     ),
-                                    "progress_pct": 92
-                                    + min(7.0, ((idx + 1) / max(parsed_total, 1)) * 7.0),
+                                    "progress_pct": 82
+                                    + min(16.0, ((idx + 1) / max(parsed_total, 1)) * 16.0),
                                 },
                             )
 
                     # ---- Validation pass: reject hallucinated or incomplete entries ----
-                    raw_count = len(holdings)
-                    dropped_count = 0
+                    raw_count = len(normalized_holdings)
                     reconciled_count = 0
                     mismatch_count = 0
-                    validated_holdings = []
-                    for h in holdings:
-                        if not h.get("symbol"):
-                            derived_name = str(h.get("name", "")).strip()
-                            if derived_name:
-                                fallback = re.sub(
-                                    r"[^A-Za-z0-9]", "", derived_name.split()[0]
-                                ).upper()
-                                if fallback:
-                                    h["symbol"] = fallback[:10]
-                            if not h.get("symbol"):
-                                logger.warning(
-                                    f"[Portfolio Validation] Dropping holding with no identifier: {h.get('name', 'unnamed')}"
-                                )
-                                dropped_count += 1
-                                continue
-                        # Drop entries with all-null financials (nothing useful extracted)
-                        if (
-                            h.get("quantity") is None
-                            and h.get("market_value") is None
-                            and h.get("price") is None
-                        ):
-                            logger.warning(
-                                f"[Portfolio Validation] Dropping holding with no financial data: {h['symbol']}"
-                            )
-                            dropped_count += 1
+                    dropped_reasons: Counter[str] = Counter()
+                    validated_holdings: list[dict[str, Any]] = []
+                    for row in normalized_holdings:
+                        is_valid, reason = _validate_holding_row(row)
+                        if not is_valid:
+                            dropped_reasons[reason or "unknown"] += 1
                             continue
 
-                        reconciliation = h.get("reconciliation")
+                        reconciliation = row.get("reconciliation")
                         if isinstance(reconciliation, dict):
                             if reconciliation.get("reconciled_fields"):
                                 reconciled_count += 1
                             if reconciliation.get("mismatch_detected"):
                                 mismatch_count += 1
 
-                        validated_holdings.append(h)
-                    holdings = validated_holdings
+                        validated_holdings.append(row)
+
+                    holdings = _aggregate_holdings_by_symbol(validated_holdings)
+                    duplicate_symbol_lot_count = max(0, len(validated_holdings) - len(holdings))
+                    unknown_name_count = sum(
+                        1 for row in holdings if _is_unknown_name(row.get("name"))
+                    )
+                    placeholder_symbol_count = sum(
+                        1 for row in holdings if str(row.get("symbol") or "").startswith("HOLDING_")
+                    )
+                    zero_qty_zero_price_nonzero_value_count = sum(
+                        1
+                        for row in holdings
+                        if (
+                            (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
+                            and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
+                            and (_coerce_optional_number(row.get("market_value")) or 0.0) > 0.0
+                        )
+                    )
+                    account_header_row_count = dropped_reasons.get("account_header_row", 0)
                     logger.info(
-                        f"[Portfolio Validation] Validated {len(holdings)}/{raw_count} holdings"
+                        "[Portfolio Validation] Validated %s/%s holdings (aggregated=%s)",
+                        len(validated_holdings),
+                        raw_count,
+                        len(holdings),
                     )
 
                     # Calculate total_value if not provided
@@ -1307,15 +1537,38 @@ Rules:
                             _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
                         )
 
-                    quality_report = {
-                        "raw": raw_count,
-                        "validated": len(holdings),
-                        "dropped": dropped_count,
-                        "reconciled": reconciled_count,
-                        "mismatch_detected": mismatch_count,
-                        "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
-                        "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
-                    }
+                    quality_report = _build_holdings_quality_report(
+                        raw_count=raw_count,
+                        validated_count=len(validated_holdings),
+                        aggregated_count=len(holdings),
+                        dropped_reasons=dropped_reasons,
+                        reconciled_count=reconciled_count,
+                        mismatch_count=mismatch_count,
+                        parse_diagnostics=parse_diagnostics,
+                        unknown_name_count=unknown_name_count,
+                        placeholder_symbol_count=placeholder_symbol_count,
+                        zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
+                        account_header_row_count=account_header_row_count,
+                        duplicate_symbol_lot_count=duplicate_symbol_lot_count,
+                    )
+
+                    yield stream.event(
+                        "progress",
+                        {
+                            "phase": "parsing",
+                            "message": (
+                                f"Validated {len(validated_holdings)} holdings and aggregated into {len(holdings)} symbols"
+                            ),
+                            "holdings_extracted": len(validated_holdings),
+                            "holdings_total": parsed_total,
+                            "holdings_raw_count": raw_count,
+                            "holdings_validated_count": len(validated_holdings),
+                            "holdings_aggregated_count": len(holdings),
+                            "holdings_dropped_reasons": dict(dropped_reasons),
+                            "holdings_preview": _build_holdings_preview(holdings, max_items=40),
+                            "progress_pct": 98,
+                        },
+                    )
 
                     # Build portfolio_data structure for frontend
                     portfolio_data = {
@@ -1352,6 +1605,10 @@ Rules:
                             "portfolio_data": portfolio_data,
                             "success": True,
                             "thought_count": thought_count,
+                            "holdings_raw_count": raw_count,
+                            "holdings_validated_count": len(validated_holdings),
+                            "holdings_aggregated_count": len(holdings),
+                            "holdings_dropped_reasons": dict(dropped_reasons),
                         },
                         terminal=True,
                     )
