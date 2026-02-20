@@ -17,12 +17,12 @@ import logging
 import os
 import time
 import urllib.parse
-import xml.etree.ElementTree as ET
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 import httpx
+from defusedxml import ElementTree as DefusedET
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
@@ -101,7 +101,11 @@ def _parse_google_news_rss(xml_text: str, ticker: str) -> List[Dict[str, Any]]:
     if not xml_text.strip():
         return []
 
-    root = ET.fromstring(xml_text)  # noqa: S314 - Parses trusted Google News RSS payload only.
+    try:
+        root = DefusedET.fromstring(xml_text)
+    except DefusedET.ParseError:
+        logger.warning("Skipping malformed Google News RSS payload for %s", ticker)
+        return []
     items: list[Dict[str, Any]] = []
     for item in root.findall(".//item"):
         title = (item.findtext("title") or "").strip()
