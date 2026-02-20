@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -40,6 +41,29 @@ def _run_step(name: str, cmd: list[str]) -> dict[str, Any]:
         "stdout": result.stdout,
         "stderr": result.stderr,
     }
+
+
+def _has_live_model_credentials() -> bool:
+    """Return True when runtime appears configured for live Gemini/Vertex calls."""
+    if os.getenv("GOOGLE_API_KEY", "").strip():
+        return True
+
+    uses_vertex = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not uses_vertex:
+        return False
+
+    has_project = bool(os.getenv("GOOGLE_CLOUD_PROJECT", "").strip())
+    has_location = bool(
+        os.getenv("GOOGLE_CLOUD_LOCATION", "").strip()
+        or os.getenv("GOOGLE_CLOUD_REGION", "").strip()
+    )
+    has_adc = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip())
+    return has_project and has_location and has_adc
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,6 +110,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include guide/how-to PDFs in benchmark auto-discovery.",
     )
+    parser.add_argument(
+        "--require-live-benchmark",
+        action="store_true",
+        help="Fail if live benchmark credentials are missing instead of skipping benchmark.",
+    )
     return parser.parse_args()
 
 
@@ -131,7 +160,40 @@ def main() -> int:
     ]
 
     steps: list[dict[str, Any]] = []
-    steps.append(_run_step("benchmark", benchmark_cmd))
+
+    can_run_live_benchmark = _has_live_model_credentials()
+    if can_run_live_benchmark:
+        steps.append(_run_step("benchmark", benchmark_cmd))
+    elif args.require_live_benchmark:
+        steps.append(
+            {
+                "name": "benchmark",
+                "command": benchmark_cmd,
+                "returncode": 1,
+                "duration_seconds": 0.0,
+                "stdout": "",
+                "stderr": (
+                    "Missing live model credentials: set GOOGLE_API_KEY or "
+                    "Vertex credentials (GOOGLE_GENAI_USE_VERTEXAI=true, "
+                    "GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION/REGION, "
+                    "GOOGLE_APPLICATION_CREDENTIALS)."
+                ),
+                "skipped": False,
+            }
+        )
+    else:
+        steps.append(
+            {
+                "name": "benchmark",
+                "command": benchmark_cmd,
+                "returncode": 0,
+                "duration_seconds": 0.0,
+                "stdout": "Skipped benchmark: missing live model credentials.",
+                "stderr": "",
+                "skipped": True,
+            }
+        )
+
     steps.append(_run_step("adk_a2a_compliance", compliance_cmd))
     if not args.skip_tests:
         steps.append(_run_step("contract_tests", test_cmd))
