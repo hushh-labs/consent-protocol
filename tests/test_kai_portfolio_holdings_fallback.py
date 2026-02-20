@@ -1,8 +1,11 @@
 """Tests for holdings fallback extraction in Kai portfolio import stream route."""
 
 from api.routes.kai.portfolio import (
+    _aggregate_holdings_by_symbol,
     _extract_holdings_list,
     _extract_live_holdings_preview_from_text,
+    _normalize_raw_holding_row,
+    _validate_holding_row,
 )
 
 
@@ -84,3 +87,73 @@ def test_extract_live_holdings_preview_from_text_returns_relatable_fields():
     assert preview[0]["name"] == "Apple Inc"
     assert preview[0]["quantity"] == 10.0
     assert preview[0]["market_value"] == 1950.25
+
+
+def test_validate_holding_row_drops_placeholder_symbol_rows():
+    raw = {
+        "name": "Unknown",
+        "quantity": None,
+        "market_value": 900226.92,
+        "price": None,
+    }
+    normalized = _normalize_raw_holding_row(raw, idx=20)
+
+    is_valid, reason = _validate_holding_row(normalized)
+    assert is_valid is False
+    assert reason in {"placeholder_symbol", "zero_qty_zero_price_nonzero_value"}
+
+
+def test_validate_holding_row_drops_account_header_rows():
+    raw = {
+        "name": "John W. Doe - Individual - TOD",
+        "symbol": "",
+        "quantity": None,
+        "market_value": None,
+    }
+    normalized = _normalize_raw_holding_row(raw, idx=3)
+    is_valid, reason = _validate_holding_row(normalized)
+
+    assert is_valid is False
+    assert reason == "account_header_row"
+
+
+def test_aggregate_holdings_by_symbol_merges_lots_and_keeps_symbol():
+    rows = [
+        _normalize_raw_holding_row(
+            {
+                "symbol": "AAPL",
+                "name": "Apple Inc",
+                "quantity": 10,
+                "price": 100,
+                "market_value": 1000,
+                "cost_basis": 800,
+                "unrealized_gain_loss": 200,
+            },
+            idx=0,
+        ),
+        _normalize_raw_holding_row(
+            {
+                "symbol": "AAPL",
+                "name": "Apple Inc",
+                "quantity": 5,
+                "price": 120,
+                "market_value": 600,
+                "cost_basis": 500,
+                "unrealized_gain_loss": 100,
+            },
+            idx=1,
+        ),
+    ]
+    is_valid_0, _ = _validate_holding_row(rows[0])
+    is_valid_1, _ = _validate_holding_row(rows[1])
+    assert is_valid_0 is True
+    assert is_valid_1 is True
+
+    aggregated = _aggregate_holdings_by_symbol(rows)
+    assert len(aggregated) == 1
+    assert aggregated[0]["symbol"] == "AAPL"
+    assert aggregated[0]["quantity"] == 15
+    assert aggregated[0]["market_value"] == 1600
+    assert aggregated[0]["cost_basis"] == 1300
+    assert aggregated[0]["unrealized_gain_loss"] == 300
+    assert aggregated[0]["lots_count"] == 2

@@ -75,12 +75,21 @@ def test_all_stream_kinds_emit_valid_envelopes():
 def test_canonical_stream_progress_is_monotonic_and_terminal_complete_is_100():
     stream = CanonicalSSEStream("portfolio_import")
     first = _parse_frame_data(stream.event("stage", {"stage": "uploading"}))
-    second = _parse_frame_data(stream.event("stage", {"stage": "extracting"}))
-    third = _parse_frame_data(stream.event("complete", {"message": "done"}, terminal=True))
+    second = _parse_frame_data(stream.event("stage", {"stage": "indexing"}))
+    third = _parse_frame_data(stream.event("stage", {"stage": "scanning"}))
+    fourth = _parse_frame_data(stream.event("stage", {"stage": "thinking"}))
+    fifth = _parse_frame_data(stream.event("stage", {"stage": "extracting"}))
+    sixth = _parse_frame_data(stream.event("stage", {"stage": "parsing"}))
+    terminal = _parse_frame_data(stream.event("complete", {"message": "done"}, terminal=True))
 
-    assert first["payload"]["progress_pct"] <= second["payload"]["progress_pct"]
-    assert third["payload"]["progress_pct"] == 100.0
-    assert third["payload"]["phase"] == "complete"
+    assert first["payload"]["progress_pct"] == 5.0
+    assert second["payload"]["progress_pct"] == 15.0
+    assert third["payload"]["progress_pct"] == 30.0
+    assert fourth["payload"]["progress_pct"] == 45.0
+    assert fifth["payload"]["progress_pct"] == 60.0
+    assert sixth["payload"]["progress_pct"] == 82.0
+    assert terminal["payload"]["progress_pct"] == 100.0
+    assert terminal["payload"]["phase"] == "complete"
 
 
 def test_canonical_stream_serializes_decimal_payload_values():
