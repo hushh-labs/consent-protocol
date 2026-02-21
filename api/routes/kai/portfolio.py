@@ -1844,19 +1844,140 @@ Rules:
 
                 except Exception as parse_error:
                     logger.error(f"JSON parse error: {parse_error}")
-                    yield stream.event(
-                        "error",
-                        {
-                            "code": "IMPORT_PARSE_FAILED",
-                            "message": "Unable to normalize extracted statement output. Please retry.",
-                            "diagnostics": {
-                                "response_chars": len(full_response),
-                                "chunk_count": chunk_count,
-                                "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
-                            },
-                        },
-                        terminal=True,
+                    fallback_rows = _extract_live_holdings_preview_from_text(
+                        full_response, max_items=240
                     )
+                    if fallback_rows:
+                        normalized_holdings: list[dict[str, Any]] = []
+                        for idx, row in enumerate(fallback_rows):
+                            if not isinstance(row, dict):
+                                continue
+                            normalized_holdings.append(_normalize_raw_holding_row(row, idx))
+
+                        dropped_reasons: Counter[str] = Counter()
+                        validated_holdings: list[dict[str, Any]] = []
+                        for row in normalized_holdings:
+                            is_valid, reason = _validate_holding_row(row)
+                            if not is_valid:
+                                dropped_reasons[reason or "unknown"] += 1
+                                continue
+                            validated_holdings.append(row)
+
+                        holdings = _aggregate_holdings_by_symbol(validated_holdings)
+                        total_value = sum(
+                            _coerce_optional_number(h.get("market_value")) or 0.0 for h in holdings
+                        )
+                        quality_report = _build_holdings_quality_report(
+                            raw_count=len(normalized_holdings),
+                            validated_count=len(validated_holdings),
+                            aggregated_count=len(holdings),
+                            dropped_reasons=dropped_reasons,
+                            reconciled_count=0,
+                            mismatch_count=0,
+                            parse_diagnostics={
+                                **parse_diagnostics,
+                                "fallback_from_stream_text": True,
+                            },
+                            unknown_name_count=sum(
+                                1 for row in holdings if _is_unknown_name(row.get("name"))
+                            ),
+                            placeholder_symbol_count=sum(
+                                1
+                                for row in holdings
+                                if str(row.get("symbol") or "").startswith("HOLDING_")
+                            ),
+                            zero_qty_zero_price_nonzero_value_count=sum(
+                                1
+                                for row in holdings
+                                if (
+                                    (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
+                                    and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
+                                    and (_coerce_optional_number(row.get("market_value")) or 0.0)
+                                    > 0.0
+                                )
+                            ),
+                            account_header_row_count=dropped_reasons.get("account_header_row", 0),
+                            duplicate_symbol_lot_count=max(
+                                0, len(validated_holdings) - len(holdings)
+                            ),
+                            average_confidence=(
+                                round(
+                                    sum(
+                                        _coerce_optional_number(row.get("confidence")) or 0.0
+                                        for row in holdings
+                                    )
+                                    / max(len(holdings), 1),
+                                    4,
+                                )
+                                if holdings
+                                else 0.0
+                            ),
+                        )
+
+                        yield stream.event(
+                            "warning",
+                            {
+                                "code": "IMPORT_PARSE_FALLBACK_USED",
+                                "message": "Structured parse failed; recovered holdings from stream text.",
+                                "holdings_count": len(holdings),
+                            },
+                        )
+                        yield stream.event(
+                            "complete",
+                            {
+                                "portfolio_data": {
+                                    "account_info": {},
+                                    "account_summary": {
+                                        "beginning_value": None,
+                                        "ending_value": total_value or None,
+                                        "change_in_value": None,
+                                        "cash_balance": 0.0,
+                                        "net_deposits_withdrawals": None,
+                                        "investment_gain_loss": None,
+                                    },
+                                    "asset_allocation": None,
+                                    "holdings": holdings,
+                                    "income_summary": None,
+                                    "realized_gain_loss": None,
+                                    "cash_flow": None,
+                                    "cash_management": None,
+                                    "projections_and_mrd": None,
+                                    "historical_values": None,
+                                    "ytd_metrics": None,
+                                    "legal_and_disclosures": None,
+                                    "cash_balance": 0.0,
+                                    "total_value": total_value,
+                                    "quality_report": quality_report,
+                                    "kpis": {
+                                        "holdings_count": len(holdings),
+                                        "total_value": total_value,
+                                    },
+                                },
+                                "success": True,
+                                "parse_fallback": True,
+                                "holdings_raw_count": len(normalized_holdings),
+                                "holdings_validated_count": len(validated_holdings),
+                                "holdings_aggregated_count": len(holdings),
+                                "holdings_dropped_reasons": dict(dropped_reasons),
+                            },
+                            terminal=True,
+                        )
+                    else:
+                        yield stream.event(
+                            "error",
+                            {
+                                "code": "IMPORT_PARSE_FAILED",
+                                "message": "Unable to normalize extracted statement output. Please retry.",
+                                "diagnostics": {
+                                    "response_chars": len(full_response),
+                                    "chunk_count": chunk_count,
+                                    "parse_repair_actions": parse_diagnostics.get(
+                                        "repair_actions", []
+                                    ),
+                                },
+                            },
+                            terminal=True,
+                        )
 
             # end of asyncio.timeout context
 

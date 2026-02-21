@@ -15,6 +15,7 @@ Runtime provider priority (for realtime market/news flows):
 import asyncio
 import logging
 import os
+import threading
 import time
 import urllib.parse
 from collections import Counter
@@ -29,6 +30,73 @@ from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
+_PROVIDER_COOLDOWNS: dict[str, float] = {}
+_PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
+    401: 15 * 60,
+    402: 15 * 60,
+    403: 10 * 60,
+    404: 20 * 60,
+    429: 5 * 60,
+}
+_MARKET_DATA_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+_MARKET_DATA_LOCKS: dict[str, asyncio.Lock] = {}
+_MARKET_DATA_CACHE_LOCK = threading.RLock()
+_MARKET_DATA_CACHE_TTL_SECONDS = max(
+    60,
+    int(os.getenv("KAI_MARKET_DATA_CACHE_TTL_SECONDS", "600") or "600"),
+)
+
+
+def _provider_in_cooldown(key: str) -> bool:
+    now = time.time()
+    until = _PROVIDER_COOLDOWNS.get(key)
+    if until is None:
+        return False
+    if until <= now:
+        _PROVIDER_COOLDOWNS.pop(key, None)
+        return False
+    return True
+
+
+def _mark_provider_cooldown(key: str, status_code: int | None) -> None:
+    if status_code is None:
+        return
+    duration = _PROVIDER_COOLDOWN_BY_STATUS.get(int(status_code))
+    if not duration:
+        return
+    _PROVIDER_COOLDOWNS[key] = time.time() + duration
+
+
+def _market_data_cache_key(symbol: str, *, finnhub_enabled: bool, pmp_enabled: bool) -> str:
+    return f"{symbol}|fh:{int(finnhub_enabled)}|pmp:{int(pmp_enabled)}"
+
+
+def _get_market_data_lock(cache_key: str) -> asyncio.Lock:
+    with _MARKET_DATA_CACHE_LOCK:
+        lock = _MARKET_DATA_LOCKS.get(cache_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _MARKET_DATA_LOCKS[cache_key] = lock
+        return lock
+
+
+def _get_cached_market_data(cache_key: str) -> Dict[str, Any] | None:
+    now = time.time()
+    with _MARKET_DATA_CACHE_LOCK:
+        cached = _MARKET_DATA_CACHE.get(cache_key)
+        if not cached:
+            return None
+        expires_at, payload = cached
+        if expires_at <= now:
+            _MARKET_DATA_CACHE.pop(cache_key, None)
+            return None
+        return dict(payload)
+
+
+def _set_cached_market_data(cache_key: str, payload: Dict[str, Any], ttl_seconds: int) -> None:
+    ttl = max(60, int(ttl_seconds))
+    with _MARKET_DATA_CACHE_LOCK:
+        _MARKET_DATA_CACHE[cache_key] = (time.time() + ttl, dict(payload))
 
 
 class RealtimeDataUnavailable(RuntimeError):
@@ -275,6 +343,8 @@ async def _fetch_pmp_quote(ticker: str) -> Dict[str, Any]:
     api_key = _pmp_api_key()
     if not api_key:
         raise RuntimeError("PMP_API_KEY/FMP_API_KEY not configured")
+    if _provider_in_cooldown("pmp:global"):
+        raise RuntimeError("pmp_provider_cooldown")
 
     symbol = ticker.upper().strip()
     timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
@@ -284,6 +354,8 @@ async def _fetch_pmp_quote(ticker: str) -> Dict[str, Any]:
             "https://financialmodelingprep.com/stable/quote",
             params={"symbol": symbol, "apikey": api_key},
         )
+        if not quote_res.is_success:
+            _mark_provider_cooldown("pmp:global", quote_res.status_code)
         quote_res.raise_for_status()
         quote_payload = (quote_res.json() if quote_res.content else []) or []
         row = quote_payload[0] if isinstance(quote_payload, list) and quote_payload else {}
@@ -295,6 +367,8 @@ async def _fetch_pmp_quote(ticker: str) -> Dict[str, Any]:
             "https://financialmodelingprep.com/stable/profile",
             params={"symbol": symbol, "apikey": api_key},
         )
+        if not details_res.is_success:
+            _mark_provider_cooldown("pmp:global", details_res.status_code)
         details_res.raise_for_status()
         details_payload = (details_res.json() if details_res.content else []) or []
         details = (
@@ -370,6 +444,8 @@ async def _fetch_pmp_news(ticker: str) -> List[Dict[str, Any]]:
     api_key = _pmp_api_key()
     if not api_key:
         return []
+    if _provider_in_cooldown("pmp:global"):
+        return []
 
     timeout = httpx.Timeout(connect=4.0, read=8.0, write=8.0, pool=4.0)
     headers = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
@@ -382,6 +458,8 @@ async def _fetch_pmp_news(ticker: str) -> List[Dict[str, Any]]:
                 "apikey": api_key,
             },
         )
+        if not res.is_success:
+            _mark_provider_cooldown("pmp:global", res.status_code)
         res.raise_for_status()
         rows = (res.json() if res.content else []) or []
         articles: list[Dict[str, Any]] = []
@@ -1023,68 +1101,102 @@ async def fetch_market_data(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(
-        "[Market Data Fetcher] Fetching market data for %s - user %s (priority: Finnhub -> PMP -> yfinance -> Yahoo)",
-        ticker,
-        user_id,
+    symbol = ticker.upper().strip()
+    finnhub_enabled = bool(_finnhub_api_key())
+    pmp_enabled = bool(_pmp_api_key())
+    cache_key = _market_data_cache_key(
+        symbol, finnhub_enabled=finnhub_enabled, pmp_enabled=pmp_enabled
     )
 
-    errors: list[str] = []
-    providers: list[tuple[str, Any]] = []
+    cached_payload = _get_cached_market_data(cache_key)
+    if cached_payload and float(cached_payload.get("price") or 0) > 0:
+        _emit_realtime_telemetry(
+            "market_data_cache_hit",
+            ticker=symbol,
+            source=cached_payload.get("source"),
+            ttl_seconds=cached_payload.get("ttl_seconds"),
+        )
+        return cached_payload
 
-    if _finnhub_api_key():
-        providers.append(("finnhub", _fetch_finnhub_quote))
-    if _pmp_api_key():
-        providers.append(("pmp", _fetch_pmp_quote))
-    providers.append(("yfinance", _fetch_yfinance_quote))
-    providers.append(("yahoo_quote_fast", _fetch_yahoo_quote_fast))
+    lock = _get_market_data_lock(cache_key)
+    async with lock:
+        cached_payload = _get_cached_market_data(cache_key)
+        if cached_payload and float(cached_payload.get("price") or 0) > 0:
+            _emit_realtime_telemetry(
+                "market_data_cache_hit_after_wait",
+                ticker=symbol,
+                source=cached_payload.get("source"),
+                ttl_seconds=cached_payload.get("ttl_seconds"),
+            )
+            return cached_payload
 
-    for provider_name, provider_fetch in providers:
-        started_at = time.perf_counter()
-        try:
-            payload = await provider_fetch(ticker)
-            if payload and float(payload.get("price") or 0) > 0:
-                fetched_at = payload.get("fetched_at")
-                ttl_seconds = payload.get("ttl_seconds")
-                is_stale = bool(payload.get("is_stale", False))
+        logger.info(
+            "[Market Data Fetcher] Fetching market data for %s - user %s (priority: Finnhub -> PMP -> yfinance -> Yahoo)",
+            symbol,
+            user_id,
+        )
+
+        errors: list[str] = []
+        providers: list[tuple[str, Any]] = []
+
+        if finnhub_enabled:
+            providers.append(("finnhub", _fetch_finnhub_quote))
+        if pmp_enabled:
+            providers.append(("pmp", _fetch_pmp_quote))
+        providers.append(("yfinance", _fetch_yfinance_quote))
+        providers.append(("yahoo_quote_fast", _fetch_yahoo_quote_fast))
+
+        for provider_name, provider_fetch in providers:
+            started_at = time.perf_counter()
+            try:
+                payload = await provider_fetch(symbol)
+                if payload and float(payload.get("price") or 0) > 0:
+                    fetched_at = payload.get("fetched_at")
+                    ttl_seconds = int(payload.get("ttl_seconds") or 0)
+                    cache_ttl_seconds = max(ttl_seconds, _MARKET_DATA_CACHE_TTL_SECONDS)
+                    is_stale = bool(payload.get("is_stale", False))
+                    normalized_payload = dict(payload)
+                    normalized_payload["ticker"] = symbol
+                    normalized_payload["ttl_seconds"] = cache_ttl_seconds
+                    _set_cached_market_data(cache_key, normalized_payload, cache_ttl_seconds)
+                    _emit_realtime_telemetry(
+                        "market_data_provider_success",
+                        ticker=symbol,
+                        provider=provider_name,
+                        source=normalized_payload.get("source"),
+                        fetched_at=fetched_at,
+                        ttl_seconds=cache_ttl_seconds,
+                        is_stale=is_stale,
+                        duration_ms=int((time.perf_counter() - started_at) * 1000),
+                    )
+                    return normalized_payload
+                errors.append(f"{provider_name}:invalid_price")
                 _emit_realtime_telemetry(
-                    "market_data_provider_success",
-                    ticker=ticker.upper(),
+                    "market_data_provider_invalid",
+                    ticker=symbol,
                     provider=provider_name,
-                    source=payload.get("source"),
-                    fetched_at=fetched_at,
-                    ttl_seconds=ttl_seconds,
-                    is_stale=is_stale,
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
-                return payload
-            errors.append(f"{provider_name}:invalid_price")
-            _emit_realtime_telemetry(
-                "market_data_provider_invalid",
-                ticker=ticker.upper(),
-                provider=provider_name,
-                duration_ms=int((time.perf_counter() - started_at) * 1000),
-            )
-        except Exception as exc:
-            errors.append(_provider_error(provider_name, exc))
-            _emit_realtime_telemetry(
-                "market_data_provider_failure",
-                ticker=ticker.upper(),
-                provider=provider_name,
-                error=str(exc)[:200],
-                duration_ms=int((time.perf_counter() - started_at) * 1000),
-            )
+            except Exception as exc:
+                errors.append(_provider_error(provider_name, exc))
+                _emit_realtime_telemetry(
+                    "market_data_provider_failure",
+                    ticker=symbol,
+                    provider=provider_name,
+                    error=str(exc)[:200],
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
 
-    _emit_realtime_telemetry(
-        "market_data_all_providers_failed",
-        ticker=ticker.upper(),
-        errors=errors,
-    )
-    raise RealtimeDataUnavailable(
-        "market_data",
-        f"Realtime quote unavailable for {ticker}. providers={'; '.join(errors) or 'none'}",
-        retryable=True,
-    )
+        _emit_realtime_telemetry(
+            "market_data_all_providers_failed",
+            ticker=symbol,
+            errors=errors,
+        )
+        raise RealtimeDataUnavailable(
+            "market_data",
+            f"Realtime quote unavailable for {symbol}. providers={'; '.join(errors) or 'none'}",
+            retryable=True,
+        )
 
 
 # ============================================================================
