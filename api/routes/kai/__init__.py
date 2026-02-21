@@ -21,6 +21,7 @@ from .consent import router as consent_router
 from .decisions import router as decisions_router
 from .health import router as health_router
 from .losers import router as losers_router
+from .market_insights import router as market_insights_router
 from .portfolio import router as portfolio_router
 from .stream import router as stream_router
 
@@ -43,6 +44,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/portfolio/summary/{user_id}",
     "/portfolio/analyze-losers",
     "/portfolio/analyze-losers/stream",
+    "/market/insights/{user_id}",
 ]
 
 # Include all sub-routers (no prefix since main router has /api/kai)
@@ -54,6 +56,7 @@ kai_router.include_router(analyze_router)
 kai_router.include_router(stream_router)
 kai_router.include_router(decisions_router)
 kai_router.include_router(losers_router)
+kai_router.include_router(market_insights_router)
 
 # Export for server.py
 router = kai_router

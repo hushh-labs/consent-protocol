@@ -10,6 +10,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import os
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -21,12 +22,11 @@ from api.routes.kai._streaming import (
     CanonicalSSEStream,
 )
 from hushh_mcp.agents.kai.debate_engine import DebateEngine
-from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent
-from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent
-from hushh_mcp.agents.kai.valuation_agent import ValuationAgent
+from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent, FundamentalInsight
+from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent, SentimentInsight
+from hushh_mcp.agents.kai.valuation_agent import ValuationAgent, ValuationInsight
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable
 from hushh_mcp.operons.kai.llm import (
     get_gemini_unavailable_reason,
     is_gemini_ready,
@@ -123,6 +123,104 @@ def _is_retryable_rate_limit_error(error: Exception | str) -> bool:
         "quota",
     )
     return any(marker in message for marker in markers)
+
+
+def _pre_agent_streaming_enabled() -> bool:
+    raw = str(os.getenv("KAI_STREAM_PRE_AGENT_THINKING", "false")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _build_fallback_fundamental_insight(ticker: str, error: Exception) -> FundamentalInsight:
+    message = str(error) or "provider unavailable"
+    return FundamentalInsight(
+        summary=(
+            f"Fundamental stream degraded for {ticker}: {message}. "
+            "Proceeding with conservative baseline assumptions."
+        ),
+        key_metrics={},
+        quant_metrics={},
+        business_moat="Unavailable during this run",
+        financial_resilience="Unavailable during this run",
+        growth_efficiency="Unavailable during this run",
+        bull_case="No reliable bull case from live providers in this run.",
+        bear_case="Data gap increases uncertainty for downside analysis.",
+        sources=["deterministic_fallback"],
+        confidence=0.25,
+        recommendation="hold",
+    )
+
+
+def _build_fallback_sentiment_insight(ticker: str, error: Exception) -> SentimentInsight:
+    message = str(error) or "provider unavailable"
+    return SentimentInsight(
+        summary=(
+            f"Sentiment stream degraded for {ticker}: {message}. "
+            "Using neutral market-sentiment fallback."
+        ),
+        sentiment_score=0.0,
+        key_catalysts=[],
+        news_highlights=[],
+        sources=["deterministic_fallback"],
+        confidence=0.25,
+        recommendation="neutral",
+    )
+
+
+def _build_fallback_valuation_insight(ticker: str, error: Exception) -> ValuationInsight:
+    message = str(error) or "provider unavailable"
+    return ValuationInsight(
+        summary=(
+            f"Valuation stream degraded for {ticker}: {message}. "
+            "Using fair-value fallback until peer quotes recover."
+        ),
+        valuation_metrics={},
+        peer_comparison={},
+        price_targets={},
+        sources=["deterministic_fallback"],
+        confidence=0.25,
+        recommendation="fair",
+    )
+
+
+def _build_short_recommendation(
+    decision: str,
+    confidence: float,
+    final_statement: str,
+    degraded_agents: list[str],
+) -> str:
+    confidence_pct = max(0, min(100, round(confidence * 100)))
+    first_sentence = final_statement.split(".")[0].strip()
+    if not first_sentence:
+        first_sentence = "Recommendation synthesized from multi-agent debate."
+    suffix = ""
+    if degraded_agents:
+        suffix = f" Fallback used: {', '.join(sorted(set(degraded_agents)))}."
+    text = f"{decision.upper()} ({confidence_pct}% confidence). {first_sentence}.{suffix}".strip()
+    return text[:320]
+
+
+def _extract_summary_count(summary: dict[str, Any] | None) -> int:
+    if not isinstance(summary, dict):
+        return 0
+    for key in ("attribute_count", "holdings_count", "item_count"):
+        value = summary.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            if value != value:
+                continue
+            return max(0, int(value))
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                continue
+            try:
+                return max(0, int(float(text)))
+            except Exception:
+                continue
+    return 0
 
 
 async def stream_agent_thinking(
@@ -246,8 +344,15 @@ async def analyze_stream_generator(
     logger.info(f"[Kai Stream] Starting analysis for {ticker} - user {user_id}")
 
     stream_token = _stream_ctx.set(CanonicalSSEStream("stock_analyze"))
+    stream_ctx = _stream_ctx.get()
+    stream_id = stream_ctx.stream_id if stream_ctx is not None else None
     loop = asyncio.get_running_loop()
     stream_started_at = loop.time()
+    llm_calls_count = 0
+    provider_calls_count = 0
+    retry_counts: dict[str, int] = {"fundamental": 0, "sentiment": 0, "valuation": 0}
+    pre_agent_thinking_enabled = _pre_agent_streaming_enabled()
+    analysis_mode = "full_stream" if pre_agent_thinking_enabled else "lean_stream"
 
     def remaining_timeout() -> float:
         elapsed = loop.time() - stream_started_at
@@ -335,6 +440,7 @@ async def analyze_stream_generator(
         full_user_context: Dict[str, Any] = {
             "risk_profile": risk_profile,
             "holdings_summary": [],
+            "holdings_count": 0,
             "goals": [],
             "learned_attributes": [],
             "preferences": {},
@@ -348,7 +454,14 @@ async def analyze_stream_generator(
         if wm_index and wm_index.domain_summaries:
             # Extract Financial Context
             fin_summary = wm_index.domain_summaries.get("financial", {})
-            full_user_context["holdings_summary"] = fin_summary.get("holdings", [])
+            request_holdings = request_context.get("holdings")
+            if isinstance(request_holdings, list):
+                full_user_context["holdings_summary"] = [
+                    row for row in request_holdings if isinstance(row, dict)
+                ]
+            full_user_context["holdings_count"] = _extract_summary_count(
+                fin_summary if isinstance(fin_summary, dict) else {}
+            )
             full_user_context["portfolio_allocation"] = {
                 "equities": fin_summary.get("equities_pct", 0),
                 "cash": fin_summary.get("cash_pct", 0),
@@ -417,6 +530,7 @@ async def analyze_stream_generator(
         fundamental_agent = FundamentalAgent(processing_mode="hybrid")
         sentiment_agent = SentimentAgent(processing_mode="hybrid")
         valuation_agent = ValuationAgent(processing_mode="hybrid")
+        degraded_agents: list[str] = []
 
         # =====================================================================
         # PHASE 1: Parallel Agent Analysis
@@ -480,24 +594,26 @@ async def analyze_stream_generator(
             },
         )
 
-        # Stream Gemini thinking tokens for fundamental analysis
-        async for token_event in stream_agent_thinking(
-            agent_name="Fundamental",
-            ticker=ticker,
-            prompt_context="Analyze SEC filings, revenue trends, cash flow, and business moat.",
-            request=request,
-            round_number=1,
-            phase="analysis",
-        ):
-            _ = remaining_timeout()
-            yield token_event
+        if pre_agent_thinking_enabled:
+            llm_calls_count += 1
+            # Optional pre-analysis thinking stream for debug visibility.
+            async for token_event in stream_agent_thinking(
+                agent_name="Fundamental",
+                ticker=ticker,
+                prompt_context="Analyze SEC filings, revenue trends, cash flow, and business moat.",
+                request=request,
+                round_number=1,
+                phase="analysis",
+            ):
+                _ = remaining_timeout()
+                yield token_event
 
-            # Check for disconnection after each token
-            if await check_disconnected():
-                logger.info(
-                    "[Kai Stream] Client disconnected during fundamental streaming, stopping..."
-                )
-                return
+                # Check for disconnection after each token
+                if await check_disconnected():
+                    logger.info(
+                        "[Kai Stream] Client disconnected during fundamental streaming, stopping..."
+                    )
+                    return
 
         # Run actual fundamental analysis (this gets the structured data)
         try:
@@ -506,6 +622,7 @@ async def analyze_stream_generator(
             fundamental_last_error: Optional[Exception] = None
             for attempt in range(1, max_agent_attempts + 1):
                 try:
+                    provider_calls_count += 1
                     fundamental_insight = await asyncio.wait_for(
                         fundamental_agent.analyze(
                             ticker=ticker,
@@ -520,6 +637,7 @@ async def analyze_stream_generator(
                 except Exception as agent_err:
                     fundamental_last_error = agent_err
                     if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_counts["fundamental"] = retry_counts.get("fundamental", 0) + 1
                         retry_delay = min(8, 2**attempt)
                         yield create_event(
                             "warning",
@@ -577,32 +695,40 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "fundamental", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            if isinstance(e, RealtimeDataUnavailable):
-                yield create_event(
-                    "error",
-                    {
-                        "code": e.code,
-                        "message": (
-                            "Required realtime market inputs are unavailable. "
-                            "Retry when providers are reachable."
-                        ),
-                        "dependency": e.source,
-                        "retryable": e.retryable,
-                    },
-                    terminal=True,
-                )
-                return
+            degraded_agents.append("fundamental")
+            fundamental_insight = _build_fallback_fundamental_insight(ticker, e)
             yield create_event(
-                "error",
+                "warning",
                 {
-                    "code": "ANALYZE_AGENT_FAILED",
-                    "message": "Fundamental analysis failed before debate could start.",
+                    "phase": "analysis",
+                    "round": 1,
                     "agent": "fundamental",
-                    "retryable": True,
+                    "code": "AGENT_DEGRADED",
+                    "message": "Fundamental agent degraded to deterministic fallback.",
+                    "retryable": _is_retryable_rate_limit_error(e),
+                    "analysis_degraded": True,
                 },
-                terminal=True,
             )
-            return
+            yield create_event(
+                "agent_complete",
+                {
+                    "agent": "fundamental",
+                    "summary": fundamental_insight.summary,
+                    "recommendation": fundamental_insight.recommendation,
+                    "confidence": fundamental_insight.confidence,
+                    "key_metrics": fundamental_insight.key_metrics,
+                    "quant_metrics": fundamental_insight.quant_metrics,
+                    "business_moat": fundamental_insight.business_moat,
+                    "financial_resilience": fundamental_insight.financial_resilience,
+                    "growth_efficiency": fundamental_insight.growth_efficiency,
+                    "bull_case": fundamental_insight.bull_case,
+                    "bear_case": fundamental_insight.bear_case,
+                    "sources": fundamental_insight.sources,
+                    "fallback_used": True,
+                    "round": 1,
+                    "phase": "analysis",
+                },
+            )
 
         # Check if client disconnected
         if await request.is_disconnected():
@@ -621,24 +747,26 @@ async def analyze_stream_generator(
             },
         )
 
-        # Stream Gemini thinking tokens for sentiment analysis
-        async for token_event in stream_agent_thinking(
-            agent_name="Sentiment",
-            ticker=ticker,
-            prompt_context="Analyze news sentiment, market catalysts, and momentum signals.",
-            request=request,
-            round_number=1,
-            phase="analysis",
-        ):
-            _ = remaining_timeout()
-            yield token_event
+        if pre_agent_thinking_enabled:
+            llm_calls_count += 1
+            # Optional pre-analysis thinking stream for debug visibility.
+            async for token_event in stream_agent_thinking(
+                agent_name="Sentiment",
+                ticker=ticker,
+                prompt_context="Analyze news sentiment, market catalysts, and momentum signals.",
+                request=request,
+                round_number=1,
+                phase="analysis",
+            ):
+                _ = remaining_timeout()
+                yield token_event
 
-            # Check for disconnection after each token
-            if await check_disconnected():
-                logger.info(
-                    "[Kai Stream] Client disconnected during sentiment streaming, stopping..."
-                )
-                return
+                # Check for disconnection after each token
+                if await check_disconnected():
+                    logger.info(
+                        "[Kai Stream] Client disconnected during sentiment streaming, stopping..."
+                    )
+                    return
 
         # Run actual sentiment analysis
         try:
@@ -647,6 +775,7 @@ async def analyze_stream_generator(
             sentiment_last_error: Optional[Exception] = None
             for attempt in range(1, max_agent_attempts + 1):
                 try:
+                    provider_calls_count += 1
                     sentiment_insight = await asyncio.wait_for(
                         sentiment_agent.analyze(
                             ticker=ticker,
@@ -661,6 +790,7 @@ async def analyze_stream_generator(
                 except Exception as agent_err:
                     sentiment_last_error = agent_err
                     if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_counts["sentiment"] = retry_counts.get("sentiment", 0) + 1
                         retry_delay = min(8, 2**attempt)
                         yield create_event(
                             "warning",
@@ -713,32 +843,35 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "sentiment", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            if isinstance(e, RealtimeDataUnavailable):
-                yield create_event(
-                    "error",
-                    {
-                        "code": e.code,
-                        "message": (
-                            "Required realtime market inputs are unavailable. "
-                            "Retry when providers are reachable."
-                        ),
-                        "dependency": e.source,
-                        "retryable": e.retryable,
-                    },
-                    terminal=True,
-                )
-                return
+            degraded_agents.append("sentiment")
+            sentiment_insight = _build_fallback_sentiment_insight(ticker, e)
             yield create_event(
-                "error",
+                "warning",
                 {
-                    "code": "ANALYZE_AGENT_FAILED",
-                    "message": "Sentiment analysis failed before debate could start.",
+                    "phase": "analysis",
+                    "round": 1,
                     "agent": "sentiment",
-                    "retryable": True,
+                    "code": "AGENT_DEGRADED",
+                    "message": "Sentiment agent degraded to deterministic fallback.",
+                    "retryable": _is_retryable_rate_limit_error(e),
+                    "analysis_degraded": True,
                 },
-                terminal=True,
             )
-            return
+            yield create_event(
+                "agent_complete",
+                {
+                    "agent": "sentiment",
+                    "summary": sentiment_insight.summary,
+                    "recommendation": sentiment_insight.recommendation,
+                    "confidence": sentiment_insight.confidence,
+                    "sentiment_score": sentiment_insight.sentiment_score,
+                    "key_catalysts": sentiment_insight.key_catalysts,
+                    "sources": sentiment_insight.sources,
+                    "fallback_used": True,
+                    "round": 1,
+                    "phase": "analysis",
+                },
+            )
 
         if await request.is_disconnected():
             return
@@ -756,24 +889,26 @@ async def analyze_stream_generator(
             },
         )
 
-        # Stream Gemini thinking tokens for valuation analysis
-        async for token_event in stream_agent_thinking(
-            agent_name="Valuation",
-            ticker=ticker,
-            prompt_context="Analyze P/E multiples, DCF valuation, and peer comparisons.",
-            request=request,
-            round_number=1,
-            phase="analysis",
-        ):
-            _ = remaining_timeout()
-            yield token_event
+        if pre_agent_thinking_enabled:
+            llm_calls_count += 1
+            # Optional pre-analysis thinking stream for debug visibility.
+            async for token_event in stream_agent_thinking(
+                agent_name="Valuation",
+                ticker=ticker,
+                prompt_context="Analyze P/E multiples, DCF valuation, and peer comparisons.",
+                request=request,
+                round_number=1,
+                phase="analysis",
+            ):
+                _ = remaining_timeout()
+                yield token_event
 
-            # Check for disconnection after each token
-            if await check_disconnected():
-                logger.info(
-                    "[Kai Stream] Client disconnected during valuation streaming, stopping..."
-                )
-                return
+                # Check for disconnection after each token
+                if await check_disconnected():
+                    logger.info(
+                        "[Kai Stream] Client disconnected during valuation streaming, stopping..."
+                    )
+                    return
 
         # Run actual valuation analysis
         try:
@@ -782,6 +917,7 @@ async def analyze_stream_generator(
             valuation_last_error: Optional[Exception] = None
             for attempt in range(1, max_agent_attempts + 1):
                 try:
+                    provider_calls_count += 1
                     valuation_insight = await asyncio.wait_for(
                         valuation_agent.analyze(
                             ticker=ticker,
@@ -796,6 +932,7 @@ async def analyze_stream_generator(
                 except Exception as agent_err:
                     valuation_last_error = agent_err
                     if _is_retryable_rate_limit_error(agent_err) and attempt < max_agent_attempts:
+                        retry_counts["valuation"] = retry_counts.get("valuation", 0) + 1
                         retry_delay = min(8, 2**attempt)
                         yield create_event(
                             "warning",
@@ -849,32 +986,36 @@ async def analyze_stream_generator(
                 "agent_error",
                 {"agent": "valuation", "error": str(e), "round": 1, "phase": "analysis"},
             )
-            if isinstance(e, RealtimeDataUnavailable):
-                yield create_event(
-                    "error",
-                    {
-                        "code": e.code,
-                        "message": (
-                            "Required realtime market inputs are unavailable. "
-                            "Retry when providers are reachable."
-                        ),
-                        "dependency": e.source,
-                        "retryable": e.retryable,
-                    },
-                    terminal=True,
-                )
-                return
+            degraded_agents.append("valuation")
+            valuation_insight = _build_fallback_valuation_insight(ticker, e)
             yield create_event(
-                "error",
+                "warning",
                 {
-                    "code": "ANALYZE_AGENT_FAILED",
-                    "message": "Valuation analysis failed before debate could start.",
+                    "phase": "analysis",
+                    "round": 1,
                     "agent": "valuation",
-                    "retryable": True,
+                    "code": "AGENT_DEGRADED",
+                    "message": "Valuation agent degraded to deterministic fallback.",
+                    "retryable": _is_retryable_rate_limit_error(e),
+                    "analysis_degraded": True,
                 },
-                terminal=True,
             )
-            return
+            yield create_event(
+                "agent_complete",
+                {
+                    "agent": "valuation",
+                    "summary": valuation_insight.summary,
+                    "recommendation": valuation_insight.recommendation,
+                    "confidence": valuation_insight.confidence,
+                    "valuation_metrics": valuation_insight.valuation_metrics,
+                    "peer_comparison": valuation_insight.peer_comparison,
+                    "price_targets": valuation_insight.price_targets,
+                    "sources": valuation_insight.sources,
+                    "fallback_used": True,
+                    "round": 1,
+                    "phase": "analysis",
+                },
+            )
 
         if await request.is_disconnected():
             return
@@ -950,6 +1091,8 @@ async def analyze_stream_generator(
             elif event_name in {"agent_start", "agent_token", "agent_complete", "agent_error"}:
                 current_round = _safe_round(normalized_payload.get("round"), current_round)
                 current_phase = str(normalized_payload.get("phase") or current_phase)
+                if event_name == "agent_start" and current_round == 2:
+                    llm_calls_count += 1
             elif event_name == "insight_extracted":
                 if len(debate_highlights) < 36:
                     debate_highlights.append(
@@ -1102,11 +1245,34 @@ async def analyze_stream_generator(
             ),
             timeout=min(remaining_timeout(), 30.0),
         )
+        analysis_degraded = len(degraded_agents) > 0
+        if analysis_degraded:
+            analysis_mode = "degraded"
+        synthesis_short = ""
+        if isinstance(synthesis_payload, dict):
+            for key in ("short_recommendation", "thesis", "summary"):
+                value = synthesis_payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    synthesis_short = value.strip()
+                    break
+        short_recommendation = (
+            synthesis_short
+            if synthesis_short
+            else _build_short_recommendation(
+                debate_result.decision,
+                debate_result.confidence,
+                debate_result.final_statement,
+                degraded_agents,
+            )
+        )
 
         world_model_context = {
             "risk_profile": full_user_context.get("risk_profile"),
             "preferences": full_user_context.get("preferences", {}),
-            "holdings_count": len(full_user_context.get("holdings_summary", []) or []),
+            "holdings_count": int(
+                full_user_context.get("holdings_count")
+                or len(full_user_context.get("holdings_summary", []) or [])
+            ),
             "portfolio_allocation": full_user_context.get("portfolio_allocation", {}),
             "has_domain_summaries": bool(full_user_context.get("domain_summaries")),
         }
@@ -1173,6 +1339,16 @@ async def analyze_stream_generator(
                 "consensus_reached": debate_result.consensus_reached,
             },
             "llm_synthesis": synthesis_payload,
+            "short_recommendation": short_recommendation,
+            "analysis_degraded": analysis_degraded,
+            "degraded_agents": sorted(set(degraded_agents)),
+            "stream_diagnostics": {
+                "stream_id": stream_id,
+                "llm_calls_count": llm_calls_count,
+                "provider_calls_count": provider_calls_count,
+                "retry_counts": retry_counts,
+                "analysis_mode": analysis_mode,
+            },
         }
 
         yield create_event(
@@ -1188,6 +1364,14 @@ async def analyze_stream_generator(
                 "fundamental_summary": fundamental_insight.summary,
                 "sentiment_summary": sentiment_insight.summary,
                 "valuation_summary": valuation_insight.summary,
+                "short_recommendation": short_recommendation,
+                "analysis_degraded": analysis_degraded,
+                "degraded_agents": sorted(set(degraded_agents)),
+                "stream_id": stream_id,
+                "llm_calls_count": llm_calls_count,
+                "provider_calls_count": provider_calls_count,
+                "retry_counts": retry_counts,
+                "analysis_mode": analysis_mode,
                 "raw_card": raw_card,
                 "round": 2,
                 "phase": "decision",

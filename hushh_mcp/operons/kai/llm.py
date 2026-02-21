@@ -42,6 +42,23 @@ _gemini_project_source: Optional[str] = None
 _gemini_location = "global"
 
 
+def _stream_concurrency_limit() -> int:
+    raw = (os.getenv("KAI_GEMINI_STREAM_CONCURRENCY") or "2").strip()
+    try:
+        return max(1, int(raw))
+    except Exception:
+        return 2
+
+
+_gemini_stream_semaphore = asyncio.Semaphore(_stream_concurrency_limit())
+
+
+def _is_retryable_stream_error(error: Exception | str) -> bool:
+    message = str(error).lower()
+    markers = ("429", "too many requests", "resource_exhausted", "quota", "rate limit")
+    return any(marker in message for marker in markers)
+
+
 def _is_truthy(raw_value: str) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -772,68 +789,80 @@ async def stream_gemini_response(
 
     logger.info(f"[Gemini Streaming] Starting stream for {agent_name}")
 
-    try:
-        # Use ASYNC streaming to prevent blocking the event loop
-        if types is None:
-            yield {
-                "type": "error",
-                "message": "Gemini streaming unavailable (google.genai.types missing)",
-            }
-            return
-
-        config = types.GenerateContentConfig(
-            temperature=0.7,
-            max_output_tokens=4096,
-        )
-
-        # Call the ASYNC streaming method
-        # Note: google.genai V1 SDK uses client.aio for async calls
-        stream = await _gemini_client.aio.models.generate_content_stream(
-            model=_gemini_model_name,
-            contents=prompt,
-            config=config,
-        )
-
-        full_text = ""
-        token_count = 0
-
-        # Async iteration
-        async for chunk in stream:
-            try:
-                chunk_text = chunk.text if hasattr(chunk, "text") else ""
-            except Exception as e:
-                logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
-                continue
-
-            if chunk_text:
-                token_count += 1
-                full_text += chunk_text
-                # Log only every 10th token to reduce noise
-                if token_count % 10 == 0:
-                    logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
-
-                yield {
-                    "type": "token",
-                    "text": chunk_text,
-                    "agent": agent_name,
-                }
-
-        # Yield complete event with full text
-        yield {
-            "type": "complete",
-            "text": full_text,
-            "agent": agent_name,
-        }
-
-        logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
-
-    except Exception as e:
-        logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
+    # Use ASYNC streaming to prevent blocking the event loop.
+    if types is None:
         yield {
             "type": "error",
-            "message": str(e),
-            "agent": agent_name,
+            "message": "Gemini streaming unavailable (google.genai.types missing)",
         }
+        return
+
+    config = types.GenerateContentConfig(
+        temperature=0.7,
+        max_output_tokens=4096,
+    )
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with _gemini_stream_semaphore:
+                stream = await _gemini_client.aio.models.generate_content_stream(
+                    model=_gemini_model_name,
+                    contents=prompt,
+                    config=config,
+                )
+
+                full_text = ""
+                token_count = 0
+
+                async for chunk in stream:
+                    try:
+                        chunk_text = chunk.text if hasattr(chunk, "text") else ""
+                    except Exception as e:
+                        logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
+                        continue
+
+                    if chunk_text:
+                        token_count += 1
+                        full_text += chunk_text
+                        if token_count % 10 == 0:
+                            logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
+
+                        yield {
+                            "type": "token",
+                            "text": chunk_text,
+                            "agent": agent_name,
+                        }
+
+            yield {
+                "type": "complete",
+                "text": full_text,
+                "agent": agent_name,
+            }
+            logger.info(f"[Gemini Streaming] Complete for {agent_name}, {token_count} tokens")
+            return
+        except Exception as e:
+            retryable = _is_retryable_stream_error(e)
+            if retryable and attempt < max_attempts:
+                delay_seconds = min(6.0, 2.0**attempt)
+                logger.warning(
+                    "[Gemini Streaming] Retryable error for %s (attempt %s/%s): %s. Retrying in %.1fs",
+                    agent_name,
+                    attempt,
+                    max_attempts,
+                    e,
+                    delay_seconds,
+                )
+                await asyncio.sleep(delay_seconds)
+                continue
+
+            logger.error(f"[Gemini Streaming] Error for {agent_name}: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "message": str(e),
+                "agent": agent_name,
+            }
+            return
 
 
 async def analyze_fundamental_streaming(

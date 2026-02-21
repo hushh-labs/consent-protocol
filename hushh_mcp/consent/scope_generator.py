@@ -105,6 +105,35 @@ class DynamicScopeGenerator:
         """Check if a scope is a dynamic attr.* scope."""
         return scope.startswith(self.SCOPE_PREFIX)
 
+    @staticmethod
+    def _normalize_domain_key(domain: str | None) -> str:
+        return str(domain or "").strip().lower()
+
+    @classmethod
+    def _normalize_domains(cls, domains: list[str] | None) -> list[str]:
+        if not domains:
+            return []
+        return sorted(
+            {
+                cls._normalize_domain_key(domain)
+                for domain in domains
+                if cls._normalize_domain_key(domain)
+            }
+        )
+
+    async def _get_user_available_domains(self, user_id: str) -> list[str]:
+        result = (
+            self.supabase.table("world_model_index_v2")
+            .select("available_domains")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return []
+        available_domains = result.data[0].get("available_domains") or []
+        return self._normalize_domains(available_domains)
+
     def matches_wildcard(self, scope: str, wildcard: str) -> bool:
         """
         Check if a specific scope matches a wildcard pattern.
@@ -144,23 +173,19 @@ class DynamicScopeGenerator:
 
         if domain is None:
             return False
+        domain = self._normalize_domain_key(domain)
+        if not domain:
+            return False
 
         # If no user_id, just validate format
         if user_id is None:
             return True
 
         try:
-            result = (
-                self.supabase.table("world_model_index_v2")
-                .select("available_domains")
-                .eq("user_id", user_id)
-                .limit(1)
-                .execute()
-            )
-            if not result.data:
+            available_domains = await self._get_user_available_domains(user_id)
+            if not available_domains:
                 logger.debug(f"No world model index for user {user_id}")
                 return False
-            available_domains = result.data[0].get("available_domains") or []
             return domain in available_domains
         except Exception as e:
             logger.error(f"Error validating scope {scope}: {e}")
@@ -180,16 +205,7 @@ class DynamicScopeGenerator:
             List of wildcard scope strings
         """
         try:
-            result = (
-                self.supabase.table("world_model_index_v2")
-                .select("available_domains")
-                .eq("user_id", user_id)
-                .limit(1)
-                .execute()
-            )
-            if not result.data:
-                return []
-            available_domains = result.data[0].get("available_domains") or []
+            available_domains = await self._get_user_available_domains(user_id)
             return sorted([self.generate_domain_wildcard(d) for d in available_domains])
         except Exception as e:
             logger.error(f"Error getting available scopes for {user_id}: {e}")

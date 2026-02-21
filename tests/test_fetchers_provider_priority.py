@@ -145,3 +145,49 @@ async def test_market_news_falls_back_from_finnhub_to_pmp(monkeypatch):
     assert len(rows) == 1
     assert rows[0]["provider"] == "pmp_fmp"
     assert called[:2] == ["finnhub_news", "pmp_news"]
+
+
+@pytest.mark.asyncio
+async def test_market_data_falls_back_when_finnhub_is_rate_limited(monkeypatch):
+    monkeypatch.setattr(fetchers, "validate_token", _valid_token)
+    monkeypatch.setenv("FINNHUB_API_KEY", "fh")
+    monkeypatch.setenv("PMP_API_KEY", "pmp")
+
+    called: list[str] = []
+
+    async def _finnhub_429(_ticker: str):
+        called.append("finnhub")
+        req = httpx.Request("GET", "https://finnhub.io/api/v1/quote")
+        res = httpx.Response(
+            429,
+            request=req,
+            text='{"error":"Resource exhausted"}',
+        )
+        raise httpx.HTTPStatusError("rate limited", request=req, response=res)
+
+    async def _pmp_ok(ticker: str):
+        called.append("pmp")
+        return {
+            "ticker": ticker,
+            "price": 210.0,
+            "change_percent": -0.5,
+            "volume": 5000,
+            "market_cap": 200,
+            "pe_ratio": 0,
+            "pb_ratio": 0,
+            "dividend_yield": 0,
+            "company_name": "MSFT Inc.",
+            "sector": "Technology",
+            "industry": "Software",
+            "source": "PMP/FMP",
+            "fetched_at": "2026-02-20T00:00:00Z",
+            "ttl_seconds": 60,
+            "is_stale": False,
+        }
+
+    monkeypatch.setattr(fetchers, "_fetch_finnhub_quote", _finnhub_429)
+    monkeypatch.setattr(fetchers, "_fetch_pmp_quote", _pmp_ok)
+
+    payload = await fetchers.fetch_market_data("MSFT", "user_1", "vault_token")
+    assert payload["source"] == "PMP/FMP"
+    assert called == ["finnhub", "pmp"]

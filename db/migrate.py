@@ -302,10 +302,31 @@ async def create_tickers(pool: asyncpg.Pool):
             title TEXT,
             cik TEXT,
             exchange TEXT,
+            sic_code TEXT,
+            sic_description TEXT,
+            sector_primary TEXT,
+            industry_primary TEXT,
+            sector_tags TEXT[] DEFAULT '{}',
+            metadata_confidence FLOAT DEFAULT 0.0,
+            tradable BOOLEAN DEFAULT TRUE,
+            last_enriched_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
+    # Backward-compatible additive columns for already-provisioned environments.
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_code TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sic_description TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sector_primary TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS industry_primary TEXT")
+    await pool.execute(
+        "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sector_tags TEXT[] DEFAULT '{}'"
+    )
+    await pool.execute(
+        "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS metadata_confidence FLOAT DEFAULT 0.0"
+    )
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS tradable BOOLEAN DEFAULT TRUE")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_enriched_at TIMESTAMPTZ")
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))"
     )

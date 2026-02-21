@@ -49,6 +49,30 @@ class StockContextResponse(BaseModel):
     portfolio_allocation: dict[str, int]
 
 
+def _summary_attribute_count(summary: dict | None) -> int:
+    if not isinstance(summary, dict):
+        return 0
+    for key in ("attribute_count", "holdings_count", "item_count"):
+        value = summary.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            if value != value:
+                continue
+            return max(0, int(value))
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                continue
+            try:
+                return max(0, int(float(text)))
+            except Exception:
+                continue
+    return 0
+
+
 async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], dict[str, int]]:
     """
     Get user's context from world_model_index_v2 domain_summaries.
@@ -71,10 +95,9 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
 
             risk_profile = financial_summary.get("risk_bucket", "balanced")
 
-            # NOTE: holdings detail is stripped from domain_summaries by
-            # update_domain_summary() sanitization (MCP scope safety).
-            # Holdings data lives in the encrypted blob, decrypted client-side.
-            cached_holdings = financial_summary.get("holdings", [])
+            # Holdings are intentionally stripped from domain_summaries.
+            # Canonical summary counters must be used for server-side context.
+            cached_holdings: list[dict] = []
 
             # Build allocation from cached data
             portfolio_allocation = {
@@ -264,6 +287,13 @@ class DeleteDomainResponse(BaseModel):
     message: Optional[str] = None
 
 
+class ReconcileWorldModelResponse(BaseModel):
+    """Response from index/registry reconciliation."""
+
+    success: bool
+    message: Optional[str] = None
+
+
 @router.delete("/domain-data/{user_id}/{domain}", response_model=DeleteDomainResponse)
 async def delete_domain_data(
     user_id: str,
@@ -295,6 +325,36 @@ async def delete_domain_data(
         )
 
     return DeleteDomainResponse(success=True, message=f"Successfully deleted {domain} domain data")
+
+
+@router.post("/reconcile/{user_id}", response_model=ReconcileWorldModelResponse)
+async def reconcile_world_model_index(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Reconcile index/domain registry coherence for a user.
+
+    Runtime helper:
+    - Normalizes domain summary counters
+    - Aligns available_domains with summary keys
+    - Recomputes total_attributes
+    - Ensures missing domains are present in domain_registry
+    """
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
+
+    world_model = get_world_model_service()
+    success = await world_model.reconcile_user_index_domains(user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reconcile world model index",
+        )
+    return ReconcileWorldModelResponse(success=True, message="World model index reconciled")
 
 
 # ==================== LEGACY ATTRIBUTE ROUTES (410 GONE) ====================
@@ -412,12 +472,7 @@ async def get_metadata(
 
             # Calculate attribute count from summary
             # Different domains store counts differently
-            attr_count = (
-                summary.get("holdings_count")
-                or summary.get("attribute_count")
-                or summary.get("item_count")
-                or 0
-            )
+            attr_count = _summary_attribute_count(summary)
 
             domains.append(
                 DomainMetadata(
