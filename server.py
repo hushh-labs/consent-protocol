@@ -149,6 +149,9 @@ else:
 # This imports the combined router from the kai package which includes:
 # - health, consent, analyze, stream, decisions, preferences
 from api.routes.kai import router as kai_router  # noqa: E402
+from api.routes.kai.market_insights import (  # noqa: E402
+    start_market_insights_background_refresh,
+)
 
 app.include_router(kai_router)
 
@@ -229,6 +232,12 @@ async def startup_regulated_runtime_guards():
 
     if _env_truthy("DEVELOPER_API_ENABLED", "false"):
         logger.warning("security.developer_api_enabled_in_production")
+
+
+@app.on_event("startup")
+async def startup_market_insights_refresh():
+    """Start background market cache refresh loop for public modules."""
+    start_market_insights_background_refresh()
 
 
 # ============================================================================

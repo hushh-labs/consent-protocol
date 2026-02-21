@@ -1,0 +1,1411 @@
+"""Kai market insights route for /kai home revamp.
+
+Provides cached, provider-backed market overview data with graceful degradation.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from datetime import datetime, timezone
+from time import time
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from api.middleware import require_vault_owner_token
+from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_market_news
+from hushh_mcp.services.market_insights_cache import market_insights_cache
+from hushh_mcp.services.symbol_master_service import get_symbol_master_service
+from hushh_mcp.services.world_model_service import get_world_model_service
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+HOME_FRESH_TTL_SECONDS = 180
+HOME_STALE_TTL_SECONDS = 900
+
+QUOTES_FRESH_TTL_SECONDS = 180
+QUOTES_STALE_TTL_SECONDS = 900
+MOVERS_FRESH_TTL_SECONDS = 180
+MOVERS_STALE_TTL_SECONDS = 900
+SECTORS_FRESH_TTL_SECONDS = 180
+SECTORS_STALE_TTL_SECONDS = 900
+NEWS_FRESH_TTL_SECONDS = 180
+NEWS_STALE_TTL_SECONDS = 900
+RECOMMENDATION_FRESH_TTL_SECONDS = 180
+RECOMMENDATION_STALE_TTL_SECONDS = 900
+FINANCIAL_SUMMARY_FRESH_TTL_SECONDS = 180
+FINANCIAL_SUMMARY_STALE_TTL_SECONDS = 900
+
+DEFAULT_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]
+WATCHLIST_MAX = 8
+NEWS_SYMBOL_MAX = 3
+NEWS_ROWS_MAX = 12
+PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
+    400: 20 * 60,
+    401: 15 * 60,
+    402: 15 * 60,
+    403: 10 * 60,
+    404: 20 * 60,
+    429: 5 * 60,
+}
+
+SECTOR_ETF_MAP: dict[str, str] = {
+    "Technology": "XLK",
+    "Financials": "XLF",
+    "Energy": "XLE",
+    "Consumer Discretionary": "XLY",
+    "Industrials": "XLI",
+    "Health Care": "XLV",
+    "Consumer Staples": "XLP",
+    "Utilities": "XLU",
+    "Materials": "XLB",
+    "Real Estate": "XLRE",
+    "Communication Services": "XLC",
+}
+_MARKET_REFRESH_TASK: asyncio.Task | None = None
+
+
+def _finnhub_api_key() -> str:
+    return (os.getenv("FINNHUB_API_KEY") or "").strip()
+
+
+def _pmp_api_key() -> str:
+    return (os.getenv("PMP_API_KEY") or os.getenv("FMP_API_KEY") or "").strip()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _safe_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        out = float(value)
+        return out
+    try:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        return float(text)
+    except Exception:
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    out = _safe_float(value)
+    if out is None:
+        return None
+    try:
+        return int(out)
+    except Exception:
+        return None
+
+
+def _normalize_symbols(raw: str | None) -> list[str]:
+    if not raw:
+        return DEFAULT_SYMBOLS
+    parts = [part.strip().upper() for part in raw.split(",")]
+    out: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if len(part) > 10:
+            continue
+        if part not in out:
+            out.append(part)
+        if len(out) >= WATCHLIST_MAX:
+            break
+    return out or DEFAULT_SYMBOLS
+
+
+def _provider_status_from_exception(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code if exc.response is not None else 0
+        if code in {401, 402, 403, 429}:
+            return "partial"
+    return "failed"
+
+
+def _provider_cooldown_seconds(status_code: int | None) -> int:
+    if status_code is None:
+        return 0
+    return PROVIDER_COOLDOWN_BY_STATUS.get(int(status_code), 0)
+
+
+def _coerce_consent_token(raw: Any) -> str:
+    if isinstance(raw, str):
+        token = raw.strip()
+        if token:
+            return token
+    token_attr = getattr(raw, "token", None)
+    if isinstance(token_attr, str) and token_attr.strip():
+        return token_attr.strip()
+    if isinstance(raw, dict):
+        nested = raw.get("token")
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()
+    return ""
+
+
+def _summary_count(summary: dict[str, Any] | None) -> int:
+    if not isinstance(summary, dict):
+        return 0
+    for key in ("attribute_count", "holdings_count", "item_count"):
+        value = summary.get(key)
+        parsed = _safe_int(value)
+        if parsed is not None:
+            return max(0, parsed)
+    return 0
+
+
+def _recommendation_from_counts(payload: dict[str, Any]) -> tuple[str, str]:
+    buy = int(payload.get("buy") or 0) + int(payload.get("strongBuy") or 0)
+    sell = int(payload.get("sell") or 0) + int(payload.get("strongSell") or 0)
+    hold = int(payload.get("hold") or 0)
+    if buy > max(sell, hold):
+        return "BUY", "Analyst momentum currently skews bullish."
+    if sell > max(buy, hold):
+        return "REDUCE", "Analyst revisions currently lean defensive."
+    return "HOLD", "Analyst distribution is mixed to neutral."
+
+
+async def _fetch_market_status() -> dict[str, Any]:
+    api_key = _finnhub_api_key()
+    if not api_key:
+        return {
+            "label": "Market Status",
+            "value": "Unknown",
+            "delta_pct": None,
+            "as_of": None,
+            "source": "Unavailable",
+            "degraded": True,
+        }
+
+    url = "https://finnhub.io/api/v1/stock/market-status"
+    timeout = httpx.Timeout(connect=3.0, read=5.0, write=5.0, pool=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        res = await client.get(url, params={"exchange": "US", "token": api_key})
+        res.raise_for_status()
+        payload = res.json() or {}
+        is_open = bool(payload.get("isOpen"))
+        session = str(payload.get("session") or "").strip() or "unknown"
+        ts = payload.get("t")
+        as_of = None
+        if isinstance(ts, (int, float)) and ts > 0:
+            as_of = (
+                datetime.fromtimestamp(float(ts), tz=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+        value = f"{'Open' if is_open else 'Closed'} ({session})"
+        return {
+            "label": "Market Status",
+            "value": value,
+            "delta_pct": None,
+            "as_of": as_of,
+            "source": "Finnhub",
+            "degraded": False,
+        }
+
+
+async def _fetch_vix_signal() -> dict[str, Any]:
+    pmp_key = _pmp_api_key()
+    if pmp_key:
+        timeout = httpx.Timeout(connect=3.0, read=6.0, write=6.0, pool=3.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            res = await client.get(
+                "https://financialmodelingprep.com/stable/quote",
+                params={"symbol": "^VIX", "apikey": pmp_key},
+            )
+            if res.is_success:
+                payload = res.json() or []
+                if isinstance(payload, list) and payload:
+                    row = payload[0] or {}
+                    return {
+                        "label": "Volatility",
+                        "value": _safe_float(row.get("price")),
+                        "delta_pct": _safe_float(row.get("changePercentage")),
+                        "as_of": None,
+                        "source": "PMP/FMP",
+                        "degraded": False,
+                    }
+
+    return {
+        "label": "Volatility",
+        "value": None,
+        "delta_pct": None,
+        "as_of": None,
+        "source": "Unavailable",
+        "degraded": True,
+    }
+
+
+async def _fetch_macro_bundle() -> dict[str, Any]:
+    statuses: dict[str, str] = {}
+    try:
+        vix = await _fetch_vix_signal()
+        statuses["volatility"] = "partial" if vix.get("degraded") else "ok"
+    except Exception as exc:
+        logger.warning("[Kai Market] volatility failed: %s", exc)
+        vix = {
+            "label": "Volatility",
+            "value": None,
+            "delta_pct": None,
+            "as_of": None,
+            "source": "Unavailable",
+            "degraded": True,
+        }
+        statuses["volatility"] = _provider_status_from_exception(exc)
+
+    try:
+        market_status = await _fetch_market_status()
+        statuses["market_status"] = "partial" if market_status.get("degraded") else "ok"
+    except Exception as exc:
+        logger.warning("[Kai Market] market status failed: %s", exc)
+        market_status = {
+            "label": "Market Status",
+            "value": "Unknown",
+            "delta_pct": None,
+            "as_of": None,
+            "source": "Unavailable",
+            "degraded": True,
+        }
+        statuses["market_status"] = _provider_status_from_exception(exc)
+
+    return {
+        "vix": vix,
+        "market_status": market_status,
+        "provider_status": statuses,
+    }
+
+
+async def _fetch_recommendation(symbol: str, quote_price: float | None) -> dict[str, Any]:
+    finnhub_key = _finnhub_api_key()
+    if finnhub_key:
+        finnhub_cooldown_key = f"finnhub:recommendation:{symbol.upper()}"
+        if market_insights_cache.is_provider_in_cooldown(finnhub_cooldown_key):
+            finnhub_key = ""
+    if finnhub_key:
+        try:
+            timeout = httpx.Timeout(connect=3.0, read=6.0, write=6.0, pool=3.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.get(
+                    "https://finnhub.io/api/v1/stock/recommendation",
+                    params={"symbol": symbol, "token": finnhub_key},
+                )
+                if not res.is_success:
+                    cooldown_seconds = _provider_cooldown_seconds(res.status_code)
+                    if cooldown_seconds > 0:
+                        market_insights_cache.mark_provider_cooldown(
+                            f"finnhub:recommendation:{symbol.upper()}",
+                            cooldown_seconds,
+                        )
+                if res.is_success:
+                    rows = res.json() or []
+                    if isinstance(rows, list) and rows:
+                        latest = rows[0] or {}
+                        signal, detail = _recommendation_from_counts(latest)
+                        return {
+                            "signal": signal,
+                            "detail": detail,
+                            "source": "Finnhub",
+                            "degraded": False,
+                        }
+        except Exception as exc:
+            logger.warning("[Kai Market] recommendation(Finnhub) failed for %s: %r", symbol, exc)
+            if isinstance(exc, httpx.HTTPStatusError):
+                cooldown_seconds = _provider_cooldown_seconds(
+                    exc.response.status_code if exc.response is not None else None
+                )
+                if cooldown_seconds > 0:
+                    market_insights_cache.mark_provider_cooldown(
+                        f"finnhub:recommendation:{symbol.upper()}",
+                        cooldown_seconds,
+                    )
+
+    pmp_key = _pmp_api_key()
+    if pmp_key and quote_price and quote_price > 0:
+        pmp_cooldown_key = f"fmp:price-target-consensus:{symbol.upper()}"
+        if market_insights_cache.is_provider_in_cooldown(pmp_cooldown_key):
+            pmp_key = ""
+    if pmp_key and quote_price and quote_price > 0:
+        try:
+            timeout = httpx.Timeout(connect=3.0, read=6.0, write=6.0, pool=3.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                res = await client.get(
+                    "https://financialmodelingprep.com/stable/price-target-consensus",
+                    params={"symbol": symbol, "apikey": pmp_key},
+                )
+                if not res.is_success:
+                    cooldown_seconds = _provider_cooldown_seconds(res.status_code)
+                    if cooldown_seconds > 0:
+                        market_insights_cache.mark_provider_cooldown(
+                            pmp_cooldown_key,
+                            cooldown_seconds,
+                        )
+                if res.is_success:
+                    rows = res.json() or []
+                    if isinstance(rows, list) and rows:
+                        target = _safe_float((rows[0] or {}).get("targetConsensus"))
+                        if target is None:
+                            return {
+                                "signal": "NEUTRAL",
+                                "detail": "Target consensus unavailable.",
+                                "source": "PMP/FMP",
+                                "degraded": True,
+                            }
+                        if target >= quote_price * 1.08:
+                            return {
+                                "signal": "BUY",
+                                "detail": "Target consensus is above current price range.",
+                                "source": "PMP/FMP",
+                                "degraded": False,
+                            }
+                        if target <= quote_price * 0.92:
+                            return {
+                                "signal": "REDUCE",
+                                "detail": "Target consensus is below current price range.",
+                                "source": "PMP/FMP",
+                                "degraded": False,
+                            }
+                        return {
+                            "signal": "HOLD",
+                            "detail": "Target consensus is near the current price range.",
+                            "source": "PMP/FMP",
+                            "degraded": False,
+                        }
+        except Exception as exc:
+            logger.warning("[Kai Market] recommendation(PMP/FMP) failed for %s: %r", symbol, exc)
+            if isinstance(exc, httpx.HTTPStatusError):
+                cooldown_seconds = _provider_cooldown_seconds(
+                    exc.response.status_code if exc.response is not None else None
+                )
+                if cooldown_seconds > 0:
+                    market_insights_cache.mark_provider_cooldown(
+                        pmp_cooldown_key,
+                        cooldown_seconds,
+                    )
+
+    return {
+        "signal": "NEUTRAL",
+        "detail": "No live recommendation feed available.",
+        "source": "Fallback",
+        "degraded": True,
+    }
+
+
+async def _fetch_finnhub_candles(symbol: str) -> list[dict[str, float]]:
+    api_key = _finnhub_api_key()
+    if not api_key:
+        return []
+    cooldown_key = f"finnhub:candles:{symbol.upper()}"
+    if market_insights_cache.is_provider_in_cooldown(cooldown_key):
+        return []
+
+    now_ts = int(time())
+    since = now_ts - (5 * 24 * 60 * 60)
+    timeout = httpx.Timeout(connect=3.0, read=6.0, write=6.0, pool=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            res = await client.get(
+                "https://finnhub.io/api/v1/stock/candle",
+                params={
+                    "symbol": symbol,
+                    "resolution": "60",
+                    "from": since,
+                    "to": now_ts,
+                    "token": api_key,
+                },
+            )
+            res.raise_for_status()
+            payload = res.json() or {}
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            cooldown_seconds = _provider_cooldown_seconds(status_code)
+            if cooldown_seconds > 0:
+                market_insights_cache.mark_provider_cooldown(cooldown_key, cooldown_seconds)
+            if status_code in {401, 403, 429}:
+                # Expected quota/plan constraints for candle data; fall back to cached/derived sparkline.
+                logger.info(
+                    "[Kai Market] sparkline candles unavailable for %s (status=%s)",
+                    symbol,
+                    status_code,
+                )
+                return []
+            raise
+
+    status_code = str(payload.get("s") or "")
+    if status_code.lower() != "ok":
+        return []
+
+    closes = payload.get("c") or []
+    times = payload.get("t") or []
+    out: list[dict[str, float]] = []
+    for ts, close in zip(times, closes, strict=False):
+        price = _safe_float(close)
+        if price is None:
+            continue
+        out.append({"t": float(ts), "p": float(price)})
+
+    if len(out) > 60:
+        out = out[-60:]
+    return out
+
+
+async def _fetch_pmp_json(paths: list[str], params: dict[str, Any]) -> list[dict[str, Any]]:
+    key = _pmp_api_key()
+    if not key:
+        return []
+
+    timeout = httpx.Timeout(connect=3.0, read=6.0, write=6.0, pool=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for path in paths:
+            cooldown_key = f"fmp:{path}"
+            if market_insights_cache.is_provider_in_cooldown(cooldown_key):
+                continue
+            url = f"https://financialmodelingprep.com{path}"
+            req_params = {**params, "apikey": key}
+            try:
+                res = await client.get(url, params=req_params)
+                if not res.is_success:
+                    cooldown_seconds = _provider_cooldown_seconds(res.status_code)
+                    if cooldown_seconds > 0:
+                        market_insights_cache.mark_provider_cooldown(cooldown_key, cooldown_seconds)
+                    continue
+                payload = res.json() or []
+                if isinstance(payload, list) and payload:
+                    rows = [row for row in payload if isinstance(row, dict)]
+                    if rows:
+                        return rows
+            except Exception as exc:
+                logger.warning("[Kai Market] FMP endpoint failed: %s (%s)", path, exc)
+                if isinstance(exc, httpx.HTTPStatusError):
+                    cooldown_seconds = _provider_cooldown_seconds(
+                        exc.response.status_code if exc.response is not None else None
+                    )
+                    if cooldown_seconds > 0:
+                        market_insights_cache.mark_provider_cooldown(cooldown_key, cooldown_seconds)
+                continue
+    return []
+
+
+def _normalize_mover_row(row: dict[str, Any], source: str) -> dict[str, Any] | None:
+    symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
+    if not symbol:
+        return None
+
+    return {
+        "symbol": symbol,
+        "company_name": str(row.get("name") or row.get("companyName") or symbol),
+        "price": _safe_float(row.get("price")),
+        "change_pct": _safe_float(
+            row.get("changesPercentage")
+            or row.get("changePercentage")
+            or row.get("change_percent")
+            or row.get("changes")
+        ),
+        "volume": _safe_int(row.get("volume")),
+        "source_tags": [source],
+        "degraded": False,
+        "as_of": None,
+    }
+
+
+async def _fetch_movers_from_fmp() -> tuple[dict[str, Any], dict[str, str]]:
+    status_map: dict[str, str] = {}
+
+    gainers_rows = await _fetch_pmp_json(
+        [
+            "/stable/biggest-gainers",
+            "/stable/market-gainers",
+            "/stable/market/gainers",
+        ],
+        {},
+    )
+    losers_rows = await _fetch_pmp_json(
+        [
+            "/stable/biggest-losers",
+            "/stable/market-losers",
+            "/stable/market/losers",
+        ],
+        {},
+    )
+    active_rows = await _fetch_pmp_json(
+        [
+            "/stable/most-actives",
+            "/stable/market-most-actives",
+            "/stable/market/actives",
+        ],
+        {},
+    )
+
+    gainers = [row for row in (_normalize_mover_row(r, "PMP/FMP") for r in gainers_rows) if row]
+    losers = [row for row in (_normalize_mover_row(r, "PMP/FMP") for r in losers_rows) if row]
+    active = [row for row in (_normalize_mover_row(r, "PMP/FMP") for r in active_rows) if row]
+
+    status_map["movers:gainers"] = "ok" if gainers else "partial"
+    status_map["movers:losers"] = "ok" if losers else "partial"
+    status_map["movers:active"] = "ok" if active else "partial"
+
+    return {
+        "gainers": gainers[:8],
+        "losers": losers[:8],
+        "active": active[:8],
+        "as_of": _now_iso(),
+        "source_tags": ["PMP/FMP"] if (gainers or losers or active) else ["Fallback"],
+        "degraded": not (gainers and losers and active),
+    }, status_map
+
+
+async def _fetch_sector_rotation_from_fmp() -> tuple[list[dict[str, Any]], str]:
+    rows = await _fetch_pmp_json(
+        [
+            "/stable/sector-performance-snapshot",
+        ],
+        {},
+    )
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        sector = str(row.get("sector") or row.get("name") or "").strip()
+        if not sector:
+            continue
+        out.append(
+            {
+                "sector": sector,
+                "change_pct": _safe_float(
+                    row.get("changesPercentage") or row.get("changePercentage") or row.get("change")
+                ),
+                "as_of": None,
+                "source_tags": ["PMP/FMP"],
+                "degraded": False,
+            }
+        )
+
+    return out[:10], ("ok" if out else "partial")
+
+
+async def _fetch_sector_rotation_from_etf_quotes(
+    user_id: str, consent_token: str
+) -> tuple[list[dict[str, Any]], str]:
+    rows: list[dict[str, Any]] = []
+    failures = 0
+
+    for sector_name, etf_symbol in SECTOR_ETF_MAP.items():
+        try:
+            quote = await fetch_market_data(etf_symbol, user_id, consent_token)
+        except Exception as exc:
+            logger.info(
+                "[Kai Market] sector ETF quote unavailable for %s (%s): %r",
+                sector_name,
+                etf_symbol,
+                exc,
+            )
+            failures += 1
+            continue
+
+        change_pct = _safe_float((quote or {}).get("change_percent"))
+        if change_pct is None:
+            failures += 1
+            continue
+
+        rows.append(
+            {
+                "sector": sector_name,
+                "change_pct": change_pct,
+                "as_of": (quote or {}).get("fetched_at")
+                if isinstance((quote or {}).get("fetched_at"), str)
+                else None,
+                "source_tags": [str((quote or {}).get("source") or "Market ETF")],
+                "degraded": False,
+            }
+        )
+
+    rows.sort(key=lambda item: abs(float(item.get("change_pct") or 0)), reverse=True)
+    if not rows:
+        return [], "partial"
+
+    # Mark partial when a material portion of sector feeds are missing.
+    status = "ok" if failures <= max(1, len(SECTOR_ETF_MAP) // 3) else "partial"
+    return rows[:10], status
+
+
+async def _fetch_sector_rotation_snapshot(
+    user_id: str, consent_token: str
+) -> tuple[list[dict[str, Any]], str]:
+    rows, status = await _fetch_sector_rotation_from_etf_quotes(user_id, consent_token)
+    if rows:
+        return rows, status
+    return await _fetch_sector_rotation_from_fmp()
+
+
+def _fallback_movers_from_watchlist(watchlist: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [row for row in watchlist if row.get("symbol")]
+
+    by_change = [row for row in rows if isinstance(row.get("change_pct"), (int, float))]
+    by_volume = [row for row in rows if isinstance(row.get("volume"), int)]
+
+    gainers = sorted(by_change, key=lambda item: float(item.get("change_pct") or 0), reverse=True)
+    losers = sorted(by_change, key=lambda item: float(item.get("change_pct") or 0))
+    active = sorted(by_volume, key=lambda item: int(item.get("volume") or 0), reverse=True)
+
+    return {
+        "gainers": [
+            {
+                "symbol": item.get("symbol"),
+                "company_name": item.get("company_name") or item.get("symbol"),
+                "price": item.get("price"),
+                "change_pct": item.get("change_pct"),
+                "volume": item.get("volume"),
+                "source_tags": ["Watchlist Fallback"],
+                "degraded": True,
+                "as_of": item.get("as_of"),
+            }
+            for item in gainers[:6]
+        ],
+        "losers": [
+            {
+                "symbol": item.get("symbol"),
+                "company_name": item.get("company_name") or item.get("symbol"),
+                "price": item.get("price"),
+                "change_pct": item.get("change_pct"),
+                "volume": item.get("volume"),
+                "source_tags": ["Watchlist Fallback"],
+                "degraded": True,
+                "as_of": item.get("as_of"),
+            }
+            for item in losers[:6]
+        ],
+        "active": [
+            {
+                "symbol": item.get("symbol"),
+                "company_name": item.get("company_name") or item.get("symbol"),
+                "price": item.get("price"),
+                "change_pct": item.get("change_pct"),
+                "volume": item.get("volume"),
+                "source_tags": ["Watchlist Fallback"],
+                "degraded": True,
+                "as_of": item.get("as_of"),
+            }
+            for item in active[:6]
+        ],
+        "as_of": _now_iso(),
+        "source_tags": ["Watchlist Fallback"],
+        "degraded": True,
+    }
+
+
+def _fallback_sector_rotation_from_watchlist(
+    watchlist: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    buckets: dict[str, list[float]] = {}
+    for row in watchlist:
+        sector = str(row.get("sector") or "").strip()
+        change = _safe_float(row.get("change_pct"))
+        if not sector or change is None:
+            continue
+        buckets.setdefault(sector, []).append(change)
+
+    out: list[dict[str, Any]] = []
+    for sector, values in buckets.items():
+        if not values:
+            continue
+        avg = sum(values) / len(values)
+        out.append(
+            {
+                "sector": sector,
+                "change_pct": round(avg, 3),
+                "as_of": _now_iso(),
+                "source_tags": ["Watchlist Fallback"],
+                "degraded": True,
+            }
+        )
+
+    out.sort(key=lambda item: abs(float(item.get("change_pct") or 0)), reverse=True)
+    return out[:8]
+
+
+def _build_market_overview(
+    spy_quote: dict[str, Any] | None,
+    qqq_quote: dict[str, Any] | None,
+    vix_payload: dict[str, Any],
+    status_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    def metric_from_quote(
+        label: str, symbol: str, quote: dict[str, Any] | None, degraded: bool
+    ) -> dict[str, Any]:
+        quote = quote or {}
+        return {
+            "id": symbol.lower(),
+            "label": label,
+            "symbol": symbol,
+            "value": _safe_float(quote.get("price")),
+            "delta_pct": _safe_float(quote.get("change_percent")),
+            "as_of": quote.get("fetched_at") if isinstance(quote.get("fetched_at"), str) else None,
+            "source": str(quote.get("source") or "Unavailable"),
+            "degraded": degraded,
+        }
+
+    out = [
+        metric_from_quote("S&P 500", "SPY", spy_quote, degraded=not bool(spy_quote)),
+        metric_from_quote("NASDAQ 100", "QQQ", qqq_quote, degraded=not bool(qqq_quote)),
+        {
+            "id": "volatility",
+            "label": vix_payload["label"],
+            "value": vix_payload["value"],
+            "delta_pct": vix_payload["delta_pct"],
+            "as_of": vix_payload["as_of"],
+            "source": vix_payload["source"],
+            "degraded": bool(vix_payload.get("degraded")),
+        },
+        {
+            "id": "market_status",
+            "label": status_payload["label"],
+            "value": status_payload["value"],
+            "delta_pct": status_payload["delta_pct"],
+            "as_of": status_payload["as_of"],
+            "source": status_payload["source"],
+            "degraded": bool(status_payload.get("degraded")),
+        },
+    ]
+    return out
+
+
+def _build_signals(
+    *,
+    watchlist: list[dict[str, Any]],
+    movers: dict[str, Any],
+    vix_payload: dict[str, Any],
+    source_tags: list[str],
+) -> list[dict[str, Any]]:
+    signals: list[dict[str, Any]] = []
+
+    gainers = movers.get("gainers") or []
+    losers = movers.get("losers") or []
+    if gainers or losers:
+        gainers_count = len(gainers)
+        losers_count = len(losers)
+        if gainers_count > losers_count:
+            summary = "Breadth currently favors gainers over losers."
+            title = "Positive Breadth"
+        elif losers_count > gainers_count:
+            summary = "Losses are dominating gainers across tracked names."
+            title = "Defensive Breadth"
+        else:
+            summary = "Breadth is mixed across tracked names."
+            title = "Mixed Breadth"
+        signals.append(
+            {
+                "id": "breadth",
+                "title": title,
+                "summary": summary,
+                "confidence": 0.68,
+                "source_tags": source_tags,
+                "degraded": bool(movers.get("degraded")),
+            }
+        )
+
+    vix_value = _safe_float(vix_payload.get("value"))
+    if vix_value is not None:
+        if vix_value >= 25:
+            summary = "Volatility regime is elevated; sizing discipline is critical."
+            title = "High Volatility"
+        elif vix_value <= 15:
+            summary = "Volatility regime is relatively calm versus stress thresholds."
+            title = "Calmer Volatility"
+        else:
+            summary = "Volatility is in a mid-range regime."
+            title = "Moderate Volatility"
+        signals.append(
+            {
+                "id": "volatility-regime",
+                "title": title,
+                "summary": summary,
+                "confidence": 0.73,
+                "source_tags": [str(vix_payload.get("source") or "Unknown")],
+                "degraded": bool(vix_payload.get("degraded")),
+            }
+        )
+
+    recommendation_counts: dict[str, int] = {"BUY": 0, "HOLD": 0, "REDUCE": 0, "NEUTRAL": 0}
+    for row in watchlist:
+        rec = str(row.get("recommendation") or "NEUTRAL").upper().strip()
+        if rec in recommendation_counts:
+            recommendation_counts[rec] += 1
+
+    if watchlist:
+        dominant = max(recommendation_counts.items(), key=lambda item: item[1])
+        if dominant[1] > 0:
+            signals.append(
+                {
+                    "id": "recommendation-consensus",
+                    "title": f"{dominant[0]} Tilt",
+                    "summary": (
+                        f"Watchlist consensus is {dominant[0].lower()} "
+                        f"({dominant[1]}/{len(watchlist)} names)."
+                    ),
+                    "confidence": 0.64,
+                    "source_tags": ["Finnhub", "PMP/FMP", "Fallback"],
+                    "degraded": any(bool(row.get("degraded")) for row in watchlist),
+                }
+            )
+
+    return signals[:4]
+
+
+async def _build_sparkline_points(
+    spy_quote: dict[str, Any] | None,
+) -> tuple[list[dict[str, float]], bool, list[str]]:
+    try:
+        candles = await _fetch_finnhub_candles("SPY")
+        if candles:
+            for point in candles[-12:]:
+                market_insights_cache.append_series_point(
+                    "sparkline:SPY", point["p"], timestamp=point["t"]
+                )
+            return candles, False, ["Finnhub"]
+    except Exception as exc:
+        logger.warning("[Kai Market] sparkline candles failed: %s", exc)
+
+    history = market_insights_cache.get_series_points(
+        "sparkline:SPY", max_age_seconds=5 * 24 * 60 * 60
+    )
+    if history:
+        points = [{"t": ts, "p": price} for ts, price in history[-60:]]
+        return points, True, ["Cache"]
+
+    price = _safe_float((spy_quote or {}).get("price"))
+    delta = _safe_float((spy_quote or {}).get("change_percent"))
+    if price is not None and delta is not None:
+        prev = price / (1 + (delta / 100.0)) if delta != -100 else price
+        ts_now = time()
+        points = [{"t": ts_now - 86400, "p": prev}, {"t": ts_now, "p": price}]
+        return points, True, ["Derived from Quote"]
+
+    return [], True, ["Unavailable"]
+
+
+async def _get_financial_summary(user_id: str) -> dict[str, Any]:
+    world_model = get_world_model_service()
+    index = await world_model.get_index_v2(user_id)
+    if index is None:
+        return {}
+    return dict((index.domain_summaries or {}).get("financial") or {})
+
+
+def _market_refresh_enabled() -> bool:
+    return str(os.getenv("KAI_MARKET_BACKGROUND_REFRESH", "true")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _market_refresh_interval_seconds() -> int:
+    raw = str(os.getenv("KAI_MARKET_REFRESH_INTERVAL_SECONDS", "180")).strip()
+    try:
+        value = int(raw)
+        return max(60, value)
+    except ValueError:
+        return 180
+
+
+async def _refresh_public_market_modules_once() -> None:
+    try:
+        await market_insights_cache.get_or_refresh(
+            "macro:us",
+            fresh_ttl_seconds=0,
+            stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
+            fetcher=_fetch_macro_bundle,
+        )
+    except Exception as exc:
+        logger.warning("[Kai Market] background macro refresh failed: %s", exc)
+
+    try:
+        await market_insights_cache.get_or_refresh(
+            "movers:us",
+            fresh_ttl_seconds=0,
+            stale_ttl_seconds=MOVERS_STALE_TTL_SECONDS,
+            fetcher=_fetch_movers_from_fmp,
+        )
+    except Exception as exc:
+        logger.warning("[Kai Market] background movers refresh failed: %s", exc)
+
+    try:
+        await market_insights_cache.get_or_refresh(
+            "sectors:us",
+            fresh_ttl_seconds=0,
+            stale_ttl_seconds=SECTORS_STALE_TTL_SECONDS,
+            fetcher=lambda: _fetch_sector_rotation_from_fmp(),
+        )
+    except Exception as exc:
+        logger.warning("[Kai Market] background sectors refresh failed: %s", exc)
+
+
+async def _market_refresh_loop() -> None:
+    interval = _market_refresh_interval_seconds()
+    logger.info("[Kai Market] background refresh loop started (interval=%ss)", interval)
+    while True:
+        await _refresh_public_market_modules_once()
+        await asyncio.sleep(interval)
+
+
+def start_market_insights_background_refresh() -> None:
+    global _MARKET_REFRESH_TASK
+    if not _market_refresh_enabled():
+        logger.info("[Kai Market] background refresh disabled by env")
+        return
+    if _MARKET_REFRESH_TASK and not _MARKET_REFRESH_TASK.done():
+        return
+    _MARKET_REFRESH_TASK = asyncio.create_task(_market_refresh_loop())
+
+
+@router.get("/market/insights/{user_id}")
+async def get_market_insights(
+    user_id: str,
+    symbols: str | None = Query(default=None, description="CSV list of symbols, max 8"),
+    days_back: int = Query(default=7, ge=1, le=14),
+    token_data: dict = Depends(require_vault_owner_token),
+) -> dict[str, Any]:
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token",
+        )
+
+    symbol_master = get_symbol_master_service()
+    requested_watchlist_symbols = _normalize_symbols(symbols)
+    filtered_symbols: list[dict[str, Any]] = []
+    watchlist_symbols: list[str] = []
+    for raw_symbol in requested_watchlist_symbols:
+        classification = symbol_master.classify(raw_symbol)
+        if classification.tradable:
+            watchlist_symbols.append(classification.symbol)
+            continue
+        filtered_symbols.append(
+            {
+                "input_symbol": raw_symbol,
+                "normalized_symbol": classification.symbol,
+                "reason": classification.reason,
+                "trust_tier": classification.trust_tier,
+            }
+        )
+    if not watchlist_symbols:
+        watchlist_symbols = DEFAULT_SYMBOLS
+    consent_token = _coerce_consent_token(token_data.get("token"))
+    if not consent_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid consent token",
+        )
+    home_key = f"home:{user_id}:{','.join(watchlist_symbols)}:{days_back}"
+
+    async def build_payload() -> dict[str, Any]:
+        provider_status: dict[str, str] = {}
+        stale = False
+
+        core_symbols = ["SPY", "QQQ"]
+        symbol_set = sorted({*watchlist_symbols, *core_symbols})
+        quotes_key = f"quotes:{','.join(symbol_set)}"
+
+        async def fetch_quotes_bundle() -> dict[str, Any]:
+            quotes_by_symbol: dict[str, dict[str, Any]] = {}
+            statuses: dict[str, str] = {}
+            for symbol in symbol_set:
+                try:
+                    quote = await fetch_market_data(symbol, user_id, consent_token)
+                    quotes_by_symbol[symbol] = quote or {}
+                    price = _safe_float((quote or {}).get("price"))
+                    if price is not None:
+                        market_insights_cache.append_series_point(f"quote:{symbol}", price)
+                        if symbol == "SPY":
+                            market_insights_cache.append_series_point("sparkline:SPY", price)
+                    statuses[f"quote:{symbol}"] = "ok"
+                except Exception as exc:
+                    logger.warning("[Kai Market] quote failed for %s: %s", symbol, exc)
+                    statuses[f"quote:{symbol}"] = _provider_status_from_exception(exc)
+            return {
+                "quotes": quotes_by_symbol,
+                "provider_status": statuses,
+                "generated_at": _now_iso(),
+            }
+
+        quotes_cache = await market_insights_cache.get_or_refresh(
+            quotes_key,
+            fresh_ttl_seconds=QUOTES_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
+            fetcher=fetch_quotes_bundle,
+        )
+        quote_bundle = quotes_cache.value if isinstance(quotes_cache.value, dict) else {}
+        quote_map = (
+            quote_bundle.get("quotes") if isinstance(quote_bundle.get("quotes"), dict) else {}
+        )
+        provider_status.update(
+            {str(k): str(v) for k, v in (quote_bundle.get("provider_status") or {}).items()}
+        )
+        stale = stale or quotes_cache.stale
+
+        spy_quote = quote_map.get("SPY") if isinstance(quote_map, dict) else None
+        qqq_quote = quote_map.get("QQQ") if isinstance(quote_map, dict) else None
+
+        # Drop invalid/non-quoted watchlist symbols when at least one symbol has live quote data.
+        quoted_watchlist_symbols = [
+            symbol
+            for symbol in watchlist_symbols
+            if _safe_float((quote_map.get(symbol) or {}).get("price")) is not None
+        ]
+        watchlist_symbols_for_cards = (
+            quoted_watchlist_symbols if quoted_watchlist_symbols else watchlist_symbols
+        )
+
+        macro_cache = await market_insights_cache.get_or_refresh(
+            "macro:us",
+            fresh_ttl_seconds=QUOTES_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
+            fetcher=_fetch_macro_bundle,
+        )
+        macro_bundle = macro_cache.value if isinstance(macro_cache.value, dict) else {}
+        vix_payload = (
+            macro_bundle.get("vix")
+            if isinstance(macro_bundle.get("vix"), dict)
+            else {
+                "label": "Volatility",
+                "value": None,
+                "delta_pct": None,
+                "as_of": None,
+                "source": "Unavailable",
+                "degraded": True,
+            }
+        )
+        status_payload = (
+            macro_bundle.get("market_status")
+            if isinstance(macro_bundle.get("market_status"), dict)
+            else {
+                "label": "Market Status",
+                "value": "Unknown",
+                "delta_pct": None,
+                "as_of": None,
+                "source": "Unavailable",
+                "degraded": True,
+            }
+        )
+        provider_status.update(
+            {str(k): str(v) for k, v in (macro_bundle.get("provider_status") or {}).items()}
+        )
+        stale = stale or macro_cache.stale
+
+        watchlist_rows: list[dict[str, Any]] = []
+        for symbol in watchlist_symbols_for_cards:
+            quote = quote_map.get(symbol) if isinstance(quote_map, dict) else None
+            quote_price = _safe_float((quote or {}).get("price"))
+
+            rec_key = f"recommendation:{symbol}:{round(quote_price or 0, 4)}"
+
+            async def fetch_recommendation_bundle(
+                symbol_value: str = symbol,
+                quote_price_value: float | None = quote_price,
+            ) -> dict[str, Any]:
+                recommendation = await _fetch_recommendation(symbol_value, quote_price_value)
+                status_value = "partial" if recommendation.get("degraded") else "ok"
+                return {"recommendation": recommendation, "status": status_value}
+
+            rec_cache = await market_insights_cache.get_or_refresh(
+                rec_key,
+                fresh_ttl_seconds=RECOMMENDATION_FRESH_TTL_SECONDS,
+                stale_ttl_seconds=RECOMMENDATION_STALE_TTL_SECONDS,
+                fetcher=fetch_recommendation_bundle,
+            )
+            rec_bundle = rec_cache.value if isinstance(rec_cache.value, dict) else {}
+            recommendation = (
+                rec_bundle.get("recommendation")
+                if isinstance(rec_bundle.get("recommendation"), dict)
+                else {
+                    "signal": "NEUTRAL",
+                    "detail": "No live recommendation feed available.",
+                    "source": "Fallback",
+                    "degraded": True,
+                }
+            )
+            provider_status[f"recommendation:{symbol}"] = str(rec_bundle.get("status") or "partial")
+            stale = stale or rec_cache.stale
+
+            watchlist_rows.append(
+                {
+                    "symbol": symbol,
+                    "symbol_quality": "tradable_ticker",
+                    "company_name": str((quote or {}).get("company_name") or symbol),
+                    "price": quote_price,
+                    "change_pct": _safe_float((quote or {}).get("change_percent")),
+                    "volume": _safe_int((quote or {}).get("volume")),
+                    "market_cap": _safe_float((quote or {}).get("market_cap")),
+                    "sector": str((quote or {}).get("sector") or "").strip() or None,
+                    "recommendation": str(recommendation.get("signal") or "NEUTRAL"),
+                    "recommendation_detail": str(recommendation.get("detail") or "").strip()
+                    or None,
+                    "source_tags": sorted(
+                        set(
+                            [
+                                str((quote or {}).get("source") or "Unknown"),
+                                str(recommendation.get("source") or "Fallback"),
+                            ]
+                        )
+                    ),
+                    "degraded": bool(
+                        not quote or recommendation.get("degraded") or rec_cache.stale
+                    ),
+                    "as_of": (quote or {}).get("fetched_at")
+                    if isinstance((quote or {}).get("fetched_at"), str)
+                    else None,
+                }
+            )
+
+        movers_cache = await market_insights_cache.get_or_refresh(
+            "movers:us",
+            fresh_ttl_seconds=MOVERS_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=MOVERS_STALE_TTL_SECONDS,
+            fetcher=_fetch_movers_from_fmp,
+        )
+        movers_pair = movers_cache.value if isinstance(movers_cache.value, tuple) else ({}, {})
+        movers_payload = movers_pair[0] if isinstance(movers_pair[0], dict) else {}
+        movers_status = movers_pair[1] if isinstance(movers_pair[1], dict) else {}
+        if not movers_payload.get("gainers") and not movers_payload.get("losers"):
+            movers_payload = _fallback_movers_from_watchlist(watchlist_rows)
+            movers_status = {
+                "movers:gainers": "partial",
+                "movers:losers": "partial",
+                "movers:active": "partial",
+            }
+        provider_status.update({str(k): str(v) for k, v in movers_status.items()})
+        stale = stale or movers_cache.stale
+
+        sectors_cache = await market_insights_cache.get_or_refresh(
+            "sectors:us",
+            fresh_ttl_seconds=SECTORS_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=SECTORS_STALE_TTL_SECONDS,
+            fetcher=lambda: _fetch_sector_rotation_snapshot(user_id, consent_token),
+        )
+        sectors_pair = (
+            sectors_cache.value if isinstance(sectors_cache.value, tuple) else ([], "partial")
+        )
+        sector_rotation = sectors_pair[0] if isinstance(sectors_pair[0], list) else []
+        sector_status = str(sectors_pair[1]) if isinstance(sectors_pair[1], str) else "partial"
+        if not sector_rotation:
+            sector_rotation = _fallback_sector_rotation_from_watchlist(watchlist_rows)
+            sector_status = "partial"
+        provider_status["sectors"] = sector_status
+        stale = stale or sectors_cache.stale
+
+        news_symbols = [
+            str(row.get("symbol") or "").strip().upper()
+            for row in watchlist_rows
+            if str(row.get("symbol") or "").strip()
+        ][:NEWS_SYMBOL_MAX]
+        if not news_symbols:
+            news_symbols = watchlist_symbols_for_cards[:NEWS_SYMBOL_MAX]
+        news_key = f"news:{','.join(news_symbols)}:{days_back}"
+
+        async def fetch_news_bundle() -> dict[str, Any]:
+            rows: list[dict[str, Any]] = []
+            statuses: dict[str, str] = {}
+
+            for symbol in news_symbols:
+                try:
+                    articles = await fetch_market_news(
+                        symbol, user_id, consent_token, days_back=days_back
+                    )
+                    statuses[f"news:{symbol}"] = "ok" if articles else "partial"
+                    for article in (articles or [])[:4]:
+                        rows.append(
+                            {
+                                "symbol": symbol,
+                                "title": str(article.get("title") or "").strip(),
+                                "url": str(article.get("url") or "").strip(),
+                                "published_at": str(article.get("publishedAt") or _now_iso()),
+                                "source_name": str(
+                                    (
+                                        (article.get("source") or {})
+                                        if isinstance(article.get("source"), dict)
+                                        else {}
+                                    ).get("name")
+                                    or "Unknown"
+                                ),
+                                "provider": str(article.get("provider") or "unknown"),
+                                "sentiment_hint": None,
+                                "degraded": False,
+                            }
+                        )
+                except Exception as exc:
+                    logger.warning("[Kai Market] news failed for %s: %s", symbol, exc)
+                    statuses[f"news:{symbol}"] = _provider_status_from_exception(exc)
+
+            deduped: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for row in rows:
+                key = f"{row.get('title')}::{row.get('url')}"
+                if not row.get("title") or not row.get("url") or key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(row)
+
+            deduped.sort(key=lambda item: str(item.get("published_at") or ""), reverse=True)
+            return {"rows": deduped[:NEWS_ROWS_MAX], "provider_status": statuses}
+
+        news_cache = await market_insights_cache.get_or_refresh(
+            news_key,
+            fresh_ttl_seconds=NEWS_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=NEWS_STALE_TTL_SECONDS,
+            fetcher=fetch_news_bundle,
+        )
+        news_bundle = news_cache.value if isinstance(news_cache.value, dict) else {}
+        news_tape = news_bundle.get("rows") if isinstance(news_bundle.get("rows"), list) else []
+        provider_status.update(
+            {str(k): str(v) for k, v in (news_bundle.get("provider_status") or {}).items()}
+        )
+        stale = stale or news_cache.stale
+
+        market_overview = _build_market_overview(spy_quote, qqq_quote, vix_payload, status_payload)
+
+        sparkline_points, sparkline_degraded, sparkline_sources = await _build_sparkline_points(
+            spy_quote
+        )
+
+        financial_summary_cache = await market_insights_cache.get_or_refresh(
+            f"financial-summary:{user_id}",
+            fresh_ttl_seconds=FINANCIAL_SUMMARY_FRESH_TTL_SECONDS,
+            stale_ttl_seconds=FINANCIAL_SUMMARY_STALE_TTL_SECONDS,
+            fetcher=lambda: _get_financial_summary(user_id),
+        )
+        financial_summary = (
+            financial_summary_cache.value if isinstance(financial_summary_cache.value, dict) else {}
+        )
+        stale = stale or financial_summary_cache.stale
+        total_value = _safe_float(
+            financial_summary.get("total_value") or financial_summary.get("portfolio_total_value")
+        )
+        holdings_count = _summary_count(financial_summary)
+        if holdings_count == 0:
+            holdings_count = len([row for row in watchlist_rows if row.get("symbol")])
+
+        hero_degraded = total_value is None
+        hero = {
+            "total_value": total_value,
+            "day_change_value": None,
+            "day_change_pct": None,
+            "sparkline_points": sparkline_points,
+            "as_of": (spy_quote or {}).get("fetched_at")
+            if isinstance((spy_quote or {}).get("fetched_at"), str)
+            else _now_iso(),
+            "source_tags": sorted(set([*(sparkline_sources or []), "World Model"])),
+            "degraded": bool(hero_degraded or sparkline_degraded),
+            "holdings_count": holdings_count,
+            "portfolio_value_bucket": financial_summary.get("portfolio_value_bucket"),
+        }
+
+        signals = _build_signals(
+            watchlist=watchlist_rows,
+            movers=movers_payload,
+            vix_payload=vix_payload,
+            source_tags=["PMP/FMP", "Finnhub", "Fallback"],
+        )
+
+        spotlights = [
+            {
+                "symbol": row.get("symbol"),
+                "company_name": row.get("company_name"),
+                "price": row.get("price"),
+                "change_pct": row.get("change_pct"),
+                "recommendation": row.get("recommendation"),
+                "recommendation_detail": row.get("recommendation_detail"),
+                "headline": next(
+                    (
+                        news.get("title")
+                        for news in news_tape
+                        if isinstance(news, dict)
+                        and str(news.get("symbol") or "") == str(row.get("symbol") or "")
+                    ),
+                    None,
+                ),
+                "source_tags": row.get("source_tags") or [],
+                "as_of": row.get("as_of"),
+                "degraded": bool(row.get("degraded")),
+            }
+            for row in watchlist_rows[:2]
+        ]
+
+        themes = [
+            {
+                "title": str(item.get("sector") or "Unknown"),
+                "subtitle": "Sector rotation",
+                "symbol": str(item.get("sector") or "").upper()[:6],
+                "change_pct": item.get("change_pct"),
+                "headline": None,
+                "source_tags": item.get("source_tags") or ["Fallback"],
+                "degraded": bool(item.get("degraded")),
+            }
+            for item in sector_rotation[:3]
+        ]
+
+        generated_at = _now_iso()
+        if any(value != "ok" for value in provider_status.values()):
+            stale = True
+
+        payload: dict[str, Any] = {
+            "layout_version": "kai_home_v2",
+            "user_id": user_id,
+            "generated_at": generated_at,
+            "stale": stale,
+            "provider_status": provider_status,
+            "hero": hero,
+            "watchlist": watchlist_rows,
+            "movers": movers_payload,
+            "sector_rotation": sector_rotation,
+            "news_tape": news_tape,
+            "signals": signals,
+            "meta": {
+                "stale": stale,
+                "provider_status": provider_status,
+                "cache_age_seconds": 0,
+                "symbol_quality": {
+                    "requested_count": len(requested_watchlist_symbols),
+                    "accepted_count": len(watchlist_symbols),
+                    "filtered_count": len(filtered_symbols),
+                },
+                "filtered_symbols": filtered_symbols,
+            },
+            # Backward compatibility fields.
+            "market_overview": market_overview,
+            "spotlights": spotlights,
+            "themes": themes,
+        }
+        return payload
+
+    cached_home = await market_insights_cache.get_or_refresh(
+        home_key,
+        fresh_ttl_seconds=HOME_FRESH_TTL_SECONDS,
+        stale_ttl_seconds=HOME_STALE_TTL_SECONDS,
+        fetcher=build_payload,
+    )
+
+    payload = cached_home.value if isinstance(cached_home.value, dict) else {}
+    payload["stale"] = bool(payload.get("stale")) or cached_home.stale
+    if cached_home.stale:
+        payload["stale_reason"] = "served_stale_cache_after_refresh_failure"
+    payload["cache_age_seconds"] = cached_home.age_seconds
+
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    meta["stale"] = bool(payload.get("stale"))
+    meta["cache_age_seconds"] = cached_home.age_seconds
+    if payload.get("stale_reason"):
+        meta["stale_reason"] = payload.get("stale_reason")
+    if payload.get("provider_status"):
+        meta["provider_status"] = payload.get("provider_status")
+    payload["meta"] = meta
+
+    return payload

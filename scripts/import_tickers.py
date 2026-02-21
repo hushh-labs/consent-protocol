@@ -89,35 +89,93 @@ def ensure_file(path: str, user_agent: str) -> str:
 
 
 def parse_rows(data: Any) -> List[Dict[str, Any]]:
-    """Transform SEC JSON into DB rows."""
-    if not isinstance(data, dict):
-        raise RuntimeError("Unexpected SEC tickers format (expected dict)")
-
+    """Transform SEC ticker JSON variants into DB rows."""
     rows: List[Dict[str, Any]] = []
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    for v in data.values():
-        try:
-            ticker = (v.get("ticker") or "").upper().strip()
-            if not ticker:
+    # Variant A: company_tickers.json => { "0": {cik_str, ticker, title}, ... }
+    if isinstance(data, dict) and "fields" not in data:
+        iterable = data.values()
+        for v in iterable:
+            try:
+                ticker = (v.get("ticker") or "").upper().strip()
+                if not ticker:
+                    continue
+                title = v.get("title")
+                cik = v.get("cik_str")
+                if cik is not None and cik != "":
+                    cik = str(cik).zfill(10)
+                rows.append(
+                    {
+                        "ticker": ticker,
+                        "title": title,
+                        "cik": cik,
+                        "exchange": None,
+                        "sic_code": None,
+                        "sic_description": None,
+                        "sector_primary": None,
+                        "industry_primary": None,
+                        "sector_tags": [],
+                        "metadata_confidence": 0.0,
+                        "tradable": True,
+                        "last_enriched_at": None,
+                        "updated_at": now_iso,
+                    }
+                )
+            except Exception:
                 continue
-            title = v.get("title")
-            cik = v.get("cik_str")
-            if cik is not None and cik != "":
-                cik = str(cik).zfill(10)
-            rows.append(
-                {
-                    "ticker": ticker,
-                    "title": title,
-                    "cik": cik,
-                    "exchange": None,
-                    "updated_at": now_iso,
-                }
-            )
-        except Exception:
-            continue
+        return rows
 
-    return rows
+    # Variant B: company_tickers_exchange.json => { fields:[...], data:[[...], ...] }
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("fields"), list)
+        and isinstance(data.get("data"), list)
+    ):
+        fields = [str(f or "").strip() for f in data.get("fields", [])]
+        index = {name: idx for idx, name in enumerate(fields)}
+        for item in data.get("data", []):
+            try:
+                if not isinstance(item, list):
+                    continue
+                ticker_idx = index.get("ticker")
+                if ticker_idx is None or ticker_idx >= len(item):
+                    continue
+                ticker = str(item[ticker_idx] or "").upper().strip()
+                if not ticker:
+                    continue
+                cik_idx = index.get("cik")
+                name_idx = index.get("name")
+                exchange_idx = index.get("exchange")
+                cik = item[cik_idx] if cik_idx is not None and cik_idx < len(item) else None
+                if cik is not None and cik != "":
+                    cik = str(cik).zfill(10)
+                rows.append(
+                    {
+                        "ticker": ticker,
+                        "title": item[name_idx]
+                        if name_idx is not None and name_idx < len(item)
+                        else None,
+                        "cik": cik,
+                        "exchange": item[exchange_idx]
+                        if exchange_idx is not None and exchange_idx < len(item)
+                        else None,
+                        "sic_code": None,
+                        "sic_description": None,
+                        "sector_primary": None,
+                        "industry_primary": None,
+                        "sector_tags": [],
+                        "metadata_confidence": 0.0,
+                        "tradable": True,
+                        "last_enriched_at": None,
+                        "updated_at": now_iso,
+                    }
+                )
+            except Exception:
+                continue
+        return rows
+
+    raise RuntimeError("Unexpected SEC tickers format")
 
 
 def main() -> int:
@@ -183,13 +241,27 @@ def main() -> int:
     batch_size = max(1, int(args.batch))
 
     upsert_sql = """
-    INSERT INTO tickers (ticker, title, cik, exchange, updated_at)
+    INSERT INTO tickers (
+      ticker, title, cik, exchange, sic_code, sic_description, sector_primary,
+      industry_primary, sector_tags, metadata_confidence, tradable, last_enriched_at, updated_at
+    )
     VALUES %s
     ON CONFLICT (ticker)
     DO UPDATE SET
       title = EXCLUDED.title,
       cik = EXCLUDED.cik,
       exchange = EXCLUDED.exchange,
+      sic_code = COALESCE(EXCLUDED.sic_code, tickers.sic_code),
+      sic_description = COALESCE(EXCLUDED.sic_description, tickers.sic_description),
+      sector_primary = COALESCE(EXCLUDED.sector_primary, tickers.sector_primary),
+      industry_primary = COALESCE(EXCLUDED.industry_primary, tickers.industry_primary),
+      sector_tags = CASE
+        WHEN EXCLUDED.sector_tags IS NULL OR cardinality(EXCLUDED.sector_tags) = 0 THEN tickers.sector_tags
+        ELSE EXCLUDED.sector_tags
+      END,
+      metadata_confidence = GREATEST(COALESCE(tickers.metadata_confidence, 0), COALESCE(EXCLUDED.metadata_confidence, 0)),
+      tradable = COALESCE(EXCLUDED.tradable, tickers.tradable),
+      last_enriched_at = COALESCE(EXCLUDED.last_enriched_at, tickers.last_enriched_at),
       updated_at = EXCLUDED.updated_at
     """
 
@@ -206,6 +278,14 @@ def main() -> int:
                                 r.get("title"),
                                 r.get("cik"),
                                 r.get("exchange"),
+                                r.get("sic_code"),
+                                r.get("sic_description"),
+                                r.get("sector_primary"),
+                                r.get("industry_primary"),
+                                r.get("sector_tags") or [],
+                                float(r.get("metadata_confidence") or 0.0),
+                                bool(r.get("tradable", True)),
+                                r.get("last_enriched_at"),
                                 r.get("updated_at"),
                             )
                             for r in batch

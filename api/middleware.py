@@ -143,5 +143,8 @@ async def require_vault_owner_token(
         "user_id": token_obj.user_id,
         "agent_id": token_obj.agent_id,
         "scope": token_obj.scope.value,
-        "token": token_obj,
+        # Keep raw token string for downstream fetcher/orchestrator calls.
+        "token": token,
+        # Preserve parsed object for call-sites that need metadata.
+        "token_obj": token_obj,
     }

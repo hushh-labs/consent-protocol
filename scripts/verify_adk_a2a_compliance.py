@@ -56,7 +56,9 @@ def main() -> int:
             [
                 r"CanonicalSSEStream",
                 r"validate_token",
-                r"RealtimeDataUnavailable",
+                r"short_recommendation",
+                r"analysis_degraded",
+                r"degraded_agents",
             ],
         ),
         _check_patterns(

@@ -196,11 +196,57 @@ SELECT remove_domain_summary_key(
 | Stripped Field   | Reason                               |
 | ---------------- | ------------------------------------ |
 | `holdings`       | Individual stock positions           |
-| `total_value`    | Portfolio dollar amounts             |
+| `total_value`    | Raw portfolio dollar amount key is stripped from index summaries (mapped to `portfolio_total_value` when numeric) |
 | `vault_key`      | Encryption key material              |
 | `password`       | Authentication credentials           |
 
 The `WorldModelService.update_domain_summary()` method enforces this sanitization server-side before any `world_model_index_v2` write.
+
+## Summary Field Contract
+
+Domain summaries use a canonical counter contract so backend context assembly never depends on stripped fields:
+
+| Field | Rule |
+| --- | --- |
+| `attribute_count` | Canonical authoritative count for the domain |
+| `item_count` | Mirrors `attribute_count` for compatibility |
+| `holdings_count` | Mirrors canonical count for financial/portfolio-like summaries |
+| `portfolio_total_value` | Optional aggregated portfolio value for UI hero cards (non-holdings scalar) |
+
+Normalization is applied on store/update and reconciliation paths. Count extraction order in consumers:
+`attribute_count -> holdings_count -> item_count`.
+
+## Domain Determination Rules
+
+To keep registry/index coherence:
+
+1. Domain key is normalized to lowercase (`financial`, `kai_profile`, etc.).
+2. Every domain store/update auto-registers the domain in `domain_registry`.
+3. `available_domains` is reconciled with `domain_summaries` keys.
+4. `total_attributes` is recomputed from canonical domain counters.
+5. Reconciliation helper (`reconcile_user_index_domains`) is callable at runtime for drift repair.
+
+## Cache Alignment (Web Runtime)
+
+Frontend memory cache keys aligned to world-model blobs and summaries:
+
+- `world_model_metadata_${userId}`
+- `world_model_blob_${userId}`
+- `domain_blob_${userId}_${domain}`
+
+Compatibility notes:
+- Domain summary patches must keep canonical counters coherent.
+- Sanitized scalar `portfolio_total_value` is the compatible summary value for portfolio hero contexts.
+- CRUD flows should prefer write-through when ciphertext and summary data are already available.
+
+## Operational Reconciliation
+
+Use runtime reconciliation/audit tools for drift repair and verification:
+
+```bash
+node scripts/ops/audit-world-model-user.mjs --userId <uid> --passphrase '<passphrase>'
+python scripts/ops/reconcile_financial_domain.py --user-id <uid> --passphrase '<passphrase>'
+```
 
 ---
 

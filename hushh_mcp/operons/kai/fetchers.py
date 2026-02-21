@@ -1168,21 +1168,32 @@ async def fetch_peer_data(
             retryable=True,
         )
 
-    quotes = await _fetch_yahoo_quotes(deduped_peers[:8])
+    peer_universe = deduped_peers[:8]
+    quotes: list[Dict[str, Any]] = []
+    for peer_symbol in peer_universe:
+        try:
+            quote = await fetch_market_data(peer_symbol, user_id, consent_token)
+            if quote:
+                quotes.append(quote)
+        except Exception as exc:
+            errors.append(_provider_error(f"peer_quote:{peer_symbol}", exc))
+
     if not quotes:
         _emit_realtime_telemetry(
             "peer_quote_fetch_failed",
             ticker=ticker.upper(),
-            peers=deduped_peers[:8],
+            peers=peer_universe,
+            errors=errors,
         )
         raise RealtimeDataUnavailable(
             "peer_data",
-            f"Peer quotes unavailable for {ticker}. peers={','.join(deduped_peers[:8])}",
+            f"Peer quotes unavailable for {ticker}. peers={','.join(peer_universe)}",
             retryable=True,
         )
     _emit_realtime_telemetry(
         "peer_data_fetch_success",
         ticker=ticker.upper(),
         peer_count=len(quotes),
+        requested_peers=len(peer_universe),
     )
     return quotes
