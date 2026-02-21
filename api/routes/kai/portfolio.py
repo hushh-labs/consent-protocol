@@ -37,6 +37,7 @@ from hushh_mcp.services.portfolio_import_service import (
     ImportResult,
     get_portfolio_import_service,
 )
+from hushh_mcp.services.symbol_master_service import get_symbol_master_service
 from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
@@ -486,6 +487,16 @@ _CASH_EQUIVALENT_HINTS = (
     "sweep",
     "core position",
 )
+_TRADE_ACTION_TOKENS = {
+    "BUY",
+    "SELL",
+    "REINVEST",
+    "DIVIDEND",
+    "INTEREST",
+    "TRANSFER",
+    "WITHDRAWAL",
+    "DEPOSIT",
+}
 
 
 def _normalize_symbol_token(raw_value: Any) -> str:
@@ -529,6 +540,28 @@ def _is_cash_equivalent_row(row: dict[str, Any]) -> bool:
         return True
     name = str(row.get("name") or row.get("description") or "").strip().lower()
     return any(hint in name for hint in _CASH_EQUIVALENT_HINTS)
+
+
+def _looks_like_cash_sweep_identifier(
+    symbol: str,
+    *,
+    name: str,
+    asset_type: str,
+) -> bool:
+    normalized_symbol = str(symbol).strip().upper()
+    if not normalized_symbol:
+        return False
+    if normalized_symbol in {"CASH", "MMF", "SWEEP"}:
+        return False
+    name_lc = str(name).strip().lower()
+    asset_lc = str(asset_type).strip().lower()
+    if "sweep" in name_lc:
+        return True
+    if "cash" in name_lc and ("cash" in asset_lc or "sweep" in asset_lc):
+        return True
+    if "cash" in asset_lc and len(normalized_symbol) > 4:
+        return True
+    return False
 
 
 def _compute_holding_confidence(row: dict[str, Any]) -> float:
@@ -575,28 +608,39 @@ def _compute_holding_confidence(row: dict[str, Any]) -> float:
 
 
 def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
+    symbol_master = get_symbol_master_service()
     raw_symbol = _first_present(
         row,
-        "symbol_cusip",
         "symbol",
         "ticker",
+        "symbol_cusip",
         "cusip",
         "security_id",
         "security",
     )
     symbol_quality = "provided"
     normalized_symbol = _normalize_symbol_token(raw_symbol)
+    raw_name = str(
+        _first_present(
+            row,
+            "description",
+            "name",
+            "security_name",
+            "holding_name",
+        )
+        or ""
+    ).strip()
+    raw_asset_type = str(
+        _first_present(
+            row,
+            "asset_class",
+            "asset_type",
+            "security_type",
+            "type",
+        )
+        or ""
+    ).strip()
     if not normalized_symbol:
-        raw_name = str(
-            _first_present(
-                row,
-                "description",
-                "name",
-                "security_name",
-                "holding_name",
-            )
-            or ""
-        ).strip()
         if raw_name:
             fallback = _normalize_symbol_token(raw_name.split()[0])
             normalized_symbol = fallback
@@ -606,18 +650,44 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     if not normalized_symbol and symbol_quality == "synthetic":
         normalized_symbol = f"HOLDING_{idx + 1}"
 
+    # Cash sweep lines often carry internal identifiers (e.g., QACDS).
+    # Canonicalize to CASH so market/watchlist layers do not treat them as tradable tickers.
+    if _looks_like_cash_sweep_identifier(
+        normalized_symbol, name=raw_name, asset_type=raw_asset_type
+    ):
+        normalized_symbol = "CASH"
+        if symbol_quality == "provided":
+            symbol_quality = "derived_from_name"
+
+    symbol_classification = symbol_master.classify(
+        normalized_symbol,
+        name=raw_name,
+        asset_type=raw_asset_type,
+    )
+    if symbol_classification.symbol:
+        normalized_symbol = symbol_classification.symbol
+
+    raw_sector_value = _first_present(row, "sector", "gics_sector", "sector_name")
+    raw_sector = str(raw_sector_value).strip() if raw_sector_value is not None else ""
+    raw_industry_value = _first_present(row, "industry", "gics_industry", "industry_name")
+    raw_industry = str(raw_industry_value).strip() if raw_industry_value is not None else ""
+    merged_sector, merged_industry, sector_tags, metadata_confidence = symbol_master.enrich_holding(
+        symbol=normalized_symbol,
+        sector=raw_sector or None,
+        industry=raw_industry or None,
+    )
+    if symbol_classification.trust_tier == "cash_equivalent":
+        merged_sector = merged_sector or "Cash & Cash Equivalents"
+        merged_industry = merged_industry or "Cash Management"
+
     normalized, reconciliation = _reconcile_holding_numeric_fields(
         {
             "symbol": normalized_symbol,
             "symbol_quality": symbol_quality,
-            "name": _first_present(
-                row,
-                "description",
-                "name",
-                "security_name",
-                "holding_name",
-            )
-            or "Unknown",
+            "symbol_trust_tier": symbol_classification.trust_tier,
+            "symbol_trust_reason": symbol_classification.reason,
+            "tradable": bool(symbol_classification.tradable),
+            "name": raw_name or "Unknown",
             "quantity": _first_present(row, "quantity", "shares", "units", "qty"),
             "price": _first_present(
                 row,
@@ -664,13 +734,11 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
                 "unrealized_return_pct",
                 "return_pct",
             ),
-            "asset_type": _first_present(
-                row,
-                "asset_class",
-                "asset_type",
-                "security_type",
-                "type",
-            ),
+            "asset_type": raw_asset_type or None,
+            "sector": merged_sector,
+            "industry": merged_industry,
+            "sector_tags": sector_tags,
+            "metadata_confidence": metadata_confidence,
             "acquisition_date": row.get("acquisition_date"),
             "estimated_annual_income": _first_present(
                 row,
@@ -687,6 +755,8 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     normalized["provenance"] = {
         "source": "statement_llm_parse",
         "symbol_quality": symbol_quality,
+        "symbol_trust_tier": symbol_classification.trust_tier,
+        "symbol_trust_reason": symbol_classification.reason,
         "reconciled_fields": reconciliation.get("reconciled_fields", []),
         "mismatch_detected": bool(reconciliation.get("mismatch_detected")),
     }
@@ -696,6 +766,7 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
 def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
     symbol = str(row.get("symbol") or "").strip()
     symbol_quality = str(row.get("symbol_quality") or "").strip().lower()
+    symbol_trust_tier = str(row.get("symbol_trust_tier") or "").strip().lower()
     name = str(row.get("name") or "").strip()
     quantity = _coerce_optional_number(row.get("quantity"))
     price = _coerce_optional_number(row.get("price"))
@@ -709,6 +780,9 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
             return False, "placeholder_symbol"
         if not symbol:
             return False, "missing_symbol"
+
+    if symbol_trust_tier == "action_token" or symbol.upper() in _TRADE_ACTION_TOKENS:
+        return False, "trade_action_token"
 
     if symbol in {"UNKNOWN", "NA", "NONE", "N/A"}:
         return False, "placeholder_symbol"
@@ -793,6 +867,29 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
             existing["name"] = incoming_name
         if not existing.get("asset_type") and row.get("asset_type"):
             existing["asset_type"] = row.get("asset_type")
+        if not existing.get("sector") and row.get("sector"):
+            existing["sector"] = row.get("sector")
+        if not existing.get("industry") and row.get("industry"):
+            existing["industry"] = row.get("industry")
+        existing_tags = (
+            existing.get("sector_tags") if isinstance(existing.get("sector_tags"), list) else []
+        )
+        incoming_tags = row.get("sector_tags") if isinstance(row.get("sector_tags"), list) else []
+        if incoming_tags:
+            deduped_tags: list[str] = []
+            for tag in [*existing_tags, *incoming_tags]:
+                text = str(tag or "").strip()
+                if text and text not in deduped_tags:
+                    deduped_tags.append(text)
+            existing["sector_tags"] = deduped_tags
+        existing_conf = _coerce_optional_number(existing.get("metadata_confidence")) or 0.0
+        incoming_conf = _coerce_optional_number(row.get("metadata_confidence")) or 0.0
+        existing["metadata_confidence"] = max(existing_conf, incoming_conf)
+        if not bool(existing.get("tradable")) and bool(row.get("tradable")):
+            existing["tradable"] = True
+        if str(existing.get("symbol_trust_tier") or "").lower() in {"", "unknown"}:
+            existing["symbol_trust_tier"] = row.get("symbol_trust_tier")
+            existing["symbol_trust_reason"] = row.get("symbol_trust_reason")
 
     aggregated = list(grouped.values())
     for row in aggregated:
@@ -1160,6 +1257,7 @@ Return one JSON object with keys:
 - portfolio_summary
 - asset_allocation
 - detailed_holdings
+- historical_values
 - income_summary
 - realized_gain_loss
 - activity_and_transactions
@@ -1172,6 +1270,7 @@ Rules:
 - Use null for unknown fields.
 - Do not invent ticker symbols.
 - Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
+- For each holding, include `asset_type` and `sector` whenever present in the statement.
 - Preserve numeric values exactly (including negatives)."""
 
                 # Create content payload with source-aware MIME type.

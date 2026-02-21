@@ -15,6 +15,28 @@ from db.db_client import get_db
 
 logger = logging.getLogger(__name__)
 
+_ENRICHED_COLUMNS = (
+    "ticker,title,cik,exchange,sic_code,sic_description,"
+    "sector_primary,industry_primary,sector_tags,metadata_confidence,tradable"
+)
+_LEGACY_COLUMNS = "ticker,title,cik,exchange"
+
+
+def _normalize_ticker_row(row: Dict) -> Dict:
+    return {
+        "ticker": row.get("ticker"),
+        "title": row.get("title"),
+        "cik": row.get("cik"),
+        "exchange": row.get("exchange"),
+        "sic_code": row.get("sic_code"),
+        "sic_description": row.get("sic_description"),
+        "sector_primary": row.get("sector_primary"),
+        "industry_primary": row.get("industry_primary"),
+        "sector_tags": row.get("sector_tags") if isinstance(row.get("sector_tags"), list) else [],
+        "metadata_confidence": row.get("metadata_confidence"),
+        "tradable": row.get("tradable", True),
+    }
+
 
 class TickerDBService:
     def __init__(self):
@@ -42,29 +64,35 @@ class TickerDBService:
             return []
 
         # If looks like a ticker (alphanumeric short), prefer ticker prefix search
-        if re.fullmatch(r"[A-Za-z.]{1,8}", q_clean):
-            pattern = f"{q_clean}%"
+        ticker_like = bool(re.fullmatch(r"[A-Za-z.]{1,8}", q_clean))
+        pattern = f"{q_clean}%" if ticker_like else f"%{q_clean}%"
+        field = "ticker" if ticker_like else "title"
+        order_field = "ticker" if ticker_like else "title"
+
+        try:
             res = (
                 db.table("tickers")
-                .select("ticker,title,cik,exchange")
-                .ilike("ticker", pattern)
-                .order("ticker")
+                .select(_ENRICHED_COLUMNS)
+                .ilike(field, pattern)
+                .order(order_field)
                 .limit(limit)
                 .execute()
             )
-            return res.data or []
-
-        # Fallback: search in title
-        pattern = f"%{q_clean}%"
-        res = (
-            db.table("tickers")
-            .select("ticker,title,cik,exchange")
-            .ilike("title", pattern)
-            .order("title")
-            .limit(limit)
-            .execute()
-        )
-        return res.data or []
+            return [_normalize_ticker_row(row) for row in (res.data or [])]
+        except Exception as exc:
+            logger.warning(
+                "[TickerDB] Enriched ticker columns unavailable, falling back to legacy columns: %s",
+                exc,
+            )
+            legacy_res = (
+                db.table("tickers")
+                .select(_LEGACY_COLUMNS)
+                .ilike(field, pattern)
+                .order(order_field)
+                .limit(limit)
+                .execute()
+            )
+            return [_normalize_ticker_row(row) for row in (legacy_res.data or [])]
 
     async def upsert_tickers_bulk(self, rows: List[Dict]) -> int:
         """Upsert a list of ticker rows. Returns count upserted."""
@@ -81,6 +109,14 @@ class TickerDBService:
                     "title": r.get("title"),
                     "cik": r.get("cik"),
                     "exchange": r.get("exchange"),
+                    "sic_code": r.get("sic_code"),
+                    "sic_description": r.get("sic_description"),
+                    "sector_primary": r.get("sector_primary"),
+                    "industry_primary": r.get("industry_primary"),
+                    "sector_tags": r.get("sector_tags") or [],
+                    "metadata_confidence": r.get("metadata_confidence") or 0.0,
+                    "tradable": r.get("tradable", True),
+                    "last_enriched_at": r.get("last_enriched_at"),
                     "updated_at": r.get("updated_at"),
                 }
             )

@@ -123,6 +123,34 @@ class DomainRegistryService:
         self._cache.clear()
         self._cache_time = None
 
+    @staticmethod
+    def _summary_count(summary: dict | None) -> int:
+        if not isinstance(summary, dict):
+            return 0
+        candidates = (
+            summary.get("attribute_count"),
+            summary.get("holdings_count"),
+            summary.get("item_count"),
+        )
+        for value in candidates:
+            if isinstance(value, bool) or value is None:
+                continue
+            if isinstance(value, int):
+                return max(0, value)
+            if isinstance(value, float):
+                if value != value:
+                    continue
+                return max(0, int(value))
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    continue
+                try:
+                    return max(0, int(float(text)))
+                except Exception:
+                    continue
+        return 0
+
     async def register_domain(
         self,
         domain_key: str,
@@ -290,18 +318,22 @@ class DomainRegistryService:
             row = result.data[0]
             available_domains = row.get("available_domains") or []
             domain_summaries = row.get("domain_summaries") or {}
+            summary_domains = (
+                list(domain_summaries.keys()) if isinstance(domain_summaries, dict) else []
+            )
+            normalized_domains = sorted(
+                {
+                    str(key).strip().lower()
+                    for key in [*available_domains, *summary_domains]
+                    if str(key).strip()
+                }
+            )
             domains = []
-            for key in available_domains:
+            for key in normalized_domains:
                 domain_info = await self.get_domain(key)
                 if domain_info:
                     summary = domain_summaries.get(key) or {}
-                    raw = (
-                        summary.get("holdings_count")
-                        or summary.get("attribute_count")
-                        or summary.get("item_count")
-                        or 0
-                    )
-                    domain_info.attribute_count = int(raw) if raw is not None else 0
+                    domain_info.attribute_count = self._summary_count(summary)
                     domains.append(domain_info)
             return sorted(domains, key=lambda d: d.display_name)
         except Exception as e:
