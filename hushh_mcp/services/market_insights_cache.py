@@ -57,6 +57,10 @@ class MarketInsightsCache:
         with self._registry_lock:
             return self._entries.get(key)
 
+    def seed_entry(self, key: str, value: Any, fetched_at: float) -> None:
+        """Seed an entry from external cache tier (e.g., Postgres L2)."""
+        self._set_entry(key, value, fetched_at)
+
     def append_series_point(
         self,
         key: str,
@@ -108,6 +112,21 @@ class MarketInsightsCache:
                 self._provider_cooldowns.pop(key, None)
                 return False
             return True
+
+    def provider_cooldown_snapshot(self) -> dict[str, int]:
+        """Return active provider cooldowns in remaining seconds."""
+        now = time.time()
+        out: dict[str, int] = {}
+        with self._registry_lock:
+            expired: list[str] = []
+            for key, until in self._provider_cooldowns.items():
+                if until <= now:
+                    expired.append(key)
+                    continue
+                out[key] = max(1, int(until - now))
+            for key in expired:
+                self._provider_cooldowns.pop(key, None)
+        return out
 
     async def get_or_refresh(
         self,

@@ -13,6 +13,7 @@ The backend never sees plaintext vault key material.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -32,14 +33,36 @@ ALLOWED_METHODS = {
 class VaultKeysService:
     """Service layer for multi-wrapper vault key operations."""
 
+    VAULT_STATE_CACHE_TTL_SECONDS = 180
+
     def __init__(self):
         self._supabase = None
+        self._vault_state_cache: dict[str, tuple[float, Dict[str, Any]]] = {}
 
     def _get_supabase(self):
         """Get database client (private - ONLY for internal service use)."""
         if self._supabase is None:
             self._supabase = get_db()
         return self._supabase
+
+    def _get_cached_vault_state(self, user_id: str) -> Optional[Dict[str, Any]]:
+        cached = self._vault_state_cache.get(user_id)
+        if not cached:
+            return None
+        cached_at, payload = cached
+        if time.time() - cached_at > self.VAULT_STATE_CACHE_TTL_SECONDS:
+            self._vault_state_cache.pop(user_id, None)
+            return None
+        return payload
+
+    def _set_cached_vault_state(self, user_id: str, payload: Optional[Dict[str, Any]]) -> None:
+        if payload is None:
+            self._vault_state_cache.pop(user_id, None)
+            return
+        self._vault_state_cache[user_id] = (time.time(), payload)
+
+    def _invalidate_vault_state_cache(self, user_id: str) -> None:
+        self._vault_state_cache.pop(user_id, None)
 
     @staticmethod
     def _mask_user_id(user_id: str) -> str:
@@ -112,6 +135,10 @@ class VaultKeysService:
 
     async def get_vault_state(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Return vault state with recovery wrapper and all enrolled method wrappers."""
+        cached = self._get_cached_vault_state(user_id)
+        if cached is not None:
+            return cached
+
         supabase = self._get_supabase()
 
         header_response = (
@@ -125,6 +152,7 @@ class VaultKeysService:
         )
 
         if not header_response.data or len(header_response.data) == 0:
+            self._set_cached_vault_state(user_id, None)
             return None
 
         wrapper_response = (
@@ -155,7 +183,7 @@ class VaultKeysService:
 
         wrappers.sort(key=lambda item: item["method"])
 
-        return {
+        payload = {
             "vaultKeyHash": self._clean_base64ish(header.get("vault_key_hash")) or "",
             "primaryMethod": self._clean_text(header.get("primary_method")) or "passphrase",
             "recoveryEncryptedVaultKey": self._clean_base64ish(
@@ -166,6 +194,8 @@ class VaultKeysService:
             "recoveryIv": self._clean_base64ish(header.get("recovery_iv")) or "",
             "wrappers": wrappers,
         }
+        self._set_cached_vault_state(user_id, payload)
+        return payload
 
     async def setup_vault_state(
         self,
@@ -337,6 +367,7 @@ class VaultKeysService:
             self._mask_user_id(user_id_clean),
             len(wrapper_rows),
         )
+        self._invalidate_vault_state_cache(user_id_clean)
         return True
 
     async def upsert_wrapper(
@@ -414,6 +445,7 @@ class VaultKeysService:
             method_norm,
             self._mask_user_id(user_id_clean),
         )
+        self._invalidate_vault_state_cache(user_id_clean)
         return True
 
     async def set_primary_method(self, *, user_id: str, primary_method: str) -> bool:
@@ -451,6 +483,7 @@ class VaultKeysService:
             primary,
             self._mask_user_id(user_id_clean),
         )
+        self._invalidate_vault_state_cache(user_id_clean)
         return True
 
     async def get_vault_status(self, user_id: str, consent_token: str) -> Dict[str, Any]:
