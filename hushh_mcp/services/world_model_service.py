@@ -38,6 +38,7 @@ from db.db_client import get_db
 from hushh_mcp.services.domain_contracts import (
     FINANCIAL_DOMAIN_CONTRACT_VERSION,
     FINANCIAL_INTENT_MAP,
+    RETIRED_DOMAIN_REGISTRY_KEYS,
     canonical_top_level_domain,
     is_allowed_top_level_domain,
 )
@@ -136,6 +137,7 @@ class WorldModelService:
         self._scope_generator = None
 
     _SUMMARY_BLOCKLIST = {"holdings", "total_value", "vault_key", "password"}
+    _RETIRED_DOMAIN_KEYS = {str(key).strip().lower() for key in RETIRED_DOMAIN_REGISTRY_KEYS}
 
     @property
     def supabase(self):
@@ -253,6 +255,69 @@ class WorldModelService:
             sanitized["intent_map"] = list(FINANCIAL_INTENT_MAP)
 
         return sanitized
+
+    @staticmethod
+    def _merge_financial_summary_from_retired_contracts(
+        financial_summary: dict,
+        retired_summaries: dict[str, dict],
+    ) -> dict:
+        merged = dict(financial_summary or {})
+
+        profile_summary = retired_summaries.get("kai_profile") or {}
+        if isinstance(profile_summary, dict):
+            if merged.get("risk_profile") in (None, ""):
+                merged["risk_profile"] = profile_summary.get("risk_profile")
+            if merged.get("risk_score") in (None, ""):
+                merged["risk_score"] = profile_summary.get("risk_score")
+            if merged.get("profile_completed") in (None, ""):
+                merged["profile_completed"] = profile_summary.get("onboarding_completed")
+            for key in (
+                "has_investment_horizon",
+                "has_drawdown_response",
+                "has_volatility_preference",
+                "nav_tour_completed",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = profile_summary.get(key)
+
+        documents_summary = retired_summaries.get("financial_documents") or {}
+        if isinstance(documents_summary, dict):
+            for key in (
+                "documents_count",
+                "last_statement_end",
+                "last_quality_score",
+                "last_brokerage",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = documents_summary.get(key)
+
+        history_summary = retired_summaries.get("kai_analysis_history") or {}
+        if isinstance(history_summary, dict):
+            if merged.get("analysis_total_analyses") in (None, ""):
+                merged["analysis_total_analyses"] = history_summary.get(
+                    "analysis_total_analyses",
+                    history_summary.get("total_analyses"),
+                )
+            if merged.get("analysis_tickers_analyzed") in (None, ""):
+                merged["analysis_tickers_analyzed"] = history_summary.get(
+                    "analysis_tickers_analyzed",
+                    history_summary.get("tickers_analyzed"),
+                )
+            if merged.get("analysis_last_updated") in (None, ""):
+                merged["analysis_last_updated"] = history_summary.get(
+                    "analysis_last_updated",
+                    history_summary.get("last_updated"),
+                )
+            for key in (
+                "total_analyses",
+                "tickers_analyzed",
+                "last_analysis_date",
+                "last_analysis_ticker",
+            ):
+                if merged.get(key) in (None, ""):
+                    merged[key] = history_summary.get(key)
+
+        return merged
 
     def _recalculate_total_attributes(self, summaries: dict | None) -> int:
         if not isinstance(summaries, dict):
@@ -951,12 +1016,17 @@ class WorldModelService:
             available_domains: set[str] = set()
             for existing_domain in index.available_domains or []:
                 normalized_domain = self._canonicalize_domain_key(existing_domain)
-                if normalized_domain:
+                if normalized_domain and normalized_domain not in self._RETIRED_DOMAIN_KEYS:
                     available_domains.add(normalized_domain)
 
+            retired_summaries: dict[str, dict] = {}
             for raw_domain, raw_summary in (index.domain_summaries or {}).items():
                 domain = self._canonicalize_domain_key(str(raw_domain))
                 if not domain:
+                    continue
+                if domain in self._RETIRED_DOMAIN_KEYS:
+                    if isinstance(raw_summary, dict):
+                        retired_summaries[domain] = dict(raw_summary)
                     continue
                 normalized_summary = self._normalize_domain_summary(
                     domain,
@@ -971,6 +1041,20 @@ class WorldModelService:
                 else:
                     normalized_summaries[domain] = normalized_summary
                 available_domains.add(domain)
+
+            financial_summary = (
+                normalized_summaries.get("financial")
+                if isinstance(normalized_summaries.get("financial"), dict)
+                else {}
+            )
+            normalized_summaries["financial"] = self._normalize_domain_summary(
+                "financial",
+                self._merge_financial_summary_from_retired_contracts(
+                    financial_summary or {},
+                    retired_summaries,
+                ),
+            )
+            available_domains.add("financial")
 
             if register_missing_registry:
                 for domain in sorted(available_domains):

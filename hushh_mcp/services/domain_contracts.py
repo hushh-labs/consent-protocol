@@ -128,6 +128,13 @@ CANONICAL_DOMAIN_KEYS = tuple(entry.domain_key for entry in CANONICAL_DOMAIN_REG
 
 # Legacy top-level aliases are removed in the finance-root contract.
 LEGACY_DOMAIN_ALIASES: dict[str, str] = {}
+RETIRED_DOMAIN_REGISTRY_KEYS: tuple[str, ...] = (
+    "financial_documents",
+    "kai_profile",
+    "kai_analysis_history",
+    "kai_decisions",
+    "kai_preferences",
+)
 
 FINANCIAL_DOMAIN_SCHEMA_VERSION = 3
 FINANCIAL_DOMAIN_CONTRACT_VERSION = 1
@@ -190,6 +197,9 @@ FINANCIAL_SUBINTENT_REGISTRY: tuple[DomainSubintentEntry, ...] = (
         description="Persisted Kai decision metadata and audit lineage",
     ),
 )
+
+CANONICAL_SUBINTENT_KEYS = tuple(entry.domain_key for entry in FINANCIAL_SUBINTENT_REGISTRY)
+CANONICAL_REGISTRY_KEYS = tuple(sorted({*CANONICAL_DOMAIN_KEYS, *CANONICAL_SUBINTENT_KEYS}))
 
 
 def normalize_domain_key(domain: str) -> str:

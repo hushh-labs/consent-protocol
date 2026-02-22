@@ -15,6 +15,7 @@ from db.db_client import get_db
 from hushh_mcp.services.domain_contracts import (
     CANONICAL_DOMAIN_REGISTRY,
     FINANCIAL_SUBINTENT_REGISTRY,
+    RETIRED_DOMAIN_REGISTRY_KEYS,
     canonical_domain_metadata_map,
 )
 
@@ -74,6 +75,107 @@ class DomainRegistryService:
         self._cache.clear()
         self._cache_time = None
 
+    @staticmethod
+    def _normalize_domain_key(value: str | None) -> str:
+        return str(value or "").strip().lower()
+
+    @classmethod
+    def _infer_parent_domain(cls, domain_key: str) -> Optional[str]:
+        normalized = cls._normalize_domain_key(domain_key)
+        if "." not in normalized:
+            return None
+        parent_domain = normalized.split(".", 1)[0].strip()
+        return parent_domain or None
+
+    async def _repair_parent_domain_links(self) -> None:
+        """Ensure dotted domains consistently link to their top-level parent."""
+        try:
+            rows = (
+                self.supabase.table("domain_registry")
+                .select("domain_key,parent_domain")
+                .execute()
+                .data
+                or []
+            )
+        except Exception as read_error:
+            logger.warning("Failed to read domain_registry for parent repair: %s", read_error)
+            return
+
+        for row in rows:
+            domain_key = self._normalize_domain_key(row.get("domain_key"))
+            if not domain_key:
+                continue
+            expected_parent = self._infer_parent_domain(domain_key)
+            current_parent = self._normalize_domain_key(row.get("parent_domain")) or None
+            if not expected_parent:
+                continue
+            if current_parent == expected_parent:
+                continue
+            try:
+                self.supabase.table("domain_registry").update(
+                    {"parent_domain": expected_parent}
+                ).eq("domain_key", domain_key).execute()
+            except Exception as update_error:
+                logger.warning(
+                    "Failed to update parent_domain for %s -> %s: %s",
+                    domain_key,
+                    expected_parent,
+                    update_error,
+                )
+
+    async def _collect_index_referenced_domains(self) -> set[str]:
+        """Collect domain keys currently referenced by any user index."""
+        referenced: set[str] = set()
+        try:
+            rows = (
+                self.supabase.table("world_model_index_v2")
+                .select("available_domains,domain_summaries")
+                .execute()
+                .data
+                or []
+            )
+        except Exception as read_error:
+            logger.warning(
+                "Failed to scan world_model_index_v2 for domain references: %s", read_error
+            )
+            return referenced
+
+        for row in rows:
+            for domain_key in row.get("available_domains") or []:
+                normalized = self._normalize_domain_key(domain_key)
+                if normalized:
+                    referenced.add(normalized)
+            summaries = row.get("domain_summaries")
+            if not isinstance(summaries, dict):
+                continue
+            for key in summaries.keys():
+                normalized = self._normalize_domain_key(str(key))
+                if normalized:
+                    referenced.add(normalized)
+        return referenced
+
+    async def _prune_retired_registry_keys(self) -> None:
+        """Delete retired registry rows when they are no longer referenced."""
+        referenced = await self._collect_index_referenced_domains()
+        for retired_key in RETIRED_DOMAIN_REGISTRY_KEYS:
+            normalized_retired = self._normalize_domain_key(retired_key)
+            if normalized_retired in referenced:
+                logger.warning(
+                    "Skipping retired registry key cleanup for %s (still referenced in index).",
+                    normalized_retired,
+                )
+                continue
+            try:
+                self.supabase.table("domain_registry").delete().eq(
+                    "domain_key", normalized_retired
+                ).execute()
+            except Exception as delete_error:
+                logger.warning(
+                    "Failed to prune retired registry key %s: %s",
+                    normalized_retired,
+                    delete_error,
+                )
+
     async def ensure_canonical_domains(self) -> None:
         """Best-effort seed of canonical top-level domains into domain_registry."""
         if self._canonical_seeded:
@@ -109,7 +211,10 @@ class DomainRegistryService:
                     subintent.domain_key,
                     seed_error,
                 )
+        await self._repair_parent_domain_links()
+        await self._prune_retired_registry_keys()
         self._canonical_seeded = True
+        self._invalidate_cache()
 
     @staticmethod
     def _summary_count(summary: dict | None) -> int:
@@ -156,6 +261,13 @@ class DomainRegistryService:
         """
         # Normalize domain key
         domain_key = domain_key.lower().strip().replace(" ", "_")
+        final_parent_domain = self._normalize_domain_key(
+            parent_domain
+        ) or self._infer_parent_domain(domain_key)
+
+        if final_parent_domain and final_parent_domain != domain_key:
+            # Ensure parent exists before inserting the subintent row.
+            await self.register_domain(domain_key=final_parent_domain)
 
         # Check cache first
         if domain_key in self._cache and self._is_cache_valid():
@@ -199,11 +311,11 @@ class DomainRegistryService:
                             rpc_payload = first_row
 
             if rpc_payload:
-                if parent_domain is not None or final_description is not None:
+                if final_parent_domain is not None or final_description is not None:
                     try:
                         patch_data: dict[str, object] = {}
-                        if parent_domain is not None:
-                            patch_data["parent_domain"] = parent_domain
+                        if final_parent_domain is not None:
+                            patch_data["parent_domain"] = final_parent_domain
                         if final_description is not None:
                             patch_data["description"] = final_description
                         if patch_data:
@@ -224,7 +336,7 @@ class DomainRegistryService:
                     description=final_description
                     if final_description is not None
                     else rpc_payload.get("description"),
-                    parent_domain=parent_domain,
+                    parent_domain=final_parent_domain,
                     attribute_count=rpc_payload.get("attribute_count", 0),
                     user_count=rpc_payload.get("user_count", 0),
                 )
@@ -242,7 +354,7 @@ class DomainRegistryService:
                 "icon_name": final_icon,
                 "color_hex": final_color,
                 "description": final_description,
-                "parent_domain": parent_domain,
+                "parent_domain": final_parent_domain,
             }
 
             self.supabase.table("domain_registry").upsert(data, on_conflict="domain_key").execute()
