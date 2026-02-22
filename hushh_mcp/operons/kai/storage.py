@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import (
-    ConsentScope,  # WORLD_MODEL_READ / WORLD_MODEL_WRITE for attr.kai_decisions.*
+    ConsentScope,  # WORLD_MODEL_READ / WORLD_MODEL_WRITE for attr.financial.analysis.decisions.*
 )
 from hushh_mcp.types import EncryptedPayload, UserID
 from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data
@@ -36,7 +36,7 @@ def store_decision_card(
     """
     Operon: Store encrypted decision card in vault.
 
-    TrustLink Required: world_model.write (covers attr.kai_decisions.*)
+    TrustLink Required: world_model.write (covers attr.financial.analysis.decisions.*)
 
     Args:
         user_id: User identifier
@@ -60,7 +60,7 @@ def store_decision_card(
         ...     consent_token="HCT:..."
         ... )
     """
-    # Validate TrustLink (world-model write covers attr.kai_decisions.*)
+    # Validate TrustLink (world-model write covers attr.financial.analysis.decisions.*)
     valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_WRITE)
 
     if not valid:
@@ -97,7 +97,7 @@ def retrieve_decision_card(
     """
     Operon: Retrieve and decrypt decision card from vault.
 
-    TrustLink Required: world_model.write (covers attr.kai_decisions.*)
+    TrustLink Required: world_model.write (covers attr.financial.analysis.decisions.*)
 
     Args:
         encrypted_payload: Encrypted decision data from database
@@ -112,7 +112,7 @@ def retrieve_decision_card(
         PermissionError: If TrustLink validation fails
         ValueError: If decryption fails
     """
-    # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
+    # Validate TrustLink (world_model.read covers attr.financial.analysis.decisions.*)
     valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_READ)
 
     if not valid:
@@ -147,7 +147,7 @@ def retrieve_decision_history(
     """
     Operon: Retrieve decision history metadata (without full decryption).
 
-    TrustLink Required: world_model.read (covers attr.kai_decisions.*)
+    TrustLink Required: world_model.read (covers attr.financial.analysis.decisions.*)
 
     This returns only metadata (ticker, decision, confidence, timestamp).
     Full decision cards must be retrieved individually with vault keys.
@@ -163,7 +163,7 @@ def retrieve_decision_history(
     Raises:
         PermissionError: If TrustLink validation fails
     """
-    # Validate TrustLink (world_model.read covers attr.kai_decisions.*)
+    # Validate TrustLink (world_model.read covers attr.financial.analysis.decisions.*)
     valid, reason, token = validate_token(consent_token, ConsentScope.WORLD_MODEL_READ)
 
     if not valid:

@@ -110,16 +110,18 @@ MCP agents discover user data availability through scopes generated from `world_
 
 ```
 attr.{domain}.*              # All attributes in a domain
-attr.{domain}.{key}          # Specific attribute
+attr.{domain}.{subintent}.*  # Optional subintent subtree
+attr.{domain}.{path}         # Specific nested path
 vault.owner                  # Full vault access (owner only)
 ```
 
 ### How It Works
 
 1. `DynamicScopeGenerator` reads `world_model_index_v2.available_domains`
-2. For each domain (e.g., `financial`, `food`), generates scope `attr.{domain}.*`
-3. MCP agent requests consent for specific scope
-4. User approves/denies in the consent UI
+2. It enriches optional subintent hints from `domain_summaries` (`intent_map`, `sub_intents`, etc.) and `domain_registry` metadata
+3. It generates domain and subintent wildcard scopes (`attr.{domain}.*`, `attr.{domain}.{subintent}.*`)
+4. MCP agent requests consent for a discovered scope
+5. User approves/denies in the consent UI
 
 ---
 
@@ -220,7 +222,7 @@ Normalization is applied on store/update and reconciliation paths. Count extract
 
 To keep registry/index coherence:
 
-1. Domain key is normalized to lowercase (`financial`, `kai_profile`, etc.).
+1. Domain key is normalized to lowercase canonical top-level keys (for example `financial`, `food`, `professional`).
 2. Every domain store/update auto-registers the domain in `domain_registry`.
 3. `available_domains` is reconciled with `domain_summaries` keys.
 4. `total_attributes` is recomputed from canonical domain counters.
@@ -263,7 +265,7 @@ Tracks all available data domains in the system.
 | `color_hex`    | `TEXT`   | Brand color                |
 | `parent_domain`| `TEXT`   | For hierarchical domains   |
 
-Seeded domains: `financial`, `food`, `professional`, `health`, `kai_decisions`.
+Seeded domains: `financial`, `subscriptions`, `health`, `travel`, `food`, `professional`, `entertainment`, `shopping`, `social`, `location`, `general`.
 
 New domains auto-register when first stored via `WorldModelService`.
 

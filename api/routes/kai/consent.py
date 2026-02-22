@@ -35,8 +35,7 @@ router = APIRouter()
 class GrantConsentRequest(BaseModel):
     user_id: str
     scopes: List[str] = [
-        "attr.financial.risk_profile",
-        "attr.kai_decisions.*",
+        "attr.financial.*",
         "agent.kai.analyze",
     ]
 

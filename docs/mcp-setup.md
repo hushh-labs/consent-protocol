@@ -118,7 +118,7 @@ Once connected, the MCP host has access to these 9 tools:
 | `get_food_preferences`     | Get food/dining preferences (requires `attr.food.*` or `world_model.read`)     |
 | `get_professional_profile` | Get professional profile (requires `attr.professional.*` or `world_model.read`) |
 | `delegate_to_agent`        | Create a TrustLink for agent-to-agent (A2A) delegation                          |
-| `list_scopes`              | List available consent scope categories (static reference)                      |
+| `list_scopes`              | List dynamic consent scope categories from backend metadata                      |
 | `discover_user_domains`    | Discover which domains a user has and the scope strings to request              |
 | `check_consent_status`     | Check current status of a pending consent request                               |
 
@@ -138,7 +138,7 @@ Agents can read `hushh://info/connector` for a machine-readable summary of every
 
 Scopes are **dynamic** -- they are derived from the world model registry (`world_model_index_v2.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
 
-1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and the corresponding scope strings (e.g. `attr.financial.*`, `attr.food.*`).
+1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings (e.g. `attr.financial.*`, `attr.financial.profile.*`). Under the hood this calls `/api/v1/user-scopes/{user_id}` with `X-MCP-Developer-Token`.
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
 3. **Wait for approval** -- If the response status is `pending`, return control to the caller and wait for user action in the Hushh app. Re-check later using `check_consent_status(user_id, scope)`.
 4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_financial_profile`, `get_food_preferences`, `get_professional_profile`, or other data tools.
@@ -147,9 +147,11 @@ Scopes are **dynamic** -- they are derived from the world model registry (`world
 
 - `world_model.read` -- Full world model (all domains for the user)
 - `world_model.write` -- Write to world model
-- `attr.{domain}.*` -- A single domain, where `{domain}` is a key returned by `discover_user_domains` (e.g. `attr.financial.*`, `attr.food.*`, `attr.health.*`, `attr.professional.*`)
+- `attr.{domain}.*` -- Domain-level scope where `{domain}` comes from runtime discovery
+- `attr.{domain}.{subintent}.*` -- Optional subintent scope when metadata/registry exposes subintents
+- `attr.{domain}.{path}` -- Specific nested path scope (narrow access)
 
-Scopes follow the `attr.{domain}.*` pattern and are resolved dynamically. Any well-formed domain key from the world model registry is valid.
+Scopes are resolved dynamically from user metadata + domain registry. There is no fixed domain whitelist in MCP.
 
 ## Zero-Knowledge Export
 

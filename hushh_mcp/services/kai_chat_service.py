@@ -1020,13 +1020,19 @@ REASONING: [2-3 sentences]
             # Store decision as a non-sensitive summary in world_model_index_v2
             saved = False
             try:
+                analyzed_at = datetime.now().isoformat()
+                ticker_upper = str(ticker or "").upper()
                 await self.world_model.update_domain_summary(
                     user_id=user_id,
-                    domain="kai_decisions",
+                    domain="financial",
                     summary={
-                        f"{ticker}_decision": decision,
-                        f"{ticker}_confidence": confidence,
-                        f"{ticker}_analyzed_at": datetime.now().isoformat(),
+                        f"{ticker_upper}_decision": decision,
+                        f"{ticker_upper}_confidence": confidence,
+                        f"{ticker_upper}_analyzed_at": analyzed_at,
+                        "analysis_last_decision_ticker": ticker_upper,
+                        "analysis_last_decision": decision,
+                        "analysis_last_confidence": confidence,
+                        "analysis_last_updated": analyzed_at,
                     },
                 )
                 saved = True

@@ -517,12 +517,8 @@ class VaultKeysService:
             )
             if wm_response.data:
                 summaries = wm_response.data[0].get("domain_summaries") or {}
-                kai_has_data = (
-                    "financial" in summaries
-                    or "kai_preferences" in summaries
-                    or "kai_decisions" in summaries
-                )
-                prefs_summary = summaries.get("kai_preferences", {})
+                kai_has_data = "financial" in summaries
+                prefs_summary = summaries.get("financial", {})
                 kai_field_count = (
                     prefs_summary.get("field_count", 0) if isinstance(prefs_summary, dict) else 0
                 )

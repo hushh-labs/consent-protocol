@@ -11,6 +11,7 @@ import contextvars
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -221,6 +222,147 @@ def _extract_summary_count(summary: dict[str, Any] | None) -> int:
             except Exception:
                 continue
     return 0
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _safe_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        out = float(value)
+        if out != out:  # NaN guard
+            return None
+        return out
+    try:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return None
+        out = float(text)
+        if out != out:
+            return None
+        return out
+    except Exception:
+        return None
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _pick_first_numeric(source: dict[str, Any] | None, keys: tuple[str, ...]) -> float | None:
+    if not isinstance(source, dict):
+        return None
+    for key in keys:
+        parsed = _safe_float(source.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _derive_market_trend(sentiment_score: float | None, decision: str) -> tuple[str, float]:
+    base_score = 5.0
+    if sentiment_score is not None:
+        base_score = _clamp((sentiment_score + 1.0) * 5.0, 0.0, 10.0)
+    decision_bias = {
+        "buy": 0.6,
+        "hold": 0.0,
+        "reduce": -0.6,
+        "sell": -0.6,
+    }.get((decision or "").strip().lower(), 0.0)
+    score = _clamp(base_score + decision_bias, 0.0, 10.0)
+    if score >= 6.4:
+        label = "Bullish"
+    elif score <= 3.6:
+        label = "Bearish"
+    else:
+        label = "Neutral"
+    return label, round(score, 2)
+
+
+def _derive_fair_value(
+    *,
+    price_targets: dict[str, Any] | None,
+    valuation_metrics: dict[str, Any] | None,
+    valuation_recommendation: str,
+) -> tuple[str, float, float | None]:
+    current_price = _pick_first_numeric(
+        valuation_metrics,
+        (
+            "current_price",
+            "price",
+            "market_price",
+            "spot_price",
+            "last_price",
+        ),
+    )
+    target_price = _pick_first_numeric(
+        price_targets,
+        (
+            "base_case",
+            "base",
+            "fair_value",
+            "consensus",
+            "target",
+            "optimistic",
+            "conservative",
+        ),
+    )
+    gap_pct: float | None = None
+    if current_price and current_price > 0 and target_price is not None:
+        gap_pct = ((target_price - current_price) / current_price) * 100.0
+        score = _clamp(5.0 + (gap_pct / 4.0), 0.0, 10.0)
+    else:
+        rec = (valuation_recommendation or "").strip().lower()
+        if "under" in rec:
+            score = 7.2
+        elif "over" in rec:
+            score = 2.8
+        else:
+            score = 5.0
+    if score >= 6.2:
+        label = "Undervalued"
+    elif score <= 3.8:
+        label = "Overvalued"
+    else:
+        label = "Fairly Valued"
+    return label, round(score, 2), (round(gap_pct, 2) if gap_pct is not None else None)
+
+
+def _derive_company_strength_score(
+    *,
+    fundamental_confidence: float | None,
+    valuation_confidence: float | None,
+    debate_confidence: float,
+    sentiment_score: float | None,
+    fair_value_score: float,
+    market_trend_score: float,
+) -> float:
+    fundamental_score = (
+        _clamp((fundamental_confidence or 0.5) * 10.0, 0.0, 10.0)
+        if fundamental_confidence is not None
+        else 5.0
+    )
+    valuation_score = (
+        _clamp((valuation_confidence or 0.5) * 10.0, 0.0, 10.0)
+        if valuation_confidence is not None
+        else fair_value_score
+    )
+    sentiment_component = (
+        _clamp((sentiment_score + 1.0) * 5.0, 0.0, 10.0)
+        if sentiment_score is not None
+        else market_trend_score
+    )
+    debate_score = _clamp((debate_confidence or 0.5) * 10.0, 0.0, 10.0)
+    blended = (
+        (fundamental_score * 0.40)
+        + (valuation_score * 0.20)
+        + (sentiment_component * 0.20)
+        + (debate_score * 0.20)
+    )
+    return round(_clamp(blended, 0.0, 10.0), 2)
 
 
 async def stream_agent_thinking(
@@ -468,10 +610,20 @@ async def analyze_stream_generator(
             }
             full_user_context["financial_summary"] = fin_summary
 
-            # Extract Kai profile summary flags (stored from onboarding preferences flow)
-            kai_profile_summary = wm_index.domain_summaries.get("kai_profile", {})
-            if isinstance(kai_profile_summary, dict):
-                full_user_context["kai_profile_summary"] = kai_profile_summary
+            # Extract financial profile summary flags (stored from onboarding preferences flow)
+            financial_profile_summary = {
+                "profile_completed": fin_summary.get("profile_completed"),
+                "risk_profile": fin_summary.get("risk_profile"),
+                "risk_score": fin_summary.get("risk_score"),
+                "has_investment_horizon": fin_summary.get("has_investment_horizon"),
+                "has_drawdown_response": fin_summary.get("has_drawdown_response"),
+                "has_volatility_preference": fin_summary.get("has_volatility_preference"),
+            }
+            full_user_context["financial_profile_summary"] = {
+                key: value
+                for key, value in financial_profile_summary.items()
+                if value not in (None, "")
+            }
 
             # Extract Learned Attributes (across all domains)
             # In a real implementation, we might filter for relevant ones
@@ -482,12 +634,13 @@ async def analyze_stream_generator(
         preference_container = {}
         if isinstance(request_context.get("preferences"), dict):
             preference_container.update(request_context.get("preferences", {}))
-        if isinstance(request_context.get("kai_profile"), dict):
-            profile = request_context.get("kai_profile", {})
+        if isinstance(request_context.get("financial_profile"), dict):
+            profile = request_context.get("financial_profile", {})
             preference_container.update(
                 {
                     "investment_horizon": profile.get("investment_horizon"),
                     "investment_style": profile.get("investment_style"),
+                    "risk_profile": profile.get("risk_profile"),
                 }
             )
         if "investment_horizon" in request_context:
@@ -1265,6 +1418,25 @@ async def analyze_stream_generator(
                 degraded_agents,
             )
         )
+        sentiment_score_value = _safe_float(sentiment_insight.sentiment_score)
+        market_trend_label, market_trend_score = _derive_market_trend(
+            sentiment_score_value,
+            debate_result.decision,
+        )
+        fair_value_label, fair_value_score, fair_value_gap_pct = _derive_fair_value(
+            price_targets=valuation_insight.price_targets,
+            valuation_metrics=valuation_insight.valuation_metrics,
+            valuation_recommendation=valuation_insight.recommendation,
+        )
+        company_strength_score = _derive_company_strength_score(
+            fundamental_confidence=_safe_float(fundamental_insight.confidence),
+            valuation_confidence=_safe_float(valuation_insight.confidence),
+            debate_confidence=_safe_float(debate_result.confidence) or 0.5,
+            sentiment_score=sentiment_score_value,
+            fair_value_score=fair_value_score,
+            market_trend_score=market_trend_score,
+        )
+        analysis_updated_at = _now_utc_iso()
 
         world_model_context = {
             "risk_profile": full_user_context.get("risk_profile"),
@@ -1339,6 +1511,13 @@ async def analyze_stream_generator(
                 "consensus_reached": debate_result.consensus_reached,
             },
             "llm_synthesis": synthesis_payload,
+            "company_strength_score": company_strength_score,
+            "market_trend_label": market_trend_label,
+            "market_trend_score": market_trend_score,
+            "fair_value_label": fair_value_label,
+            "fair_value_score": fair_value_score,
+            "fair_value_gap_pct": fair_value_gap_pct,
+            "analysis_updated_at": analysis_updated_at,
             "short_recommendation": short_recommendation,
             "analysis_degraded": analysis_degraded,
             "degraded_agents": sorted(set(degraded_agents)),
@@ -1364,6 +1543,13 @@ async def analyze_stream_generator(
                 "fundamental_summary": fundamental_insight.summary,
                 "sentiment_summary": sentiment_insight.summary,
                 "valuation_summary": valuation_insight.summary,
+                "company_strength_score": company_strength_score,
+                "market_trend_label": market_trend_label,
+                "market_trend_score": market_trend_score,
+                "fair_value_label": fair_value_label,
+                "fair_value_score": fair_value_score,
+                "fair_value_gap_pct": fair_value_gap_pct,
+                "analysis_updated_at": analysis_updated_at,
                 "short_recommendation": short_recommendation,
                 "analysis_degraded": analysis_degraded,
                 "degraded_agents": sorted(set(degraded_agents)),
