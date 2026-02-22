@@ -372,6 +372,77 @@ class ConsentDBService:
             "limit": limit,
         }
 
+    async def delete_audit_log(
+        self,
+        user_id: str,
+        *,
+        agent_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        clear_all: bool = False,
+    ) -> Dict:
+        """
+        Delete audit log rows for a user.
+
+        Safety guards:
+        - Disallow broad deletes unless clear_all=True.
+        - Block delete when active consents would be impacted.
+        """
+        supabase = self._get_supabase()
+
+        if not clear_all and not agent_id and not request_id:
+            raise ValueError("At least one filter (agent_id or request_id) is required")
+
+        # Deleting audit rows that are still driving active consents would create
+        # inconsistent session state in the UI; require revoke-first behavior.
+        active_tokens = await self.get_active_tokens(user_id)
+        if clear_all and active_tokens:
+            return {
+                "deleted": 0,
+                "blocked": True,
+                "reason": "active_consents_present",
+                "active_count": len(active_tokens),
+            }
+
+        if agent_id:
+            active_for_agent = [
+                token for token in active_tokens if token.get("agent_id") == agent_id
+            ]
+            if active_for_agent:
+                return {
+                    "deleted": 0,
+                    "blocked": True,
+                    "reason": "active_consents_present",
+                    "active_count": len(active_for_agent),
+                }
+
+        if request_id:
+            active_for_request = [
+                token for token in active_tokens if token.get("request_id") == request_id
+            ]
+            if active_for_request:
+                return {
+                    "deleted": 0,
+                    "blocked": True,
+                    "reason": "active_consents_present",
+                    "active_count": len(active_for_request),
+                }
+
+        delete_query = supabase.table("consent_audit").delete().eq("user_id", user_id)
+        if agent_id:
+            delete_query = delete_query.eq("agent_id", agent_id)
+        if request_id:
+            delete_query = delete_query.eq("request_id", request_id)
+
+        response = delete_query.execute()
+        deleted = len(response.data or [])
+
+        return {
+            "deleted": deleted,
+            "blocked": False,
+            "reason": None,
+            "active_count": 0,
+        }
+
     # =========================================================================
     # Event Insertion
     # =========================================================================
