@@ -26,6 +26,7 @@ if str(CONSENT_PROTOCOL_ROOT) not in sys.path:
 
 from api.routes.kai._streaming import parse_json_with_single_repair  # noqa: E402
 from api.routes.kai.portfolio import (  # noqa: E402
+    _PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
     _aggregate_holdings_by_symbol,
     _coerce_optional_number,
     _extract_holdings_list,
@@ -135,13 +136,11 @@ async def _run_model_for_pdf(
     ]
 
     config = types.GenerateContentConfig(
-        temperature=0.1,
+        temperature=0.0,
         max_output_tokens=12288,
+        response_mime_type="application/json",
+        response_schema=_PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        thinking_config=types.ThinkingConfig(
-            include_thoughts=True,
-            thinking_level=types.ThinkingLevel.MEDIUM,
-        ),
     )
 
     response = None

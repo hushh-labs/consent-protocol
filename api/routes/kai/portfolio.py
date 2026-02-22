@@ -101,6 +101,70 @@ _HOLDING_KEY_HINTS = frozenset(
     }
 )
 
+_PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "account_metadata": {"type": "OBJECT"},
+        "portfolio_summary": {"type": "OBJECT"},
+        "asset_allocation": {
+            "type": "ARRAY",
+            "items": {"type": "OBJECT"},
+        },
+        "detailed_holdings": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "asset_class": {"type": "STRING"},
+                    "asset_type": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "name": {"type": "STRING"},
+                    "symbol": {"type": "STRING"},
+                    "symbol_cusip": {"type": "STRING"},
+                    "quantity": {"type": "NUMBER"},
+                    "price": {"type": "NUMBER"},
+                    "market_value": {"type": "NUMBER"},
+                    "cost_basis": {"type": "NUMBER"},
+                    "unrealized_gain_loss": {"type": "NUMBER"},
+                    "unrealized_gain_loss_pct": {"type": "NUMBER"},
+                    "acquisition_date": {"type": "STRING"},
+                    "estimated_annual_income": {"type": "NUMBER"},
+                    "est_yield": {"type": "NUMBER"},
+                    "sector": {"type": "STRING"},
+                    "industry": {"type": "STRING"},
+                },
+            },
+        },
+        "historical_values": {"type": "ARRAY", "items": {"type": "OBJECT"}},
+        "income_summary": {"type": "OBJECT"},
+        "realized_gain_loss": {"type": "OBJECT"},
+        "activity_and_transactions": {"type": "ARRAY", "items": {"type": "OBJECT"}},
+        "cash_management": {"type": "OBJECT"},
+        "cash_flow": {"type": "OBJECT"},
+        "projections_and_mrd": {"type": "OBJECT"},
+        "ytd_metrics": {"type": "OBJECT"},
+        "legal_and_disclosures": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "cash_balance": {"type": "NUMBER"},
+        "total_value": {"type": "NUMBER"},
+    },
+    "required": ["account_metadata", "portfolio_summary", "detailed_holdings"],
+}
+
+_PORTFOLIO_CONSISTENCY_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "account_metadata": {"type": "OBJECT"},
+        "portfolio_summary": {"type": "OBJECT"},
+        "asset_allocation": {
+            "type": "ARRAY",
+            "items": {"type": "OBJECT"},
+        },
+        "cash_balance": {"type": "NUMBER"},
+        "total_value": {"type": "NUMBER"},
+    },
+    "required": ["account_metadata", "portfolio_summary", "asset_allocation"],
+}
+
 
 def _looks_like_holding_row(value: Any) -> bool:
     if not isinstance(value, dict):
@@ -406,6 +470,236 @@ def _coerce_optional_number(value: Any) -> Optional[float]:
         return num if math.isfinite(num) else None
     except ValueError:
         return None
+
+
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, list):
+        return len(value) == 0
+    if isinstance(value, dict):
+        return len(value) == 0
+    return False
+
+
+def _merge_missing_values(primary: Any, supplement: Any) -> Any:
+    if _is_missing_value(primary):
+        return supplement
+    if isinstance(primary, dict) and isinstance(supplement, dict):
+        merged = dict(primary)
+        for key, supplemental_value in supplement.items():
+            merged[key] = _merge_missing_values(merged.get(key), supplemental_value)
+        return merged
+    if isinstance(primary, list) and isinstance(supplement, list):
+        return supplement if len(primary) == 0 and len(supplement) > 0 else primary
+    return primary
+
+
+def _detect_sparse_sections(parsed_data: dict[str, Any]) -> list[str]:
+    sparse_sections: list[str] = []
+    account_metadata = (
+        parsed_data.get("account_metadata")
+        if isinstance(parsed_data.get("account_metadata"), dict)
+        else {}
+    )
+    portfolio_summary = (
+        parsed_data.get("portfolio_summary")
+        if isinstance(parsed_data.get("portfolio_summary"), dict)
+        else {}
+    )
+    asset_allocation = parsed_data.get("asset_allocation")
+
+    account_required = ("institution_name", "statement_period_start", "statement_period_end")
+    account_present = sum(
+        1 for key in account_required if not _is_missing_value(account_metadata.get(key))
+    )
+    if account_present < 2:
+        sparse_sections.append("account_metadata")
+
+    summary_present = 0
+    if (
+        _coerce_optional_number(
+            _first_present(
+                portfolio_summary,
+                "beginning_value",
+                "beginning_market_value",
+                "start_value",
+            )
+        )
+        is not None
+    ):
+        summary_present += 1
+    if (
+        _coerce_optional_number(
+            _first_present(
+                portfolio_summary,
+                "ending_value",
+                "ending_market_value",
+                "total_market_value",
+                "total_value",
+            )
+        )
+        is not None
+    ):
+        summary_present += 1
+    if (
+        _coerce_optional_number(
+            _first_present(
+                portfolio_summary,
+                "total_change",
+                "total_investment_results",
+                "net_change_in_investment_value",
+                "investment_gain_loss",
+            )
+        )
+        is not None
+    ):
+        summary_present += 1
+    if summary_present < 2:
+        sparse_sections.append("portfolio_summary")
+
+    if not isinstance(asset_allocation, list) or len(asset_allocation) == 0:
+        sparse_sections.append("asset_allocation")
+
+    if _coerce_optional_number(parsed_data.get("cash_balance")) is None:
+        sparse_sections.append("cash_balance")
+
+    return sparse_sections
+
+
+def _normalize_portfolio_summary(parsed_data: dict[str, Any]) -> dict[str, Any]:
+    summary = (
+        parsed_data.get("portfolio_summary")
+        if isinstance(parsed_data.get("portfolio_summary"), dict)
+        else {}
+    )
+    income_summary = (
+        parsed_data.get("income_summary")
+        if isinstance(parsed_data.get("income_summary"), dict)
+        else {}
+    )
+    cash_flow = (
+        parsed_data.get("cash_flow") if isinstance(parsed_data.get("cash_flow"), dict) else {}
+    )
+
+    beginning_value = _coerce_optional_number(
+        _first_present(summary, "beginning_value", "beginning_market_value", "start_value")
+    )
+    ending_value = _coerce_optional_number(
+        _first_present(
+            summary,
+            "ending_value",
+            "ending_market_value",
+            "total_market_value",
+            "total_value",
+        )
+    )
+    total_change = _coerce_optional_number(
+        _first_present(
+            summary,
+            "total_change",
+            "total_investment_results",
+            "net_change_in_investment_value",
+            "investment_gain_loss",
+        )
+    )
+    if total_change is None and beginning_value is not None and ending_value is not None:
+        total_change = ending_value - beginning_value
+
+    net_deposits_withdrawals = _coerce_optional_number(
+        _first_present(
+            summary,
+            "net_deposits_withdrawals",
+            "net_deposits_period",
+            "net_deposits",
+            "net_contributions",
+            "net_money_market_activity",
+        )
+    )
+    investment_gain_loss = _coerce_optional_number(
+        _first_present(
+            summary,
+            "investment_gain_loss",
+            "net_change_in_investment_value",
+            "total_investment_results",
+        )
+    )
+    if investment_gain_loss is None:
+        investment_gain_loss = total_change
+
+    total_income_period = _coerce_optional_number(
+        _first_present(
+            summary,
+            "total_income_period",
+            "interest_dividends_other_income",
+            "income_period",
+            "total_income",
+        )
+    )
+    if total_income_period is None:
+        total_income_period = _coerce_optional_number(
+            _first_present(
+                income_summary,
+                "total_income",
+                "income_total",
+                "dividends_and_interest_total",
+                "total",
+            )
+        )
+
+    total_income_ytd = _coerce_optional_number(
+        _first_present(
+            summary,
+            "total_income_ytd",
+            "income_ytd",
+            "year_to_date_income",
+            "ytd_total_income",
+        )
+    )
+    if total_income_ytd is None:
+        total_income_ytd = _coerce_optional_number(
+            _first_present(
+                income_summary,
+                "total_income_ytd",
+                "year_to_date_total_income",
+            )
+        )
+    if total_income_ytd is None:
+        total_income_ytd = total_income_period
+
+    total_fees = _coerce_optional_number(
+        _first_present(
+            summary,
+            "total_fees",
+            "fees_and_expenses",
+            "fees",
+            "expenses",
+        )
+    )
+    if total_fees is None:
+        total_fees = _coerce_optional_number(_first_present(cash_flow, "fees_paid", "fees"))
+
+    normalized: dict[str, Any] = {}
+    if beginning_value is not None:
+        normalized["beginning_value"] = beginning_value
+    if ending_value is not None:
+        normalized["ending_value"] = ending_value
+    if total_change is not None:
+        normalized["total_change"] = total_change
+    if net_deposits_withdrawals is not None:
+        normalized["net_deposits_withdrawals"] = net_deposits_withdrawals
+    if investment_gain_loss is not None:
+        normalized["investment_gain_loss"] = investment_gain_loss
+    if total_income_period is not None:
+        normalized["total_income_period"] = total_income_period
+    if total_income_ytd is not None:
+        normalized["total_income_ytd"] = total_income_ytd
+    if total_fees is not None:
+        normalized["total_fees"] = total_fees
+
+    return normalized
 
 
 def _reconcile_holding_numeric_fields(
@@ -923,6 +1217,13 @@ def _build_holdings_quality_report(
     duplicate_symbol_lot_count: int,
     average_confidence: float,
 ) -> dict[str, Any]:
+    consistency_applied = bool(parse_diagnostics.get("consistency_pass_applied"))
+    consistency_model = str(parse_diagnostics.get("consistency_pass_model") or "").strip() or None
+    sparse_sections = (
+        parse_diagnostics.get("sparse_sections_detected")
+        if isinstance(parse_diagnostics.get("sparse_sections_detected"), list)
+        else []
+    )
     return {
         "raw": raw_count,
         "validated": validated_count,
@@ -939,6 +1240,9 @@ def _build_holdings_quality_report(
         "average_confidence": average_confidence,
         "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
         "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
+        "consistency_pass_applied": consistency_applied,
+        "consistency_pass_model": consistency_model,
+        "sparse_sections_detected": sparse_sections,
     }
 
 
@@ -1410,6 +1714,86 @@ async def get_dashboard_profile_picks(
     )
 
 
+def _extract_json_payload_from_response(response: Any) -> dict[str, Any]:
+    parsed = getattr(response, "parsed", None)
+    if isinstance(parsed, dict):
+        return parsed
+
+    raw_text = str(getattr(response, "text", "") or "").strip()
+    if not raw_text and getattr(response, "candidates", None):
+        candidate = response.candidates[0]
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) or []
+        raw_text = "".join(str(getattr(part, "text", "") or "") for part in parts).strip()
+
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.startswith("```"):
+        raw_text = raw_text[3:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
+    raw_text = raw_text.strip()
+    if not raw_text:
+        raise ValueError("Model returned empty JSON payload")
+    decoded = json.loads(raw_text)
+    if not isinstance(decoded, dict):
+        raise ValueError("Model payload is not a JSON object")
+    return decoded
+
+
+async def _run_portfolio_consistency_pass(
+    *,
+    client: Any,
+    model_name: str,
+    content: bytes,
+    is_csv_upload: bool,
+    sparse_sections: list[str],
+    parsed_data: dict[str, Any],
+    types_module: Any,
+) -> dict[str, Any]:
+    sparse_label = ", ".join(sparse_sections) if sparse_sections else "none"
+    prompt = (
+        "You are validating a brokerage statement extraction. "
+        "Return JSON only. Fill only missing/partial sections; do not alter known-good values.\n\n"
+        f"Sparse sections detected: {sparse_label}\n\n"
+        "Return one JSON object with keys:\n"
+        "- account_metadata\n"
+        "- portfolio_summary\n"
+        "- asset_allocation\n"
+        "- cash_balance\n"
+        "- total_value\n\n"
+        "Rules:\n"
+        "- Use null for unknown values.\n"
+        "- Do not invent tickers or account identifiers.\n"
+        "- Preserve numeric signs exactly.\n"
+        "- asset_allocation must be an array of {category, market_value, percentage} rows.\n"
+        "- Output valid JSON only.\n\n"
+        f"Existing extraction JSON:\n{json.dumps(parsed_data, ensure_ascii=True, separators=(',', ':'))}"
+    )
+
+    upload_mime_type = "text/csv" if is_csv_upload else "application/pdf"
+    contents = [
+        types_module.Part.from_text(text=prompt),
+        types_module.Part.from_bytes(data=content, mime_type=upload_mime_type),
+    ]
+    config = types_module.GenerateContentConfig(
+        temperature=0.0,
+        max_output_tokens=8192,
+        response_mime_type="application/json",
+        response_schema=_PORTFOLIO_CONSISTENCY_RESPONSE_SCHEMA,
+        automatic_function_calling=types_module.AutomaticFunctionCallingConfig(disable=True),
+    )
+    response = await client.aio.models.generate_content(
+        model=model_name,
+        contents=contents,
+        config=config,
+    )
+    repair_json = _extract_json_payload_from_response(response)
+    if not isinstance(repair_json, dict):
+        raise ValueError("Consistency pass returned invalid payload")
+    return repair_json
+
+
 @router.post("/portfolio/import/stream")
 async def import_portfolio_stream(
     request: Request,
@@ -1421,7 +1805,7 @@ async def import_portfolio_stream(
     SSE streaming endpoint for portfolio import with real-time progress.
 
     Streams Gemini parsing progress as Server-Sent Events (SSE).
-    Uses Gemini 3 Flash thinking mode for visible AI reasoning.
+    Uses schema-constrained extraction with optional consistency repair pass.
 
     **Event Types (canonical)**:
     - `stage`: Current processing stage + heartbeat metadata
@@ -1466,7 +1850,7 @@ async def import_portfolio_stream(
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
     async def event_generator():
-        """Generate SSE events for streaming portfolio parsing with Gemini thinking."""
+        """Generate SSE events for streaming portfolio parsing."""
         HARD_TIMEOUT_SECONDS = PORTFOLIO_IMPORT_TIMEOUT_SECONDS
         stream = CanonicalSSEStream("portfolio_import")
 
@@ -1474,9 +1858,17 @@ async def import_portfolio_stream(
         from google.genai import types
         from google.genai.types import HttpOptions
 
-        from hushh_mcp.constants import GEMINI_MODEL
+        from hushh_mcp.constants import (
+            KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS,
+            KAI_PORTFOLIO_IMPORT_ENABLE_THINKING,
+            KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL,
+            KAI_PORTFOLIO_IMPORT_REPAIR_MODEL,
+        )
 
-        thinking_enabled = True
+        thinking_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_THINKING
+        consistency_pass_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS
+        extraction_model = KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL
+        repair_model = KAI_PORTFOLIO_IMPORT_REPAIR_MODEL
 
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
@@ -1492,8 +1884,14 @@ async def import_portfolio_stream(
 
                 # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
                 client = genai.Client(http_options=HttpOptions(api_version="v1"))
-                model_to_use = GEMINI_MODEL
-                logger.info(f"SSE: Using Vertex AI with model {model_to_use}")
+                model_to_use = extraction_model
+                logger.info(
+                    "SSE: Portfolio import models primary=%s repair=%s thinking=%s consistency_pass=%s",
+                    model_to_use,
+                    repair_model,
+                    thinking_enabled,
+                    consistency_pass_enabled,
+                )
 
                 # Stage 2: Indexing
                 yield stream.event(
@@ -1533,7 +1931,6 @@ async def import_portfolio_stream(
                     )
                     return
 
-                # Keep prompt concise for lower latency and better stream yield behavior.
                 prompt = """Extract this brokerage statement to JSON only.
 
 Return one JSON object with keys:
@@ -1549,12 +1946,11 @@ Return one JSON object with keys:
 - total_value
 
 Rules:
-- No markdown, no prose.
-- Return compact minified JSON (no indentation).
+- Return valid JSON object only (no prose, no markdown, no code fences).
 - Use null for unknown fields.
 - Do not invent ticker symbols.
 - Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
-- For each holding, include `asset_type` and `sector` whenever present in the statement.
+- For each holding, include `asset_type`, `sector`, and `industry` whenever present in the statement.
 - Preserve numeric values exactly (including negatives)."""
 
                 # Create content payload with source-aware MIME type.
@@ -1565,8 +1961,10 @@ Rules:
                 ]
 
                 config_kwargs: dict[str, Any] = {
-                    "temperature": 0.1,
+                    "temperature": 0.0,
                     "max_output_tokens": 12288,
+                    "response_mime_type": "application/json",
+                    "response_schema": _PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
                     "automatic_function_calling": types.AutomaticFunctionCallingConfig(
                         disable=True
                     ),
@@ -1872,6 +2270,50 @@ Rules:
                 parse_diagnostics: dict[str, Any] = {}
                 try:
                     parsed_data, parse_diagnostics = parse_json_with_single_repair(full_response)
+                    normalized_summary = _normalize_portfolio_summary(parsed_data)
+                    if normalized_summary:
+                        parsed_data["portfolio_summary"] = {
+                            **(
+                                parsed_data.get("portfolio_summary")
+                                if isinstance(parsed_data.get("portfolio_summary"), dict)
+                                else {}
+                            ),
+                            **normalized_summary,
+                        }
+                    sparse_sections = _detect_sparse_sections(parsed_data)
+                    parse_diagnostics["sparse_sections_detected"] = sparse_sections
+                    if consistency_pass_enabled and sparse_sections:
+                        yield stream.event(
+                            "stage",
+                            {
+                                "stage": "parsing",
+                                "message": (
+                                    "Running consistency pass for missing sections: "
+                                    + ", ".join(sparse_sections)
+                                ),
+                            },
+                        )
+                        try:
+                            consistency_payload = await _run_portfolio_consistency_pass(
+                                client=client,
+                                model_name=repair_model,
+                                content=content,
+                                is_csv_upload=is_csv_upload,
+                                sparse_sections=sparse_sections,
+                                parsed_data=parsed_data,
+                                types_module=types,
+                            )
+                            parsed_data = _merge_missing_values(parsed_data, consistency_payload)
+                            parse_diagnostics["consistency_pass_applied"] = True
+                            parse_diagnostics["consistency_pass_model"] = repair_model
+                        except Exception as consistency_error:
+                            logger.warning(
+                                "[Portfolio Import] Consistency pass failed: %s", consistency_error
+                            )
+                            parse_diagnostics["consistency_pass_applied"] = False
+                            parse_diagnostics["consistency_pass_error"] = str(consistency_error)
+                    else:
+                        parse_diagnostics["consistency_pass_applied"] = False
                     detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
                     parsed_data["detailed_holdings"] = detailed_holdings
                     if holdings_source != "detailed_holdings":
@@ -1917,14 +2359,20 @@ Rules:
                         "change_in_value": _coerce_optional_number(
                             portfolio_summary.get("total_change")
                         ),
-                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance"))
-                        or 0.0,
+                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
                         "net_deposits_withdrawals": _coerce_optional_number(
                             portfolio_summary.get("net_deposits_withdrawals")
                         ),
                         "investment_gain_loss": _coerce_optional_number(
                             portfolio_summary.get("investment_gain_loss")
                         ),
+                        "total_income_period": _coerce_optional_number(
+                            portfolio_summary.get("total_income_period")
+                        ),
+                        "total_income_ytd": _coerce_optional_number(
+                            portfolio_summary.get("total_income_ytd")
+                        ),
+                        "total_fees": _coerce_optional_number(portfolio_summary.get("total_fees")),
                     }
 
                     detailed_holdings_raw = parsed_data.get("detailed_holdings")
@@ -2097,10 +2545,10 @@ Rules:
                         "historical_values": parsed_data.get("historical_values"),
                         "ytd_metrics": parsed_data.get("ytd_metrics"),
                         "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
-                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance"))
-                        or 0.0,
+                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
                         "total_value": total_value,
                         "quality_report": quality_report,
+                        "parse_fallback": False,
                         "kpis": {
                             "holdings_count": len(holdings),
                             "total_value": total_value,
@@ -2117,6 +2565,7 @@ Rules:
                         {
                             "portfolio_data": portfolio_data,
                             "success": True,
+                            "parse_fallback": False,
                             "thought_count": thought_count,
                             "holdings_raw_count": raw_count,
                             "holdings_validated_count": len(validated_holdings),
@@ -2215,7 +2664,7 @@ Rules:
                                         "beginning_value": None,
                                         "ending_value": total_value or None,
                                         "change_in_value": None,
-                                        "cash_balance": 0.0,
+                                        "cash_balance": None,
                                         "net_deposits_withdrawals": None,
                                         "investment_gain_loss": None,
                                     },
@@ -2229,9 +2678,10 @@ Rules:
                                     "historical_values": None,
                                     "ytd_metrics": None,
                                     "legal_and_disclosures": None,
-                                    "cash_balance": 0.0,
+                                    "cash_balance": None,
                                     "total_value": total_value,
                                     "quality_report": quality_report,
+                                    "parse_fallback": True,
                                     "kpis": {
                                         "holdings_count": len(holdings),
                                         "total_value": total_value,

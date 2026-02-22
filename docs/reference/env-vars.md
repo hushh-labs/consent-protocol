@@ -61,6 +61,10 @@ These are read by `mcp_server.py` (separate from the main FastAPI server):
 
 Migration scripts use `DB_*` variables only (same as runtime). `db/migrate.py` uses `db.connection.get_database_url()` and `get_database_ssl()`. There is no `DATABASE_URL` variable.
 
+## Kai Portfolio Import Model Policy
+
+Kai portfolio import model selection is constants-driven in `hushh_mcp/constants.py` (`KAI_PORTFOLIO_IMPORT_*` constants) rather than per-environment toggles. Runtime environment controls provider/auth (`GOOGLE_GENAI_USE_VERTEXAI`, Vertex project/location credentials, API key).
+
 ---
 
 ## Secrets in Production

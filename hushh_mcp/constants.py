@@ -234,6 +234,16 @@ GEMINI_MODEL_FULL = "models/gemini-3-flash-preview"
 # Vertex AI model (for Google Cloud deployments)
 GEMINI_MODEL_VERTEX = "gemini-3-flash-preview"
 
+# ==================== Kai Portfolio Import Defaults ====================
+
+# Portfolio import stream extraction uses deterministic JSON extraction settings
+# and should stay centralized in constants (not ad-hoc env toggles).
+KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL = GEMINI_MODEL
+# Keep repair pass on Flash unless explicitly changed in code after benchmark sign-off.
+KAI_PORTFOLIO_IMPORT_REPAIR_MODEL = GEMINI_MODEL
+KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS = True
+KAI_PORTFOLIO_IMPORT_ENABLE_THINKING = False
+
 # ==================== Exports ====================
 
 __all__ = [
@@ -248,4 +258,8 @@ __all__ = [
     "GEMINI_MODEL",
     "GEMINI_MODEL_FULL",
     "GEMINI_MODEL_VERTEX",
+    "KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL",
+    "KAI_PORTFOLIO_IMPORT_REPAIR_MODEL",
+    "KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS",
+    "KAI_PORTFOLIO_IMPORT_ENABLE_THINKING",
 ]
