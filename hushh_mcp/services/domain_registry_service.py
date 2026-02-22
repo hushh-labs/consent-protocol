@@ -12,6 +12,11 @@ from datetime import datetime
 from typing import Optional
 
 from db.db_client import get_db
+from hushh_mcp.services.domain_contracts import (
+    CANONICAL_DOMAIN_REGISTRY,
+    FINANCIAL_SUBINTENT_REGISTRY,
+    canonical_domain_metadata_map,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,63 +37,8 @@ class DomainInfo:
     last_updated_at: Optional[datetime] = None
 
 
-# Default domain metadata for common domains
-DEFAULT_DOMAIN_METADATA = {
-    "financial": {
-        "display_name": "Financial",
-        "icon_name": "wallet",
-        "color_hex": "#D4AF37",
-        "description": "Investment portfolio, risk profile, and financial preferences",
-    },
-    "subscriptions": {
-        "display_name": "Subscriptions",
-        "icon_name": "credit-card",
-        "color_hex": "#6366F1",
-        "description": "Streaming services, memberships, and recurring payments",
-    },
-    "health": {
-        "display_name": "Health & Wellness",
-        "icon_name": "heart",
-        "color_hex": "#EF4444",
-        "description": "Fitness data, health metrics, and wellness preferences",
-    },
-    "travel": {
-        "display_name": "Travel",
-        "icon_name": "plane",
-        "color_hex": "#0EA5E9",
-        "description": "Travel preferences, loyalty programs, and trip history",
-    },
-    "food": {
-        "display_name": "Food & Dining",
-        "icon_name": "utensils",
-        "color_hex": "#F97316",
-        "description": "Dietary preferences, favorite cuisines, and restaurant history",
-    },
-    "professional": {
-        "display_name": "Professional",
-        "icon_name": "briefcase",
-        "color_hex": "#8B5CF6",
-        "description": "Career information, skills, and work preferences",
-    },
-    "entertainment": {
-        "display_name": "Entertainment",
-        "icon_name": "tv",
-        "color_hex": "#EC4899",
-        "description": "Movies, music, games, and media preferences",
-    },
-    "shopping": {
-        "display_name": "Shopping",
-        "icon_name": "shopping-bag",
-        "color_hex": "#14B8A6",
-        "description": "Purchase history, brand preferences, and wishlists",
-    },
-    "general": {
-        "display_name": "General",
-        "icon_name": "folder",
-        "color_hex": "#6B7280",
-        "description": "Miscellaneous preferences and attributes",
-    },
-}
+# Default domain metadata for canonical top-level domains.
+DEFAULT_DOMAIN_METADATA = canonical_domain_metadata_map()
 
 
 class DomainRegistryService:
@@ -104,6 +54,7 @@ class DomainRegistryService:
         self._cache: dict[str, DomainInfo] = {}
         self._cache_ttl = 300  # 5 minutes
         self._cache_time: Optional[datetime] = None
+        self._canonical_seeded = False
 
     @property
     def supabase(self):
@@ -122,6 +73,43 @@ class DomainRegistryService:
         """Invalidate the domain cache."""
         self._cache.clear()
         self._cache_time = None
+
+    async def ensure_canonical_domains(self) -> None:
+        """Best-effort seed of canonical top-level domains into domain_registry."""
+        if self._canonical_seeded:
+            return
+        for entry in CANONICAL_DOMAIN_REGISTRY:
+            try:
+                await self.register_domain(
+                    domain_key=entry.domain_key,
+                    display_name=entry.display_name,
+                    description=entry.description,
+                    icon_name=entry.icon_name,
+                    color_hex=entry.color_hex,
+                )
+            except Exception as seed_error:
+                logger.warning(
+                    "Failed to seed canonical domain '%s': %s",
+                    entry.domain_key,
+                    seed_error,
+                )
+        for subintent in FINANCIAL_SUBINTENT_REGISTRY:
+            try:
+                await self.register_domain(
+                    domain_key=subintent.domain_key,
+                    display_name=subintent.display_name,
+                    description=subintent.description,
+                    icon_name=subintent.icon_name,
+                    color_hex=subintent.color_hex,
+                    parent_domain=subintent.parent_domain,
+                )
+            except Exception as seed_error:
+                logger.warning(
+                    "Failed to seed domain subintent '%s': %s",
+                    subintent.domain_key,
+                    seed_error,
+                )
+        self._canonical_seeded = True
 
     @staticmethod
     def _summary_count(summary: dict | None) -> int:
@@ -185,8 +173,8 @@ class DomainRegistryService:
         final_description = description or defaults.get("description")
 
         try:
-            # Use RPC function for atomic upsert
-            result = self.supabase.rpc(
+            # Use RPC function for atomic upsert when supported by the client.
+            rpc_call = self.supabase.rpc(
                 "auto_register_domain",
                 {
                     "p_domain_key": domain_key,
@@ -194,17 +182,51 @@ class DomainRegistryService:
                     "p_icon_name": final_icon,
                     "p_color_hex": final_color,
                 },
-            ).execute()
+            )
+            rpc_payload: dict | None = None
+            if hasattr(rpc_call, "execute"):
+                result = rpc_call.execute()
+                raw_payload = result.data
+                if isinstance(raw_payload, dict):
+                    rpc_payload = raw_payload
+                elif isinstance(raw_payload, list) and raw_payload:
+                    first_row = raw_payload[0]
+                    if isinstance(first_row, dict):
+                        nested = first_row.get("auto_register_domain")
+                        if isinstance(nested, dict):
+                            rpc_payload = nested
+                        else:
+                            rpc_payload = first_row
 
-            if result.data:
+            if rpc_payload:
+                if parent_domain is not None or final_description is not None:
+                    try:
+                        patch_data: dict[str, object] = {}
+                        if parent_domain is not None:
+                            patch_data["parent_domain"] = parent_domain
+                        if final_description is not None:
+                            patch_data["description"] = final_description
+                        if patch_data:
+                            self.supabase.table("domain_registry").update(patch_data).eq(
+                                "domain_key", domain_key
+                            ).execute()
+                    except Exception as patch_error:
+                        logger.warning(
+                            "Failed to patch domain metadata for %s after RPC upsert: %s",
+                            domain_key,
+                            patch_error,
+                        )
                 domain_info = DomainInfo(
-                    domain_key=result.data.get("domain_key", domain_key),
-                    display_name=result.data.get("display_name", final_display_name),
-                    icon_name=result.data.get("icon_name", final_icon),
-                    color_hex=result.data.get("color_hex", final_color),
-                    description=final_description,
-                    attribute_count=result.data.get("attribute_count", 0),
-                    user_count=result.data.get("user_count", 0),
+                    domain_key=rpc_payload.get("domain_key", domain_key),
+                    display_name=rpc_payload.get("display_name", final_display_name),
+                    icon_name=rpc_payload.get("icon_name", final_icon),
+                    color_hex=rpc_payload.get("color_hex", final_color),
+                    description=final_description
+                    if final_description is not None
+                    else rpc_payload.get("description"),
+                    parent_domain=parent_domain,
+                    attribute_count=rpc_payload.get("attribute_count", 0),
+                    user_count=rpc_payload.get("user_count", 0),
                 )
                 self._cache[domain_key] = domain_info
                 self._cache_time = datetime.utcnow()

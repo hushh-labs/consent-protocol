@@ -2,7 +2,8 @@
 """
 Utility tool handlers (validate_token, delegate, list_scopes, discover_user_domains).
 
-Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
+Only world-model scopes are supported: world_model.read, world_model.write,
+attr.{domain}.*, and optional nested attr.{domain}.{subintent}.* scopes.
 """
 
 import json
@@ -17,7 +18,7 @@ from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import AGENT_PORTS
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
-from mcp_modules.config import FASTAPI_URL
+from mcp_modules.config import FASTAPI_URL, MCP_DEVELOPER_TOKEN
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -144,68 +145,46 @@ async def handle_delegate(args: dict) -> list[TextContent]:
 
 async def handle_list_scopes() -> list[TextContent]:
     """
-    List all available consent scopes dynamically.
-
-    Purpose: Transparency - users and developers can see what data categories exist
-
-    NOTE: This should ideally fetch from domain_registry for truly dynamic scopes.
-    For now, returns common dynamic scopes as examples.
+    List scope categories using backend dynamic registry output.
     """
-    # Common dynamic scopes (in production, fetch from domain_registry)
-    scopes = [
-        {
-            "scope": "attr.food.*",
-            "emoji": "🍽️",
-            "description": get_scope_description("attr.food.*"),
-            "pattern": "attr.food.{attribute_key}",
-            "sensitivity": "medium",
-        },
-        {
-            "scope": "attr.professional.*",
-            "emoji": "💼",
-            "description": get_scope_description("attr.professional.*"),
-            "pattern": "attr.professional.{attribute_key}",
-            "sensitivity": "medium",
-        },
-        {
-            "scope": "attr.financial.*",
-            "emoji": "💰",
-            "description": get_scope_description("attr.financial.*"),
-            "pattern": "attr.financial.{attribute_key}",
-            "sensitivity": "high",
-        },
-        {
-            "scope": "attr.health.*",
-            "emoji": "❤️",
-            "description": get_scope_description("attr.health.*"),
-            "pattern": "attr.health.{attribute_key}",
-            "sensitivity": "high",
-        },
-    ]
-
-    return [
-        TextContent(
-            type="text",
-            text=json.dumps(
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{FASTAPI_URL}/api/v1/list-scopes")
+            response.raise_for_status()
+            data = response.json()
+            return [TextContent(type="text", text=json.dumps(data))]
+    except Exception as e:
+        logger.warning("list_scopes backend fallback: %s", e)
+        fallback = {
+            "scopes": [
                 {
-                    "available_scopes": scopes,
-                    "total_scopes": len(scopes),
-                    "scope_format": "attr.{domain}.* for wildcard, attr.{domain}.{attribute_key} for specific",
-                    "scopes_are_dynamic": True,
-                    "note": "These are example scopes. Per-user scope strings come from the world model: call discover_user_domains(user_id) to get the actual domains and scope strings for a user (backend: GET /api/world-model/scopes/{user_id}).",
-                    "usage": "Call discover_user_domains(user_id) first, then request_consent(user_id, scope) with a scope from that result.",
-                    "privacy_principle": "Each scope requires separate, explicit user consent",
-                    "hushh_promise": "Your data is never accessed without your permission.",
-                }
-            ),
-        )
-    ]
+                    "name": "world_model.read",
+                    "description": get_scope_description("world_model.read"),
+                },
+                {
+                    "name": "world_model.write",
+                    "description": get_scope_description("world_model.write"),
+                },
+                {
+                    "name": "attr.{domain}.*",
+                    "description": "Dynamic domain scope (discover per user first).",
+                },
+                {
+                    "name": "attr.{domain}.{subintent}.*",
+                    "description": "Dynamic subintent scope when metadata exposes subintents.",
+                },
+            ],
+            "scopes_are_dynamic": True,
+            "note": "Use discover_user_domains(user_id) for user-specific scope strings.",
+            "fallback_reason": str(e),
+        }
+        return [TextContent(type="text", text=json.dumps(fallback))]
 
 
 async def handle_discover_user_domains(args: dict) -> list[TextContent]:
     """
     Discover which domains a user has and the scope strings to request.
-    Calls GET /api/world-model/scopes/{user_id} (or metadata). Use before request_consent.
+    Calls GET /api/v1/user-scopes/{user_id}. Use before request_consent.
     """
     from .consent_tools import resolve_email_to_uid
 
@@ -241,7 +220,10 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{FASTAPI_URL}/api/world-model/scopes/{uid}")
+            headers = {}
+            if MCP_DEVELOPER_TOKEN:
+                headers["X-MCP-Developer-Token"] = MCP_DEVELOPER_TOKEN
+            r = await client.get(f"{FASTAPI_URL}/api/v1/user-scopes/{uid}", headers=headers)
             if r.status_code == 404:
                 return [
                     TextContent(
@@ -253,6 +235,19 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
                                 "scopes": [],
                                 "message": "No world model data for this user (new user or no domains yet)",
                                 "usage": "Call request_consent with scope='world_model.read' or attr.{domain}.* after user adds data",
+                            }
+                        ),
+                    )
+                ]
+            if r.status_code == 401 and not MCP_DEVELOPER_TOKEN:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "error": "developer_token_missing",
+                                "message": "MCP_DEVELOPER_TOKEN is required for discover_user_domains",
+                                "hint": "Set MCP_DEVELOPER_TOKEN in MCP environment to call /api/v1/user-scopes/{user_id}.",
                             }
                         ),
                     )
@@ -284,9 +279,10 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
     scopes = data.get("scopes") or []
     domains = []
     for s in scopes:
-        m = re.match(r"^attr\.([a-zA-Z0-9_]+)\.\*$", s)
+        m = re.match(r"^attr\.([a-zA-Z0-9_]+)(?:\..*)?$", s)
         if m:
             domains.append(m.group(1))
+    domains = sorted(set(domains))
 
     return [
         TextContent(

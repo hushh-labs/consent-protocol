@@ -2,7 +2,8 @@
 """
 Consent request and status check handlers.
 
-Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
+Only world-model scopes are supported: world_model.read, world_model.write,
+attr.{domain}.*, and optional nested attr.{domain}.{subintent}.* scopes.
 
 Regulated cutover note:
 - request_consent no longer performs blocking SSE/poll waits for consent resolution.
@@ -22,7 +23,6 @@ from mcp_modules.config import (
     FRONTEND_URL,
     MCP_DEVELOPER_TOKEN,
     PRODUCTION_MODE,
-    SCOPE_API_MAP,
     resolve_scope_api,
 )
 
@@ -97,8 +97,8 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             )
         ]
 
-    scope_api = resolve_scope_api(scope_str)
-    if not scope_api:
+    scope_dot = resolve_scope_api(scope_str)
+    if not scope_dot:
         return [
             TextContent(
                 type="text",
@@ -106,9 +106,13 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                     {
                         "status": "error",
                         "error": f"Invalid scope: {scope_str}",
-                        "valid_scopes": list(SCOPE_API_MAP.keys())
-                        + ["attr.{domain}.*  (any domain)"],
-                        "hint": "Use list_scopes tool to see available options, or use attr.<domain>.*",
+                        "valid_scopes": [
+                            "world_model.read",
+                            "world_model.write",
+                            "attr.{domain}.*",
+                            "attr.{domain}.{subintent}.*",
+                        ],
+                        "hint": "Use discover_user_domains(user_id) to fetch actual per-user scope strings.",
                     }
                 ),
             )
@@ -166,7 +170,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                 json={
                     "developer_token": MCP_DEVELOPER_TOKEN,
                     "user_id": user_id,
-                    "scope": scope_api,
+                    "scope": scope_dot,
                     "expiry_hours": 24,
                 },
                 timeout=10.0,

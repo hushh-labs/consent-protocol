@@ -20,9 +20,10 @@ import logging
 import math
 import re
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -37,12 +38,15 @@ from hushh_mcp.services.portfolio_import_service import (
     ImportResult,
     get_portfolio_import_service,
 )
+from hushh_mcp.services.renaissance_service import TIER_WEIGHTS, get_renaissance_service
 from hushh_mcp.services.symbol_master_service import get_symbol_master_service
 from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_PICK_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+_MAX_PROFILE_PICKS = 8
 
 _NUMERIC_STRIP_RE = re.compile(r"[$,\s]")
 _LIVE_SYMBOL_RE = re.compile(
@@ -973,6 +977,109 @@ class PortfolioSummaryResponse(BaseModel):
     total_gain_loss_pct: Optional[float] = None
 
 
+class DashboardProfilePick(BaseModel):
+    """Profile-personalized ticker candidate for dashboard recommendations."""
+
+    symbol: str
+    company_name: str
+    sector: Optional[str] = None
+    tier: Optional[str] = None
+    conviction_weight: float = 0.0
+    price: Optional[float] = None
+    change_percent: Optional[float] = None
+    recommendation_bias: Optional[str] = None
+    rationale: str
+    source_tags: list[str] = Field(default_factory=list)
+    degraded: bool = False
+    as_of: Optional[str] = None
+
+
+class DashboardProfilePicksResponse(BaseModel):
+    """Response payload for profile-based picks on Kai dashboard."""
+
+    user_id: str
+    generated_at: str
+    risk_profile: str
+    picks: list[DashboardProfilePick] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_symbols_query(raw: Optional[str], *, max_items: int = 20) -> list[str]:
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.split(","):
+        symbol = str(part or "").strip().upper()
+        if not symbol or not _PICK_TICKER_RE.match(symbol):
+            continue
+        if symbol in out:
+            continue
+        out.append(symbol)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _normalize_risk_profile(raw: Any) -> str:
+    text = str(raw or "").strip().lower()
+    if text in {"conservative", "balanced", "aggressive"}:
+        return text
+    return "balanced"
+
+
+def _allowed_tiers_for_risk(risk_profile: str) -> tuple[str, ...]:
+    if risk_profile == "conservative":
+        return ("ACE", "KING")
+    if risk_profile == "aggressive":
+        return ("KING", "QUEEN", "JACK", "ACE")
+    return ("ACE", "KING", "QUEEN")
+
+
+def _recommendation_bias_from_tier(tier: str) -> str:
+    tier_upper = str(tier or "").strip().upper()
+    return {
+        "ACE": "STRONG_BUY",
+        "KING": "BUY",
+        "QUEEN": "HOLD_TO_BUY",
+        "JACK": "WATCHLIST",
+    }.get(tier_upper, "NEUTRAL")
+
+
+def _candidate_rank(
+    *,
+    tier: str,
+    sector: str,
+    dominant_sectors: list[str],
+    tier_rank: Optional[int],
+) -> tuple[float, int, str]:
+    tier_upper = str(tier or "").strip().upper()
+    sector_clean = str(sector or "").strip()
+    score = float(TIER_WEIGHTS.get(tier_upper, 0.5))
+    if dominant_sectors:
+        if sector_clean == dominant_sectors[0]:
+            score += 0.22
+        elif sector_clean in dominant_sectors:
+            score += 0.12
+    tie_breaker = tier_rank if isinstance(tier_rank, int) else 999_999
+    return (score, -tie_breaker, tier_upper)
+
+
+def _build_pick_rationale(*, tier: str, sector: str, dominant_sector: Optional[str]) -> str:
+    tier_upper = str(tier or "").strip().upper() or "UNRANKED"
+    if dominant_sector and sector and sector == dominant_sector:
+        return (
+            f"{tier_upper} tier candidate with sector alignment to your existing portfolio "
+            f"({sector})."
+        )
+    if sector:
+        return f"{tier_upper} tier candidate with resilient fundamentals in {sector}."
+    return f"{tier_upper} tier candidate from the Renaissance investable universe."
+
+
 @router.post("/portfolio/import", response_model=PortfolioImportResponse)
 async def import_portfolio(
     file: UploadFile,
@@ -1123,6 +1230,181 @@ async def get_portfolio_summary(
         losers_count=losers_count,
         winners_count=winners_count,
         total_gain_loss_pct=total_gain_loss_pct,
+    )
+
+
+@router.get("/dashboard/profile-picks/{user_id}", response_model=DashboardProfilePicksResponse)
+async def get_dashboard_profile_picks(
+    user_id: str,
+    symbols: Optional[str] = Query(
+        default=None,
+        description="Optional comma-separated ticker symbols from current holdings context.",
+    ),
+    limit: int = Query(default=4, ge=1, le=_MAX_PROFILE_PICKS),
+    token_data: dict = Depends(require_vault_owner_token),
+) -> DashboardProfilePicksResponse:
+    """
+    Build profile-based dashboard picks from real user context.
+
+    Source blend:
+    - User profile/risk from `world_model_index_v2.domain_summaries.financial`
+    - Existing holdings symbols from caller-provided decrypted symbols context
+    - Renaissance investable universe tiers
+    - Live quote/sector context via `fetch_market_data`
+
+    No synthetic placeholders are returned.
+    """
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User ID does not match token",
+        )
+
+    requested_symbols = _normalize_symbols_query(symbols)
+    requested_limit = max(1, min(int(limit), _MAX_PROFILE_PICKS))
+    consent_token = str(token_data.get("token") or "")
+
+    world_model = get_world_model_service()
+    index = await world_model.get_index_v2(user_id)
+    domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
+    financial_summary = (
+        domain_summaries.get("financial")
+        if isinstance(domain_summaries.get("financial"), dict)
+        else {}
+    )
+    risk_profile = _normalize_risk_profile(
+        financial_summary.get("risk_profile") or financial_summary.get("profile_risk_profile")
+    )
+    allowed_tiers = _allowed_tiers_for_risk(risk_profile)
+    holdings_count = int(
+        _coerce_optional_number(
+            financial_summary.get("holdings_count")
+            or financial_summary.get("attribute_count")
+            or financial_summary.get("item_count")
+        )
+        or 0
+    )
+
+    from hushh_mcp.operons.kai.fetchers import fetch_market_data
+
+    holdings_sector_counter: Counter[str] = Counter()
+    if requested_symbols:
+        sector_sem = asyncio.Semaphore(4)
+
+        async def resolve_holding_sector(symbol: str) -> Optional[str]:
+            async with sector_sem:
+                try:
+                    quote = await fetch_market_data(symbol, user_id, consent_token)
+                    sector = str(quote.get("sector") or "").strip()
+                    return sector or None
+                except Exception as exc:
+                    logger.warning(
+                        "[Kai Picks] failed to resolve holding sector for %s (%s): %s",
+                        symbol,
+                        user_id,
+                        exc,
+                    )
+                    return None
+
+        sector_rows = await asyncio.gather(
+            *(resolve_holding_sector(symbol) for symbol in requested_symbols)
+        )
+        for sector in sector_rows:
+            if sector:
+                holdings_sector_counter[sector] += 1
+
+    dominant_sectors = [sector for sector, _ in holdings_sector_counter.most_common(2)]
+    dominant_sector = dominant_sectors[0] if dominant_sectors else None
+
+    renaissance_service = get_renaissance_service()
+    tier_results = await asyncio.gather(
+        *(renaissance_service.get_by_tier(tier) for tier in allowed_tiers),
+        return_exceptions=True,
+    )
+    owned_symbols = set(requested_symbols)
+    candidate_by_symbol: dict[str, Any] = {}
+    for tier_value, result in zip(allowed_tiers, tier_results, strict=False):
+        if isinstance(result, Exception):
+            logger.warning("[Kai Picks] Renaissance tier fetch failed (%s): %s", tier_value, result)
+            continue
+        for stock in result:
+            symbol_key = str(getattr(stock, "ticker", "") or "").strip().upper()
+            if not symbol_key or symbol_key in owned_symbols or symbol_key in candidate_by_symbol:
+                continue
+            candidate_by_symbol[symbol_key] = stock
+
+    ranked_candidates = sorted(
+        candidate_by_symbol.values(),
+        key=lambda stock: _candidate_rank(
+            tier=str(getattr(stock, "tier", "")),
+            sector=str(getattr(stock, "sector", "")),
+            dominant_sectors=dominant_sectors,
+            tier_rank=getattr(stock, "tier_rank", None),
+        ),
+        reverse=True,
+    )
+    candidate_pool = ranked_candidates[: max(requested_limit * 3, requested_limit)]
+
+    quote_sem = asyncio.Semaphore(4)
+
+    async def enrich_candidate(stock: Any) -> DashboardProfilePick:
+        symbol_value = str(getattr(stock, "ticker", "") or "").strip().upper()
+        company_name = str(getattr(stock, "company_name", "") or symbol_value)
+        tier_value = str(getattr(stock, "tier", "") or "").strip().upper() or None
+        sector_value = str(getattr(stock, "sector", "") or "").strip() or None
+        conviction_weight = float(TIER_WEIGHTS.get(tier_value or "", 0.5))
+        recommendation_bias = _recommendation_bias_from_tier(tier_value or "")
+
+        quote_payload: dict[str, Any] = {}
+        degraded = False
+        source_tags = ["Renaissance"]
+        async with quote_sem:
+            try:
+                quote_payload = await fetch_market_data(symbol_value, user_id, consent_token)
+                source_name = str(quote_payload.get("source") or "").strip()
+                if source_name:
+                    source_tags.append(source_name)
+            except Exception as exc:
+                degraded = True
+                source_tags.append("Quote unavailable")
+                logger.warning("[Kai Picks] quote fetch failed for %s: %s", symbol_value, exc)
+
+        return DashboardProfilePick(
+            symbol=symbol_value,
+            company_name=company_name,
+            sector=sector_value,
+            tier=tier_value,
+            conviction_weight=round(conviction_weight, 4),
+            price=_coerce_optional_number(quote_payload.get("price")),
+            change_percent=_coerce_optional_number(quote_payload.get("change_percent")),
+            recommendation_bias=recommendation_bias,
+            rationale=_build_pick_rationale(
+                tier=tier_value or "UNRANKED",
+                sector=sector_value or "",
+                dominant_sector=dominant_sector,
+            ),
+            source_tags=source_tags,
+            degraded=degraded,
+            as_of=str(quote_payload.get("fetched_at") or _now_utc_iso()),
+        )
+
+    enriched = await asyncio.gather(*(enrich_candidate(stock) for stock in candidate_pool))
+    picks = enriched[:requested_limit]
+
+    context_payload = {
+        "requested_symbol_count": len(requested_symbols),
+        "holdings_count_index": holdings_count,
+        "dominant_sectors": dominant_sectors,
+        "allowed_tiers": list(allowed_tiers),
+        "candidate_pool_size": len(candidate_pool),
+    }
+
+    return DashboardProfilePicksResponse(
+        user_id=user_id,
+        generated_at=_now_utc_iso(),
+        risk_profile=risk_profile,
+        picks=picks,
+        context=context_payload,
     )
 
 
