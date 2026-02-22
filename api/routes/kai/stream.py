@@ -248,6 +248,13 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _safe_int(value: Any) -> int | None:
+    parsed = _safe_float(value)
+    if parsed is None:
+        return None
+    return int(parsed)
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -593,21 +600,70 @@ async def analyze_stream_generator(
             "request_context": request_context,
         }
 
+        request_holdings = request_context.get("holdings")
+        if isinstance(request_holdings, list):
+            cleaned_holdings = [row for row in request_holdings if isinstance(row, dict)]
+            full_user_context["holdings_summary"] = cleaned_holdings[:30]
+            full_user_context["holdings_count"] = len(cleaned_holdings)
+
+        requested_holdings_count = _safe_int(request_context.get("holdings_count"))
+        if requested_holdings_count is not None:
+            full_user_context["holdings_count"] = max(
+                int(full_user_context.get("holdings_count") or 0),
+                max(0, requested_holdings_count),
+            )
+
+        request_debate_context = request_context.get("debate_context")
+        if isinstance(request_debate_context, dict):
+            full_user_context["debate_context"] = request_debate_context
+            snapshot = request_debate_context.get("portfolio_snapshot")
+            if isinstance(snapshot, dict):
+                snapshot_holdings = _safe_int(snapshot.get("holdings_count"))
+                if snapshot_holdings is not None:
+                    full_user_context["holdings_count"] = max(
+                        int(full_user_context.get("holdings_count") or 0),
+                        max(0, snapshot_holdings),
+                    )
+
+        for rich_key in (
+            "account_summary",
+            "asset_allocation",
+            "income_summary",
+            "realized_gain_loss",
+            "quality_report",
+        ):
+            value = request_context.get(rich_key)
+            if isinstance(value, dict):
+                full_user_context[rich_key] = value
+
+        total_value_context = _safe_float(request_context.get("total_value"))
+        if total_value_context is not None:
+            full_user_context["total_value"] = total_value_context
+
+        cash_balance_context = _safe_float(request_context.get("cash_balance"))
+        if cash_balance_context is not None:
+            full_user_context["cash_balance"] = cash_balance_context
+
         if wm_index and wm_index.domain_summaries:
             # Extract Financial Context
             fin_summary = wm_index.domain_summaries.get("financial", {})
-            request_holdings = request_context.get("holdings")
-            if isinstance(request_holdings, list):
-                full_user_context["holdings_summary"] = [
-                    row for row in request_holdings if isinstance(row, dict)
-                ]
-            full_user_context["holdings_count"] = _extract_summary_count(
+            summary_holdings_count = _extract_summary_count(
                 fin_summary if isinstance(fin_summary, dict) else {}
             )
-            full_user_context["portfolio_allocation"] = {
-                "equities": fin_summary.get("equities_pct", 0),
-                "cash": fin_summary.get("cash_pct", 0),
-            }
+            full_user_context["holdings_count"] = max(
+                int(full_user_context.get("holdings_count") or 0),
+                summary_holdings_count,
+            )
+
+            requested_allocation = request_context.get("asset_allocation")
+            if isinstance(requested_allocation, dict):
+                full_user_context["portfolio_allocation"] = requested_allocation
+            else:
+                full_user_context["portfolio_allocation"] = {
+                    "equities": fin_summary.get("equities_pct", 0),
+                    "cash": fin_summary.get("cash_pct", 0),
+                    "fixed_income": fin_summary.get("bonds_pct", 0),
+                }
             full_user_context["financial_summary"] = fin_summary
 
             # Extract financial profile summary flags (stored from onboarding preferences flow)
