@@ -10,7 +10,7 @@ Kai implements the AlphaAgents framework -- three specialist agents debate acros
 
 **Output**: A `DecisionCard` with a recommendation (Buy / Hold / Reduce), short recommendation summary, confidence score, supporting evidence, and sourced reasoning from all three agents.
 
-Kai intro personalization is optional and managed in encrypted world-model domain `kai_profile`. Legacy `/api/kai/preferences/*` routes are removed.
+Kai intro personalization is optional and managed in encrypted world-model path `financial.profile`. Legacy `/api/kai/preferences/*` routes are removed.
 
 ---
 
@@ -213,10 +213,10 @@ The LLM client is initialized in `hushh_mcp/operons/kai/llm.py` with graceful fa
 
 ## Analysis History
 
-Analysis results are stored in the world model under the `kai_decisions` domain.
+Analysis results are stored in the world model under `financial.analysis.decisions` (finance-root contract).
 
 - **FIFO**: Maximum 3 versions per ticker. Fourth analysis deletes the oldest.
-- **Storage**: Encrypted in `world_model_data`, summarized in `world_model_index_v2.domain_summaries.kai_decisions`
+- **Storage**: Encrypted in `world_model_data.financial.analysis.decisions`, summarized in `world_model_index_v2.domain_summaries.financial`
 - **Access**: `GET /api/kai/decisions/{user_id}` returns the decision summary list
 
 ---

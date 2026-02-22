@@ -173,7 +173,7 @@ class VaultDBService:
 
         Args:
             user_id: The user ID
-            domain: The vault domain (food, professional, kai_preferences, kai_decisions)
+            domain: The vault domain (food, professional, financial, etc.)
             consent_token: Valid consent token with read scope
             field_names: Optional list of specific fields to retrieve
 

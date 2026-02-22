@@ -3,10 +3,10 @@
 Kai Decision Endpoints — reads from world_model_index_v2.domain_summaries.
 
 The legacy vault_kai table has been dropped.  All decision history is now
-stored in domain_summaries["kai_decisions"] inside world_model_index_v2.
+stored under the `financial` domain summary contract.
 
 Write operations (store/delete) are handled client-side via the generic
-POST /api/world-model/store-domain endpoint with domain="kai_decisions".
+POST /api/world-model/store-domain endpoint with domain="financial".
 """
 
 import logging
@@ -48,7 +48,7 @@ async def get_decision_history(
     """
     Get decision history from domain_summaries.
 
-    Reads from world_model_index_v2.domain_summaries.kai_decisions.
+    Canonical source: world_model_index_v2.domain_summaries.financial.
     REQUIRES: VAULT_OWNER consent token.
     """
     if token_data.get("user_id") != user_id:
@@ -60,15 +60,27 @@ async def get_decision_history(
     world_model = get_world_model_service()
     index = await world_model.get_index_v2(user_id)
 
+    domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
     decisions: list[dict] = []
-    if index and "kai_decisions" in (index.domain_summaries or {}):
-        raw = index.domain_summaries["kai_decisions"]
-        # domain_summaries.kai_decisions is expected to be a list or
-        # a dict with a "decisions" key
-        if isinstance(raw, list):
-            decisions = raw
-        elif isinstance(raw, dict):
-            decisions = raw.get("decisions", [])
+    financial_summary = (
+        domain_summaries.get("financial")
+        if isinstance(domain_summaries.get("financial"), dict)
+        else {}
+    )
+    if isinstance(financial_summary, dict):
+        for key in (
+            "recent_decisions",
+            "analysis_recent_decisions",
+            "analysis_decisions",
+            "decisions",
+        ):
+            payload = financial_summary.get(key)
+            if isinstance(payload, list):
+                decisions.extend([row for row in payload if isinstance(row, dict)])
+            elif isinstance(payload, dict):
+                nested = payload.get("decisions")
+                if isinstance(nested, list):
+                    decisions.extend([row for row in nested if isinstance(row, dict)])
 
     # Pagination
     total = len(decisions)
@@ -80,11 +92,11 @@ async def get_decision_history(
 @router.post("/decision/store", status_code=status.HTTP_410_GONE)
 async def store_decision_gone():
     """
-    GONE — use POST /api/world-model/store-domain with domain='kai_decisions'.
+    GONE — use POST /api/world-model/store-domain with domain='financial'.
     """
     raise HTTPException(
         status_code=410,
-        detail="Gone. Use POST /api/world-model/store-domain with domain='kai_decisions'.",
+        detail="Gone. Use POST /api/world-model/store-domain with domain='financial'.",
     )
 
 
@@ -107,5 +119,5 @@ async def delete_decision_gone(decision_id: int):
     """
     raise HTTPException(
         status_code=410,
-        detail="Gone. Use POST /api/world-model/store-domain with domain='kai_decisions'.",
+        detail="Gone. Use POST /api/world-model/store-domain with domain='financial'.",
     )

@@ -2,7 +2,8 @@
 """
 Developer API v1 endpoints for external access with consent.
 
-Only world-model scopes are supported: world_model.read, world_model.write, attr.{domain}.*
+Only world-model scopes are supported: world_model.read, world_model.write,
+attr.{domain}.*, and optional nested attr.{domain}.{subintent}.* scopes.
 """
 
 import json
@@ -12,28 +13,27 @@ import re
 import time
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.models import ConsentRequest, ConsentResponse, DataAccessRequest
+from hushh_mcp.consent.scope_generator import get_scope_generator
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_enum
 from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.domain_registry_service import get_domain_registry_service
 
-# Well-known world-model scopes (dot notation).
-# API also accepts any dynamic attr.{domain}.* scope based on available_domains.
+# Well-known non-dynamic world-model scopes (dot notation).
 _STATIC_WORLD_MODEL_SCOPES = {
     "world_model.read",
     "world_model.write",
-    "attr.food.*",
-    "attr.professional.*",
-    "attr.financial.*",
-    "attr.health.*",
-    "attr.kai_decisions.*",
 }
 
-# Pattern for dynamic attr.{domain}.* scopes (lowercase alphanumeric + underscores)
-_DYNAMIC_ATTR_SCOPE_RE = re.compile(r"^attr\.[a-z][a-z0-9_]*\.\*$")
+# Pattern for dynamic attr scopes with optional nested subintent paths:
+# - attr.{domain}.*
+# - attr.{domain}.{subintent}.*
+# - attr.{domain}.{subintent}.{attribute}
+_DYNAMIC_ATTR_SCOPE_RE = re.compile(r"^attr\.[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*(?:\.\*)?$")
 
 
 def _is_valid_world_model_scope(scope: str) -> bool:
@@ -106,6 +106,18 @@ def _load_registered_developers() -> dict[str, dict]:
     return registry
 
 
+def _require_registered_developer(developer_token: str) -> dict:
+    token = str(developer_token or "").strip()
+    registered_developers = _load_registered_developers()
+    if not registered_developers:
+        logger.error("developer_api.registry_missing_or_empty")
+        raise HTTPException(status_code=503, detail="Developer registry is not configured")
+    dev_info = registered_developers.get(token)
+    if not dev_info:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid developer token")
+    return dev_info
+
+
 def get_scope_description(scope: str) -> str:
     """
     Human-readable scope descriptions.
@@ -130,6 +142,7 @@ async def developer_api_root():
             "POST /api/v1/food-data",
             "POST /api/v1/professional-data",
             "GET /api/v1/list-scopes",
+            "GET /api/v1/user-scopes/{user_id}",
         ],
     }
 
@@ -153,28 +166,53 @@ async def request_consent(request: ConsentRequest):
 
     logger.info("developer_api.request_consent scope=%s", request.scope)
 
-    registered_developers = _load_registered_developers()
-    if not registered_developers:
-        logger.error("developer_api.registry_missing_or_empty")
-        raise HTTPException(status_code=503, detail="Developer registry is not configured")
-
     # Verify developer
-    if request.developer_token not in registered_developers:
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid developer token")
-
-    dev_info = registered_developers[request.developer_token]
+    dev_info = _require_registered_developer(request.developer_token)
 
     # Normalize to dot notation for storage and validation (e.g. attr_food -> attr.food.*)
     scope_dot = normalize_scope(request.scope)
     if not _is_valid_world_model_scope(scope_dot):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid scope: {request.scope}. Use world_model.read, world_model.write, or attr.{{domain}}.* (e.g. attr.food.*)",
+            detail=(
+                f"Invalid scope: {request.scope}. Use world_model.read/world_model.write "
+                "or dynamic attr.{domain}.* / attr.{domain}.{subintent}.* scopes."
+            ),
         )
 
-    # Verify scope is allowed for this developer
-    approved = dev_info["approved_scopes"]
-    if "*" not in approved and scope_dot not in approved:
+    if scope_dot.startswith("attr."):
+        scope_generator = get_scope_generator()
+        if not await scope_generator.validate_scope(scope_dot, request.user_id):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Scope '{scope_dot}' is not available for this user. "
+                    "Discover valid scopes first via /api/v1/user-scopes/{user_id}."
+                ),
+            )
+
+    # Verify scope is allowed for this developer.
+    approved = [normalize_scope(str(scope)) for scope in dev_info["approved_scopes"]]
+    scope_generator = get_scope_generator()
+    is_scope_approved = False
+    for allowed_scope in approved:
+        if allowed_scope == "*":
+            is_scope_approved = True
+            break
+        if allowed_scope == scope_dot:
+            is_scope_approved = True
+            break
+        # world_model.read is broader than any attr.* scope.
+        if allowed_scope == "world_model.read" and scope_dot.startswith("attr."):
+            is_scope_approved = True
+            break
+        # Allow narrower requests under approved wildcard paths.
+        if allowed_scope.startswith("attr.") and scope_dot.startswith("attr."):
+            if scope_generator.matches_wildcard(scope_dot, allowed_scope):
+                is_scope_approved = True
+                break
+
+    if not is_scope_approved:
         raise HTTPException(
             status_code=403, detail=f"Scope '{scope_dot}' not approved for this developer"
         )
@@ -284,24 +322,141 @@ async def list_available_scopes():
     if disabled:
         return disabled
 
+    scopes = [
+        {"name": "world_model.read", "description": get_scope_description("world_model.read")},
+        {"name": "world_model.write", "description": get_scope_description("world_model.write")},
+    ]
+
+    registry = get_domain_registry_service()
+    await registry.ensure_canonical_domains()
+    registry_domains = await registry.list_domains(include_empty=True)
+
+    parent_domains = sorted(
+        {
+            str(domain.domain_key).strip().lower()
+            for domain in registry_domains
+            if not domain.parent_domain
+        }
+    )
+
+    for domain_key in parent_domains:
+        scopes.append(
+            {
+                "name": f"attr.{domain_key}.*",
+                "description": get_scope_description(f"attr.{domain_key}.*"),
+                "source": "domain_registry",
+            }
+        )
+
+    for domain in registry_domains:
+        parent_key = str(domain.parent_domain or "").strip().lower()
+        if not parent_key:
+            continue
+        domain_key = str(domain.domain_key).strip().lower()
+        if parent_key not in parent_domains:
+            continue
+        if domain_key.startswith(f"{parent_key}."):
+            subintent = domain_key[len(parent_key) + 1 :]
+        else:
+            subintent = domain_key
+        if not subintent:
+            continue
+        sub_scope = f"attr.{parent_key}.{subintent}.*"
+        scopes.append(
+            {
+                "name": sub_scope,
+                "description": get_scope_description(sub_scope),
+                "source": "domain_registry",
+            }
+        )
+
+    # Add contract templates for clients that construct user-specific requests dynamically.
+    scopes.append(
+        {
+            "name": "attr.{domain}.*",
+            "description": "Dynamic domain scope from user metadata (discover first).",
+            "source": "template",
+        }
+    )
+    scopes.append(
+        {
+            "name": "attr.{domain}.{subintent}.*",
+            "description": "Dynamic subintent scope when domain metadata exposes subintents.",
+            "source": "template",
+        }
+    )
+
+    deduped = []
+    seen = set()
+    for row in scopes:
+        name = row.get("name")
+        if not isinstance(name, str) or not name or name in seen:
+            continue
+        seen.add(name)
+        deduped.append(row)
+
     return {
-        "scopes": [
-            {"name": "world_model.read", "description": "Read full world model (all domains)"},
-            {"name": "world_model.write", "description": "Write to world model"},
-            {
-                "name": "attr.food.*",
-                "description": "Read user's food preferences (dietary, cuisines, budget)",
-            },
-            {
-                "name": "attr.professional.*",
-                "description": "Read user's professional profile (title, skills, experience)",
-            },
-            {"name": "attr.financial.*", "description": "Read user's financial data"},
-            {"name": "attr.health.*", "description": "Read user's health and wellness data"},
-            {"name": "attr.kai_decisions.*", "description": "Read/write Kai decision history"},
-            {
-                "name": "attr.{domain}.*",
-                "description": "Dynamic: any domain from world_model_index_v2.available_domains",
-            },
-        ]
+        "scopes": deduped,
+        "scopes_are_dynamic": True,
+        "scope_pattern": "attr.{domain}.* and attr.{domain}.{subintent}.*",
+        "note": "Per-user scope strings should be discovered via /api/v1/user-scopes/{user_id}.",
+    }
+
+
+@router.get("/user-scopes/{user_id}")
+async def list_user_scopes(
+    user_id: str,
+    x_mcp_developer_token: str | None = Header(None, alias="X-MCP-Developer-Token"),
+    developer_token: str | None = None,
+):
+    """
+    Discover user-specific dynamic scope strings using developer auth.
+
+    This endpoint is intended for MCP/tooling flows that need domain discovery
+    before requesting user consent.
+    """
+    disabled = _disabled_response_if_needed()
+    if disabled:
+        return disabled
+
+    token = str(x_mcp_developer_token or developer_token or "").strip()
+    dev_info = _require_registered_developer(token)
+
+    scope_generator = get_scope_generator()
+    scopes = await scope_generator.get_available_scopes(user_id)
+
+    approved_scopes = [normalize_scope(str(scope)) for scope in dev_info["approved_scopes"]]
+    if "*" not in approved_scopes:
+        filtered_scopes: list[str] = []
+        for discovered_scope in scopes:
+            allowed = False
+            for approved_scope in approved_scopes:
+                if approved_scope == discovered_scope:
+                    allowed = True
+                    break
+                if approved_scope == "world_model.read" and discovered_scope.startswith("attr."):
+                    allowed = True
+                    break
+                if approved_scope.startswith("attr.") and discovered_scope.startswith("attr."):
+                    if scope_generator.matches_wildcard(discovered_scope, approved_scope):
+                        allowed = True
+                        break
+            if allowed:
+                filtered_scopes.append(discovered_scope)
+        scopes = sorted(set(filtered_scopes))
+
+    domains = sorted(
+        {
+            domain
+            for scope in scopes
+            for domain, _path, _is_wildcard in [scope_generator.parse_scope(scope)]
+            if domain
+        }
+    )
+
+    return {
+        "user_id": user_id,
+        "domains": domains,
+        "scopes": scopes,
+        "scopes_are_dynamic": True,
     }

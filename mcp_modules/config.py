@@ -53,7 +53,7 @@ SERVER_INFO = {
         },
         {
             "name": "list_scopes",
-            "purpose": "List available consent scope categories (static examples)",
+            "purpose": "List dynamic consent scope categories from backend registry",
         },
         {
             "name": "check_consent_status",
@@ -82,37 +82,55 @@ SERVER_INFO = {
 # SCOPE MAPPINGS
 # ============================================================================
 
-# Map MCP scope strings (dot notation) to API format. Only world-model scopes are supported.
-# Static entries for well-known scopes:
+# Canonical scopes and legacy aliases.
+# We keep legacy underscore inputs for backward compatibility, but normalize
+# everything to canonical dot notation before sending to backend.
 SCOPE_API_MAP = {
-    "world_model.read": "world_model_read",
-    "attr.food.*": "attr_food",
-    "attr.professional.*": "attr_professional",
-    "attr.financial.*": "attr_financial",
-    "attr.health.*": "attr_health",
-    "attr.kai_decisions.*": "attr_kai_decisions",
+    "world_model.read": "world_model.read",
+    "world_model.write": "world_model.write",
+    "vault.owner": "vault.owner",
+    "world_model_read": "world_model.read",
+    "world_model_write": "world_model.write",
+    "vault_owner": "vault.owner",
 }
 
 
 def resolve_scope_api(scope: str) -> str | None:
-    """Resolve a scope string to its API format, supporting dynamic attr.* scopes.
+    """Resolve scope input to canonical dot notation.
 
-    Static scopes are looked up from SCOPE_API_MAP.  Dynamic scopes matching
-    the ``attr.{domain}.*`` pattern are resolved on-the-fly by converting dots
-    and stripping the wildcard suffix (e.g. ``attr.travel.*`` -> ``attr_travel``).
+    Accepts:
+    - canonical static scopes (world_model.read/write, vault.owner)
+    - canonical dynamic scopes (attr.{domain}.*, attr.{domain}.{subintent}.*,
+      or specific paths like attr.{domain}.{attribute})
+    - legacy underscore aliases (world_model_read, attr_financial, etc.)
 
-    Returns None if the scope is not a valid world-model scope.
+    Returns None if scope format is invalid.
     """
-    # Fast path: static lookup
-    if scope in SCOPE_API_MAP:
-        return SCOPE_API_MAP[scope]
-
-    # Dynamic: accept any well-formed attr.{domain}.* scope
     import re
 
-    m = re.match(r"^attr\.([a-z][a-z0-9_]*)\.\*$", scope)
-    if m:
-        domain = m.group(1)
-        return f"attr_{domain}"
+    value = str(scope or "").strip()
+    if not value:
+        return None
+
+    # Static / legacy alias normalization
+    static = SCOPE_API_MAP.get(value)
+    if static:
+        return static
+
+    # Canonical dynamic scope (domain, nested subintent, optional wildcard)
+    if re.match(r"^attr\.[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*(?:\.\*)?$", value):
+        return value
+
+    # Legacy dynamic API format:
+    # - attr_financial -> attr.financial.*
+    # - attr_financial__profile -> attr.financial.profile.*
+    legacy_match = re.match(r"^attr_([a-z][a-z0-9_]*(?:__[a-z][a-z0-9_]*)*)$", value)
+    if legacy_match:
+        parts = [segment for segment in legacy_match.group(1).split("__") if segment]
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return f"attr.{parts[0]}.*"
+        return f"attr.{parts[0]}.{'.'.join(parts[1:])}.*"
 
     return None

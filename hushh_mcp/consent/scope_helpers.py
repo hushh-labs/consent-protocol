@@ -97,23 +97,13 @@ def scope_matches(granted_scope: str, requested_scope: str) -> bool:
         if generator.is_dynamic_scope(requested_scope):
             return True
 
-    # Wildcard matching for attr.* scopes
+    # Wildcard + path-aware matching for dynamic attr.* scopes
     generator = get_scope_generator()
     if generator.is_dynamic_scope(granted_scope) and generator.is_dynamic_scope(requested_scope):
-        # Both are attr.* scopes - check domain isolation
-        granted_domain, _, granted_wildcard = generator.parse_scope(granted_scope)
-        requested_domain, _, _ = generator.parse_scope(requested_scope)
-
-        # Domain must match for isolation
-        if granted_domain != requested_domain:
-            return False
-
-        # If granted is wildcard (attr.domain.*), it matches all in that domain
-        if granted_wildcard:
-            return True
-
-        # Otherwise, must be exact match (already checked above)
-        return granted_scope == requested_scope
+        # Uses DynamicScopeGenerator's parser for domain/path-aware checks:
+        # - attr.financial.* covers attr.financial.profile.*
+        # - attr.financial.profile.* does NOT cover attr.financial.holdings
+        return generator.matches_wildcard(requested_scope, granted_scope)
 
     return False
 
@@ -182,15 +172,15 @@ def is_write_scope(scope: str) -> bool:
 # API format (underscore) -> dot notation for backend/MCP consistency
 _API_FORMAT_TO_DOT = {
     "world_model_read": "world_model.read",
-    "attr_food": "attr.food.*",
-    "attr_professional": "attr.professional.*",
-    "attr_financial": "attr.financial.*",
-    "attr_health": "attr.health.*",
-    "attr_kai_decisions": "attr.kai_decisions.*",
+    "world_model_write": "world_model.write",
+    "vault_owner": "vault.owner",
 }
 
-# Pattern for dynamic API-format attr scopes: attr_{domain}
-_DYNAMIC_API_ATTR_RE = __import__("re").compile(r"^attr_([a-z][a-z0-9_]*)$")
+# Pattern for dynamic API-format attr scopes:
+# - attr_{domain}
+# - attr_{domain}__{subintent}__{nested}
+# Double underscore is used as path separator.
+_DYNAMIC_API_ATTR_RE = __import__("re").compile(r"^attr_([a-z][a-z0-9_]*(?:__[a-z][a-z0-9_]*)*)$")
 
 
 def _api_format_to_dot(scope: str) -> str:
@@ -203,7 +193,14 @@ def _api_format_to_dot(scope: str) -> str:
         return static
     m = _DYNAMIC_API_ATTR_RE.match(scope)
     if m:
-        return f"attr.{m.group(1)}.*"
+        parts = [part for part in m.group(1).split("__") if part]
+        if not parts:
+            return scope
+        domain = parts[0]
+        if len(parts) == 1:
+            return f"attr.{domain}.*"
+        subpath = ".".join(parts[1:])
+        return f"attr.{domain}.{subpath}.*"
     return scope
 
 

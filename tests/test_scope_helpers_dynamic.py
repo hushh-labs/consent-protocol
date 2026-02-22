@@ -1,0 +1,28 @@
+"""Scope helper tests for dynamic domain/subintent paths."""
+
+from hushh_mcp.consent.scope_helpers import normalize_scope, resolve_scope_to_enum, scope_matches
+from hushh_mcp.constants import ConsentScope
+
+
+def test_scope_matches_domain_wildcard():
+    assert scope_matches("attr.financial.*", "attr.financial.holdings")
+    assert not scope_matches("attr.financial.*", "attr.food.preferences")
+
+
+def test_scope_matches_nested_wildcard_isolation():
+    assert scope_matches("attr.financial.profile.*", "attr.financial.profile.risk_score")
+    assert not scope_matches("attr.financial.profile.*", "attr.financial.holdings")
+    assert not scope_matches("attr.financial.profile.*", "attr.food.profile.risk_score")
+
+
+def test_scope_matches_world_model_read_superset():
+    assert scope_matches("world_model.read", "attr.financial.profile.*")
+
+
+def test_normalize_scope_legacy_dynamic_format():
+    assert normalize_scope("attr_financial") == "attr.financial.*"
+    assert normalize_scope("attr_financial__profile") == "attr.financial.profile.*"
+
+
+def test_resolve_scope_to_enum_dynamic_scope():
+    assert resolve_scope_to_enum("attr.financial.profile.*") == ConsentScope.WORLD_MODEL_READ
