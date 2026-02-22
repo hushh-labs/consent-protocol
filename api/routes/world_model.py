@@ -78,8 +78,8 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
     """
     Get user's context from world_model_index_v2 domain_summaries.
 
-    Returns cached data stored when portfolio is uploaded:
-    - risk_bucket: User's risk profile
+    Returns cached data stored in the financial summary contract:
+    - risk_profile: user preference risk from onboarding/profile settings
     - holdings: List of portfolio holdings
     - portfolio_allocation: Allocation percentages
 
@@ -94,7 +94,11 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
         if index and "financial" in (index.domain_summaries or {}):
             financial_summary = index.domain_summaries["financial"]
 
-            risk_profile = financial_summary.get("risk_bucket", "balanced")
+            risk_profile = (
+                financial_summary.get("risk_profile")
+                or financial_summary.get("profile_risk_profile")
+                or "balanced"
+            )
 
             # Holdings are intentionally stripped from domain_summaries.
             # Canonical summary counters must be used for server-side context.

@@ -971,7 +971,8 @@ class PortfolioSummaryResponse(BaseModel):
     has_portfolio: bool
     holdings_count: Optional[int] = None
     portfolio_value_bucket: Optional[str] = None
-    risk_bucket: Optional[str] = None
+    portfolio_risk_bucket: Optional[str] = None
+    preference_risk_profile: Optional[str] = None
     losers_count: Optional[int] = None
     winners_count: Optional[int] = None
     total_gain_loss_pct: Optional[float] = None
@@ -1116,7 +1117,7 @@ async def import_portfolio(
         "winners": [
             {"symbol": "NVDA", "name": "NVIDIA", "gain_loss_pct": 45.2, "gain_loss": 8500.00}
         ],
-        "kpis_stored": ["holdings_count", "risk_bucket", "sector_allocation"],
+        "kpis_stored": ["holdings_count", "portfolio_risk_bucket", "sector_allocation"],
         "source": "schwab"
     }
     ```
@@ -1226,7 +1227,8 @@ async def get_portfolio_summary(
         has_portfolio=bool(has_portfolio),
         holdings_count=holdings_count,
         portfolio_value_bucket=summary.get("portfolio_value_bucket"),
-        risk_bucket=summary.get("risk_bucket"),
+        portfolio_risk_bucket=summary.get("portfolio_risk_bucket") or summary.get("risk_bucket"),
+        preference_risk_profile=summary.get("risk_profile") or summary.get("profile_risk_profile"),
         losers_count=losers_count,
         winners_count=winners_count,
         total_gain_loss_pct=total_gain_loss_pct,
