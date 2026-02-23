@@ -753,12 +753,15 @@ class DebateEngine:
                 or ""
             ).strip()
             screening_excerpt = screening_criteria[:1800] if screening_criteria else ""
+            screening_line = (
+                "- Screening Criteria:\n" + screening_excerpt if screening_excerpt else ""
+            )
             ren_context_str = f"""
         RENAISSANCE DATA (THE MATHEMATICAL TRUTH):
         - Tier: {tier} (ACE/KING = Strong Buy, QUEEN/JACK = Watch/Hold)
         - Free Cash Flow (Billions): {fcf}
         - Thesis: {thesis}
-        {"- Screening Criteria:\\n" + screening_excerpt if screening_excerpt else ""}
+        {screening_line}
         
         MANDATE: You MUST reference this 'Renaissance' data. 
         If Tier is ACE/KING, respect the math even if sentiment is weak.
