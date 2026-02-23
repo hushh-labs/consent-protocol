@@ -65,6 +65,19 @@ Migration scripts use `DB_*` variables only (same as runtime). `db/migrate.py` u
 
 Kai portfolio import model selection is constants-driven in `hushh_mcp/constants.py` (`KAI_PORTFOLIO_IMPORT_*` constants) rather than per-environment toggles. Runtime environment controls provider/auth (`GOOGLE_GENAI_USE_VERTEXAI`, Vertex project/location credentials, API key).
 
+Kai generation behavior for import/optimize/debate is also constants-driven (not `.env` toggles):
+
+- `KAI_LLM_TEMPERATURE=0.0` (deterministic)
+- `KAI_LLM_THINKING_ENABLED`
+- `KAI_LLM_THINKING_LEVEL`
+- `KAI_LLM_STREAM_INCLUDE_THOUGHTS`
+- `KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS`
+
+Optional local-only vars used by migration/reset utilities:
+
+- `KAI_TEST_USER_ID`
+- `KAI_TEST_PASSPHRASE`
+
 ---
 
 ## Secrets in Production

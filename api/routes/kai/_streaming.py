@@ -18,7 +18,7 @@ from typing import Any, Literal, cast
 StreamKind = Literal["portfolio_import", "portfolio_optimize", "stock_analyze"]
 SCHEMA_VERSION = "1.0"
 DEFAULT_STREAM_TIMEOUT_SECONDS = 120
-PORTFOLIO_IMPORT_TIMEOUT_SECONDS = 180
+PORTFOLIO_IMPORT_TIMEOUT_SECONDS = 360
 STOCK_ANALYZE_TIMEOUT_SECONDS = 300
 HEARTBEAT_INTERVAL_SECONDS = 4.0
 

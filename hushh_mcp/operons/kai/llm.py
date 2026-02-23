@@ -1,8 +1,8 @@
 # hushh_mcp/operons/kai/llm.py
 
 """
-Kai LLM Operons - Powered by Gemini 3 Flash
-Processes financial data through Gemini 3 Flash for fast, intelligent analysis.
+Kai LLM Operons - Powered by Gemini
+Processes financial data through the configured Gemini model for analysis.
 """
 
 import asyncio
@@ -26,7 +26,16 @@ except ImportError:
     logging.warning("⚠️ google-genai SDK not found. Kai LLM operons are unavailable.")
 
 from hushh_mcp.consent.token import validate_token
-from hushh_mcp.constants import GEMINI_MODEL, ConsentScope
+from hushh_mcp.constants import (
+    GEMINI_MODEL,
+    KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+    KAI_LLM_STREAM_INCLUDE_THOUGHTS,
+    KAI_LLM_TEMPERATURE,
+    KAI_LLM_THINKING_ENABLED,
+    KAI_LLM_THINKING_LEVEL,
+    KAI_SYNTHESIS_MAX_OUTPUT_TOKENS,
+    ConsentScope,
+)
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
@@ -241,7 +250,6 @@ async def _generate_content_text(
     *,
     prompt: str,
     timeout_seconds: float,
-    temperature: float,
     max_output_tokens: int,
     response_mime_type: Optional[str] = None,
 ) -> str:
@@ -249,9 +257,17 @@ async def _generate_content_text(
         raise RuntimeError(_gemini_unavailable_reason or "Gemini client unavailable")
 
     config_kwargs: Dict[str, Any] = {
-        "temperature": temperature,
+        "temperature": KAI_LLM_TEMPERATURE,
         "max_output_tokens": max_output_tokens,
     }
+    if KAI_LLM_THINKING_ENABLED:
+        thinking_level = getattr(types.ThinkingLevel, str(KAI_LLM_THINKING_LEVEL).upper(), None)
+        if thinking_level is None:
+            thinking_level = types.ThinkingLevel.HIGH
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            include_thoughts=False,
+            thinking_level=thinking_level,
+        )
     if response_mime_type:
         config_kwargs["response_mime_type"] = response_mime_type
 
@@ -458,8 +474,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
         response_text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT DATA:\n{context}",
             timeout_seconds=40.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
 
@@ -557,8 +572,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
         text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
             timeout_seconds=30.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
         if text.startswith("```json"):
@@ -665,8 +679,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
         text = await _generate_content_text(
             prompt=f"{system_instruction}\n\nCONTEXT:\n{context}",
             timeout_seconds=30.0,
-            temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
             response_mime_type="application/json",
         )
         if text.startswith("```json"):
@@ -742,8 +755,7 @@ highlights={json.dumps(highlights[:24], default=str)[:4000]}
         text = await _generate_content_text(
             prompt=synthesis_prompt,
             timeout_seconds=25.0,
-            temperature=0.2,
-            max_output_tokens=2500,
+            max_output_tokens=KAI_SYNTHESIS_MAX_OUTPUT_TOKENS,
             response_mime_type="application/json",
         )
         parsed = _extract_json(text)
@@ -797,10 +809,19 @@ async def stream_gemini_response(
         }
         return
 
-    config = types.GenerateContentConfig(
-        temperature=0.7,
-        max_output_tokens=4096,
-    )
+    config_kwargs: Dict[str, Any] = {
+        "temperature": KAI_LLM_TEMPERATURE,
+        "max_output_tokens": KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+    }
+    if KAI_LLM_THINKING_ENABLED:
+        thinking_level = getattr(types.ThinkingLevel, str(KAI_LLM_THINKING_LEVEL).upper(), None)
+        if thinking_level is None:
+            thinking_level = types.ThinkingLevel.HIGH
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            include_thoughts=bool(KAI_LLM_STREAM_INCLUDE_THOUGHTS),
+            thinking_level=thinking_level,
+        )
+    config = types.GenerateContentConfig(**config_kwargs)
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
@@ -817,22 +838,52 @@ async def stream_gemini_response(
 
                 async for chunk in stream:
                     try:
-                        chunk_text = chunk.text if hasattr(chunk, "text") else ""
+                        emitted = False
+                        if hasattr(chunk, "candidates") and chunk.candidates:
+                            for candidate in chunk.candidates:
+                                content = getattr(candidate, "content", None)
+                                parts = getattr(content, "parts", None) or []
+                                for part in parts:
+                                    text_value = getattr(part, "text", None)
+                                    if not text_value:
+                                        continue
+                                    is_thought = bool(getattr(part, "thought", False))
+                                    token_count += 1
+                                    full_text += str(text_value)
+                                    emitted = True
+                                    if token_count % 10 == 0:
+                                        logger.info(
+                                            "[Gemini Streaming] Token #%s for %s",
+                                            token_count,
+                                            agent_name,
+                                        )
+                                    yield {
+                                        "type": "token",
+                                        "text": str(text_value),
+                                        "agent": agent_name,
+                                        "token_source": "thought" if is_thought else "response",
+                                    }
+
+                        if not emitted:
+                            chunk_text = chunk.text if hasattr(chunk, "text") else ""
+                            if chunk_text:
+                                token_count += 1
+                                full_text += str(chunk_text)
+                                if token_count % 10 == 0:
+                                    logger.info(
+                                        "[Gemini Streaming] Token #%s for %s",
+                                        token_count,
+                                        agent_name,
+                                    )
+                                yield {
+                                    "type": "token",
+                                    "text": str(chunk_text),
+                                    "agent": agent_name,
+                                    "token_source": "response",
+                                }
                     except Exception as e:
                         logger.warning(f"[Gemini Streaming] Skipped chunk for {agent_name}: {e}")
                         continue
-
-                    if chunk_text:
-                        token_count += 1
-                        full_text += chunk_text
-                        if token_count % 10 == 0:
-                            logger.info(f"[Gemini Streaming] Token #{token_count} for {agent_name}")
-
-                        yield {
-                            "type": "token",
-                            "text": chunk_text,
-                            "agent": agent_name,
-                        }
 
             yield {
                 "type": "complete",

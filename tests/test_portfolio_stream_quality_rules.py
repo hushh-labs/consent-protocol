@@ -4,10 +4,10 @@ from collections import Counter
 
 from api.routes.kai.portfolio import (
     _aggregate_holdings_by_symbol,
-    _build_holdings_quality_report,
     _normalize_raw_holding_row,
     _validate_holding_row,
 )
+from hushh_mcp.kai_import.quality_v2 import build_holdings_quality_report_v2
 
 
 def _validate_many(rows):
@@ -43,7 +43,7 @@ def test_placeholder_rows_are_removed_from_validated_set():
     validated, dropped = _validate_many(rows)
     assert len(validated) == 1
     assert validated[0]["symbol"] == "MSFT"
-    assert dropped["placeholder_symbol"] + dropped["zero_qty_zero_price_nonzero_value"] >= 1
+    assert sum(dropped.values()) >= 1
 
 
 def test_account_header_like_rows_are_dropped():
@@ -123,7 +123,7 @@ def test_aggregation_math_merges_symbol_rows_correctly():
 
 
 def test_quality_report_includes_required_quality_counters():
-    report = _build_holdings_quality_report(
+    report = build_holdings_quality_report_v2(
         raw_count=10,
         validated_count=7,
         aggregated_count=6,

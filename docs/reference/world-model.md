@@ -218,6 +218,28 @@ Domain summaries use a canonical counter contract so backend context assembly ne
 Normalization is applied on store/update and reconciliation paths. Count extraction order in consumers:
 `attribute_count -> holdings_count -> item_count`.
 
+---
+
+## Kai Financial V2 Canonical Shape
+
+Kai runtime stores canonical portfolio data only under the `financial` top-level domain:
+
+- `financial.portfolio` = canonical app-consumed portfolio payload (V2)
+- `financial.analytics` = materialized analytics for dashboard/debate/optimize (V2)
+- `financial.documents.statements[]` snapshots may contain:
+  - `raw_extract_v2`
+  - `canonical_v2`
+  - `analytics_v2`
+
+Cash-equivalent positions remain part of totals/allocation but are excluded from investable optimize/debate eligibility.
+
+### Migration Utility
+
+Use `consent-protocol/scripts/migrate_financial_v2.py` to align existing users:
+
+- default mode: index-only summary migration
+- deep mode: user-scoped decrypt/re-encrypt migration with `--user-id` and `--passphrase`
+
 ## Domain Determination Rules
 
 To keep registry/index coherence:
