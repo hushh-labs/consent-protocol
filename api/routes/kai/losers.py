@@ -23,10 +23,19 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
 from api.routes.kai._streaming import (
-    DEFAULT_STREAM_TIMEOUT_SECONDS,
     HEARTBEAT_INTERVAL_SECONDS,
     CanonicalSSEStream,
     parse_json_with_single_repair,
+)
+from hushh_mcp.constants import (
+    GEMINI_MODEL,
+    KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+    KAI_LLM_STREAM_INCLUDE_THOUGHTS,
+    KAI_LLM_TEMPERATURE,
+    KAI_LLM_THINKING_ENABLED,
+    KAI_LLM_THINKING_LEVEL,
+    KAI_OPTIMIZE_MAX_OUTPUT_TOKENS,
+    KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS,
 )
 from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable, fetch_market_data
 from hushh_mcp.services.renaissance_service import get_renaissance_service
@@ -130,6 +139,36 @@ def _extract_likely_json_object(text: str) -> str | None:
     return trimmed or None
 
 
+def _is_cash_equivalent_position(
+    *,
+    symbol: str,
+    name: str | None = None,
+    asset_type: str | None = None,
+) -> bool:
+    token = str(symbol or "").strip().upper()
+    if token in {"CASH", "MMF", "SWEEP", "QACDS"}:
+        return True
+    name_l = str(name or "").strip().lower()
+    asset_l = str(asset_type or "").strip().lower()
+    hints = ("cash", "money market", "sweep", "core position", "deposit")
+    return any(hint in name_l for hint in hints) or any(hint in asset_l for hint in hints)
+
+
+def _summarize_excluded_cash_positions(holdings: list[PortfolioHolding]) -> tuple[int, float]:
+    count = 0
+    market_value_sum = 0.0
+    for holding in holdings:
+        if not _is_cash_equivalent_position(
+            symbol=holding.symbol,
+            name=holding.name,
+            asset_type=holding.asset_type,
+        ):
+            continue
+        count += 1
+        market_value_sum += float(holding.market_value or 0.0)
+    return count, round(market_value_sum, 2)
+
+
 @router.post("/portfolio/analyze-losers", response_model=AnalyzeLosersResponse)
 async def analyze_portfolio_losers(
     request: AnalyzeLosersRequest,
@@ -166,11 +205,12 @@ async def analyze_portfolio_losers(
     from google.genai import types as genai_types
     from google.genai.types import HttpOptions
 
-    from hushh_mcp.constants import GEMINI_MODEL
-
     client = genai.Client(http_options=HttpOptions(api_version="v1"))
     model_to_use = GEMINI_MODEL
     logger.info(f"Optimize Portfolio: Using Vertex AI with model {model_to_use}")
+    cash_positions_excluded, cash_value_excluded = _summarize_excluded_cash_positions(
+        request.holdings or []
+    )
 
     portfolio_snapshot = {
         "threshold_pct": request.threshold_pct,
@@ -178,6 +218,8 @@ async def analyze_portfolio_losers(
         "mode": "losers" if optimize_from_losers else "full_portfolio",
         "total_positions_market_value": total_mv,
         "positions": per_loser_context,
+        "cash_positions_excluded": cash_positions_excluded,
+        "cash_value_excluded": cash_value_excluded,
         "user_preferences": request.user_preferences or {},
     }
 
@@ -189,11 +231,22 @@ async def analyze_portfolio_losers(
     )
 
     try:
-        config = genai_types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=4096,
-            response_mime_type="application/json",
-        )
+        config_kwargs: dict[str, Any] = {
+            "temperature": KAI_LLM_TEMPERATURE,
+            "max_output_tokens": KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT,
+            "response_mime_type": "application/json",
+        }
+        if KAI_LLM_THINKING_ENABLED:
+            thinking_level = getattr(
+                genai_types.ThinkingLevel,
+                str(KAI_LLM_THINKING_LEVEL).upper(),
+                genai_types.ThinkingLevel.HIGH,
+            )
+            config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+                include_thoughts=False,
+                thinking_level=thinking_level,
+            )
+        config = genai_types.GenerateContentConfig(**config_kwargs)
         resp = await client.aio.models.generate_content(
             model=model_to_use,
             contents=prompt,
@@ -235,8 +288,20 @@ async def _build_optimization_context(
         Tuple of (losers_filtered, criteria_context, criteria_rows, replacement_pool,
                   per_loser_context, optimize_from_losers, total_mv)
     """
-    losers_in = request.losers or []
-    holdings_in = request.holdings or []
+    losers_in = [
+        loser
+        for loser in (request.losers or [])
+        if not _is_cash_equivalent_position(symbol=loser.symbol, name=loser.name)
+    ]
+    holdings_in = [
+        holding
+        for holding in (request.holdings or [])
+        if not _is_cash_equivalent_position(
+            symbol=holding.symbol,
+            name=holding.name,
+            asset_type=holding.asset_type,
+        )
+    ]
 
     # Build optimization universe
     losers_filtered: list[PortfolioLoser] = []
@@ -524,7 +589,7 @@ async def analyze_portfolio_losers_stream(
 
     **Disconnection Handling (Production-Grade)**:
     - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(120) hard ceiling prevents runaway LLM calls
+    - Layer 2: asyncio.timeout(240) hard ceiling prevents runaway LLM calls
     - Layer 3: backend heartbeats every 3-5s while waiting for model output
     - Layer 4: raw_request.is_disconnected() checked per-chunk for fast cleanup
     """
@@ -534,7 +599,7 @@ async def analyze_portfolio_losers_stream(
         )
 
     async def generate():
-        HARD_TIMEOUT_SECONDS = DEFAULT_STREAM_TIMEOUT_SECONDS
+        HARD_TIMEOUT_SECONDS = KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS
         stream = CanonicalSSEStream("portfolio_optimize")
 
         try:
@@ -558,6 +623,9 @@ async def analyze_portfolio_losers_stream(
                     user_id=request.user_id,
                     consent_token=token_data["token"],
                 )
+                cash_positions_excluded, cash_value_excluded = _summarize_excluded_cash_positions(
+                    request.holdings or []
+                )
 
                 portfolio_snapshot = {
                     "threshold_pct": request.threshold_pct,
@@ -565,6 +633,8 @@ async def analyze_portfolio_losers_stream(
                     "mode": "losers" if optimize_from_losers else "full_portfolio",
                     "total_positions_market_value": total_mv,
                     "positions": per_loser_context,
+                    "cash_positions_excluded": cash_positions_excluded,
+                    "cash_value_excluded": cash_value_excluded,
                     "user_preferences": request.user_preferences or {},
                 }
 
@@ -582,18 +652,16 @@ async def analyze_portfolio_losers_stream(
                 from google.genai import types as genai_types
                 from google.genai.types import HttpOptions
 
-                from hushh_mcp.constants import GEMINI_MODEL
-
                 client = genai.Client(http_options=HttpOptions(api_version="v1"))
                 model_to_use = GEMINI_MODEL
                 logger.info(f"Optimize Portfolio Stream: Using Vertex AI with model {model_to_use}")
 
                 # Configure for deterministic JSON reliability.
-                config = genai_types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=8192,
-                    response_mime_type="application/json",
-                    response_schema={
+                config_kwargs: dict[str, Any] = {
+                    "temperature": KAI_LLM_TEMPERATURE,
+                    "max_output_tokens": KAI_OPTIMIZE_MAX_OUTPUT_TOKENS,
+                    "response_mime_type": "application/json",
+                    "response_schema": {
                         "type": "OBJECT",
                         "properties": {
                             "summary": {"type": "OBJECT"},
@@ -603,11 +671,18 @@ async def analyze_portfolio_losers_stream(
                         },
                         "required": ["summary", "losers", "portfolio_level_takeaways"],
                     },
-                    thinking_config=genai_types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_level=genai_types.ThinkingLevel.MEDIUM,
-                    ),
-                )
+                }
+                if KAI_LLM_THINKING_ENABLED:
+                    thinking_level = getattr(
+                        genai_types.ThinkingLevel,
+                        str(KAI_LLM_THINKING_LEVEL).upper(),
+                        genai_types.ThinkingLevel.HIGH,
+                    )
+                    config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+                        include_thoughts=bool(KAI_LLM_STREAM_INCLUDE_THOUGHTS),
+                        thinking_level=thinking_level,
+                    )
+                config = genai_types.GenerateContentConfig(**config_kwargs)
 
                 # Stream the response
                 full_response = ""
@@ -675,7 +750,13 @@ async def analyze_portfolio_losers_stream(
                                         thought_count += 1
                                         yield stream.event(
                                             "thinking",
-                                            {"thought": part.text, "count": thought_count},
+                                            {
+                                                "phase": "thinking",
+                                                "message": "Reasoning through optimization trade-offs...",
+                                                "thought": part.text,
+                                                "count": thought_count,
+                                                "token_source": "thought",
+                                            },
                                         )
                                     # Regular text content
                                     elif hasattr(part, "text") and part.text:
@@ -684,7 +765,12 @@ async def analyze_portfolio_losers_stream(
                                         appended_response_text = True
                                         yield stream.event(
                                             "chunk",
-                                            {"text": part.text, "chunk_count": chunk_count},
+                                            {
+                                                "phase": "extracting",
+                                                "text": part.text,
+                                                "chunk_count": chunk_count,
+                                                "token_source": "response",
+                                            },
                                         )
 
                     # Some SDK responses include text on chunk.text even when candidates are present.
@@ -693,7 +779,12 @@ async def analyze_portfolio_losers_stream(
                         full_response += str(chunk.text)
                         yield stream.event(
                             "chunk",
-                            {"text": str(chunk.text), "chunk_count": chunk_count},
+                            {
+                                "phase": "extracting",
+                                "text": str(chunk.text),
+                                "chunk_count": chunk_count,
+                                "token_source": "response",
+                            },
                         )
 
                 # Skip all post-processing if client disconnected — no point parsing for nobody

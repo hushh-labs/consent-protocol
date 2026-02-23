@@ -26,7 +26,6 @@ if str(CONSENT_PROTOCOL_ROOT) not in sys.path:
 
 from api.routes.kai._streaming import parse_json_with_single_repair  # noqa: E402
 from api.routes.kai.portfolio import (  # noqa: E402
-    _PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
     _aggregate_holdings_by_symbol,
     _coerce_optional_number,
     _extract_holdings_list,
@@ -35,28 +34,16 @@ from api.routes.kai.portfolio import (  # noqa: E402
     _normalize_raw_holding_row,
     _validate_holding_row,
 )
-from hushh_mcp.constants import GEMINI_MODEL  # noqa: E402
-
-PROMPT = """Extract this brokerage statement to JSON only.
-
-Return one JSON object with keys:
-- account_metadata
-- portfolio_summary
-- asset_allocation
-- detailed_holdings
-- income_summary
-- realized_gain_loss
-- activity_and_transactions
-- cash_balance
-- total_value
-
-Rules:
-- No markdown, no prose.
-- Return compact minified JSON (no indentation).
-- Use null for unknown fields.
-- Do not invent ticker symbols.
-- Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
-- Preserve numeric values exactly (including negatives)."""
+from hushh_mcp.constants import (  # noqa: E402
+    GEMINI_MODEL,
+    KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
+    KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
+)
+from hushh_mcp.kai_import import (  # noqa: E402
+    FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
+    FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
+    build_statement_extract_prompt_v2,
+)
 
 
 def _discover_brokerage_pdfs(corpus_dir: Path) -> list[Path]:
@@ -131,17 +118,19 @@ async def _run_model_for_pdf(
     timeout_seconds: float,
 ) -> dict[str, Any]:
     contents = [
-        types.Part.from_text(text=PROMPT),
+        types.Part.from_text(text=build_statement_extract_prompt_v2()),
         types.Part.from_bytes(data=pdf_path.read_bytes(), mime_type="application/pdf"),
     ]
 
-    config = types.GenerateContentConfig(
-        temperature=0.0,
-        max_output_tokens=12288,
-        response_mime_type="application/json",
-        response_schema=_PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    )
+    config_kwargs: dict[str, Any] = {
+        "temperature": 0.0,
+        "max_output_tokens": KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
+        "response_mime_type": "application/json",
+        "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+    }
+    if KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA:
+        config_kwargs["response_schema"] = FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA
+    config = types.GenerateContentConfig(**config_kwargs)
 
     response = None
     last_error: Exception | None = None
@@ -169,7 +158,10 @@ async def _run_model_for_pdf(
         raise RuntimeError(str(last_error).strip() or "model_response_missing")
 
     text = (response.text or "").strip()
-    parsed, diagnostics = parse_json_with_single_repair(text)
+    parsed, diagnostics = parse_json_with_single_repair(
+        text,
+        required_keys=FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
+    )
     holdings, source = _extract_holdings_list(parsed)
 
     normalized_rows: list[dict[str, Any]] = []

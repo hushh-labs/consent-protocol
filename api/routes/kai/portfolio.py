@@ -15,10 +15,12 @@ Authentication:
 """
 
 import asyncio
+import io
 import json
 import logging
 import math
 import re
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -32,7 +34,26 @@ from api.routes.kai._streaming import (
     HEARTBEAT_INTERVAL_SECONDS,
     PORTFOLIO_IMPORT_TIMEOUT_SECONDS,
     CanonicalSSEStream,
-    parse_json_with_single_repair,
+)
+from hushh_mcp.constants import (
+    KAI_LLM_TEMPERATURE,
+    KAI_LLM_THINKING_ENABLED,
+    KAI_LLM_THINKING_LEVEL,
+    KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
+    KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
+)
+from hushh_mcp.kai_import import (
+    FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
+    FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
+    build_financial_analytics_v2,
+    build_financial_portfolio_canonical_v2,
+    build_holdings_quality_report_v2,
+    build_quality_report_v2,
+    build_statement_extract_prompt_v2,
+    build_timing_payload,
+    build_token_counts_payload,
+    evaluate_import_quality_gate_v2,
+    run_stream_pass_v2,
 )
 from hushh_mcp.services.portfolio_import_service import (
     ImportResult,
@@ -49,27 +70,8 @@ _PICK_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _MAX_PROFILE_PICKS = 8
 
 _NUMERIC_STRIP_RE = re.compile(r"[$,\s]")
-_LIVE_SYMBOL_RE = re.compile(
-    r'"(?:symbol|symbol_cusip|ticker|cusip|security_id|security)"\s*:\s*"([^"]{1,64})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_NAME_RE = re.compile(
-    r'"(?:description|name|security_name|holding_name)"\s*:\s*"([^"]{1,180})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_ASSET_RE = re.compile(
-    r'"(?:asset_class|asset_type|security_type|type)"\s*:\s*"([^"]{1,64})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_QTY_RE = re.compile(
-    r'"(?:quantity|shares|units|qty)"\s*:\s*(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
-    flags=re.IGNORECASE,
-)
-_LIVE_VALUE_RE = re.compile(
-    r'"(?:market_value|current_value|value|position_value|marketValue)"\s*:\s*'
-    r'(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
-    flags=re.IGNORECASE,
-)
+_FILENAME_DATE_RE = re.compile(r"(20\d{2}-\d{2}-\d{2})")
+_FILENAME_ACCOUNT_RE = re.compile(r"(?:acct|account|inv|#)?\s*(\d{4,})", flags=re.IGNORECASE)
 _HOLDING_KEY_HINTS = frozenset(
     {
         "symbol",
@@ -78,6 +80,7 @@ _HOLDING_KEY_HINTS = frozenset(
         "cusip",
         "security_id",
         "security",
+        "security_description",
         "description",
         "name",
         "quantity",
@@ -100,70 +103,29 @@ _HOLDING_KEY_HINTS = frozenset(
         "security_type",
     }
 )
-
-_PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA: dict[str, Any] = {
-    "type": "OBJECT",
-    "properties": {
-        "account_metadata": {"type": "OBJECT"},
-        "portfolio_summary": {"type": "OBJECT"},
-        "asset_allocation": {
-            "type": "ARRAY",
-            "items": {"type": "OBJECT"},
-        },
-        "detailed_holdings": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "asset_class": {"type": "STRING"},
-                    "asset_type": {"type": "STRING"},
-                    "description": {"type": "STRING"},
-                    "name": {"type": "STRING"},
-                    "symbol": {"type": "STRING"},
-                    "symbol_cusip": {"type": "STRING"},
-                    "quantity": {"type": "NUMBER"},
-                    "price": {"type": "NUMBER"},
-                    "market_value": {"type": "NUMBER"},
-                    "cost_basis": {"type": "NUMBER"},
-                    "unrealized_gain_loss": {"type": "NUMBER"},
-                    "unrealized_gain_loss_pct": {"type": "NUMBER"},
-                    "acquisition_date": {"type": "STRING"},
-                    "estimated_annual_income": {"type": "NUMBER"},
-                    "est_yield": {"type": "NUMBER"},
-                    "sector": {"type": "STRING"},
-                    "industry": {"type": "STRING"},
-                },
-            },
-        },
-        "historical_values": {"type": "ARRAY", "items": {"type": "OBJECT"}},
-        "income_summary": {"type": "OBJECT"},
-        "realized_gain_loss": {"type": "OBJECT"},
-        "activity_and_transactions": {"type": "ARRAY", "items": {"type": "OBJECT"}},
-        "cash_management": {"type": "OBJECT"},
-        "cash_flow": {"type": "OBJECT"},
-        "projections_and_mrd": {"type": "OBJECT"},
-        "ytd_metrics": {"type": "OBJECT"},
-        "legal_and_disclosures": {"type": "ARRAY", "items": {"type": "STRING"}},
-        "cash_balance": {"type": "NUMBER"},
-        "total_value": {"type": "NUMBER"},
-    },
-    "required": ["account_metadata", "portfolio_summary", "detailed_holdings"],
-}
-
-_PORTFOLIO_CONSISTENCY_RESPONSE_SCHEMA: dict[str, Any] = {
-    "type": "OBJECT",
-    "properties": {
-        "account_metadata": {"type": "OBJECT"},
-        "portfolio_summary": {"type": "OBJECT"},
-        "asset_allocation": {
-            "type": "ARRAY",
-            "items": {"type": "OBJECT"},
-        },
-        "cash_balance": {"type": "NUMBER"},
-        "total_value": {"type": "NUMBER"},
-    },
-    "required": ["account_metadata", "portfolio_summary", "asset_allocation"],
-}
+_POSITIONS_PAGE_KEYWORDS = (
+    "holdings",
+    "positions",
+    "symbol",
+    "ticker",
+    "cusip",
+    "market value",
+    "cost basis",
+    "unrealized",
+    "shares",
+    "quantity",
+)
+_SUMMARY_PAGE_KEYWORDS = (
+    "account summary",
+    "portfolio summary",
+    "allocation",
+    "asset allocation",
+    "ending value",
+    "beginning value",
+    "net change",
+    "cash balance",
+    "income",
+)
 
 
 def _looks_like_holding_row(value: Any) -> bool:
@@ -186,8 +148,24 @@ def _looks_like_holding_row(value: Any) -> bool:
         "symbol_cusip",
     }
     id_fields = {"symbol", "symbol_cusip", "ticker", "cusip", "security_id", "security"}
+    descriptor_fields = {
+        "description",
+        "name",
+        "security_name",
+        "holding_name",
+        "security_description",
+    }
     qty_fields = {"quantity", "qty", "shares", "units"}
     price_fields = {"price", "price_per_unit", "last_price", "unit_price", "current_price"}
+    numeric_keys = {
+        "market_value",
+        "value",
+        "current_value",
+        "marketvalue",
+        "quantity",
+        "shares",
+        "units",
+    }
     transaction_bias_fields = {
         "transaction_type",
         "settle_date",
@@ -208,11 +186,14 @@ def _looks_like_holding_row(value: Any) -> bool:
         and keys.intersection(price_fields)
     ):
         return True
-    if keys.intersection(_HOLDING_KEY_HINTS):
+    if keys.intersection(id_fields) and keys.intersection(numeric_keys):
+        return True
+    if keys.intersection(descriptor_fields) and keys.intersection(
+        {"market_value", "value", "current_value", "marketvalue", "quantity", "shares"}
+    ):
         return True
     # Some statements only return a security identifier + value fields.
     identifier_keys = {"cusip", "security_id", "security"}
-    numeric_keys = {"market_value", "value", "current_value", "quantity", "shares", "units"}
     return bool(keys.intersection(identifier_keys) and keys.intersection(numeric_keys))
 
 
@@ -317,101 +298,6 @@ def _extract_holdings_list(parsed_data: dict[str, Any]) -> tuple[list[dict[str, 
     return merged, "recursive_scan"
 
 
-def _estimate_stream_holdings(full_response: str) -> int:
-    if not full_response:
-        return 0
-
-    lower = full_response.lower()
-    anchor = -1
-    for key in ('"detailed_holdings"', '"holdings"', '"positions"', '"securities"'):
-        anchor = lower.rfind(key)
-        if anchor != -1:
-            break
-    section = full_response[anchor:] if anchor != -1 else full_response
-    symbol_matches = re.findall(
-        r'"(?:symbol|symbol_cusip|ticker)"\s*:', section, flags=re.IGNORECASE
-    )
-    if symbol_matches:
-        return len(symbol_matches)
-    row_markers = re.findall(
-        r'"(?:quantity|market_value|cost_basis|price|price_per_unit)"\s*:',
-        section,
-        flags=re.IGNORECASE,
-    )
-    return max(0, len(row_markers) // 2)
-
-
-def _extract_live_holdings_preview_from_text(
-    full_response: str,
-    *,
-    max_items: int = 40,
-) -> list[dict[str, Any]]:
-    if not full_response:
-        return []
-
-    lower = full_response.lower()
-    anchors = [
-        lower.rfind('"detailed_holdings"'),
-        lower.rfind('"holdings"'),
-        lower.rfind('"positions"'),
-        lower.rfind('"securities"'),
-    ]
-    anchor = max(anchors)
-    section = full_response[anchor:] if anchor >= 0 else full_response
-
-    preview: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    for symbol_match in _LIVE_SYMBOL_RE.finditer(section):
-        symbol = symbol_match.group(1).strip()
-        if not symbol:
-            continue
-
-        window_start = symbol_match.start()
-        window_end = min(len(section), window_start + 700)
-        window = section[window_start:window_end]
-
-        name_match = _LIVE_NAME_RE.search(window)
-        asset_match = _LIVE_ASSET_RE.search(window)
-        qty_match = _LIVE_QTY_RE.search(window)
-        value_match = _LIVE_VALUE_RE.search(window)
-
-        name = name_match.group(1).strip() if name_match else ""
-        asset_type = asset_match.group(1).strip() if asset_match else ""
-        quantity_raw = (
-            (qty_match.group(1) or qty_match.group(2)).strip()
-            if qty_match and (qty_match.group(1) or qty_match.group(2))
-            else None
-        )
-        market_value_raw = (
-            (value_match.group(1) or value_match.group(2)).strip()
-            if value_match and (value_match.group(1) or value_match.group(2))
-            else None
-        )
-
-        quantity = _coerce_optional_number(quantity_raw)
-        market_value = _coerce_optional_number(market_value_raw)
-
-        fingerprint = f"{symbol}|{name}|{quantity}|{market_value}|{asset_type}"
-        if fingerprint in seen:
-            continue
-        seen.add(fingerprint)
-
-        preview.append(
-            {
-                "symbol": symbol,
-                "name": name or None,
-                "quantity": quantity,
-                "market_value": market_value,
-                "asset_type": asset_type or None,
-            }
-        )
-        if len(preview) >= max_items:
-            break
-
-    return preview
-
-
 def _build_holdings_preview(
     holdings: list[dict[str, Any]],
     *,
@@ -424,7 +310,9 @@ def _build_holdings_preview(
 
     for holding in rows:
         symbol = holding.get("symbol") or holding.get("symbol_cusip")
-        name = holding.get("name") or holding.get("description")
+        name = (
+            holding.get("name") or holding.get("description") or holding.get("security_description")
+        )
         preview.append(
             {
                 "symbol": str(symbol).strip() if symbol is not None else "",
@@ -435,6 +323,132 @@ def _build_holdings_preview(
             }
         )
     return preview
+
+
+def _phase_progress_bounds(phase: str) -> tuple[float, float]:
+    ranges: dict[str, tuple[float, float]] = {
+        "extract_full": (20.0, 82.0),
+        "normalizing": (82.0, 92.0),
+        "validating": (92.0, 99.0),
+    }
+    return ranges.get(phase, (0.0, 100.0))
+
+
+def _score_page_keywords(text: str, keywords: tuple[str, ...]) -> float:
+    haystack = text.lower()
+    score = 0.0
+    for keyword in keywords:
+        if keyword in haystack:
+            score += 1.0
+    return score
+
+
+def _extract_pdf_pass_contexts(content: bytes) -> dict[str, Any]:
+    """
+    Build deterministic text excerpts for positions and summary passes.
+    Falls back to full document bytes when snippet confidence is low.
+    """
+    try:
+        import pdfplumber
+
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            extracted_pages: list[tuple[int, str, float, float]] = []
+            for idx, page in enumerate(pdf.pages[:40]):
+                text = (page.extract_text() or "").strip()
+                if not text:
+                    continue
+                positions_score = _score_page_keywords(text, _POSITIONS_PAGE_KEYWORDS)
+                summary_score = _score_page_keywords(text, _SUMMARY_PAGE_KEYWORDS)
+                extracted_pages.append((idx + 1, text, positions_score, summary_score))
+
+        if not extracted_pages:
+            return {
+                "positions_text": "",
+                "summary_text": "",
+                "positions_confidence": 0.0,
+                "summary_confidence": 0.0,
+                "selected_pages": [],
+            }
+
+        positions_pages = sorted(
+            extracted_pages,
+            key=lambda row: (row[2], len(row[1])),
+            reverse=True,
+        )[:5]
+        summary_pages = sorted(
+            extracted_pages,
+            key=lambda row: (row[3], len(row[1])),
+            reverse=True,
+        )[:4]
+
+        def build_text(rows: list[tuple[int, str, float, float]]) -> str:
+            chunks: list[str] = []
+            for page_num, page_text, _p_score, _s_score in rows:
+                compact = re.sub(r"\s+", " ", page_text).strip()
+                if compact:
+                    chunks.append(f"[Page {page_num}] {compact[:7000]}")
+            return "\n\n".join(chunks)[:52000]
+
+        positions_conf = sum(row[2] for row in positions_pages) / max(
+            1.0, float(len(positions_pages) * 4.0)
+        )
+        summary_conf = sum(row[3] for row in summary_pages) / max(
+            1.0, float(len(summary_pages) * 4.0)
+        )
+        selected_pages = sorted({row[0] for row in positions_pages + summary_pages})
+        return {
+            "positions_text": build_text(positions_pages),
+            "summary_text": build_text(summary_pages),
+            "positions_confidence": round(max(0.0, min(1.0, positions_conf)), 4),
+            "summary_confidence": round(max(0.0, min(1.0, summary_conf)), 4),
+            "selected_pages": selected_pages,
+        }
+    except Exception as context_err:
+        logger.warning("[Portfolio Import] PDF context extraction failed: %s", context_err)
+        return {
+            "positions_text": "",
+            "summary_text": "",
+            "positions_confidence": 0.0,
+            "summary_confidence": 0.0,
+            "selected_pages": [],
+            "error": str(context_err),
+        }
+
+
+def _compute_positions_coverage(
+    *,
+    holdings: list[dict[str, Any]],
+    total_value: Optional[float],
+) -> dict[str, Any]:
+    holdings_count = len(holdings)
+    holdings_market_value = round(
+        sum(_coerce_optional_number(row.get("market_value")) or 0.0 for row in holdings), 2
+    )
+    statement_total_value = _coerce_optional_number(total_value)
+    coverage_pct: Optional[float] = None
+    if statement_total_value is not None and statement_total_value > 0:
+        coverage_pct = (holdings_market_value / statement_total_value) * 100.0
+
+    placeholder_symbol_count = sum(
+        1
+        for row in holdings
+        if not str(row.get("symbol") or "").strip()
+        or str(row.get("symbol") or "").startswith("HOLDING_")
+    )
+    unknown_name_count = sum(1 for row in holdings if _is_unknown_name(row.get("name")))
+    placeholder_ratio = placeholder_symbol_count / holdings_count if holdings_count > 0 else 1.0
+    unknown_name_ratio = unknown_name_count / holdings_count if holdings_count > 0 else 1.0
+
+    return {
+        "holdings_count": holdings_count,
+        "holdings_market_value_sum": holdings_market_value,
+        "statement_total_value": statement_total_value,
+        "value_coverage_pct": round(coverage_pct, 4) if coverage_pct is not None else None,
+        "placeholder_symbol_count": placeholder_symbol_count,
+        "placeholder_ratio": round(placeholder_ratio, 4),
+        "unknown_name_count": unknown_name_count,
+        "unknown_name_ratio": round(unknown_name_ratio, 4),
+    }
 
 
 def _first_present(row: dict[str, Any], *keys: str) -> Any:
@@ -472,6 +486,38 @@ def _coerce_optional_number(value: Any) -> Optional[float]:
         return None
 
 
+def _coerce_optional_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text in {"true", "yes", "y", "1"}:
+        return True
+    if text in {"false", "no", "n", "0"}:
+        return False
+    return None
+
+
+def _normalize_optional_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.lower() in {"null", "none", "n/a", "na", "unknown", "-", "--"}:
+        return None
+    return text
+
+
 def _is_missing_value(value: Any) -> bool:
     if value is None:
         return True
@@ -482,19 +528,6 @@ def _is_missing_value(value: Any) -> bool:
     if isinstance(value, dict):
         return len(value) == 0
     return False
-
-
-def _merge_missing_values(primary: Any, supplement: Any) -> Any:
-    if _is_missing_value(primary):
-        return supplement
-    if isinstance(primary, dict) and isinstance(supplement, dict):
-        merged = dict(primary)
-        for key, supplemental_value in supplement.items():
-            merged[key] = _merge_missing_values(merged.get(key), supplemental_value)
-        return merged
-    if isinstance(primary, list) and isinstance(supplement, list):
-        return supplement if len(primary) == 0 and len(supplement) > 0 else primary
-    return primary
 
 
 def _detect_sparse_sections(parsed_data: dict[str, Any]) -> list[str]:
@@ -560,13 +593,191 @@ def _detect_sparse_sections(parsed_data: dict[str, Any]) -> list[str]:
     if summary_present < 2:
         sparse_sections.append("portfolio_summary")
 
-    if not isinstance(asset_allocation, list) or len(asset_allocation) == 0:
+    asset_allocation_has_signal = False
+    if isinstance(asset_allocation, list):
+        for row in asset_allocation:
+            if not isinstance(row, dict):
+                continue
+            if (
+                _coerce_optional_number(_first_present(row, "market_value", "value", "amount"))
+                is not None
+            ):
+                asset_allocation_has_signal = True
+                break
+            if (
+                _coerce_optional_number(_first_present(row, "percentage", "pct", "weight"))
+                is not None
+            ):
+                asset_allocation_has_signal = True
+                break
+            category = str(
+                _first_present(row, "category", "asset_class", "asset_type") or ""
+            ).strip()
+            if category:
+                asset_allocation_has_signal = True
+                break
+    if not asset_allocation_has_signal:
         sparse_sections.append("asset_allocation")
 
     if _coerce_optional_number(parsed_data.get("cash_balance")) is None:
         sparse_sections.append("cash_balance")
 
+    recovered_holdings, _source = _extract_holdings_list(parsed_data)
+    if len(recovered_holdings) == 0:
+        sparse_sections.append("detailed_holdings")
+
     return sparse_sections
+
+
+def _canonicalize_structured_portfolio_payload(parsed_data: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(parsed_data, dict):
+        return {}
+
+    canonical = dict(parsed_data)
+
+    statement_details = (
+        canonical.get("statement_details")
+        if isinstance(canonical.get("statement_details"), dict)
+        else {}
+    )
+    account_metadata = (
+        canonical.get("account_metadata")
+        if isinstance(canonical.get("account_metadata"), dict)
+        else {}
+    )
+
+    def put_account_field_if_missing(target_key: str, *source_keys: str) -> None:
+        if _normalize_optional_text(account_metadata.get(target_key)):
+            return
+        for source_key in source_keys:
+            value = _normalize_optional_text(statement_details.get(source_key))
+            if value:
+                account_metadata[target_key] = value
+                return
+
+    if statement_details:
+        put_account_field_if_missing(
+            "institution_name",
+            "institution_name",
+            "financial_institution",
+            "brokerage_name",
+        )
+        put_account_field_if_missing("account_number", "account_number")
+        put_account_field_if_missing(
+            "account_holder",
+            "client_name",
+            "account_holder",
+            "account_name",
+        )
+        put_account_field_if_missing(
+            "statement_period_start",
+            "statement_start_date",
+            "start_date",
+        )
+        put_account_field_if_missing(
+            "statement_period_end",
+            "statement_end_date",
+            "end_date",
+        )
+        client_address = _normalize_optional_text(statement_details.get("client_address"))
+        if client_address and not _normalize_optional_text(
+            account_metadata.get("account_holder_address")
+        ):
+            account_metadata["account_holder_address"] = client_address
+
+    if account_metadata:
+        canonical["account_metadata"] = account_metadata
+
+    existing_holdings = canonical.get("detailed_holdings")
+    if not isinstance(existing_holdings, list) or len(existing_holdings) == 0:
+        portfolio_detail = canonical.get("portfolio_detail")
+        if isinstance(portfolio_detail, list):
+            mapped_holdings: list[dict[str, Any]] = []
+            for row in portfolio_detail:
+                if not isinstance(row, dict):
+                    continue
+                mapped_holdings.append(
+                    {
+                        "asset_class": _normalize_optional_text(row.get("asset_class")),
+                        "asset_type": _normalize_optional_text(row.get("asset_type"))
+                        or _normalize_optional_text(row.get("asset_class")),
+                        "description": _normalize_optional_text(row.get("security_description"))
+                        or _normalize_optional_text(row.get("description")),
+                        "name": _normalize_optional_text(row.get("security_description"))
+                        or _normalize_optional_text(row.get("name")),
+                        "symbol": _normalize_optional_text(row.get("ticker"))
+                        or _normalize_optional_text(row.get("symbol")),
+                        "symbol_cusip": _normalize_optional_text(row.get("symbol_cusip"))
+                        or _normalize_optional_text(row.get("cusip"))
+                        or _normalize_optional_text(row.get("security_id")),
+                        "quantity": row.get("quantity"),
+                        "price": row.get("market_price")
+                        if row.get("market_price") is not None
+                        else row.get("price"),
+                        "market_value": row.get("market_value"),
+                        "cost_basis": row.get("cost_basis"),
+                        "unrealized_gain_loss": row.get("unrealized_gain_loss"),
+                        "unrealized_gain_loss_pct": row.get("percent_of_portfolio")
+                        if row.get("percent_of_portfolio") is not None
+                        else row.get("unrealized_gain_loss_pct"),
+                        "estimated_annual_income": row.get("estimated_annual_income"),
+                        "est_yield": row.get("estimated_current_yield")
+                        if row.get("estimated_current_yield") is not None
+                        else row.get("est_yield"),
+                        "sector": _normalize_optional_text(row.get("sector")),
+                        "industry": _normalize_optional_text(row.get("industry")),
+                        "acquisition_date": _normalize_optional_text(row.get("acquisition_date")),
+                    }
+                )
+            if mapped_holdings:
+                canonical["detailed_holdings"] = mapped_holdings
+
+    if not isinstance(canonical.get("activity_and_transactions"), list):
+        transactions = canonical.get("transactions")
+        if isinstance(transactions, dict):
+            flattened_transactions: list[dict[str, Any]] = []
+            for group_name, rows in transactions.items():
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if isinstance(row, dict):
+                        flattened_transactions.append({"group": group_name, **row})
+            if flattened_transactions:
+                canonical["activity_and_transactions"] = flattened_transactions
+
+    if _coerce_optional_number(canonical.get("total_value")) is None:
+        portfolio_summary = (
+            canonical.get("portfolio_summary")
+            if isinstance(canonical.get("portfolio_summary"), dict)
+            else {}
+        )
+        derived_metrics = (
+            canonical.get("derived_metrics")
+            if isinstance(canonical.get("derived_metrics"), dict)
+            else {}
+        )
+        total_value = _coerce_optional_number(
+            _first_present(
+                portfolio_summary,
+                "ending_value",
+                "ending_market_value",
+                "end_value",
+                "endingMarketValue",
+            )
+        )
+        if total_value is None:
+            total_value = _coerce_optional_number(
+                _first_present(
+                    derived_metrics,
+                    "total_assets",
+                    "ending_market_value",
+                    "portfolio_value",
+                )
+            )
+        if total_value is not None:
+            canonical["total_value"] = total_value
+
+    return canonical
 
 
 def _normalize_portfolio_summary(parsed_data: dict[str, Any]) -> dict[str, Any]:
@@ -702,6 +913,166 @@ def _normalize_portfolio_summary(parsed_data: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _bucket_from_holding(row: dict[str, Any]) -> str:
+    symbol = str(row.get("symbol") or "").strip().upper()
+    name = (
+        str(row.get("name") or row.get("description") or row.get("security_description") or "")
+        .strip()
+        .lower()
+    )
+    asset_type = str(row.get("asset_type") or "").strip().lower()
+    sector = str(row.get("sector") or "").strip().lower()
+    hint = f"{symbol} {name} {asset_type} {sector}"
+    if _is_cash_equivalent_row(row):
+        return "Cash"
+    if any(tag in hint for tag in ("bond", "fixed income", "treasury", "municipal", "tax free")):
+        return "Fixed Income"
+    if any(tag in hint for tag in ("reit", "real estate", "real asset", "gold", "commodity")):
+        return "Real Assets"
+    if any(tag in hint for tag in ("equity", "stock", "etf", "fund", "growth", "value", "cap")):
+        return "Equities"
+    return "Other"
+
+
+def _normalize_asset_allocation_rows(
+    asset_allocation: Any,
+    *,
+    holdings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    sanitized_rows: list[dict[str, Any]] = []
+    if isinstance(asset_allocation, list):
+        for row in asset_allocation:
+            if not isinstance(row, dict):
+                continue
+            category = str(
+                _first_present(row, "category", "asset_class", "asset_type", "label") or ""
+            ).strip()
+            market_value = _coerce_optional_number(
+                _first_present(row, "market_value", "value", "amount")
+            )
+            percentage = _coerce_optional_number(_first_present(row, "percentage", "pct", "weight"))
+            if not category and market_value is None and percentage is None:
+                continue
+            normalized_row: dict[str, Any] = {}
+            if category:
+                normalized_row["category"] = category
+            if market_value is not None:
+                normalized_row["market_value"] = market_value
+            if percentage is not None:
+                normalized_row["percentage"] = percentage
+            sanitized_rows.append(normalized_row)
+
+    if sanitized_rows:
+        return sanitized_rows
+
+    bucket_values: dict[str, float] = {
+        "Equities": 0.0,
+        "Fixed Income": 0.0,
+        "Cash": 0.0,
+        "Real Assets": 0.0,
+        "Other": 0.0,
+    }
+    total_market_value = 0.0
+    for row in holdings:
+        market_value = _coerce_optional_number(row.get("market_value")) or 0.0
+        if market_value <= 0:
+            continue
+        total_market_value += market_value
+        bucket_values[_bucket_from_holding(row)] += market_value
+
+    derived_rows: list[dict[str, Any]] = []
+    for bucket in ("Equities", "Fixed Income", "Cash", "Real Assets", "Other"):
+        value = bucket_values.get(bucket, 0.0)
+        if value <= 0:
+            continue
+        derived_rows.append(
+            {
+                "category": bucket,
+                "market_value": round(value, 2),
+                "percentage": round((value / total_market_value) * 100, 2)
+                if total_market_value > 0
+                else 0.0,
+            }
+        )
+    return derived_rows
+
+
+def _derive_cash_balance_from_holdings(holdings: list[dict[str, Any]]) -> Optional[float]:
+    cash_total = 0.0
+    found_cash_row = False
+    for row in holdings:
+        if not _is_cash_equivalent_row(row):
+            continue
+        found_cash_row = True
+        cash_total += _coerce_optional_number(row.get("market_value")) or 0.0
+    if not found_cash_row:
+        return None
+    return round(cash_total, 2)
+
+
+def _enrich_account_summary_with_holdings(
+    account_summary: dict[str, Any],
+    *,
+    holdings: list[dict[str, Any]],
+    total_value: Optional[float],
+) -> dict[str, Any]:
+    enriched = dict(account_summary)
+    holdings_total = round(
+        sum(_coerce_optional_number(row.get("market_value")) or 0.0 for row in holdings), 2
+    )
+    normalized_total = _coerce_optional_number(total_value)
+    if normalized_total is None or normalized_total <= 0:
+        normalized_total = holdings_total if holdings_total > 0 else None
+
+    if enriched.get("ending_value") is None and normalized_total is not None:
+        enriched["ending_value"] = normalized_total
+
+    derived_cash_balance = _derive_cash_balance_from_holdings(holdings)
+    if enriched.get("cash_balance") is None and derived_cash_balance is not None:
+        enriched["cash_balance"] = derived_cash_balance
+
+    beginning_value = _coerce_optional_number(enriched.get("beginning_value"))
+    ending_value = _coerce_optional_number(enriched.get("ending_value"))
+    change_in_value = _coerce_optional_number(enriched.get("change_in_value"))
+    if change_in_value is None and beginning_value is not None and ending_value is not None:
+        change_in_value = ending_value - beginning_value
+        enriched["change_in_value"] = change_in_value
+    if beginning_value is None and ending_value is not None and change_in_value is not None:
+        enriched["beginning_value"] = ending_value - change_in_value
+
+    if enriched.get("investment_gain_loss") is None and change_in_value is not None:
+        enriched["investment_gain_loss"] = change_in_value
+
+    return enriched
+
+
+def _derive_account_metadata_from_filename(filename: str) -> dict[str, Any]:
+    name = str(filename or "").strip()
+    if not name:
+        return {}
+    stem = re.sub(r"\.(pdf|csv)$", "", name, flags=re.IGNORECASE).strip()
+    stem = stem.replace("_", " ").replace("  ", " ")
+
+    inferred: dict[str, Any] = {}
+    date_match = _FILENAME_DATE_RE.search(stem)
+    if date_match:
+        inferred["statement_period_end"] = date_match.group(1)
+
+    # Try to infer institution label from the suffix after the first hyphen.
+    if " - " in stem:
+        rhs = stem.split(" - ", 1)[1].strip()
+        if rhs:
+            inferred["institution_name"] = rhs
+    elif stem:
+        inferred["institution_name"] = stem
+
+    acct_match = _FILENAME_ACCOUNT_RE.search(stem)
+    if acct_match:
+        inferred["account_number"] = acct_match.group(1)
+
+    return inferred
+
+
 def _reconcile_holding_numeric_fields(
     holding: dict[str, Any], tolerance: float = 0.10
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -795,12 +1166,22 @@ _TRADE_ACTION_TOKENS = {
     "WITHDRAWAL",
     "DEPOSIT",
 }
+_PLACEHOLDER_SYMBOL_TOKENS = {
+    "NULL",
+    "NA",
+    "NAN",
+    "NONE",
+    "UNKNOWN",
+    "UNAVAILABLE",
+}
 
 
 def _normalize_symbol_token(raw_value: Any) -> str:
     if raw_value is None:
         return ""
     token = re.sub(r"[^A-Za-z0-9]", "", str(raw_value)).upper()
+    if token in _PLACEHOLDER_SYMBOL_TOKENS:
+        return ""
     return token[:12]
 
 
@@ -815,7 +1196,11 @@ def _is_non_holding_row(row: dict[str, Any]) -> bool:
     """
     Detect rows that look like account/profile headers instead of holdings.
     """
-    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    name = (
+        str(row.get("name") or row.get("description") or row.get("security_description") or "")
+        .strip()
+        .lower()
+    )
     symbol = str(row.get("symbol") or "").strip().lower()
 
     has_numeric = any(
@@ -836,7 +1221,11 @@ def _is_cash_equivalent_row(row: dict[str, Any]) -> bool:
     asset_type = str(row.get("asset_type") or "").strip().lower()
     if asset_type in {"cash", "cash_equivalent", "money_market"}:
         return True
-    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    name = (
+        str(row.get("name") or row.get("description") or row.get("security_description") or "")
+        .strip()
+        .lower()
+    )
     return any(hint in name for hint in _CASH_EQUIVALENT_HINTS)
 
 
@@ -905,8 +1294,46 @@ def _compute_holding_confidence(row: dict[str, Any]) -> float:
     return max(0.0, min(1.0, round(score, 4)))
 
 
+def _derive_analyze_eligibility(
+    *,
+    is_investable: bool,
+    is_cash_equivalent: bool,
+    security_listing_status: str,
+    symbol_kind: str,
+    is_sec_common_equity_ticker: bool,
+) -> tuple[bool, str]:
+    listing_status = str(security_listing_status or "").strip().lower()
+    kind = str(symbol_kind or "").strip().lower()
+
+    if is_cash_equivalent or listing_status == "cash_or_sweep":
+        return False, "excluded_cash"
+    if listing_status == "fixed_income":
+        return False, "excluded_fixed_income"
+    if listing_status == "non_sec_common_equity":
+        return False, "excluded_non_sec_common_equity"
+    if not is_investable:
+        return False, "excluded_missing_equity_classification"
+    if (
+        is_sec_common_equity_ticker
+        or listing_status == "sec_common_equity"
+        or kind == "us_common_equity_ticker"
+    ):
+        return True, "eligible_sec_common_equity"
+    return False, "excluded_missing_equity_classification"
+
+
 def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     symbol_master = get_symbol_master_service()
+    raw_ticker_value = _first_present(row, "symbol", "ticker")
+    raw_identifier_value = _first_present(row, "symbol_cusip", "cusip", "security_id", "security")
+    normalized_ticker = _normalize_symbol_token(raw_ticker_value)
+    normalized_identifier = _normalize_symbol_token(raw_identifier_value)
+    if normalized_ticker:
+        identifier_type = "ticker"
+    elif normalized_identifier:
+        identifier_type = "cusip"
+    else:
+        identifier_type = "derived"
     raw_symbol = _first_present(
         row,
         "symbol",
@@ -918,26 +1345,45 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     )
     symbol_quality = "provided"
     normalized_symbol = _normalize_symbol_token(raw_symbol)
-    raw_name = str(
-        _first_present(
-            row,
-            "description",
-            "name",
-            "security_name",
-            "holding_name",
+    raw_name = (
+        _normalize_optional_text(
+            _first_present(
+                row,
+                "description",
+                "name",
+                "security_name",
+                "holding_name",
+                "security_description",
+            )
         )
         or ""
-    ).strip()
-    raw_asset_type = str(
-        _first_present(
-            row,
-            "asset_class",
-            "asset_type",
-            "security_type",
-            "type",
+    )
+    raw_asset_type = (
+        _normalize_optional_text(
+            _first_present(
+                row,
+                "asset_class",
+                "asset_type",
+                "security_type",
+                "type",
+            )
         )
         or ""
-    ).strip()
+    )
+    raw_symbol_source = (
+        (_normalize_optional_text(_first_present(row, "symbol_source")) or "").strip().lower()
+    )
+    raw_symbol_kind = (
+        (_normalize_optional_text(_first_present(row, "symbol_kind")) or "").strip().lower()
+    )
+    raw_listing_status = (
+        (_normalize_optional_text(_first_present(row, "security_listing_status")) or "")
+        .strip()
+        .lower()
+    )
+    raw_is_sec_common_equity = _coerce_optional_bool(
+        _first_present(row, "is_sec_common_equity_ticker")
+    )
     if not normalized_symbol:
         if raw_name:
             fallback = _normalize_symbol_token(raw_name.split()[0])
@@ -964,11 +1410,88 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     )
     if symbol_classification.symbol:
         normalized_symbol = symbol_classification.symbol
+    is_cash_equivalent = symbol_classification.trust_tier == "cash_equivalent"
+    is_investable = bool(symbol_classification.tradable) and not is_cash_equivalent
+    instrument_kind = "equity"
+    asset_type_hint = raw_asset_type.lower()
+    if is_cash_equivalent:
+        instrument_kind = "cash_equivalent"
+    elif any(h in asset_type_hint for h in ("bond", "fixed income", "treasury", "municipal")):
+        instrument_kind = "fixed_income"
+    elif any(
+        h in asset_type_hint for h in ("real estate", "reit", "commodity", "gold", "real asset")
+    ):
+        instrument_kind = "real_asset"
+    elif any(h in asset_type_hint for h in ("fund", "etf", "stock", "equity")):
+        instrument_kind = "equity"
+    else:
+        instrument_kind = "other"
+
+    symbol_source = raw_symbol_source
+    if symbol_source not in {
+        "statement_ticker",
+        "statement_cusip",
+        "statement_security_id",
+        "derived_none",
+    }:
+        if normalized_ticker:
+            symbol_source = "statement_ticker"
+        elif normalized_identifier:
+            symbol_source = "statement_cusip"
+        else:
+            symbol_source = "derived_none"
+
+    symbol_kind = raw_symbol_kind
+    if symbol_kind not in {
+        "us_common_equity_ticker",
+        "fund_or_etf_ticker",
+        "bond_or_fixed_income_id",
+        "cash_identifier",
+        "unknown",
+    }:
+        if is_cash_equivalent:
+            symbol_kind = "cash_identifier"
+        elif instrument_kind == "fixed_income":
+            symbol_kind = "bond_or_fixed_income_id"
+        elif instrument_kind in {"equity", "real_asset"} and identifier_type == "ticker":
+            symbol_kind = "unknown"
+        else:
+            symbol_kind = "unknown"
+
+    security_listing_status = raw_listing_status
+    if security_listing_status not in {
+        "sec_common_equity",
+        "non_sec_common_equity",
+        "cash_or_sweep",
+        "fixed_income",
+        "unknown",
+    }:
+        if is_cash_equivalent:
+            security_listing_status = "cash_or_sweep"
+        elif instrument_kind == "fixed_income":
+            security_listing_status = "fixed_income"
+        else:
+            security_listing_status = "unknown"
+
+    is_sec_common_equity_ticker = raw_is_sec_common_equity
+    if is_sec_common_equity_ticker is None:
+        is_sec_common_equity_ticker = (
+            security_listing_status == "sec_common_equity"
+            or symbol_kind == "us_common_equity_ticker"
+        )
+
+    analyze_eligible, analyze_eligible_reason = _derive_analyze_eligibility(
+        is_investable=is_investable,
+        is_cash_equivalent=is_cash_equivalent,
+        security_listing_status=security_listing_status,
+        symbol_kind=symbol_kind,
+        is_sec_common_equity_ticker=bool(is_sec_common_equity_ticker),
+    )
 
     raw_sector_value = _first_present(row, "sector", "gics_sector", "sector_name")
-    raw_sector = str(raw_sector_value).strip() if raw_sector_value is not None else ""
+    raw_sector = _normalize_optional_text(raw_sector_value) or ""
     raw_industry_value = _first_present(row, "industry", "gics_industry", "industry_name")
-    raw_industry = str(raw_industry_value).strip() if raw_industry_value is not None else ""
+    raw_industry = _normalize_optional_text(raw_industry_value) or ""
     merged_sector, merged_industry, sector_tags, metadata_confidence = symbol_master.enrich_holding(
         symbol=normalized_symbol,
         sector=raw_sector or None,
@@ -981,10 +1504,23 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
     normalized, reconciliation = _reconcile_holding_numeric_fields(
         {
             "symbol": normalized_symbol,
+            "symbol_cusip": normalized_identifier or None,
+            "identifier_type": identifier_type,
             "symbol_quality": symbol_quality,
             "symbol_trust_tier": symbol_classification.trust_tier,
             "symbol_trust_reason": symbol_classification.reason,
             "tradable": bool(symbol_classification.tradable),
+            "instrument_kind": instrument_kind,
+            "is_cash_equivalent": is_cash_equivalent,
+            "is_investable": is_investable,
+            "debate_eligible": is_investable,
+            "optimize_eligible": is_investable,
+            "analyze_eligible": analyze_eligible,
+            "analyze_eligible_reason": analyze_eligible_reason,
+            "symbol_source": symbol_source,
+            "symbol_kind": symbol_kind,
+            "security_listing_status": security_listing_status,
+            "is_sec_common_equity_ticker": is_sec_common_equity_ticker,
             "name": raw_name or "Unknown",
             "quantity": _first_present(row, "quantity", "shares", "units", "qty"),
             "price": _first_present(
@@ -1037,7 +1573,7 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
             "industry": merged_industry,
             "sector_tags": sector_tags,
             "metadata_confidence": metadata_confidence,
-            "acquisition_date": row.get("acquisition_date"),
+            "acquisition_date": _normalize_optional_text(row.get("acquisition_date")),
             "estimated_annual_income": _first_present(
                 row,
                 "estimated_annual_income",
@@ -1131,6 +1667,14 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
                     "source": "statement_llm_parse",
                     "aggregated_from_lots": 1,
                 },
+                "is_cash_equivalent": bool(row.get("is_cash_equivalent")),
+                "is_investable": bool(row.get("is_investable")),
+                "debate_eligible": bool(row.get("debate_eligible")),
+                "optimize_eligible": bool(row.get("optimize_eligible")),
+                "analyze_eligible": bool(row.get("analyze_eligible")),
+                "analyze_eligible_reason": str(
+                    row.get("analyze_eligible_reason") or "excluded_missing_equity_classification"
+                ),
             }
             continue
 
@@ -1185,6 +1729,44 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
         existing["metadata_confidence"] = max(existing_conf, incoming_conf)
         if not bool(existing.get("tradable")) and bool(row.get("tradable")):
             existing["tradable"] = True
+        existing["is_cash_equivalent"] = bool(existing.get("is_cash_equivalent")) or bool(
+            row.get("is_cash_equivalent")
+        )
+        existing["is_investable"] = bool(existing.get("tradable")) and not bool(
+            existing.get("is_cash_equivalent")
+        )
+        existing["debate_eligible"] = bool(existing.get("is_investable"))
+        existing["optimize_eligible"] = bool(existing.get("is_investable"))
+        existing["analyze_eligible"] = bool(existing.get("analyze_eligible")) and bool(
+            existing.get("is_investable")
+        )
+        if str(existing.get("analyze_eligible_reason") or "").strip().lower() in {
+            "",
+            "excluded_missing_equity_classification",
+        } and row.get("analyze_eligible_reason"):
+            existing["analyze_eligible_reason"] = row.get("analyze_eligible_reason")
+        if not existing.get("identifier_type") and row.get("identifier_type"):
+            existing["identifier_type"] = row.get("identifier_type")
+        if not existing.get("symbol_cusip") and row.get("symbol_cusip"):
+            existing["symbol_cusip"] = row.get("symbol_cusip")
+        if not existing.get("instrument_kind") and row.get("instrument_kind"):
+            existing["instrument_kind"] = row.get("instrument_kind")
+        if not existing.get("symbol_source") and row.get("symbol_source"):
+            existing["symbol_source"] = row.get("symbol_source")
+        if str(existing.get("symbol_kind") or "").strip().lower() in {"", "unknown"} and row.get(
+            "symbol_kind"
+        ):
+            existing["symbol_kind"] = row.get("symbol_kind")
+        if str(existing.get("security_listing_status") or "").strip().lower() in {
+            "",
+            "unknown",
+        } and row.get("security_listing_status"):
+            existing["security_listing_status"] = row.get("security_listing_status")
+        if (
+            existing.get("is_sec_common_equity_ticker") is None
+            and row.get("is_sec_common_equity_ticker") is not None
+        ):
+            existing["is_sec_common_equity_ticker"] = bool(row.get("is_sec_common_equity_ticker"))
         if str(existing.get("symbol_trust_tier") or "").lower() in {"", "unknown"}:
             existing["symbol_trust_tier"] = row.get("symbol_trust_tier")
             existing["symbol_trust_reason"] = row.get("symbol_trust_reason")
@@ -1196,54 +1778,24 @@ def _aggregate_holdings_by_symbol(rows: list[dict[str, Any]]) -> list[dict[str, 
         if qty is not None and abs(qty) > 1e-9 and market_value is not None:
             row["price"] = market_value / qty
             row["price_per_unit"] = row["price"]
+        row["is_cash_equivalent"] = bool(row.get("is_cash_equivalent")) or _is_cash_equivalent_row(
+            row
+        )
+        row["is_investable"] = bool(row.get("tradable")) and not bool(row.get("is_cash_equivalent"))
+        row["debate_eligible"] = bool(row.get("is_investable"))
+        row["optimize_eligible"] = bool(row.get("is_investable"))
+        analyze_eligible, analyze_eligible_reason = _derive_analyze_eligibility(
+            is_investable=bool(row.get("is_investable")),
+            is_cash_equivalent=bool(row.get("is_cash_equivalent")),
+            security_listing_status=str(row.get("security_listing_status") or ""),
+            symbol_kind=str(row.get("symbol_kind") or ""),
+            is_sec_common_equity_ticker=bool(row.get("is_sec_common_equity_ticker")),
+        )
+        row["analyze_eligible"] = analyze_eligible
+        row["analyze_eligible_reason"] = analyze_eligible_reason
         row["symbol_quality"] = "aggregated"
         row["confidence"] = _compute_holding_confidence(row)
     return aggregated
-
-
-def _build_holdings_quality_report(
-    *,
-    raw_count: int,
-    validated_count: int,
-    aggregated_count: int,
-    dropped_reasons: Counter[str],
-    reconciled_count: int,
-    mismatch_count: int,
-    parse_diagnostics: dict[str, Any],
-    unknown_name_count: int,
-    placeholder_symbol_count: int,
-    zero_qty_zero_price_nonzero_value_count: int,
-    account_header_row_count: int,
-    duplicate_symbol_lot_count: int,
-    average_confidence: float,
-) -> dict[str, Any]:
-    consistency_applied = bool(parse_diagnostics.get("consistency_pass_applied"))
-    consistency_model = str(parse_diagnostics.get("consistency_pass_model") or "").strip() or None
-    sparse_sections = (
-        parse_diagnostics.get("sparse_sections_detected")
-        if isinstance(parse_diagnostics.get("sparse_sections_detected"), list)
-        else []
-    )
-    return {
-        "raw": raw_count,
-        "validated": validated_count,
-        "aggregated": aggregated_count,
-        "dropped": raw_count - validated_count,
-        "reconciled": reconciled_count,
-        "mismatch_detected": mismatch_count,
-        "dropped_reasons": dict(dropped_reasons),
-        "unknown_name_count": unknown_name_count,
-        "placeholder_symbol_count": placeholder_symbol_count,
-        "zero_qty_zero_price_nonzero_value_count": zero_qty_zero_price_nonzero_value_count,
-        "account_header_row_count": account_header_row_count,
-        "duplicate_symbol_lot_count": duplicate_symbol_lot_count,
-        "average_confidence": average_confidence,
-        "parse_repair_applied": parse_diagnostics.get("repair_applied", False),
-        "parse_repair_actions": parse_diagnostics.get("repair_actions", []),
-        "consistency_pass_applied": consistency_applied,
-        "consistency_pass_model": consistency_model,
-        "sparse_sections_detected": sparse_sections,
-    }
 
 
 class PortfolioImportResponse(BaseModel):
@@ -1714,86 +2266,6 @@ async def get_dashboard_profile_picks(
     )
 
 
-def _extract_json_payload_from_response(response: Any) -> dict[str, Any]:
-    parsed = getattr(response, "parsed", None)
-    if isinstance(parsed, dict):
-        return parsed
-
-    raw_text = str(getattr(response, "text", "") or "").strip()
-    if not raw_text and getattr(response, "candidates", None):
-        candidate = response.candidates[0]
-        content = getattr(candidate, "content", None)
-        parts = getattr(content, "parts", None) or []
-        raw_text = "".join(str(getattr(part, "text", "") or "") for part in parts).strip()
-
-    if raw_text.startswith("```json"):
-        raw_text = raw_text[7:]
-    if raw_text.startswith("```"):
-        raw_text = raw_text[3:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3]
-    raw_text = raw_text.strip()
-    if not raw_text:
-        raise ValueError("Model returned empty JSON payload")
-    decoded = json.loads(raw_text)
-    if not isinstance(decoded, dict):
-        raise ValueError("Model payload is not a JSON object")
-    return decoded
-
-
-async def _run_portfolio_consistency_pass(
-    *,
-    client: Any,
-    model_name: str,
-    content: bytes,
-    is_csv_upload: bool,
-    sparse_sections: list[str],
-    parsed_data: dict[str, Any],
-    types_module: Any,
-) -> dict[str, Any]:
-    sparse_label = ", ".join(sparse_sections) if sparse_sections else "none"
-    prompt = (
-        "You are validating a brokerage statement extraction. "
-        "Return JSON only. Fill only missing/partial sections; do not alter known-good values.\n\n"
-        f"Sparse sections detected: {sparse_label}\n\n"
-        "Return one JSON object with keys:\n"
-        "- account_metadata\n"
-        "- portfolio_summary\n"
-        "- asset_allocation\n"
-        "- cash_balance\n"
-        "- total_value\n\n"
-        "Rules:\n"
-        "- Use null for unknown values.\n"
-        "- Do not invent tickers or account identifiers.\n"
-        "- Preserve numeric signs exactly.\n"
-        "- asset_allocation must be an array of {category, market_value, percentage} rows.\n"
-        "- Output valid JSON only.\n\n"
-        f"Existing extraction JSON:\n{json.dumps(parsed_data, ensure_ascii=True, separators=(',', ':'))}"
-    )
-
-    upload_mime_type = "text/csv" if is_csv_upload else "application/pdf"
-    contents = [
-        types_module.Part.from_text(text=prompt),
-        types_module.Part.from_bytes(data=content, mime_type=upload_mime_type),
-    ]
-    config = types_module.GenerateContentConfig(
-        temperature=0.0,
-        max_output_tokens=8192,
-        response_mime_type="application/json",
-        response_schema=_PORTFOLIO_CONSISTENCY_RESPONSE_SCHEMA,
-        automatic_function_calling=types_module.AutomaticFunctionCallingConfig(disable=True),
-    )
-    response = await client.aio.models.generate_content(
-        model=model_name,
-        contents=contents,
-        config=config,
-    )
-    repair_json = _extract_json_payload_from_response(response)
-    if not isinstance(repair_json, dict):
-        raise ValueError("Consistency pass returned invalid payload")
-    return repair_json
-
-
 @router.post("/portfolio/import/stream")
 async def import_portfolio_stream(
     request: Request,
@@ -1804,8 +2276,8 @@ async def import_portfolio_stream(
     """
     SSE streaming endpoint for portfolio import with real-time progress.
 
-    Streams Gemini parsing progress as Server-Sent Events (SSE).
-    Uses schema-constrained extraction with optional consistency repair pass.
+    Streams deterministic Gemini extraction progress as Server-Sent Events (SSE).
+    Uses one V2 schema-constrained extraction pass (no semantic repair pass).
 
     **Event Types (canonical)**:
     - `stage`: Current processing stage + heartbeat metadata
@@ -1819,7 +2291,7 @@ async def import_portfolio_stream(
 
     **Disconnection Handling (Production-Grade)**:
     - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(180) hard ceiling prevents runaway LLM calls
+    - Layer 2: asyncio.timeout(360) hard ceiling prevents runaway LLM calls
     - Layer 3: backend heartbeats every 3-5s while waiting for model output
     - Layer 4: request.is_disconnected() checked per-chunk for fast cleanup
     """
@@ -1859,16 +2331,12 @@ async def import_portfolio_stream(
         from google.genai.types import HttpOptions
 
         from hushh_mcp.constants import (
-            KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS,
             KAI_PORTFOLIO_IMPORT_ENABLE_THINKING,
             KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL,
-            KAI_PORTFOLIO_IMPORT_REPAIR_MODEL,
         )
 
-        thinking_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_THINKING
-        consistency_pass_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS
+        thinking_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_THINKING and KAI_LLM_THINKING_ENABLED
         extraction_model = KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL
-        repair_model = KAI_PORTFOLIO_IMPORT_REPAIR_MODEL
 
         try:
             async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
@@ -1886,11 +2354,9 @@ async def import_portfolio_stream(
                 client = genai.Client(http_options=HttpOptions(api_version="v1"))
                 model_to_use = extraction_model
                 logger.info(
-                    "SSE: Portfolio import models primary=%s repair=%s thinking=%s consistency_pass=%s",
+                    "SSE: Portfolio import model=%s thinking=%s mode=single_pass_no_repair",
                     model_to_use,
-                    repair_model,
                     thinking_enabled,
-                    consistency_pass_enabled,
                 )
 
                 # Stage 2: Indexing
@@ -1931,54 +2397,30 @@ async def import_portfolio_stream(
                     )
                     return
 
-                prompt = """Extract this brokerage statement to JSON only.
+                full_extract_prompt = build_statement_extract_prompt_v2()
 
-Return one JSON object with keys:
-- account_metadata
-- portfolio_summary
-- asset_allocation
-- detailed_holdings
-- historical_values
-- income_summary
-- realized_gain_loss
-- activity_and_transactions
-- cash_balance
-- total_value
+                pdf_context = (
+                    _extract_pdf_pass_contexts(content)
+                    if is_pdf_upload
+                    else {
+                        "positions_text": "",
+                        "summary_text": "",
+                        "positions_confidence": 0.0,
+                        "summary_confidence": 0.0,
+                        "selected_pages": [],
+                    }
+                )
 
-Rules:
-- Return valid JSON object only (no prose, no markdown, no code fences).
-- Use null for unknown fields.
-- Do not invent ticker symbols.
-- Include every holding row in `detailed_holdings`; if ticker is missing, use best available identifier in `symbol_cusip`.
-- For each holding, include `asset_type`, `sector`, and `industry` whenever present in the statement.
-- Preserve numeric values exactly (including negatives)."""
-
-                # Create content payload with source-aware MIME type.
-                upload_mime_type = "text/csv" if is_csv_upload else "application/pdf"
-                contents = [
-                    types.Part.from_text(text=prompt),
-                    types.Part.from_bytes(data=content, mime_type=upload_mime_type),
-                ]
-
-                config_kwargs: dict[str, Any] = {
-                    "temperature": 0.0,
-                    "max_output_tokens": 12288,
-                    "response_mime_type": "application/json",
-                    "response_schema": _PORTFOLIO_EXTRACTION_RESPONSE_SCHEMA,
-                    "automatic_function_calling": types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
+                run_started_at = time.perf_counter()
+                parse_diagnostics: dict[str, Any] = {
+                    "pass_timings_ms": {},
+                    "pass_token_counts": {},
+                    "pass_content_sources": {},
+                    "pdf_context": pdf_context,
                 }
-                if thinking_enabled:
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_level=types.ThinkingLevel.MEDIUM,
-                    )
-                    logger.info("SSE: Thinking mode enabled for token-level reasoning stream")
-                else:
-                    logger.info("SSE: Thinking mode disabled for stable streaming throughput")
-
-                config = types.GenerateContentConfig(**config_kwargs)
+                combined_stream_text = ""
+                combined_chunk_count = 0
+                combined_thought_count = 0
 
                 # Stage 3: Scanning (real runtime milestone: handoff to model stream request)
                 yield stream.event(
@@ -1986,732 +2428,496 @@ Rules:
                     {
                         "stage": "scanning",
                         "message": "Submitting statement to Vertex model...",
+                        "phase": "extract_full",
                     },
                 )
 
-                full_response = ""
-                chunk_count = 0
-                thought_count = 0
-                current_stream_stage: str = "scanning"
-                thinking_stage_emitted = False
-                extracting_stage_emitted = False
-                streamed_holdings_estimate = 0
-                latest_live_holdings_preview: list[dict[str, Any]] = []
-                stream_started_at = asyncio.get_running_loop().time()
-                last_extract_progress_emit_at = stream_started_at
-
-                def extraction_progress_from_chunks(chunks: int) -> float | None:
-                    if chunks <= 0:
-                        return None
-                    return min(
-                        80.0,
-                        35.0 + min(45.0, math.log1p(max(chunks, 1)) * 12.0),
+                full_context_parts = [
+                    str(pdf_context.get("positions_text") or "").strip(),
+                    str(pdf_context.get("summary_text") or "").strip(),
+                ]
+                full_context_excerpt = "\n\n".join(part for part in full_context_parts if part)
+                full_context_confidence = float(
+                    max(
+                        float(pdf_context.get("positions_confidence") or 0.0),
+                        float(pdf_context.get("summary_confidence") or 0.0),
                     )
-
-                # Use official Gemini streaming API with thinking support
-                gen_stream = await client.aio.models.generate_content_stream(
-                    model=model_to_use,
-                    contents=contents,
-                    config=config,
                 )
 
-                client_disconnected = False
+                extract_full_result: dict[str, Any] = {}
+                async for frame in run_stream_pass_v2(
+                    request=request,
+                    stream=stream,
+                    client=client,
+                    types_module=types,
+                    phase="extract_full",
+                    model_name=model_to_use,
+                    prompt=full_extract_prompt,
+                    response_schema=FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
+                    context_excerpt=full_context_excerpt,
+                    context_confidence=full_context_confidence,
+                    stage_message="Extracting portfolio statement data...",
+                    progress_message="Streaming full extraction",
+                    include_holdings_preview=True,
+                    result_store=extract_full_result,
+                    content=content,
+                    is_csv_upload=is_csv_upload,
+                    temperature=KAI_LLM_TEMPERATURE,
+                    max_output_tokens=KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
+                    enforce_response_schema=KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
+                    thinking_enabled=thinking_enabled,
+                    thinking_level_raw=KAI_LLM_THINKING_LEVEL,
+                    heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
+                    required_keys=FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
+                ):
+                    yield frame
 
-                stream_iter = gen_stream.__aiter__()
-                next_chunk_task: asyncio.Task | None = None
-                while True:
-                    # Check for disconnection after each chunk
-                    if await request.is_disconnected():
-                        logger.info(
-                            "[Portfolio Import] Client disconnected, stopping streaming — saving compute"
-                        )
-                        client_disconnected = True
-                        if next_chunk_task and not next_chunk_task.done():
-                            next_chunk_task.cancel()
-                        break
+                if extract_full_result.get("client_disconnected"):
+                    logger.info("[Portfolio Import] Client disconnected during full extraction")
+                    return
 
-                    try:
-                        if next_chunk_task is None:
-                            next_chunk_task = asyncio.create_task(stream_iter.__anext__())
-                        chunk = await asyncio.wait_for(
-                            asyncio.shield(next_chunk_task),
-                            timeout=HEARTBEAT_INTERVAL_SECONDS,
-                        )
-                        next_chunk_task = None
-                    except asyncio.TimeoutError:
-                        elapsed = int(asyncio.get_running_loop().time() - stream_started_at)
-                        heartbeat_stage = current_stream_stage
-                        if heartbeat_stage == "extracting":
-                            heartbeat_message = (
-                                f"Streaming extracted JSON payload... ({elapsed}s elapsed)"
-                            )
-                        elif heartbeat_stage == "thinking":
-                            heartbeat_message = f"Model is still reasoning over account sections... ({elapsed}s elapsed)"
-                        else:
-                            heartbeat_message = (
-                                f"Awaiting first model tokens... ({elapsed}s elapsed)"
-                            )
-                        yield stream.event(
-                            "stage",
-                            {
-                                "stage": heartbeat_stage,
-                                "message": heartbeat_message,
-                                "heartbeat": True,
-                                "elapsed_seconds": elapsed,
-                                "chunk_count": chunk_count,
-                                "total_chars": len(full_response),
-                                **(
-                                    {"progress_pct": extraction_progress_from_chunks(chunk_count)}
-                                    if heartbeat_stage == "extracting"
-                                    and extraction_progress_from_chunks(chunk_count) is not None
-                                    else {}
-                                ),
-                            },
-                        )
-                        continue
-                    except StopAsyncIteration:
-                        next_chunk_task = None
-                        break
+                parsed_data = (
+                    extract_full_result.get("parsed")
+                    if isinstance(extract_full_result.get("parsed"), dict)
+                    else {}
+                )
+                parsed_data = _canonicalize_structured_portfolio_payload(parsed_data)
+                parse_diagnostics["extract_full_pass_parse"] = extract_full_result.get(
+                    "parse_diagnostics", {}
+                )
+                parse_diagnostics["pass_timings_ms"]["extract_full_ms"] = extract_full_result.get(
+                    "elapsed_ms"
+                )
+                parse_diagnostics["pass_token_counts"]["extract_full"] = {
+                    "chunks": extract_full_result.get("chunk_count", 0),
+                    "thoughts": extract_full_result.get("thought_count", 0),
+                }
+                parse_diagnostics["pass_content_sources"]["extract_full"] = extract_full_result.get(
+                    "source"
+                )
 
-                    # Handle chunks with thinking support
-                    appended_response_text = False
-                    if hasattr(chunk, "candidates") and chunk.candidates:
-                        candidate = chunk.candidates[0]
-                        if hasattr(candidate, "content") and candidate.content:
-                            parts = getattr(candidate.content, "parts", None) or []
-                            for part in parts:
-                                if not hasattr(part, "text") or not part.text:
-                                    continue
+                detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
+                coverage_metrics = _compute_positions_coverage(
+                    holdings=detailed_holdings,
+                    total_value=_coerce_optional_number(parsed_data.get("total_value")),
+                )
+                parse_diagnostics["positions_coverage"] = coverage_metrics
 
-                                # Check if this is a thought (reasoning) or actual response
-                                is_thought = hasattr(part, "thought") and part.thought
-
-                                if is_thought:
-                                    # Stream thought summary to frontend
-                                    thought_count += 1
-                                    current_stream_stage = "thinking"
-                                    if not thinking_stage_emitted:
-                                        thinking_stage_emitted = True
-                                        yield stream.event(
-                                            "stage",
-                                            {
-                                                "stage": "thinking",
-                                                "message": "Reasoning through account sections...",
-                                            },
-                                        )
-                                    yield stream.event(
-                                        "thinking",
-                                        {
-                                            "thought": part.text,
-                                            "count": thought_count,
-                                            "token_source": "thought",
-                                            "message": "Reasoning through account sections...",
-                                        },
-                                    )
-                                else:
-                                    # This is the actual JSON response
-                                    if not extracting_stage_emitted:
-                                        extracting_stage_emitted = True
-                                        current_stream_stage = "extracting"
-                                        yield stream.event(
-                                            "stage",
-                                            {
-                                                "stage": "extracting",
-                                                "message": "Extracting financial data...",
-                                            },
-                                        )
-
-                                    full_response += part.text
-                                    chunk_count += 1
-                                    appended_response_text = True
-                                    streamed_holdings_estimate = max(
-                                        streamed_holdings_estimate,
-                                        _estimate_stream_holdings(full_response),
-                                    )
-                                    latest_live_holdings_preview = (
-                                        _extract_live_holdings_preview_from_text(
-                                            full_response, max_items=40
-                                        )
-                                    )
-
-                                    # Stream extraction progress
-                                    yield stream.event(
-                                        "chunk",
-                                        {
-                                            "text": part.text,
-                                            "total_chars": len(full_response),
-                                            "chunk_count": chunk_count,
-                                            "holdings_detected": streamed_holdings_estimate,
-                                            "holdings_preview": latest_live_holdings_preview,
-                                            "token_source": "response",
-                                            "progress_pct": extraction_progress_from_chunks(
-                                                chunk_count
-                                            ),
-                                        },
-                                    )
-                                    now = asyncio.get_running_loop().time()
-                                    if (
-                                        chunk_count > 1
-                                        and (now - last_extract_progress_emit_at)
-                                        >= HEARTBEAT_INTERVAL_SECONDS
-                                    ):
-                                        last_extract_progress_emit_at = now
-                                        yield stream.event(
-                                            "progress",
-                                            {
-                                                "phase": "extracting",
-                                                "message": (
-                                                    "Streaming response: "
-                                                    f"{chunk_count} chunks, {len(full_response):,} chars"
-                                                ),
-                                                "chunk_count": chunk_count,
-                                                "total_chars": len(full_response),
-                                                "progress_pct": extraction_progress_from_chunks(
-                                                    chunk_count
-                                                ),
-                                            },
-                                        )
-
-                    # Fallback for response shapes where chunk.text is populated even if candidates exist.
-                    if not appended_response_text and getattr(chunk, "text", None):
-                        if not extracting_stage_emitted:
-                            extracting_stage_emitted = True
-                            current_stream_stage = "extracting"
-                            yield stream.event(
-                                "stage",
-                                {
-                                    "stage": "extracting",
-                                    "message": "Extracting financial data...",
-                                },
-                            )
-
-                        text_chunk = chunk.text
-                        full_response += text_chunk
-                        chunk_count += 1
-                        streamed_holdings_estimate = max(
-                            streamed_holdings_estimate,
-                            _estimate_stream_holdings(full_response),
-                        )
-                        latest_live_holdings_preview = _extract_live_holdings_preview_from_text(
-                            full_response, max_items=40
-                        )
-                        yield stream.event(
-                            "chunk",
-                            {
-                                "text": text_chunk,
-                                "total_chars": len(full_response),
-                                "chunk_count": chunk_count,
-                                "holdings_detected": streamed_holdings_estimate,
-                                "holdings_preview": latest_live_holdings_preview,
-                                "token_source": "response",
-                                "progress_pct": extraction_progress_from_chunks(chunk_count),
-                            },
-                        )
-                        now = asyncio.get_running_loop().time()
-                        if (
-                            chunk_count > 1
-                            and (now - last_extract_progress_emit_at) >= HEARTBEAT_INTERVAL_SECONDS
-                        ):
-                            last_extract_progress_emit_at = now
-                            yield stream.event(
-                                "progress",
-                                {
-                                    "phase": "extracting",
-                                    "message": (
-                                        "Streaming response: "
-                                        f"{chunk_count} chunks, {len(full_response):,} chars"
-                                    ),
-                                    "chunk_count": chunk_count,
-                                    "total_chars": len(full_response),
-                                    "progress_pct": extraction_progress_from_chunks(chunk_count),
-                                },
-                            )
-
-                # Skip all post-processing if client disconnected — no point parsing for nobody
-                if client_disconnected:
-                    logger.info(
-                        "[Portfolio Import] Skipping post-processing, client gone — LLM compute saved"
+                if len(detailed_holdings) == 0:
+                    yield stream.event(
+                        "error",
+                        {
+                            "code": "IMPORT_NO_HOLDINGS",
+                            "message": (
+                                "No valid holdings were extracted from the statement. "
+                                "Please retry with a clearer statement export."
+                            ),
+                            "diagnostics": parse_diagnostics,
+                        },
+                        terminal=True,
                     )
                     return
 
-                # Strict LLM streaming only: no secondary generation fallback.
-                if not full_response.strip():
-                    raise ValueError("Empty model response from streaming call")
+                parsed_data["detailed_holdings"] = detailed_holdings
 
-                # Final extraction complete
+                # Stage 4: Normalizing
                 yield stream.event(
                     "stage",
                     {
-                        "stage": "extracting",
-                        "message": "Extraction stream complete",
-                        "total_chars": len(full_response),
-                        "chunk_count": chunk_count,
-                        "thought_count": thought_count,
-                        "holdings_detected": streamed_holdings_estimate,
-                        "holdings_preview": latest_live_holdings_preview,
+                        "stage": "normalizing",
+                        "phase": "normalizing",
+                        "message": "Normalizing extracted statement data...",
+                        "progress_pct": _phase_progress_bounds("normalizing")[0],
+                    },
+                )
+
+                normalized_summary = _normalize_portfolio_summary(parsed_data)
+                if normalized_summary:
+                    parsed_data["portfolio_summary"] = {
                         **(
-                            {"progress_pct": extraction_progress_from_chunks(chunk_count)}
-                            if extraction_progress_from_chunks(chunk_count) is not None
+                            parsed_data.get("portfolio_summary")
+                            if isinstance(parsed_data.get("portfolio_summary"), dict)
                             else {}
                         ),
-                    },
-                )
-
-                # Stage 4: Parsing
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "parsing",
-                        "message": "Processing extracted data...",
-                    },
-                )
-
-                # Parse JSON from response
-                parse_diagnostics: dict[str, Any] = {}
-                try:
-                    parsed_data, parse_diagnostics = parse_json_with_single_repair(full_response)
-                    normalized_summary = _normalize_portfolio_summary(parsed_data)
-                    if normalized_summary:
-                        parsed_data["portfolio_summary"] = {
-                            **(
-                                parsed_data.get("portfolio_summary")
-                                if isinstance(parsed_data.get("portfolio_summary"), dict)
-                                else {}
-                            ),
-                            **normalized_summary,
-                        }
-                    sparse_sections = _detect_sparse_sections(parsed_data)
-                    parse_diagnostics["sparse_sections_detected"] = sparse_sections
-                    if consistency_pass_enabled and sparse_sections:
-                        yield stream.event(
-                            "stage",
-                            {
-                                "stage": "parsing",
-                                "message": (
-                                    "Running consistency pass for missing sections: "
-                                    + ", ".join(sparse_sections)
-                                ),
-                            },
-                        )
-                        try:
-                            consistency_payload = await _run_portfolio_consistency_pass(
-                                client=client,
-                                model_name=repair_model,
-                                content=content,
-                                is_csv_upload=is_csv_upload,
-                                sparse_sections=sparse_sections,
-                                parsed_data=parsed_data,
-                                types_module=types,
-                            )
-                            parsed_data = _merge_missing_values(parsed_data, consistency_payload)
-                            parse_diagnostics["consistency_pass_applied"] = True
-                            parse_diagnostics["consistency_pass_model"] = repair_model
-                        except Exception as consistency_error:
-                            logger.warning(
-                                "[Portfolio Import] Consistency pass failed: %s", consistency_error
-                            )
-                            parse_diagnostics["consistency_pass_applied"] = False
-                            parse_diagnostics["consistency_pass_error"] = str(consistency_error)
-                    else:
-                        parse_diagnostics["consistency_pass_applied"] = False
-                    detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
-                    parsed_data["detailed_holdings"] = detailed_holdings
-                    if holdings_source != "detailed_holdings":
-                        yield stream.event(
-                            "warning",
-                            {
-                                "code": "HOLDINGS_ALIAS_USED",
-                                "message": (
-                                    "Structured holdings were recovered from an alternative field."
-                                    if holdings_source != "none"
-                                    else "No holdings array found in model output; continuing with empty holdings."
-                                ),
-                                "source_field": holdings_source,
-                                "holdings_count": len(detailed_holdings),
-                            },
-                        )
-
-                    # Transform Gemini response to match frontend expected structure
-                    account_metadata_raw = parsed_data.get("account_metadata")
-                    account_metadata = (
-                        account_metadata_raw if isinstance(account_metadata_raw, dict) else {}
-                    )
-                    account_info = {
-                        "holder_name": account_metadata.get("account_holder"),
-                        "account_number": account_metadata.get("account_number"),
-                        "account_type": account_metadata.get("account_type"),
-                        "brokerage_name": account_metadata.get("institution_name"),
-                        "statement_period_start": account_metadata.get("statement_period_start"),
-                        "statement_period_end": account_metadata.get("statement_period_end"),
+                        **normalized_summary,
                     }
+                sparse_sections = _detect_sparse_sections(parsed_data)
+                parse_diagnostics["sparse_sections_detected"] = sparse_sections
 
-                    portfolio_summary_raw = parsed_data.get("portfolio_summary")
-                    portfolio_summary = (
-                        portfolio_summary_raw if isinstance(portfolio_summary_raw, dict) else {}
-                    )
-                    account_summary = {
-                        "beginning_value": _coerce_optional_number(
-                            portfolio_summary.get("beginning_value")
-                        ),
-                        "ending_value": _coerce_optional_number(
-                            portfolio_summary.get("ending_value")
-                        ),
-                        "change_in_value": _coerce_optional_number(
-                            portfolio_summary.get("total_change")
-                        ),
-                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
-                        "net_deposits_withdrawals": _coerce_optional_number(
-                            portfolio_summary.get("net_deposits_withdrawals")
-                        ),
-                        "investment_gain_loss": _coerce_optional_number(
-                            portfolio_summary.get("investment_gain_loss")
-                        ),
-                        "total_income_period": _coerce_optional_number(
-                            portfolio_summary.get("total_income_period")
-                        ),
-                        "total_income_ytd": _coerce_optional_number(
-                            portfolio_summary.get("total_income_ytd")
-                        ),
-                        "total_fees": _coerce_optional_number(portfolio_summary.get("total_fees")),
-                    }
-
-                    detailed_holdings_raw = parsed_data.get("detailed_holdings")
-                    detailed_holdings = (
-                        detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
-                    )
-                    normalized_holdings: list[dict[str, Any]] = []
-                    parsed_total = len(detailed_holdings)
-                    if parsed_total > 0:
-                        yield stream.event(
-                            "progress",
-                            {
-                                "phase": "parsing",
-                                "message": f"Normalizing {parsed_total} extracted holdings...",
-                                "holdings_extracted": 0,
-                                "holdings_total": parsed_total,
-                                "holdings_raw_count": parsed_total,
-                                "holdings_preview": [],
-                                "progress_pct": 82,
-                            },
-                        )
-                    for idx, h in enumerate(detailed_holdings):
-                        if await request.is_disconnected():
-                            logger.info(
-                                "[Portfolio Import] Client disconnected during parsing, stopping stream cleanup"
-                            )
-                            return
-                        if not isinstance(h, dict):
-                            logger.warning(
-                                "[Portfolio Import] Skipping non-dict holding row at index %s: %r",
-                                idx,
-                                type(h).__name__,
-                            )
-                            continue
-                        normalized = _normalize_raw_holding_row(h, idx)
-                        normalized_holdings.append(normalized)
-
-                        if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
-                            yield stream.event(
-                                "progress",
-                                {
-                                    "phase": "parsing",
-                                    "message": (
-                                        f"Parsed {idx + 1} of {parsed_total} holdings"
-                                        if parsed_total > 0
-                                        else "Parsing holdings..."
-                                    ),
-                                    "holdings_extracted": idx + 1,
-                                    "holdings_total": parsed_total,
-                                    "holdings_raw_count": parsed_total,
-                                    "holdings_preview": _build_holdings_preview(
-                                        normalized_holdings, max_items=40
-                                    ),
-                                    "progress_pct": 82
-                                    + min(16.0, ((idx + 1) / max(parsed_total, 1)) * 16.0),
-                                },
-                            )
-
-                    # ---- Validation pass: reject hallucinated or incomplete entries ----
-                    raw_count = len(normalized_holdings)
-                    reconciled_count = 0
-                    mismatch_count = 0
-                    dropped_reasons: Counter[str] = Counter()
-                    validated_holdings: list[dict[str, Any]] = []
-                    for row in normalized_holdings:
-                        is_valid, reason = _validate_holding_row(row)
-                        if not is_valid:
-                            dropped_reasons[reason or "unknown"] += 1
-                            continue
-
-                        reconciliation = row.get("reconciliation")
-                        if isinstance(reconciliation, dict):
-                            if reconciliation.get("reconciled_fields"):
-                                reconciled_count += 1
-                            if reconciliation.get("mismatch_detected"):
-                                mismatch_count += 1
-
-                        validated_holdings.append(row)
-
-                    holdings = _aggregate_holdings_by_symbol(validated_holdings)
-                    duplicate_symbol_lot_count = max(0, len(validated_holdings) - len(holdings))
-                    unknown_name_count = sum(
-                        1 for row in holdings if _is_unknown_name(row.get("name"))
-                    )
-                    placeholder_symbol_count = sum(
-                        1 for row in holdings if str(row.get("symbol") or "").startswith("HOLDING_")
-                    )
-                    zero_qty_zero_price_nonzero_value_count = sum(
-                        1
-                        for row in holdings
-                        if (
-                            (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
-                            and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
-                            and (_coerce_optional_number(row.get("market_value")) or 0.0) > 0.0
-                        )
-                    )
-                    account_header_row_count = dropped_reasons.get("account_header_row", 0)
-                    logger.info(
-                        "[Portfolio Validation] Validated %s/%s holdings (aggregated=%s)",
-                        len(validated_holdings),
-                        raw_count,
-                        len(holdings),
-                    )
-
-                    # Calculate total_value if not provided
-                    total_value = _coerce_optional_number(parsed_data.get("total_value")) or 0.0
-                    if not total_value and account_summary.get("ending_value"):
-                        total_value = account_summary["ending_value"] or 0.0
-                    if not total_value and holdings:
-                        total_value = sum(
-                            _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
-                        )
-
-                    quality_report = _build_holdings_quality_report(
-                        raw_count=raw_count,
-                        validated_count=len(validated_holdings),
-                        aggregated_count=len(holdings),
-                        dropped_reasons=dropped_reasons,
-                        reconciled_count=reconciled_count,
-                        mismatch_count=mismatch_count,
-                        parse_diagnostics=parse_diagnostics,
-                        unknown_name_count=unknown_name_count,
-                        placeholder_symbol_count=placeholder_symbol_count,
-                        zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
-                        account_header_row_count=account_header_row_count,
-                        duplicate_symbol_lot_count=duplicate_symbol_lot_count,
-                        average_confidence=(
-                            round(
-                                sum(
-                                    _coerce_optional_number(row.get("confidence")) or 0.0
-                                    for row in holdings
-                                )
-                                / max(len(holdings), 1),
-                                4,
-                            )
-                            if holdings
-                            else 0.0
-                        ),
-                    )
-
+                detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
+                parsed_data["detailed_holdings"] = detailed_holdings
+                if holdings_source != "detailed_holdings":
                     yield stream.event(
-                        "progress",
+                        "warning",
                         {
-                            "phase": "parsing",
+                            "code": "HOLDINGS_ALIAS_USED",
                             "message": (
-                                f"Validated {len(validated_holdings)} holdings and aggregated into {len(holdings)} symbols"
+                                "Structured holdings were recovered from an alternative field."
+                                if holdings_source != "none"
+                                else "No holdings array found in model output; continuing with empty holdings."
                             ),
-                            "holdings_extracted": len(validated_holdings),
-                            "holdings_total": parsed_total,
-                            "holdings_raw_count": raw_count,
-                            "holdings_validated_count": len(validated_holdings),
-                            "holdings_aggregated_count": len(holdings),
-                            "holdings_dropped_reasons": dict(dropped_reasons),
-                            "holdings_preview": _build_holdings_preview(holdings, max_items=40),
-                            "progress_pct": 98,
+                            "source_field": holdings_source,
+                            "holdings_count": len(detailed_holdings),
+                            "phase": "normalizing",
                         },
                     )
 
-                    # Build portfolio_data structure for frontend
-                    portfolio_data = {
-                        "account_info": account_info,
-                        "account_summary": account_summary,
-                        "asset_allocation": parsed_data.get("asset_allocation"),
-                        "holdings": holdings,
-                        "income_summary": parsed_data.get("income_summary"),
-                        "realized_gain_loss": parsed_data.get("realized_gain_loss"),
-                        "cash_flow": parsed_data.get("cash_flow"),
-                        "cash_management": parsed_data.get("cash_management"),
-                        "projections_and_mrd": parsed_data.get("projections_and_mrd"),
-                        "historical_values": parsed_data.get("historical_values"),
-                        "ytd_metrics": parsed_data.get("ytd_metrics"),
-                        "legal_and_disclosures": parsed_data.get("legal_and_disclosures"),
-                        "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
-                        "total_value": total_value,
-                        "quality_report": quality_report,
+                parse_diagnostics["pass_timings_ms"]["total_ms"] = int(
+                    (time.perf_counter() - run_started_at) * 1000
+                )
+                combined_stream_text = str(extract_full_result.get("text") or "").strip()
+                combined_chunk_count = int(extract_full_result.get("chunk_count") or 0)
+                combined_thought_count = int(extract_full_result.get("thought_count") or 0)
+                parse_diagnostics["combined_stream"] = {
+                    "response_chars": len(combined_stream_text),
+                    "chunk_count": combined_chunk_count,
+                    "thought_count": combined_thought_count,
+                }
+
+                # Transform Gemini response to match frontend expected structure
+                account_metadata_raw = parsed_data.get("account_metadata")
+                account_metadata = (
+                    account_metadata_raw if isinstance(account_metadata_raw, dict) else {}
+                )
+                inferred_account_metadata = _derive_account_metadata_from_filename(
+                    file.filename or ""
+                )
+                for key, value in inferred_account_metadata.items():
+                    if account_metadata.get(key) in (None, "", []):
+                        account_metadata[key] = value
+                account_info = {
+                    "holder_name": account_metadata.get("account_holder"),
+                    "account_number": account_metadata.get("account_number"),
+                    "account_type": account_metadata.get("account_type"),
+                    "brokerage_name": account_metadata.get("institution_name"),
+                    "statement_period_start": account_metadata.get("statement_period_start"),
+                    "statement_period_end": account_metadata.get("statement_period_end"),
+                }
+
+                portfolio_summary_raw = parsed_data.get("portfolio_summary")
+                portfolio_summary = (
+                    portfolio_summary_raw if isinstance(portfolio_summary_raw, dict) else {}
+                )
+                account_summary = {
+                    "beginning_value": _coerce_optional_number(
+                        portfolio_summary.get("beginning_value")
+                    ),
+                    "ending_value": _coerce_optional_number(portfolio_summary.get("ending_value")),
+                    "change_in_value": _coerce_optional_number(
+                        portfolio_summary.get("total_change")
+                    ),
+                    "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
+                    "net_deposits_withdrawals": _coerce_optional_number(
+                        portfolio_summary.get("net_deposits_withdrawals")
+                    ),
+                    "investment_gain_loss": _coerce_optional_number(
+                        portfolio_summary.get("investment_gain_loss")
+                    ),
+                    "total_income_period": _coerce_optional_number(
+                        portfolio_summary.get("total_income_period")
+                    ),
+                    "total_income_ytd": _coerce_optional_number(
+                        portfolio_summary.get("total_income_ytd")
+                    ),
+                    "total_fees": _coerce_optional_number(portfolio_summary.get("total_fees")),
+                }
+
+                detailed_holdings_raw = parsed_data.get("detailed_holdings")
+                detailed_holdings = (
+                    detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
+                )
+                normalized_holdings: list[dict[str, Any]] = []
+                parsed_total = len(detailed_holdings)
+                if parsed_total > 0:
+                    yield stream.event(
+                        "progress",
+                        {
+                            "phase": "normalizing",
+                            "message": f"Normalizing {parsed_total} extracted holdings...",
+                            "holdings_extracted": 0,
+                            "holdings_total": parsed_total,
+                            "holdings_raw_count": parsed_total,
+                            "holdings_preview": [],
+                            "progress_pct": _phase_progress_bounds("normalizing")[0],
+                        },
+                    )
+                for idx, h in enumerate(detailed_holdings):
+                    if await request.is_disconnected():
+                        logger.info(
+                            "[Portfolio Import] Client disconnected during normalization, stopping stream cleanup"
+                        )
+                        return
+                    if not isinstance(h, dict):
+                        logger.warning(
+                            "[Portfolio Import] Skipping non-dict holding row at index %s: %r",
+                            idx,
+                            type(h).__name__,
+                        )
+                        continue
+                    normalized = _normalize_raw_holding_row(h, idx)
+                    normalized_holdings.append(normalized)
+
+                    if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
+                        yield stream.event(
+                            "progress",
+                            {
+                                "phase": "normalizing",
+                                "message": (
+                                    f"Parsed {idx + 1} of {parsed_total} holdings"
+                                    if parsed_total > 0
+                                    else "Parsing holdings..."
+                                ),
+                                "holdings_extracted": idx + 1,
+                                "holdings_total": parsed_total,
+                                "holdings_raw_count": parsed_total,
+                                "holdings_preview": _build_holdings_preview(
+                                    normalized_holdings, max_items=40
+                                ),
+                                "progress_pct": _phase_progress_bounds("normalizing")[0]
+                                + min(
+                                    _phase_progress_bounds("normalizing")[1]
+                                    - _phase_progress_bounds("normalizing")[0],
+                                    ((idx + 1) / max(parsed_total, 1))
+                                    * (
+                                        _phase_progress_bounds("normalizing")[1]
+                                        - _phase_progress_bounds("normalizing")[0]
+                                    ),
+                                ),
+                            },
+                        )
+
+                # ---- Validation pass: reject hallucinated or incomplete entries ----
+                yield stream.event(
+                    "stage",
+                    {
+                        "stage": "validating",
+                        "phase": "validating",
+                        "message": "Validating and reconciling normalized holdings...",
+                        "progress_pct": _phase_progress_bounds("validating")[0],
+                    },
+                )
+                raw_count = len(normalized_holdings)
+                reconciled_count = 0
+                mismatch_count = 0
+                dropped_reasons: Counter[str] = Counter()
+                validated_holdings: list[dict[str, Any]] = []
+                for row in normalized_holdings:
+                    is_valid, reason = _validate_holding_row(row)
+                    if not is_valid:
+                        dropped_reasons[reason or "unknown"] += 1
+                        continue
+
+                    reconciliation = row.get("reconciliation")
+                    if isinstance(reconciliation, dict):
+                        if reconciliation.get("reconciled_fields"):
+                            reconciled_count += 1
+                        if reconciliation.get("mismatch_detected"):
+                            mismatch_count += 1
+
+                    validated_holdings.append(row)
+
+                holdings = _aggregate_holdings_by_symbol(validated_holdings)
+                duplicate_symbol_lot_count = max(0, len(validated_holdings) - len(holdings))
+                unknown_name_count = sum(1 for row in holdings if _is_unknown_name(row.get("name")))
+                placeholder_symbol_count = sum(
+                    1 for row in holdings if str(row.get("symbol") or "").startswith("HOLDING_")
+                )
+                zero_qty_zero_price_nonzero_value_count = sum(
+                    1
+                    for row in holdings
+                    if (
+                        (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
+                        and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
+                        and (_coerce_optional_number(row.get("market_value")) or 0.0) > 0.0
+                    )
+                )
+                account_header_row_count = dropped_reasons.get("account_header_row", 0)
+                logger.info(
+                    "[Portfolio Validation] Validated %s/%s holdings (aggregated=%s)",
+                    len(validated_holdings),
+                    raw_count,
+                    len(holdings),
+                )
+
+                # Calculate total_value if not provided
+                total_value = _coerce_optional_number(parsed_data.get("total_value")) or 0.0
+                if not total_value and account_summary.get("ending_value"):
+                    total_value = account_summary["ending_value"] or 0.0
+                if not total_value and holdings:
+                    total_value = sum(
+                        _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
+                    )
+                parsed_data["asset_allocation"] = _normalize_asset_allocation_rows(
+                    parsed_data.get("asset_allocation"),
+                    holdings=holdings,
+                )
+                account_summary = _enrich_account_summary_with_holdings(
+                    account_summary,
+                    holdings=holdings,
+                    total_value=total_value,
+                )
+                if account_summary.get("cash_balance") is not None:
+                    parsed_data["cash_balance"] = account_summary.get("cash_balance")
+
+                quality_report = build_holdings_quality_report_v2(
+                    raw_count=raw_count,
+                    validated_count=len(validated_holdings),
+                    aggregated_count=len(holdings),
+                    dropped_reasons=dropped_reasons,
+                    reconciled_count=reconciled_count,
+                    mismatch_count=mismatch_count,
+                    parse_diagnostics=parse_diagnostics,
+                    unknown_name_count=unknown_name_count,
+                    placeholder_symbol_count=placeholder_symbol_count,
+                    zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
+                    account_header_row_count=account_header_row_count,
+                    duplicate_symbol_lot_count=duplicate_symbol_lot_count,
+                    average_confidence=(
+                        round(
+                            sum(
+                                _coerce_optional_number(row.get("confidence")) or 0.0
+                                for row in holdings
+                            )
+                            / max(len(holdings), 1),
+                            4,
+                        )
+                        if holdings
+                        else 0.0
+                    ),
+                )
+                quality_gate_passed, quality_gate = evaluate_import_quality_gate_v2(
+                    holdings=holdings,
+                    placeholder_symbol_count=placeholder_symbol_count,
+                    account_header_row_count=account_header_row_count,
+                    expected_total_value=total_value,
+                )
+                quality_report["quality_gate"] = quality_gate
+                quality_report_v2 = build_quality_report_v2(
+                    quality_report=quality_report,
+                    quality_gate=quality_gate,
+                    holdings=holdings,
+                )
+
+                yield stream.event(
+                    "progress",
+                    {
+                        "phase": "validating",
+                        "message": (
+                            f"Validated {len(validated_holdings)} holdings and aggregated into {len(holdings)} symbols"
+                        ),
+                        "holdings_extracted": len(validated_holdings),
+                        "holdings_total": parsed_total,
+                        "holdings_raw_count": raw_count,
+                        "holdings_validated_count": len(validated_holdings),
+                        "holdings_aggregated_count": len(holdings),
+                        "holdings_dropped_reasons": dict(dropped_reasons),
+                        "holdings_preview": _build_holdings_preview(holdings, max_items=40),
+                        "progress_pct": 98,
+                        "quality_gate": quality_gate,
+                    },
+                )
+
+                if not quality_gate_passed:
+                    yield stream.event(
+                        "aborted",
+                        {
+                            "code": "IMPORT_QUALITY_GATE_FAILED",
+                            "reason": "quality_gate_failed",
+                            "message": (
+                                "Parsed statement data did not pass strict validation checks. "
+                                "Please retry import or upload a clearer statement."
+                            ),
+                            "quality_gate": quality_gate,
+                            "quality_report_v2": quality_report_v2,
+                        },
+                        terminal=True,
+                    )
+                    return
+
+                cash_balance = _coerce_optional_number(parsed_data.get("cash_balance"))
+                raw_extract_v2 = dict(parsed_data)
+                portfolio_data_v2 = build_financial_portfolio_canonical_v2(
+                    raw_extract_v2=raw_extract_v2,
+                    account_info=account_info,
+                    account_summary=account_summary,
+                    holdings=holdings,
+                    asset_allocation=parsed_data.get("asset_allocation"),
+                    total_value=total_value,
+                    cash_balance=cash_balance,
+                    quality_report_v2=quality_report_v2,
+                )
+                portfolio_data_v2.update(
+                    {
+                        "statement_details": raw_extract_v2.get("statement_details"),
+                        "management_contacts": raw_extract_v2.get("management_contacts"),
+                        "investment_objective": raw_extract_v2.get("investment_objective"),
+                        "portfolio_detail": raw_extract_v2.get("portfolio_detail"),
+                        "transactions": raw_extract_v2.get("transactions"),
+                        "reconciliation_summary": raw_extract_v2.get("reconciliation_summary"),
+                        "derived_metrics": raw_extract_v2.get("derived_metrics"),
+                        "income_summary": raw_extract_v2.get("income_summary"),
+                        "realized_gain_loss": raw_extract_v2.get("realized_gain_loss"),
+                        "cash_flow": raw_extract_v2.get("cash_flow"),
+                        "cash_management": raw_extract_v2.get("cash_management"),
+                        "projections_and_mrd": raw_extract_v2.get("projections_and_mrd"),
+                        "historical_values": raw_extract_v2.get("historical_values"),
+                        "ytd_metrics": raw_extract_v2.get("ytd_metrics"),
+                        "legal_and_disclosures": raw_extract_v2.get("legal_and_disclosures"),
                         "parse_fallback": False,
                         "kpis": {
                             "holdings_count": len(holdings),
                             "total_value": total_value,
                         },
                     }
+                )
+                analytics_v2 = build_financial_analytics_v2(
+                    canonical_portfolio_v2=portfolio_data_v2,
+                    raw_extract_v2=raw_extract_v2,
+                )
+                coverage_metrics_payload = (
+                    parse_diagnostics.get("positions_coverage")
+                    if isinstance(parse_diagnostics.get("positions_coverage"), dict)
+                    else {}
+                )
+                logger.info(
+                    "SSE: Portfolio V2 ready - holdings=%s total_value=%s",
+                    len(holdings),
+                    total_value,
+                )
+                phase_token_counts = (
+                    parse_diagnostics.get("pass_token_counts")
+                    if isinstance(parse_diagnostics.get("pass_token_counts"), dict)
+                    else {}
+                )
+                total_phase_thoughts = sum(
+                    int((value.get("thoughts") or 0))
+                    for value in phase_token_counts.values()
+                    if isinstance(value, dict)
+                )
 
-                    logger.info(
-                        f"SSE: Transformed portfolio data - {len(holdings)} holdings, total_value={total_value}"
-                    )
-
-                    # Stage 5: Complete
-                    yield stream.event(
-                        "complete",
-                        {
-                            "portfolio_data": portfolio_data,
-                            "success": True,
-                            "parse_fallback": False,
-                            "thought_count": thought_count,
-                            "holdings_raw_count": raw_count,
-                            "holdings_validated_count": len(validated_holdings),
-                            "holdings_aggregated_count": len(holdings),
-                            "holdings_dropped_reasons": dict(dropped_reasons),
-                        },
-                        terminal=True,
-                    )
-
-                except Exception as parse_error:
-                    logger.error(f"JSON parse error: {parse_error}")
-                    fallback_rows = _extract_live_holdings_preview_from_text(
-                        full_response, max_items=240
-                    )
-                    if fallback_rows:
-                        normalized_holdings: list[dict[str, Any]] = []
-                        for idx, row in enumerate(fallback_rows):
-                            if not isinstance(row, dict):
-                                continue
-                            normalized_holdings.append(_normalize_raw_holding_row(row, idx))
-
-                        dropped_reasons: Counter[str] = Counter()
-                        validated_holdings: list[dict[str, Any]] = []
-                        for row in normalized_holdings:
-                            is_valid, reason = _validate_holding_row(row)
-                            if not is_valid:
-                                dropped_reasons[reason or "unknown"] += 1
-                                continue
-                            validated_holdings.append(row)
-
-                        holdings = _aggregate_holdings_by_symbol(validated_holdings)
-                        total_value = sum(
-                            _coerce_optional_number(h.get("market_value")) or 0.0 for h in holdings
-                        )
-                        quality_report = _build_holdings_quality_report(
-                            raw_count=len(normalized_holdings),
-                            validated_count=len(validated_holdings),
-                            aggregated_count=len(holdings),
-                            dropped_reasons=dropped_reasons,
-                            reconciled_count=0,
-                            mismatch_count=0,
-                            parse_diagnostics={
-                                **parse_diagnostics,
-                                "fallback_from_stream_text": True,
-                            },
-                            unknown_name_count=sum(
-                                1 for row in holdings if _is_unknown_name(row.get("name"))
-                            ),
-                            placeholder_symbol_count=sum(
-                                1
-                                for row in holdings
-                                if str(row.get("symbol") or "").startswith("HOLDING_")
-                            ),
-                            zero_qty_zero_price_nonzero_value_count=sum(
-                                1
-                                for row in holdings
-                                if (
-                                    (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
-                                    and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
-                                    and (_coerce_optional_number(row.get("market_value")) or 0.0)
-                                    > 0.0
-                                )
-                            ),
-                            account_header_row_count=dropped_reasons.get("account_header_row", 0),
-                            duplicate_symbol_lot_count=max(
-                                0, len(validated_holdings) - len(holdings)
-                            ),
-                            average_confidence=(
-                                round(
-                                    sum(
-                                        _coerce_optional_number(row.get("confidence")) or 0.0
-                                        for row in holdings
-                                    )
-                                    / max(len(holdings), 1),
-                                    4,
-                                )
-                                if holdings
-                                else 0.0
-                            ),
-                        )
-
-                        yield stream.event(
-                            "warning",
-                            {
-                                "code": "IMPORT_PARSE_FALLBACK_USED",
-                                "message": "Structured parse failed; recovered holdings from stream text.",
-                                "holdings_count": len(holdings),
-                            },
-                        )
-                        yield stream.event(
-                            "complete",
-                            {
-                                "portfolio_data": {
-                                    "account_info": {},
-                                    "account_summary": {
-                                        "beginning_value": None,
-                                        "ending_value": total_value or None,
-                                        "change_in_value": None,
-                                        "cash_balance": None,
-                                        "net_deposits_withdrawals": None,
-                                        "investment_gain_loss": None,
-                                    },
-                                    "asset_allocation": None,
-                                    "holdings": holdings,
-                                    "income_summary": None,
-                                    "realized_gain_loss": None,
-                                    "cash_flow": None,
-                                    "cash_management": None,
-                                    "projections_and_mrd": None,
-                                    "historical_values": None,
-                                    "ytd_metrics": None,
-                                    "legal_and_disclosures": None,
-                                    "cash_balance": None,
-                                    "total_value": total_value,
-                                    "quality_report": quality_report,
-                                    "parse_fallback": True,
-                                    "kpis": {
-                                        "holdings_count": len(holdings),
-                                        "total_value": total_value,
-                                    },
-                                },
-                                "success": True,
-                                "parse_fallback": True,
-                                "holdings_raw_count": len(normalized_holdings),
-                                "holdings_validated_count": len(validated_holdings),
-                                "holdings_aggregated_count": len(holdings),
-                                "holdings_dropped_reasons": dict(dropped_reasons),
-                            },
-                            terminal=True,
-                        )
-                    else:
-                        yield stream.event(
-                            "error",
-                            {
-                                "code": "IMPORT_PARSE_FAILED",
-                                "message": "Unable to normalize extracted statement output. Please retry.",
-                                "diagnostics": {
-                                    "response_chars": len(full_response),
-                                    "chunk_count": chunk_count,
-                                    "parse_repair_actions": parse_diagnostics.get(
-                                        "repair_actions", []
-                                    ),
-                                },
-                            },
-                            terminal=True,
-                        )
+                # Stage 5: Complete
+                yield stream.event(
+                    "complete",
+                    {
+                        "portfolio_data_v2": portfolio_data_v2,
+                        "raw_extract_v2": raw_extract_v2,
+                        "analytics_v2": analytics_v2,
+                        "quality_report_v2": quality_report_v2,
+                        "timings_ms": build_timing_payload(diagnostics=parse_diagnostics),
+                        "token_counts": build_token_counts_payload(diagnostics=parse_diagnostics),
+                        "coverage_metrics": coverage_metrics_payload,
+                        "success": True,
+                        "parse_fallback": False,
+                        "quality_gate": quality_gate,
+                        "thought_count": max(combined_thought_count, total_phase_thoughts),
+                        "holdings_raw_count": raw_count,
+                        "holdings_validated_count": len(validated_holdings),
+                        "holdings_aggregated_count": len(holdings),
+                        "holdings_dropped_reasons": dict(dropped_reasons),
+                        "diagnostics": parse_diagnostics,
+                    },
+                    terminal=True,
+                )
 
             # end of asyncio.timeout context
 
@@ -2725,7 +2931,7 @@ Rules:
                     "code": "IMPORT_TIMEOUT",
                     "message": (
                         f"Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. "
-                        "Please try again with a smaller file."
+                        "Please retry; parsing may still complete on the next attempt."
                     ),
                 },
                 terminal=True,

@@ -11,6 +11,7 @@ import contextvars
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -36,11 +37,13 @@ from hushh_mcp.operons.kai.llm import (
 )
 from hushh_mcp.services.consent_db import ConsentDBService
 from hushh_mcp.services.renaissance_service import get_renaissance_service
+from hushh_mcp.services.symbol_master_service import get_symbol_master_service
 from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Streaming"])
+_TICKER_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
 
 
 # ============================================================================
@@ -255,6 +258,191 @@ def _safe_int(value: Any) -> int | None:
     return int(parsed)
 
 
+def _is_cash_equivalent_context_row(row: dict[str, Any]) -> bool:
+    symbol = str(row.get("symbol") or "").strip().upper()
+    if symbol in {"CASH", "MMF", "SWEEP", "QACDS"}:
+        return True
+    name = str(row.get("name") or row.get("description") or "").strip().lower()
+    asset_type = str(row.get("asset_type") or "").strip().lower()
+    hints = ("cash", "money market", "sweep", "core position", "deposit")
+    return any(hint in name for hint in hints) or any(hint in asset_type for hint in hints)
+
+
+def _context_row_analyze_eligibility(row: dict[str, Any]) -> tuple[bool, str]:
+    listing_status = str(row.get("security_listing_status") or "").strip().lower()
+    symbol_kind = str(row.get("symbol_kind") or "").strip().lower()
+    is_sec_common_equity = bool(row.get("is_sec_common_equity_ticker"))
+    is_cash_equivalent = bool(row.get("is_cash_equivalent")) or _is_cash_equivalent_context_row(row)
+    is_investable = bool(row.get("is_investable")) and not is_cash_equivalent
+
+    if is_cash_equivalent or listing_status == "cash_or_sweep":
+        return False, "excluded_cash"
+    if listing_status == "fixed_income":
+        return False, "excluded_fixed_income"
+    if listing_status == "non_sec_common_equity":
+        return False, "excluded_non_sec_common_equity"
+    if not is_investable:
+        return False, "excluded_missing_equity_classification"
+    if (
+        is_sec_common_equity
+        or listing_status == "sec_common_equity"
+        or symbol_kind == "us_common_equity_ticker"
+    ):
+        return True, "eligible_sec_common_equity"
+    return False, "excluded_missing_equity_classification"
+
+
+def _looks_non_equity_from_ticker_metadata(
+    *,
+    symbol: str,
+    title: str,
+    sector_primary: str,
+    industry_primary: str,
+    sic_description: str,
+) -> tuple[bool, str]:
+    combined = " ".join(
+        [
+            str(title or "").strip().lower(),
+            str(sector_primary or "").strip().lower(),
+            str(industry_primary or "").strip().lower(),
+            str(sic_description or "").strip().lower(),
+        ]
+    )
+
+    if symbol.endswith("X"):
+        return True, "excluded_non_sec_common_equity"
+
+    if any(term in combined for term in ("bond", "fixed income", "treasury", "municipal")):
+        return True, "excluded_fixed_income"
+
+    if any(
+        term in combined
+        for term in (
+            "etf",
+            "fund",
+            "mutual",
+            "index",
+            "trust",
+            "money market",
+            "cash",
+            "sweep",
+            "commodity",
+            "gold",
+            "real estate",
+            "reit",
+        )
+    ):
+        return True, "excluded_non_sec_common_equity"
+
+    return False, "eligible_sec_common_equity"
+
+
+def _resolve_symbol_eligibility(
+    *,
+    ticker: str,
+    request_context: dict[str, Any],
+) -> dict[str, Any]:
+    symbol = str(ticker or "").strip().upper()
+    if not symbol:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": "excluded_missing_equity_classification",
+            "eligibility_source": "request_symbol",
+        }
+
+    holdings = request_context.get("holdings")
+    if isinstance(holdings, list):
+        for row in holdings:
+            if not isinstance(row, dict):
+                continue
+            row_symbol = str(row.get("symbol") or "").strip().upper()
+            if row_symbol != symbol:
+                continue
+            eligible, reason = _context_row_analyze_eligibility(row)
+            return {
+                "symbol_eligibility": eligible,
+                "eligibility_reason": reason,
+                "eligibility_source": "portfolio",
+            }
+
+    symbol_master = get_symbol_master_service()
+    metadata = symbol_master.get_ticker_metadata(symbol) or {}
+    classification = symbol_master.classify(symbol)
+    if not classification.tradable:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": "excluded_missing_equity_classification",
+            "eligibility_source": "ticker_master",
+        }
+
+    non_equity, reason = _looks_non_equity_from_ticker_metadata(
+        symbol=symbol,
+        title=str(metadata.get("title") or ""),
+        sector_primary=str(metadata.get("sector_primary") or ""),
+        industry_primary=str(metadata.get("industry_primary") or ""),
+        sic_description=str(metadata.get("sic_description") or ""),
+    )
+    if non_equity:
+        return {
+            "symbol_eligibility": False,
+            "eligibility_reason": reason,
+            "eligibility_source": "ticker_master",
+        }
+
+    return {
+        "symbol_eligibility": True,
+        "eligibility_reason": "eligible_sec_common_equity",
+        "eligibility_source": "ticker_master",
+    }
+
+
+def _build_canonical_portfolio_context(holdings: list[dict[str, Any]]) -> dict[str, Any]:
+    cleaned = [row for row in holdings if isinstance(row, dict)]
+    non_cash = [row for row in cleaned if not _is_cash_equivalent_context_row(row)]
+    investable = [
+        row
+        for row in non_cash
+        if _TICKER_SYMBOL_RE.match(str(row.get("symbol") or "").strip().upper())
+        and _context_row_analyze_eligibility(row)[0]
+    ]
+
+    investable_symbols: list[str] = []
+    for row in investable:
+        symbol = str(row.get("symbol") or "").strip().upper()
+        if symbol and symbol not in investable_symbols:
+            investable_symbols.append(symbol)
+
+    total_value = sum(_safe_float(row.get("market_value")) or 0.0 for row in cleaned)
+    cash_value = sum(
+        _safe_float(row.get("market_value")) or 0.0
+        for row in cleaned
+        if _is_cash_equivalent_context_row(row)
+    )
+    losers = sum(
+        1 for row in investable if (_safe_float(row.get("unrealized_gain_loss")) or 0.0) < 0
+    )
+    winners = sum(
+        1 for row in investable if (_safe_float(row.get("unrealized_gain_loss")) or 0.0) > 0
+    )
+    estimated_annual_income = sum(
+        _safe_float(row.get("estimated_annual_income")) or 0.0 for row in cleaned
+    )
+
+    return {
+        "holdings_summary": cleaned[:30],
+        "holdings_count": len(cleaned),
+        "non_cash_holdings_count": len(non_cash),
+        "investable_holdings_count": len(investable),
+        "cash_positions_count": len(cleaned) - len(non_cash),
+        "eligible_symbols": investable_symbols[:30],
+        "cash_value": round(cash_value, 2),
+        "total_value": round(total_value, 2),
+        "estimated_annual_income": round(estimated_annual_income, 2),
+        "losers_count": losers,
+        "winners_count": winners,
+    }
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -408,6 +596,7 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                         "agent": agent_name.lower(),
                         "text": event.get("text", ""),
                         "type": "token",
+                        "token_source": event.get("token_source", "response"),
                         "round": round_number,
                         "phase": phase,
                     },
@@ -441,6 +630,7 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                         "agent": agent_name.lower(),
                         "text": token_text,
                         "type": "token",
+                        "token_source": "fallback",
                         "round": round_number,
                         "phase": phase,
                     },
@@ -502,6 +692,9 @@ async def analyze_stream_generator(
     retry_counts: dict[str, int] = {"fundamental": 0, "sentiment": 0, "valuation": 0}
     pre_agent_thinking_enabled = _pre_agent_streaming_enabled()
     analysis_mode = "full_stream" if pre_agent_thinking_enabled else "lean_stream"
+    symbol_eligibility = False
+    eligibility_reason = "excluded_missing_equity_classification"
+    eligibility_source = "request_symbol"
 
     def remaining_timeout() -> float:
         elapsed = loop.time() - stream_started_at
@@ -531,6 +724,31 @@ async def analyze_stream_generator(
                 "tokens": ["Connecting", "to", "context", "layers", "and", "screening", "data."],
             },
         )
+
+        request_context: Dict[str, Any] = context if isinstance(context, dict) else {}
+        eligibility = _resolve_symbol_eligibility(ticker=ticker, request_context=request_context)
+        symbol_eligibility = bool(eligibility.get("symbol_eligibility"))
+        eligibility_reason = str(
+            eligibility.get("eligibility_reason") or "excluded_missing_equity_classification"
+        )
+        eligibility_source = str(eligibility.get("eligibility_source") or "request_symbol")
+        if not symbol_eligibility:
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_NOT_ELIGIBLE_FOR_ALPHAAGENTS",
+                    "message": (
+                        "Selected symbol is not eligible for equity-only AlphaAgents analysis. "
+                        "Choose an SEC common equity holding."
+                    ),
+                    "ticker": ticker,
+                    "symbol_eligibility": symbol_eligibility,
+                    "eligibility_reason": eligibility_reason,
+                    "eligibility_source": eligibility_source,
+                },
+                terminal=True,
+            )
+            return
         if not is_gemini_ready():
             yield create_event(
                 "warning",
@@ -585,7 +803,6 @@ async def analyze_stream_generator(
         else:
             wm_index = wm_result
 
-        request_context: Dict[str, Any] = context if isinstance(context, dict) else {}
         full_user_context: Dict[str, Any] = {
             "risk_profile": risk_profile,
             "holdings_summary": [],
@@ -602,9 +819,22 @@ async def analyze_stream_generator(
 
         request_holdings = request_context.get("holdings")
         if isinstance(request_holdings, list):
-            cleaned_holdings = [row for row in request_holdings if isinstance(row, dict)]
-            full_user_context["holdings_summary"] = cleaned_holdings[:30]
-            full_user_context["holdings_count"] = len(cleaned_holdings)
+            canonical_portfolio_context = _build_canonical_portfolio_context(request_holdings)
+            full_user_context["holdings_summary"] = canonical_portfolio_context["holdings_summary"]
+            full_user_context["holdings_count"] = canonical_portfolio_context["holdings_count"]
+            full_user_context["portfolio_snapshot"] = {
+                "non_cash_holdings_count": canonical_portfolio_context["non_cash_holdings_count"],
+                "investable_holdings_count": canonical_portfolio_context[
+                    "investable_holdings_count"
+                ],
+                "cash_positions_count": canonical_portfolio_context["cash_positions_count"],
+                "cash_value": canonical_portfolio_context["cash_value"],
+                "total_value": canonical_portfolio_context["total_value"],
+                "estimated_annual_income": canonical_portfolio_context["estimated_annual_income"],
+                "losers_count": canonical_portfolio_context["losers_count"],
+                "winners_count": canonical_portfolio_context["winners_count"],
+            }
+            full_user_context["eligible_symbols"] = canonical_portfolio_context["eligible_symbols"]
 
         requested_holdings_count = _safe_int(request_context.get("holdings_count"))
         if requested_holdings_count is not None:
@@ -630,7 +860,7 @@ async def analyze_stream_generator(
             "asset_allocation",
             "income_summary",
             "realized_gain_loss",
-            "quality_report",
+            "quality_report_v2",
         ):
             value = request_context.get(rich_key)
             if isinstance(value, dict):
@@ -1584,6 +1814,9 @@ async def analyze_stream_generator(
                 "retry_counts": retry_counts,
                 "analysis_mode": analysis_mode,
             },
+            "symbol_eligibility": symbol_eligibility,
+            "eligibility_reason": eligibility_reason,
+            "eligibility_source": eligibility_source,
         }
 
         yield create_event(
@@ -1614,6 +1847,9 @@ async def analyze_stream_generator(
                 "provider_calls_count": provider_calls_count,
                 "retry_counts": retry_counts,
                 "analysis_mode": analysis_mode,
+                "symbol_eligibility": symbol_eligibility,
+                "eligibility_reason": eligibility_reason,
+                "eligibility_source": eligibility_source,
                 "raw_card": raw_card,
                 "round": 2,
                 "phase": "decision",

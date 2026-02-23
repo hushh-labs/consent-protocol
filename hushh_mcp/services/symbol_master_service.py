@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -20,6 +21,7 @@ _TRADE_ACTION_SYMBOLS = {
 
 _CASH_EQUIVALENT_SYMBOLS = {"CASH", "MMF", "SWEEP", "QACDS"}
 _CASH_HINTS = ("cash", "sweep", "money market", "core position", "deposit")
+_TICKER_PATTERN_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
 
 
 @dataclass
@@ -120,6 +122,16 @@ class SymbolMasterService:
                 trust_tier="tradable_ticker" if tradable else "non_tradable_identifier",
                 tradable=tradable,
                 reason="symbol_master_match",
+            )
+
+        # Fallback: when the ticker master is stale/incomplete, treat valid ticker-like
+        # symbols as tradable candidates so downstream optimize/debate flows stay usable.
+        if _TICKER_PATTERN_RE.match(normalized):
+            return SymbolClassification(
+                symbol=normalized,
+                trust_tier="tradable_ticker",
+                tradable=True,
+                reason="ticker_pattern_fallback",
             )
 
         return SymbolClassification(
