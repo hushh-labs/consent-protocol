@@ -2992,12 +2992,30 @@ Extract data into the following nested objects:
             parsed.etf_value *= scale
             parsed.other_value *= scale
 
-        parsed.cash_pct = (parsed.cash_value / total_value) * 100
-        parsed.equities_pct = (parsed.equities_value / total_value) * 100
-        parsed.bonds_pct = (parsed.bonds_value / total_value) * 100
-        parsed.mutual_funds_pct = (parsed.mutual_funds_value / total_value) * 100
-        parsed.etf_pct = (parsed.etf_value / total_value) * 100
-        parsed.other_pct = (parsed.other_value / total_value) * 100
+        # Preserve explicit parser-provided percentages when present, otherwise
+        # backfill from reconciled values.
+        parsed.cash_pct = (
+            parsed.cash_pct if parsed.cash_pct > 0 else (parsed.cash_value / total_value) * 100
+        )
+        parsed.equities_pct = (
+            parsed.equities_pct
+            if parsed.equities_pct > 0
+            else (parsed.equities_value / total_value) * 100
+        )
+        parsed.bonds_pct = (
+            parsed.bonds_pct if parsed.bonds_pct > 0 else (parsed.bonds_value / total_value) * 100
+        )
+        parsed.mutual_funds_pct = (
+            parsed.mutual_funds_pct
+            if parsed.mutual_funds_pct > 0
+            else (parsed.mutual_funds_value / total_value) * 100
+        )
+        parsed.etf_pct = (
+            parsed.etf_pct if parsed.etf_pct > 0 else (parsed.etf_value / total_value) * 100
+        )
+        parsed.other_pct = (
+            parsed.other_pct if parsed.other_pct > 0 else (parsed.other_value / total_value) * 100
+        )
         portfolio.asset_allocation = parsed
 
     def _reconcile_income_summary(self, portfolio: ComprehensivePortfolio) -> None:

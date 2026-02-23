@@ -1656,7 +1656,7 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
     if _is_non_holding_row(row):
         return False, "account_header_row"
 
-    if symbol.startswith("HOLDING_") or not symbol:
+    if symbol.startswith("HOLDING") or not symbol:
         if symbol_quality == "synthetic":
             return False, "placeholder_symbol"
         if not symbol:
@@ -1671,7 +1671,7 @@ def _validate_holding_row(row: dict[str, Any]) -> tuple[bool, str | None]:
     if _is_unknown_name(name) and symbol_quality != "provided":
         return False, "unknown_name"
 
-    if _is_unknown_name(name) and (symbol.startswith("HOLDING_") or not symbol):
+    if _is_unknown_name(name) and (symbol.startswith("HOLDING") or not symbol):
         return False, "unknown_name"
 
     if quantity is None and price is None and market_value is None:
