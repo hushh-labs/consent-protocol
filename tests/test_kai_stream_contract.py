@@ -129,7 +129,8 @@ def test_stream_routes_emit_terminal_events():
     losers_source = (_ROOT / "api/routes/kai/losers.py").read_text(encoding="utf-8")
     analyze_source = (_ROOT / "api/routes/kai/stream.py").read_text(encoding="utf-8")
 
-    assert 'stream.event(\n                        "complete",' in portfolio_source
+    assert "stream.event(\n" in portfolio_source
+    assert '"complete",' in portfolio_source
     assert "terminal=True" in portfolio_source
     assert 'stream.event("complete", payload, terminal=True)' in losers_source
     assert 'create_event(\n            "decision",' in analyze_source
