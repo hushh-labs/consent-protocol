@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -20,6 +21,7 @@ from dotenv import load_dotenv
 from psycopg2.extras import execute_values
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=False)
 
 SEC_HEADERS = {"User-Agent": "Hushh-Research/1.0 (eng@hush1one.com)"}
 
@@ -32,26 +34,66 @@ NON_TRADABLE_SYMBOLS = {
     "TRANSFER",
     "WITHDRAWAL",
     "DEPOSIT",
+    "CASH",
+    "QACDS",
+    "MMF",
+    "SWEEP",
 }
+_TRADABLE_TICKER_PATTERN = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
 
 SECTOR_KEYWORDS = {
     "technology": "Technology",
     "semiconductor": "Technology",
     "software": "Technology",
+    "cloud": "Technology",
+    "digital": "Technology",
+    "internet": "Technology",
     "bank": "Financials",
     "insurance": "Financials",
+    "financial": "Financials",
+    "capital": "Financials",
+    "acquisition": "Financials",
+    "trust": "Financials",
     "health": "Healthcare",
     "pharma": "Healthcare",
+    "biopharma": "Healthcare",
+    "biotech": "Healthcare",
+    "medical": "Healthcare",
     "energy": "Energy",
     "oil": "Energy",
+    "gas": "Energy",
     "consumer": "Consumer Discretionary",
     "retail": "Consumer Discretionary",
+    "restaurant": "Consumer Discretionary",
+    "hotel": "Consumer Discretionary",
     "telecom": "Communication Services",
     "communication": "Communication Services",
+    "media": "Communication Services",
     "industrial": "Industrials",
+    "machinery": "Industrials",
+    "aerospace": "Industrials",
+    "defense": "Industrials",
     "real estate": "Real Estate",
+    "reit": "Real Estate",
+    "realty": "Real Estate",
+    "property": "Real Estate",
     "utility": "Utilities",
+    "electric": "Utilities",
+    "power": "Utilities",
     "material": "Materials",
+    "steel": "Materials",
+    "chemical": "Materials",
+    "mining": "Materials",
+    "gold": "Commodities",
+    "silver": "Commodities",
+    "commodity": "Commodities",
+    "cash": "Cash & Cash Equivalents",
+    "money market": "Cash & Cash Equivalents",
+    "sweep": "Cash & Cash Equivalents",
+    "bond": "Fixed Income Taxable",
+    "municipal": "Fixed Income Tax-Exempt",
+    "tax free": "Fixed Income Tax-Exempt",
+    "tax-exempt": "Fixed Income Tax-Exempt",
 }
 
 
@@ -59,6 +101,7 @@ SECTOR_KEYWORDS = {
 class TickerSeed:
     ticker: str
     cik: Optional[str]
+    title: Optional[str]
 
 
 @dataclass
@@ -80,10 +123,40 @@ def normalize_sector(value: Optional[str]) -> Optional[str]:
     if not text:
         return None
     lower = text.lower()
+    if lower in {"n/a", "na", "none", "unknown", "null", "not available"}:
+        return None
     for key, normalized in SECTOR_KEYWORDS.items():
         if key in lower:
             return normalized
     return text[:80]
+
+
+def first_non_empty(*values: Any) -> Optional[str]:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def normalize_optional_text(value: Optional[str], max_len: int = 120) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.lower() in {"n/a", "na", "none", "unknown", "null", "not available"}:
+        return None
+    return text[:max_len]
+
+
+def is_practical_non_tradable_symbol(ticker: str) -> bool:
+    normalized = str(ticker or "").strip().upper()
+    if not normalized:
+        return True
+    if normalized in NON_TRADABLE_SYMBOLS:
+        return True
+    if not _TRADABLE_TICKER_PATTERN.match(normalized):
+        return True
+    return False
 
 
 def confidence_score(*, has_sic: bool, has_sector: bool, has_industry: bool) -> float:
@@ -102,10 +175,13 @@ async def fetch_sec_submission(client: httpx.AsyncClient, cik: Optional[str]) ->
         return {}
     padded = str(cik).zfill(10)
     url = f"https://data.sec.gov/submissions/CIK{padded}.json"
-    res = await client.get(url, headers=SEC_HEADERS)
-    if not res.is_success:
+    try:
+        res = await client.get(url, headers=SEC_HEADERS)
+        if not res.is_success:
+            return {}
+        return res.json() or {}
+    except Exception:
         return {}
-    return res.json() or {}
 
 
 async def fetch_finnhub_profile(
@@ -113,28 +189,34 @@ async def fetch_finnhub_profile(
 ) -> dict[str, Any]:
     if not finnhub_key:
         return {}
-    res = await client.get(
-        "https://finnhub.io/api/v1/stock/profile2",
-        params={"symbol": ticker, "token": finnhub_key},
-    )
-    if not res.is_success:
+    try:
+        res = await client.get(
+            "https://finnhub.io/api/v1/stock/profile2",
+            params={"symbol": ticker, "token": finnhub_key},
+        )
+        if not res.is_success:
+            return {}
+        return res.json() or {}
+    except Exception:
         return {}
-    return res.json() or {}
 
 
 async def fetch_fmp_profile(client: httpx.AsyncClient, ticker: str, pmp_key: str) -> dict[str, Any]:
     if not pmp_key:
         return {}
-    res = await client.get(
-        "https://financialmodelingprep.com/stable/profile",
-        params={"symbol": ticker, "apikey": pmp_key},
-    )
-    if not res.is_success:
+    try:
+        res = await client.get(
+            "https://financialmodelingprep.com/stable/profile",
+            params={"symbol": ticker, "apikey": pmp_key},
+        )
+        if not res.is_success:
+            return {}
+        payload = res.json() or []
+        if isinstance(payload, list) and payload:
+            return payload[0] or {}
         return {}
-    payload = res.json() or []
-    if isinstance(payload, list) and payload:
-        return payload[0] or {}
-    return {}
+    except Exception:
+        return {}
 
 
 def build_sector_tags(
@@ -170,17 +252,24 @@ async def enrich_one(
 
     sic_code = str(sec_payload.get("sic") or "").strip() or None
     sic_description = str(sec_payload.get("sicDescription") or "").strip() or None
-    sector_raw = (
-        str(fmp_profile.get("sector") or "").strip()
-        or str(finnhub_profile.get("finnhubIndustry") or "").strip()
-        or sic_description
+    sector_raw = first_non_empty(
+        fmp_profile.get("sector"),
+        finnhub_profile.get("gicsSector"),
+        finnhub_profile.get("gics_sector"),
+        finnhub_profile.get("finnhubIndustry"),
+        sic_description,
+        seed.title,
     )
-    industry_raw = (
-        str(fmp_profile.get("industry") or "").strip()
-        or str(finnhub_profile.get("finnhubIndustry") or "").strip()
+    industry_raw = first_non_empty(
+        fmp_profile.get("industry"),
+        finnhub_profile.get("gicsSubIndustry"),
+        finnhub_profile.get("gics_sub_industry"),
+        finnhub_profile.get("gicsIndustryGroup"),
+        finnhub_profile.get("gics_industry_group"),
+        finnhub_profile.get("finnhubIndustry"),
     )
     sector_primary = normalize_sector(sector_raw)
-    industry_primary = industry_raw[:120] if industry_raw else None
+    industry_primary = normalize_optional_text(industry_raw, max_len=120)
     sector_tags = build_sector_tags(
         sector_primary=sector_primary,
         industry_primary=industry_primary,
@@ -191,7 +280,7 @@ async def enrich_one(
         has_sector=bool(sector_primary),
         has_industry=bool(industry_primary),
     )
-    tradable = seed.ticker not in NON_TRADABLE_SYMBOLS
+    tradable = not is_practical_non_tradable_symbol(seed.ticker)
     exchange = (
         str(fmp_profile.get("exchangeShortName") or "").strip()
         or str(finnhub_profile.get("exchange") or "").strip()
@@ -236,7 +325,7 @@ def read_seed_rows(conn, *, limit: int, symbols: list[str]) -> list[TickerSeed]:
         if symbols:
             cur.execute(
                 """
-                SELECT ticker, cik
+                SELECT ticker, cik, title
                 FROM tickers
                 WHERE ticker = ANY(%s)
                 ORDER BY ticker
@@ -246,7 +335,7 @@ def read_seed_rows(conn, *, limit: int, symbols: list[str]) -> list[TickerSeed]:
         else:
             cur.execute(
                 """
-                SELECT ticker, cik
+                SELECT ticker, cik, title
                 FROM tickers
                 ORDER BY COALESCE(last_enriched_at, to_timestamp(0)) ASC, ticker
                 LIMIT %s
@@ -256,11 +345,17 @@ def read_seed_rows(conn, *, limit: int, symbols: list[str]) -> list[TickerSeed]:
         rows = cur.fetchall()
 
     out = []
-    for ticker, cik in rows:
+    for ticker, cik, title in rows:
         text = str(ticker or "").strip().upper()
         if not text:
             continue
-        out.append(TickerSeed(ticker=text, cik=str(cik).strip() if cik else None))
+        out.append(
+            TickerSeed(
+                ticker=text,
+                cik=str(cik).strip() if cik else None,
+                title=str(title).strip() if title else None,
+            )
+        )
     return out
 
 
@@ -287,9 +382,9 @@ def upsert_enriched_rows(conn, rows: list[TickerEnriched]) -> int:
     SET
       sic_code = v.sic_code,
       sic_description = v.sic_description,
-      sector_primary = v.sector_primary,
-      industry_primary = v.industry_primary,
-      sector_tags = v.sector_tags,
+      sector_primary = COALESCE(v.sector_primary, t.sector_primary),
+      industry_primary = COALESCE(v.industry_primary, t.industry_primary),
+      sector_tags = COALESCE(v.sector_tags::text[], t.sector_tags),
       metadata_confidence = v.metadata_confidence,
       tradable = v.tradable,
       last_enriched_at = v.last_enriched_at::timestamptz,

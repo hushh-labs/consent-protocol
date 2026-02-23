@@ -225,24 +225,46 @@ DEFAULT_TRUST_LINK_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30  # 30 days
 # ==================== Gemini Model Configuration ====================
 
 # Standard model for all LLM operations across the codebase
-# Using gemini-3-flash-preview for enhanced document parsing capabilities
-GEMINI_MODEL = "gemini-3-flash-preview"
+# Using gemini-3.1-pro-preview for higher-quality reasoning/extraction.
+GEMINI_MODEL = "gemini-3.1-pro-preview"
 
 # Full path format (for ADK and direct API calls)
-GEMINI_MODEL_FULL = "models/gemini-3-flash-preview"
+GEMINI_MODEL_FULL = "models/gemini-3.1-pro-preview"
 
 # Vertex AI model (for Google Cloud deployments)
-GEMINI_MODEL_VERTEX = "gemini-3-flash-preview"
+GEMINI_MODEL_VERTEX = "gemini-3.1-pro-preview"
 
 # ==================== Kai Portfolio Import Defaults ====================
 
 # Portfolio import stream extraction uses deterministic JSON extraction settings
 # and should stay centralized in constants (not ad-hoc env toggles).
 KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL = GEMINI_MODEL
-# Keep repair pass on Flash unless explicitly changed in code after benchmark sign-off.
-KAI_PORTFOLIO_IMPORT_REPAIR_MODEL = GEMINI_MODEL
-KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS = True
-KAI_PORTFOLIO_IMPORT_ENABLE_THINKING = False
+KAI_PORTFOLIO_IMPORT_ENABLE_THINKING = True
+KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS = 32768
+# Pro models can under-fill when constrained by strict response_schema.
+# Keep prompt-led JSON extraction as default for import quality.
+KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA = False
+
+# ==================== Kai LLM Deterministic Runtime ====================
+
+# Keep Kai decision-bearing generation deterministic to reduce user confusion.
+KAI_LLM_TEMPERATURE = 0.0
+# Default output budget for Kai text-generation helpers.
+KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT = 16384
+# Larger output budget for long-form generation paths.
+KAI_LLM_MAX_OUTPUT_TOKENS_LARGE = 32768
+# Optimize stream output budget.
+KAI_OPTIMIZE_MAX_OUTPUT_TOKENS = 16384
+# Debate synthesis output budget.
+KAI_SYNTHESIS_MAX_OUTPUT_TOKENS = 8192
+# Keep reasoning mode enabled for import/optimize/debate quality.
+KAI_LLM_THINKING_ENABLED = True
+# Medium is the default for import stream latency/quality balance.
+KAI_LLM_THINKING_LEVEL = "MEDIUM"
+# Stream thought chunks for telemetry/progress surfaces.
+KAI_LLM_STREAM_INCLUDE_THOUGHTS = True
+# Optimize stream hard timeout (seconds).
+KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS = 240
 
 # ==================== Exports ====================
 
@@ -259,7 +281,16 @@ __all__ = [
     "GEMINI_MODEL_FULL",
     "GEMINI_MODEL_VERTEX",
     "KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL",
-    "KAI_PORTFOLIO_IMPORT_REPAIR_MODEL",
-    "KAI_PORTFOLIO_IMPORT_ENABLE_REPAIR_PASS",
     "KAI_PORTFOLIO_IMPORT_ENABLE_THINKING",
+    "KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS",
+    "KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA",
+    "KAI_LLM_TEMPERATURE",
+    "KAI_LLM_MAX_OUTPUT_TOKENS_DEFAULT",
+    "KAI_LLM_MAX_OUTPUT_TOKENS_LARGE",
+    "KAI_OPTIMIZE_MAX_OUTPUT_TOKENS",
+    "KAI_SYNTHESIS_MAX_OUTPUT_TOKENS",
+    "KAI_LLM_THINKING_ENABLED",
+    "KAI_LLM_THINKING_LEVEL",
+    "KAI_LLM_STREAM_INCLUDE_THOUGHTS",
+    "KAI_OPTIMIZE_STREAM_TIMEOUT_SECONDS",
 ]
