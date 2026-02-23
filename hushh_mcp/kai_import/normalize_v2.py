@@ -147,7 +147,7 @@ def build_financial_analytics_v2(
             }
             for sector, value in sector_counter.items()
         ],
-        key=lambda row: row["value"],
+        key=lambda row: float(_to_num(row.get("value")) or 0.0),
         reverse=True,
     )
 
@@ -160,19 +160,23 @@ def build_financial_analytics_v2(
             }
             for row in holdings
         ),
-        key=lambda row: row["market_value"],
+        key=lambda row: float(_to_num(row.get("market_value")) or 0.0),
         reverse=True,
     )
-    concentration = [
-        {
-            **row,
-            "weight_pct": round((row["market_value"] / total_value) * 100.0, 4)
-            if total_value > 0
-            else 0.0,
-        }
-        for row in ranked_positions[:10]
-        if row["market_value"] > 0
-    ]
+    concentration: list[dict[str, Any]] = []
+    for row in ranked_positions[:10]:
+        market_value = _to_num(row.get("market_value")) or 0.0
+        if market_value <= 0:
+            continue
+        concentration.append(
+            {
+                **row,
+                "market_value": market_value,
+                "weight_pct": round((market_value / total_value) * 100.0, 4)
+                if total_value > 0
+                else 0.0,
+            }
+        )
 
     gain_loss_counter: Counter[str] = Counter({"gain": 0, "loss": 0, "flat": 0})
     losers_count = 0
