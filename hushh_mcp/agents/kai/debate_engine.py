@@ -814,6 +814,23 @@ class DebateEngine:
                 if isinstance(portfolio_snapshot, dict)
                 else self.user_context.get("cash_balance")
             )
+            allocation_summary = "n/a"
+            if isinstance(port_alloc, dict) and port_alloc:
+                allocation_entries: list[str] = []
+                preferred_keys = ("equities", "cash", "fixed_income", "other")
+                for key in preferred_keys:
+                    parsed = _safe_float(port_alloc.get(key))
+                    if parsed is None:
+                        continue
+                    allocation_entries.append(f"{key}:{parsed:.1f}%")
+                if not allocation_entries:
+                    for key, raw_value in list(port_alloc.items())[:4]:
+                        parsed = _safe_float(raw_value)
+                        if parsed is None:
+                            continue
+                        allocation_entries.append(f"{key}:{parsed:.1f}%")
+                if allocation_entries:
+                    allocation_summary = ", ".join(allocation_entries)
 
             top_position_lines: list[str] = []
             if isinstance(top_positions, list):
@@ -856,9 +873,7 @@ class DebateEngine:
         - Statement Signals: Investment Results {_format_currency(statement_signals.get("investment_gain_loss") if isinstance(statement_signals, dict) else None)}, Income {_format_currency(statement_signals.get("total_income_period") if isinstance(statement_signals, dict) else None)}, Fees {_format_currency(statement_signals.get("total_fees") if isinstance(statement_signals, dict) else None)}
         - Eligible Symbol Sample: {", ".join(eligible_preview) if eligible_preview else "n/a"}
         - Top Positions: {", ".join(top_position_lines) if top_position_lines else "n/a"}
-
-        Allocation Reference:
-        {port_alloc}
+        - Allocation Snapshot: {allocation_summary}
         
         MANDATE: You MUST personalize your argument.
         Example: "Since you own [Holding], adding [Ticker] increases/decreases risk..."
@@ -872,6 +887,13 @@ class DebateEngine:
         - Each specialist speaks at least twice and must challenge weak assumptions.
         - Prefer evidence over narrative. Convert disagreements into explicit portfolio impact.
         - Keep claims falsifiable and tied to available data.
+
+        CONTEXT FUSION RULES (MANDATORY):
+        - Reference at least one Renaissance screening signal (tier, investable/avoid, rubric criteria).
+        - Reference at least one world-model portfolio fact (holdings, concentration, coverage, or statement signal).
+        - Explicitly frame risk tradeoff (concentration/diversification/downside) for this user.
+        - If your view conflicts with Renaissance screening, state the conflict and mitigation.
+        - Avoid raw data dumps; use only the highest-signal facts.
         
         AUDIENCE CONTEXT:
         User Name: {self.user_context.get("user_name", "Value Investor")}

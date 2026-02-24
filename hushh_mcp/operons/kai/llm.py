@@ -504,6 +504,7 @@ async def analyze_sentiment_with_gemini(
     user_id: UserID,
     consent_token: str,
     news_articles: List[Dict[str, Any]],
+    market_data: Optional[Dict[str, Any]] = None,
     user_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
@@ -542,6 +543,13 @@ async def analyze_sentiment_with_gemini(
     
     [Recent News Articles]
     {news_context}
+
+    [Market Snapshot]
+    Current Price: {market_data.get("price", "N/A") if market_data else "N/A"}
+    Day Change %: {market_data.get("change_percent", market_data.get("change_pct", "N/A")) if market_data else "N/A"}
+    Volume: {market_data.get("volume", "N/A") if market_data else "N/A"}
+    Market Cap: {market_data.get("market_cap", "N/A") if market_data else "N/A"}
+    Sector: {market_data.get("sector", "Unknown") if market_data else "Unknown"}
     
     [Investor Profile]
     Risk Tolerance: {user_risk}
@@ -723,8 +731,10 @@ async def synthesize_debate_recommendation_card(
 You are Kai Chief Investment Strategist.
 You are given finalized multi-agent debate artifacts for {ticker}.
 
-Your task: produce a concise, institution-grade synthesis that unifies
-fundamental/sentiment/valuation, user context, and Renaissance screening.
+Your task: produce a concise, institution-grade synthesis that explicitly fuses:
+1) AlphaAgents debate outputs,
+2) world-model portfolio/user context,
+3) Renaissance screening signals.
 
 Return STRICT JSON with keys:
 - thesis: string (1 short paragraph)
@@ -737,7 +747,10 @@ Return STRICT JSON with keys:
 Constraints:
 - No markdown.
 - No generic filler.
-- Mention Renaissance tier and at least one user-context personalization.
+- Must mention Renaissance tier/screening signal explicitly.
+- Must include at least one concrete user-context personalization (holdings/risk/horizon/style).
+- Must include at least one portfolio impact statement (concentration, diversification, drawdown, or risk tradeoff).
+- If Renaissance signal conflicts with debate recommendation, state the conflict and risk-control framing.
 - Keep each bullet <= 140 chars.
 
 INPUT:

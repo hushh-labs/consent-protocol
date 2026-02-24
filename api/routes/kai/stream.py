@@ -560,6 +560,114 @@ def _derive_company_strength_score(
     return round(_clamp(blended, 0.0, 10.0), 2)
 
 
+def _derive_market_snapshot(
+    *,
+    valuation_metrics: dict[str, Any] | None,
+    price_targets: dict[str, Any] | None,
+    analysis_updated_at: str,
+) -> dict[str, Any]:
+    candidate_fields = (
+        ("current_price", valuation_metrics, "valuation_metrics.current_price"),
+        ("price", valuation_metrics, "valuation_metrics.price"),
+        ("market_price", price_targets, "price_targets.market_price"),
+        ("current_price", price_targets, "price_targets.current_price"),
+        ("current", price_targets, "price_targets.current"),
+    )
+    for key, source, source_label in candidate_fields:
+        if not isinstance(source, dict):
+            continue
+        parsed = _safe_float(source.get(key))
+        if parsed is not None:
+            return {
+                "last_price": round(parsed, 4),
+                "observed_at": analysis_updated_at,
+                "source": source_label,
+            }
+    return {
+        "last_price": None,
+        "observed_at": analysis_updated_at,
+        "source": "unavailable",
+    }
+
+
+def _validate_world_model_context_requirements(
+    full_user_context: dict[str, Any],
+) -> list[str]:
+    missing: list[str] = []
+    request_context = (
+        full_user_context.get("request_context")
+        if isinstance(full_user_context.get("request_context"), dict)
+        else {}
+    )
+
+    holdings = request_context.get("holdings")
+    if not isinstance(holdings, list) or len(holdings) == 0:
+        missing.append("world_model_holdings")
+
+    debate_context = request_context.get("debate_context")
+    if not isinstance(debate_context, dict):
+        missing.append("world_model_debate_context")
+        return missing
+
+    portfolio_snapshot = debate_context.get("portfolio_snapshot")
+    if not isinstance(portfolio_snapshot, dict) or len(portfolio_snapshot) == 0:
+        missing.append("world_model_portfolio_snapshot")
+
+    coverage = debate_context.get("coverage")
+    if not isinstance(coverage, dict) or len(coverage) == 0:
+        missing.append("world_model_coverage")
+
+    return missing
+
+
+def _validate_renaissance_context_requirements(
+    renaissance_context: dict[str, Any],
+    renaissance_lookup_error: Exception | None,
+) -> list[str]:
+    missing: list[str] = []
+    if renaissance_lookup_error is not None:
+        missing.append("renaissance_context_lookup")
+        return missing
+
+    if not isinstance(renaissance_context, dict) or not renaissance_context:
+        missing.append("renaissance_context_payload")
+        return missing
+
+    if "is_investable" not in renaissance_context:
+        missing.append("renaissance_investable_flag")
+
+    return missing
+
+
+def _build_renaissance_comparison(renaissance_context: dict[str, Any]) -> dict[str, Any]:
+    tier = renaissance_context.get("tier")
+    is_investable = bool(renaissance_context.get("is_investable"))
+    is_avoid = bool(renaissance_context.get("is_avoid"))
+    recommendation_bias = renaissance_context.get("recommendation_bias")
+
+    if is_avoid:
+        status = "avoid"
+        comparison_label = "Renaissance avoid"
+    elif is_investable:
+        status = "investable"
+        comparison_label = f"Renaissance investable ({tier})" if tier else "Renaissance investable"
+    elif renaissance_context.get("is_investable") is False:
+        status = "outside_universe"
+        comparison_label = "Outside Renaissance investable universe"
+    else:
+        status = "unknown"
+        comparison_label = "Renaissance status unavailable"
+
+    return {
+        "status": status,
+        "tier": tier,
+        "is_investable": is_investable,
+        "is_avoid": is_avoid,
+        "comparison_label": comparison_label,
+        "recommendation_bias": recommendation_bias,
+    }
+
+
 async def stream_agent_thinking(
     agent_name: str,
     ticker: str,
@@ -779,23 +887,18 @@ async def analyze_stream_generator(
         )
         renaissance_result, wm_result = context_results
 
-        if isinstance(renaissance_result, Exception):
+        renaissance_lookup_error: Exception | None = (
+            renaissance_result if isinstance(renaissance_result, Exception) else None
+        )
+        if renaissance_lookup_error is not None:
             logger.warning(
                 "[Kai Stream] Renaissance context lookup failed for %s: %s",
                 ticker,
-                renaissance_result,
+                renaissance_lookup_error,
             )
-            renaissance_context: Dict[str, Any] = {
-                "is_investable": False,
-                "tier": None,
-                "tier_description": "Unavailable",
-                "conviction_weight": 0.0,
-                "investment_thesis": "",
-                "sector_peers": [],
-                "recommendation_bias": "NEUTRAL",
-            }
+            renaissance_context: Dict[str, Any] = {}
         else:
-            renaissance_context = renaissance_result or {}
+            renaissance_context = renaissance_result if isinstance(renaissance_result, dict) else {}
 
         if isinstance(wm_result, Exception):
             logger.warning("[Kai Stream] World model fetch failed for %s: %s", user_id, wm_result)
@@ -937,6 +1040,42 @@ async def analyze_stream_generator(
             key: value for key, value in preference_container.items() if value not in (None, "")
         }
 
+        missing_requirements = sorted(
+            set(
+                _validate_world_model_context_requirements(full_user_context)
+                + _validate_renaissance_context_requirements(
+                    renaissance_context,
+                    renaissance_lookup_error,
+                )
+            )
+        )
+        context_integrity = {
+            "world_model_context_present": not any(
+                item.startswith("world_model_") for item in missing_requirements
+            ),
+            "renaissance_context_present": not any(
+                item.startswith("renaissance_") for item in missing_requirements
+            ),
+            "missing_requirements": missing_requirements,
+        }
+        if missing_requirements:
+            yield create_event(
+                "error",
+                {
+                    "code": "ANALYZE_CONTEXT_REQUIRED",
+                    "message": (
+                        "Analysis requires both world-model portfolio context "
+                        "and Renaissance screening context."
+                    ),
+                    "ticker": ticker,
+                    "missing_requirements": missing_requirements,
+                    "context_integrity": context_integrity,
+                },
+                terminal=True,
+            )
+            return
+        renaissance_comparison = _build_renaissance_comparison(renaissance_context)
+
         # Yield thinking event about context retrieval
         yield create_event(
             "kai_thinking",
@@ -981,7 +1120,7 @@ async def analyze_stream_generator(
             {
                 "phase": "analysis",
                 "round": 1,
-                "message": f"🧠 Initializing analysis pipeline for {ticker}...",
+                "message": f"🧠 Starting analysis pipeline for {ticker}...",
                 "tokens": [
                     "Activating",
                     "three",
@@ -1723,6 +1862,11 @@ async def analyze_stream_generator(
             market_trend_score=market_trend_score,
         )
         analysis_updated_at = _now_utc_iso()
+        market_snapshot = _derive_market_snapshot(
+            valuation_metrics=valuation_insight.valuation_metrics,
+            price_targets=valuation_insight.price_targets,
+            analysis_updated_at=analysis_updated_at,
+        )
 
         world_model_context = {
             "risk_profile": full_user_context.get("risk_profile"),
@@ -1770,6 +1914,8 @@ async def analyze_stream_generator(
             "dissenting_opinions": debate_result.dissenting_opinions,
             "debate_highlights": debate_highlights[:20],
             "world_model_context": world_model_context,
+            "context_integrity": context_integrity,
+            "renaissance_comparison": renaissance_comparison,
             "renaissance_tier": renaissance_context.get("tier"),
             "renaissance_score": float(renaissance_context.get("conviction_weight", 0.0) or 0.0)
             * 100.0,
@@ -1804,6 +1950,7 @@ async def analyze_stream_generator(
             "fair_value_score": fair_value_score,
             "fair_value_gap_pct": fair_value_gap_pct,
             "analysis_updated_at": analysis_updated_at,
+            "market_snapshot": market_snapshot,
             "short_recommendation": short_recommendation,
             "analysis_degraded": analysis_degraded,
             "degraded_agents": sorted(set(degraded_agents)),
@@ -1839,6 +1986,7 @@ async def analyze_stream_generator(
                 "fair_value_score": fair_value_score,
                 "fair_value_gap_pct": fair_value_gap_pct,
                 "analysis_updated_at": analysis_updated_at,
+                "market_snapshot": market_snapshot,
                 "short_recommendation": short_recommendation,
                 "analysis_degraded": analysis_degraded,
                 "degraded_agents": sorted(set(degraded_agents)),
@@ -1850,6 +1998,8 @@ async def analyze_stream_generator(
                 "symbol_eligibility": symbol_eligibility,
                 "eligibility_reason": eligibility_reason,
                 "eligibility_source": eligibility_source,
+                "context_integrity": context_integrity,
+                "renaissance_comparison": renaissance_comparison,
                 "raw_card": raw_card,
                 "round": 2,
                 "phase": "decision",
