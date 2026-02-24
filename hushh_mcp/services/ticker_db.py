@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -99,6 +100,10 @@ _INVALID_METADATA_VALUES = {
     "null",
     "not available",
     "unclassified",
+    "other",
+    "others",
+    "misc",
+    "miscellaneous",
 }
 _CASH_HINTS = ("cash", "sweep", "money market", "core position", "deposit")
 
@@ -231,6 +236,10 @@ def _confidence_score(*, has_sector: bool, has_industry: bool, has_sic: bool = F
 class TickerDBService:
     def __init__(self):
         self._db = None
+        self._finnhub_rate_lock = asyncio.Lock()
+        self._finnhub_next_call_at = 0.0
+        self._fmp_rate_lock = asyncio.Lock()
+        self._fmp_next_call_at = 0.0
 
     def _get_db(self):
         if self._db is None:
@@ -359,15 +368,39 @@ class TickerDBService:
         }
 
     async def _fetch_finnhub_profile(
-        self, client: httpx.AsyncClient, symbol: str, finnhub_key: str
+        self,
+        client: httpx.AsyncClient,
+        symbol: str,
+        finnhub_key: str,
+        *,
+        attempt: int = 0,
     ) -> Dict[str, Any]:
         if not finnhub_key:
             return {}
+        calls_per_minute = max(1, int(os.getenv("FINNHUB_CALLS_PER_MINUTE", "55")))
+        min_interval = 60.0 / float(calls_per_minute)
         try:
+            async with self._finnhub_rate_lock:
+                now = time.monotonic()
+                wait = self._finnhub_next_call_at - now
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    now = time.monotonic()
+                self._finnhub_next_call_at = now + min_interval
+
             response = await client.get(
                 "https://finnhub.io/api/v1/stock/profile2",
                 params={"symbol": symbol, "token": finnhub_key},
             )
+            if response.status_code == 429:
+                if attempt >= 2:
+                    return {}
+                reset_epoch = int(response.headers.get("x-ratelimit-reset", "0") or 0)
+                wait_seconds = max(1.0, float(reset_epoch - int(time.time())))
+                await asyncio.sleep(min(wait_seconds, 30.0))
+                return await self._fetch_finnhub_profile(
+                    client, symbol, finnhub_key, attempt=attempt + 1
+                )
             if not response.is_success:
                 return {}
             payload = response.json() or {}
@@ -376,15 +409,40 @@ class TickerDBService:
             return {}
 
     async def _fetch_fmp_profile(
-        self, client: httpx.AsyncClient, symbol: str, fmp_key: str
+        self,
+        client: httpx.AsyncClient,
+        symbol: str,
+        fmp_key: str,
+        *,
+        attempt: int = 0,
     ) -> Dict[str, Any]:
         if not fmp_key:
             return {}
         try:
+            calls_per_minute = max(1, int(os.getenv("FMP_CALLS_PER_MINUTE", "240")))
+            min_interval = 60.0 / float(calls_per_minute)
+            async with self._fmp_rate_lock:
+                now = time.monotonic()
+                wait = self._fmp_next_call_at - now
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                    now = time.monotonic()
+                self._fmp_next_call_at = now + min_interval
+
             response = await client.get(
                 "https://financialmodelingprep.com/stable/profile",
                 params={"symbol": symbol, "apikey": fmp_key},
             )
+            if response.status_code == 429:
+                if attempt >= 2:
+                    return {}
+                retry_after = response.headers.get("retry-after", "").strip()
+                try:
+                    wait_seconds = float(retry_after)
+                except ValueError:
+                    wait_seconds = 2.0 * (attempt + 1)
+                await asyncio.sleep(min(max(wait_seconds, 1.0), 30.0))
+                return await self._fetch_fmp_profile(client, symbol, fmp_key, attempt=attempt + 1)
             if not response.is_success:
                 return {}
             payload = response.json() or []
@@ -422,9 +480,19 @@ class TickerDBService:
         rows_to_upsert: list[Dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=timeout) as client:
             for symbol in cleaned_symbols:
-                finnhub_profile, fmp_profile = await asyncio.gather(
-                    self._fetch_finnhub_profile(client, symbol, finnhub_key),
-                    self._fetch_fmp_profile(client, symbol, fmp_key),
+                fmp_profile = await self._fetch_fmp_profile(client, symbol, fmp_key)
+                needs_finnhub = bool(finnhub_key) and (
+                    not _clean_text(
+                        fmp_profile.get("sector")
+                        or fmp_profile.get("industry")
+                        or fmp_profile.get("exchangeShortName")
+                        or fmp_profile.get("exchange")
+                    )
+                )
+                finnhub_profile = (
+                    await self._fetch_finnhub_profile(client, symbol, finnhub_key)
+                    if needs_finnhub
+                    else {}
                 )
                 sector = _normalize_sector(
                     fmp_profile.get("sector")

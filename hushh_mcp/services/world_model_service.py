@@ -802,41 +802,71 @@ class WorldModelService:
                     domain,
                 )
 
-            normalized_summary = self._normalize_domain_summary(domain, summary)
+            ciphertext = self._clean_base64ish(encrypted_blob["ciphertext"])
+            iv = self._clean_base64ish(encrypted_blob["iv"])
+            tag = self._clean_base64ish(encrypted_blob["tag"])
+            algorithm = self._clean_text(
+                encrypted_blob.get("algorithm", "aes-256-gcm"),
+                default="aes-256-gcm",
+            ).lower()
 
-            # 1. Get current encrypted data
-            current_data = await self.get_encrypted_data(user_id)
+            blob_stored = False
+            try:
+                rpc_result = self._run_rpc(
+                    "upsert_world_model_data_blob",
+                    {
+                        "p_user_id": user_id,
+                        "p_ciphertext": ciphertext,
+                        "p_iv": iv,
+                        "p_tag": tag,
+                        "p_algorithm": algorithm,
+                    },
+                )
+                if hasattr(rpc_result, "error") and rpc_result.error:
+                    logger.warning(
+                        "upsert_world_model_data_blob RPC returned error for %s/%s: %s",
+                        user_id,
+                        domain,
+                        rpc_result.error,
+                    )
+                else:
+                    blob_stored = True
+            except Exception as rpc_error:
+                logger.info(
+                    "upsert_world_model_data_blob RPC unavailable for %s/%s, using fallback: %s",
+                    user_id,
+                    domain,
+                    rpc_error,
+                )
 
-            # 2. Store updated encrypted blob
-            # Note: Merging happens on client-side. Backend just stores the new blob.
-            current_version = 0
-            if current_data is not None:
-                current_version = current_data.get("data_version", 0) or 0
+            if not blob_stored:
+                # Fallback: existing read-modify-write path for data_version increment.
+                current_data = await self.get_encrypted_data(user_id)
+                current_version = 0
+                if current_data is not None:
+                    current_version = current_data.get("data_version", 0) or 0
 
-            data = {
-                "user_id": user_id,
-                "encrypted_data_ciphertext": self._clean_base64ish(encrypted_blob["ciphertext"]),
-                "encrypted_data_iv": self._clean_base64ish(encrypted_blob["iv"]),
-                "encrypted_data_tag": self._clean_base64ish(encrypted_blob["tag"]),
-                "algorithm": self._clean_text(
-                    encrypted_blob.get("algorithm", "aes-256-gcm"),
-                    default="aes-256-gcm",
-                ).lower(),
-                "data_version": current_version + 1,
-                "updated_at": datetime.utcnow().isoformat(),
-            }
+                data = {
+                    "user_id": user_id,
+                    "encrypted_data_ciphertext": ciphertext,
+                    "encrypted_data_iv": iv,
+                    "encrypted_data_tag": tag,
+                    "algorithm": algorithm,
+                    "data_version": current_version + 1,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
 
-            if current_data is None:
-                data["created_at"] = datetime.utcnow().isoformat()
+                if current_data is None:
+                    data["created_at"] = datetime.utcnow().isoformat()
 
-            self.supabase.table("world_model_data").upsert(data, on_conflict="user_id").execute()
+                self.supabase.table("world_model_data").upsert(
+                    data, on_conflict="user_id"
+                ).execute()
 
             # 3. Update world_model_index_v2
-            summary_ok = await self.update_domain_summary(user_id, domain, normalized_summary)
+            summary_ok = await self.update_domain_summary(user_id, domain, summary)
             if not summary_ok:
                 return False
-
-            await self.reconcile_user_index_domains(user_id, register_missing_registry=False)
 
             return True
         except Exception as e:
