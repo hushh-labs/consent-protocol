@@ -81,7 +81,11 @@ class SentimentAgent(HushhAgent):
         logger.info(f"[Sentiment] Orchestrating analysis for {ticker} - user {user_id}")
 
         # Operon 1: Fetch news articles (with consent check)
-        from hushh_mcp.operons.kai.fetchers import RealtimeDataUnavailable, fetch_market_news
+        from hushh_mcp.operons.kai.fetchers import (
+            RealtimeDataUnavailable,
+            fetch_market_data,
+            fetch_market_news,
+        )
 
         try:
             news_articles = await fetch_market_news(ticker, user_id, consent_token)
@@ -94,6 +98,13 @@ class SentimentAgent(HushhAgent):
         except Exception as e:
             logger.error(f"[Sentiment] News fetch failed: {e}")
             raise
+
+        market_data: Optional[Dict[str, Any]] = None
+        try:
+            # Reuse quote cache pipeline so sentiment reasoning is anchored to latest price context.
+            market_data = await fetch_market_data(ticker, user_id, consent_token)
+        except Exception as e:
+            logger.warning(f"[Sentiment] Market snapshot unavailable for {ticker}: {e}")
 
         # Operon 2: Gemini Deep Sentiment Analysis
         from hushh_mcp.operons.kai.llm import (
@@ -116,6 +127,7 @@ class SentimentAgent(HushhAgent):
                         user_id=user_id,
                         consent_token=consent_token,
                         news_articles=news_articles,
+                        market_data=market_data,
                         user_context=context,
                     )
                     break
