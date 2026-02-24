@@ -1471,6 +1471,13 @@ def _normalize_raw_holding_row(row: dict[str, Any], idx: int) -> dict[str, Any]:
         instrument_kind = "real_asset"
     elif any(h in asset_type_hint for h in ("fund", "etf", "stock", "equity")):
         instrument_kind = "equity"
+    elif symbol_classification.tradable and not is_cash_equivalent and identifier_type == "ticker":
+        # Treat ticker-like tradable holdings as equity when statement asset_type is missing.
+        instrument_kind = "equity"
+    elif raw_symbol_kind in {"us_common_equity_ticker", "fund_or_etf_ticker"}:
+        instrument_kind = "equity"
+    elif raw_is_sec_common_equity is True:
+        instrument_kind = "equity"
     else:
         instrument_kind = "other"
 

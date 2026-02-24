@@ -310,6 +310,15 @@ async def create_tickers(pool: asyncpg.Pool):
             metadata_confidence FLOAT DEFAULT 0.0,
             tradable BOOLEAN DEFAULT TRUE,
             last_enriched_at TIMESTAMPTZ,
+            sec_entity_type TEXT,
+            sec_filer_category TEXT,
+            sec_state_incorporation TEXT,
+            sec_fiscal_year_end TEXT,
+            sec_latest_10k_date DATE,
+            sec_latest_10q_date DATE,
+            instrument_type TEXT,
+            metadata_source_primary TEXT,
+            metadata_updated_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
@@ -327,14 +336,117 @@ async def create_tickers(pool: asyncpg.Pool):
     )
     await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS tradable BOOLEAN DEFAULT TRUE")
     await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_enriched_at TIMESTAMPTZ")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_entity_type TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_filer_category TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_state_incorporation TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_fiscal_year_end TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_latest_10k_date DATE")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS sec_latest_10q_date DATE")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS instrument_type TEXT")
+    await pool.execute("ALTER TABLE tickers ADD COLUMN IF NOT EXISTS metadata_source_primary TEXT")
+    await pool.execute(
+        "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS metadata_updated_at TIMESTAMPTZ"
+    )
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS idx_tickers_ticker_lower ON tickers (LOWER(ticker))"
     )
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS idx_tickers_title ON tickers USING GIN (to_tsvector('english', coalesce(title, ''))) "
     )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tickers_last_enriched_at ON tickers(last_enriched_at DESC)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tickers_metadata_updated_at ON tickers(metadata_updated_at DESC)"
+    )
+    await pool.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'tickers_metadata_confidence_range_chk'
+            ) THEN
+                ALTER TABLE tickers
+                ADD CONSTRAINT tickers_metadata_confidence_range_chk
+                CHECK (
+                    metadata_confidence IS NULL
+                    OR (metadata_confidence >= 0.0 AND metadata_confidence <= 1.0)
+                );
+            END IF;
+        END $$;
+    """)
 
     print("✅ tickers ready!")
+
+
+async def create_ticker_facts_snapshot(pool: asyncpg.Pool):
+    """Create SEC fundamentals snapshot table for ticker analysis context."""
+    print("📊 Creating ticker_facts_snapshot table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS ticker_facts_snapshot (
+            ticker TEXT PRIMARY KEY REFERENCES tickers(ticker) ON DELETE CASCADE,
+            cik TEXT NOT NULL,
+            as_of_date DATE,
+            shares_outstanding NUMERIC,
+            public_float_usd NUMERIC,
+            revenue_ttm_usd NUMERIC,
+            net_income_ttm_usd NUMERIC,
+            assets_usd NUMERIC,
+            liabilities_usd NUMERIC,
+            eps_diluted_ttm NUMERIC,
+            source TEXT NOT NULL DEFAULT 'sec_companyfacts',
+            source_updated_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ticker_facts_source_updated_at ON ticker_facts_snapshot(source_updated_at DESC)"
+    )
+    print("✅ ticker_facts_snapshot ready!")
+
+
+async def create_ticker_enrichment_runs(pool: asyncpg.Pool):
+    """Create ticker enrichment run audit/idempotency table."""
+    print("🧾 Creating ticker_enrichment_runs table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS ticker_enrichment_runs (
+            id BIGSERIAL PRIMARY KEY,
+            run_key TEXT NOT NULL UNIQUE,
+            mode TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'started',
+            enable_openfigi BOOLEAN NOT NULL DEFAULT FALSE,
+            source_tickers_exchange_etag TEXT,
+            source_tickers_exchange_last_modified TEXT,
+            source_submissions_etag TEXT,
+            source_submissions_last_modified TEXT,
+            source_companyfacts_etag TEXT,
+            source_companyfacts_last_modified TEXT,
+            source_hash_tickers_exchange TEXT,
+            source_hash_submissions TEXT,
+            source_hash_companyfacts TEXT,
+            rows_tickers_upserted INTEGER NOT NULL DEFAULT 0,
+            rows_facts_upserted INTEGER NOT NULL DEFAULT 0,
+            rows_figi_classified INTEGER NOT NULL DEFAULT 0,
+            coverage_exchange NUMERIC,
+            coverage_sector NUMERIC,
+            coverage_industry NUMERIC,
+            coverage_sec_entity NUMERIC,
+            coverage_facts NUMERIC,
+            duration_ms INTEGER,
+            error_message TEXT,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ticker_enrichment_runs_status ON ticker_enrichment_runs(status)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ticker_enrichment_runs_started_at ON ticker_enrichment_runs(started_at DESC)"
+    )
+    print("✅ ticker_enrichment_runs ready!")
 
 
 async def create_kai_market_cache_entries(pool: asyncpg.Pool):
@@ -371,6 +483,8 @@ TABLE_CREATORS = {
     "world_model_index_v2": create_world_model_index_v2,
     "domain_registry": create_domain_registry,
     "tickers": create_tickers,
+    "ticker_facts_snapshot": create_ticker_facts_snapshot,
+    "ticker_enrichment_runs": create_ticker_enrichment_runs,
     "consent_exports": create_consent_exports,
     "kai_market_cache_entries": create_kai_market_cache_entries,
 }
@@ -394,33 +508,42 @@ async def run_full_migration(pool: asyncpg.Pool):
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
+        "ticker_facts_snapshot",
+        "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
+        "tickers",
     ]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
     # Create in dependency order
-    print("\n[1/8] Creating vault_keys (vault headers + recovery wrapper)...")
+    print("\n[1/11] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/8] Creating vault_key_wrappers (enrolled unlock methods)...")
+    print("[2/11] Creating vault_key_wrappers (enrolled unlock methods)...")
     await create_vault_key_wrappers(pool)
 
-    print("[3/8] Creating consent_audit (consent tracking)...")
+    print("[3/11] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[4/8] Creating world_model_data (encrypted user data blob)...")
+    print("[4/11] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[5/8] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/11] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[6/8] Creating domain_registry (dynamic domain registry)...")
+    print("[6/11] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[7/8] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/11] Creating tickers (symbol master)...")
+    await create_tickers(pool)
+    print("[8/11] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
+    await create_ticker_facts_snapshot(pool)
+    print("[9/11] Creating ticker_enrichment_runs (run audit)...")
+    await create_ticker_enrichment_runs(pool)
+    print("[10/11] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
-    print("[8/8] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    print("[11/11] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
 
     print("\n✅ Full migration complete!")
@@ -442,27 +565,33 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
 
     # Create in dependency order
-    print("\n[1/8] Creating vault_keys (vault headers + recovery wrapper)...")
+    print("\n[1/11] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
-    print("[2/8] Creating vault_key_wrappers (enrolled unlock methods)...")
+    print("[2/11] Creating vault_key_wrappers (enrolled unlock methods)...")
     await create_vault_key_wrappers(pool)
 
-    print("[3/8] Creating consent_audit (consent tracking)...")
+    print("[3/11] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[4/8] Creating world_model_data (encrypted user data blob)...")
+    print("[4/11] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[5/8] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[5/11] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[6/8] Creating domain_registry (dynamic domain registry)...")
+    print("[6/11] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[7/8] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[7/11] Creating tickers (symbol master)...")
+    await create_tickers(pool)
+    print("[8/11] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
+    await create_ticker_facts_snapshot(pool)
+    print("[9/11] Creating ticker_enrichment_runs (run audit)...")
+    await create_ticker_enrichment_runs(pool)
+    print("[10/11] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
-    print("[8/8] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    print("[11/11] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
 
     print("\nAll tables initialized successfully!")
@@ -495,6 +624,9 @@ async def show_status(pool: asyncpg.Pool):
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
+        "tickers",
+        "ticker_facts_snapshot",
+        "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
     ]:
@@ -534,7 +666,12 @@ Examples:
     parser.add_argument(
         "--table",
         choices=list(TABLE_CREATORS.keys()),
-        help="Create a specific table (vault_keys, vault_key_wrappers, consent_audit, world_model_data, world_model_index_v2, domain_registry)",
+        help=(
+            "Create a specific table (vault_keys, vault_key_wrappers, consent_audit, "
+            "world_model_data, world_model_index_v2, domain_registry, tickers, "
+            "ticker_facts_snapshot, ticker_enrichment_runs, consent_exports, "
+            "kai_market_cache_entries)"
+        ),
     )
     parser.add_argument("--consent", action="store_true", help="Create all consent-related tables")
     parser.add_argument(
