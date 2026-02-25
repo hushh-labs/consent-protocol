@@ -21,6 +21,7 @@ REQUIRED_COLUMNS = {
         "user_id",
         "vault_key_hash",
         "primary_method",
+        "primary_wrapper_id",
         "recovery_encrypted_vault_key",
         "recovery_salt",
         "recovery_iv",
@@ -31,11 +32,16 @@ REQUIRED_COLUMNS = {
         "id",
         "user_id",
         "method",
+        "wrapper_id",
         "encrypted_vault_key",
         "salt",
         "iv",
         "passkey_credential_id",
         "passkey_prf_salt",
+        "passkey_rp_id",
+        "passkey_provider",
+        "passkey_device_label",
+        "passkey_last_used_at",
         "created_at",
         "updated_at",
     },
@@ -72,12 +78,14 @@ async def main() -> int:
             JOIN pg_class t ON c.conrelid = t.oid
             WHERE t.relname = 'vault_key_wrappers'
               AND c.contype = 'u'
-              AND c.conname LIKE '%user_id%method%'
+              AND c.conname LIKE '%user_id%method%wrapper_id%'
             LIMIT 1
             """
         )
         if not unique_exists:
-            failures.append("vault_key_wrappers unique(user_id, method) constraint missing")
+            failures.append(
+                "vault_key_wrappers unique(user_id, method, wrapper_id) constraint missing"
+            )
 
         if failures:
             print("Vault schema verification FAILED:")

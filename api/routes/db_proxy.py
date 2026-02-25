@@ -17,6 +17,8 @@ Security:
 """
 
 import logging
+import os
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -29,6 +31,10 @@ from hushh_mcp.services.vault_keys_service import VaultKeysService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/db", tags=["Database Proxy (DEPRECATED)"])
+MIN_VAULT_WRITE_CLIENT_VERSION = os.getenv("MIN_VAULT_WRITE_CLIENT_VERSION", "2.0.0")
+ENFORCE_VAULT_WRITE_CLIENT_VERSION = os.getenv(
+    "ENFORCE_VAULT_WRITE_CLIENT_VERSION", "true"
+).strip().lower() not in {"0", "false", "no"}
 
 
 def _mask_user_id(user_id: str) -> str:
@@ -37,6 +43,37 @@ def _mask_user_id(user_id: str) -> str:
     if len(user_id) <= 8:
         return user_id
     return f"{user_id[:4]}...{user_id[-4:]}"
+
+
+def _parse_semver(value: str) -> tuple[int, int, int] | None:
+    match = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", value or "")
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _check_client_version_or_raise(http_request: Request) -> None:
+    if not ENFORCE_VAULT_WRITE_CLIENT_VERSION:
+        return
+
+    client_version = (
+        http_request.headers.get("x-hushh-client-version")
+        or http_request.headers.get("x-client-version")
+        or ""
+    ).strip()
+    parsed_client = _parse_semver(client_version)
+    parsed_min = _parse_semver(MIN_VAULT_WRITE_CLIENT_VERSION)
+    if parsed_min is None:
+        return
+    if parsed_client is None or parsed_client < parsed_min:
+        raise HTTPException(
+            status_code=426,
+            detail={
+                "error": "Client upgrade required",
+                "code": "CLIENT_UPGRADE_REQUIRED",
+                "minimum_version": MIN_VAULT_WRITE_CLIENT_VERSION,
+            },
+        )
 
 
 # ============================================================================
@@ -58,16 +95,22 @@ class VaultGetRequest(BaseModel):
 
 class VaultWrapperData(BaseModel):
     method: str
+    wrapperId: str | None = None
     encryptedVaultKey: str
     salt: str
     iv: str
     passkeyCredentialId: str | None = None
     passkeyPrfSalt: str | None = None
+    passkeyRpId: str | None = None
+    passkeyProvider: str | None = None
+    passkeyDeviceLabel: str | None = None
+    passkeyLastUsedAt: int | None = None
 
 
 class VaultStateData(BaseModel):
     vaultKeyHash: str
     primaryMethod: str
+    primaryWrapperId: str | None = None
     recoveryEncryptedVaultKey: str
     recoverySalt: str
     recoveryIv: str
@@ -78,6 +121,7 @@ class VaultSetupStateRequest(BaseModel):
     userId: str
     vaultKeyHash: str
     primaryMethod: str
+    primaryWrapperId: str | None = None
     recoveryEncryptedVaultKey: str
     recoverySalt: str
     recoveryIv: str
@@ -88,16 +132,22 @@ class VaultWrapperUpsertRequest(BaseModel):
     userId: str
     vaultKeyHash: str
     method: str
+    wrapperId: str | None = None
     encryptedVaultKey: str
     salt: str
     iv: str
     passkeyCredentialId: str | None = None
     passkeyPrfSalt: str | None = None
+    passkeyRpId: str | None = None
+    passkeyProvider: str | None = None
+    passkeyDeviceLabel: str | None = None
+    passkeyLastUsedAt: int | None = None
 
 
 class VaultPrimaryMethodSetRequest(BaseModel):
     userId: str
     primaryMethod: str
+    primaryWrapperId: str | None = None
 
 
 class SuccessResponse(BaseModel):
@@ -178,6 +228,7 @@ async def vault_get(
 
 @router.post("/vault/setup", response_model=SuccessResponse)
 async def vault_setup(
+    http_request: Request,
     request: VaultSetupStateRequest,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
@@ -190,6 +241,7 @@ async def vault_setup(
     """
     # Verify user is setting up their own vault
     verify_user_id_match(firebase_uid, request.userId)
+    _check_client_version_or_raise(http_request)
     methods = [wrapper.method for wrapper in request.wrappers]
     logger.info(
         "vault/setup request user=%s wrappers=%s methods=%s primary=%s",
@@ -209,11 +261,23 @@ async def vault_setup(
             recovery_salt=request.recoverySalt,
             recovery_iv=request.recoveryIv,
             wrappers=[wrapper.model_dump() for wrapper in request.wrappers],
+            primary_wrapper_id=request.primaryWrapperId,
         )
         return SuccessResponse(success=True)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        message = str(e)
+        if "primaryMethod + primaryWrapperId" in message:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": message,
+                    "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
+                },
+            )
+        raise HTTPException(
+            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+        )
     except Exception as e:
         logger.error(
             "vault/setup error user=%s wrappers=%s methods=%s: %s",
@@ -227,11 +291,13 @@ async def vault_setup(
 
 @router.post("/vault/wrapper/upsert", response_model=SuccessResponse)
 async def vault_wrapper_upsert(
+    http_request: Request,
     request: VaultWrapperUpsertRequest,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     """Add or update a single vault wrapper for an enrolled method."""
     verify_user_id_match(firebase_uid, request.userId)
+    _check_client_version_or_raise(http_request)
     logger.info(
         "vault/wrapper/upsert request user=%s method=%s",
         _mask_user_id(request.userId),
@@ -244,16 +310,32 @@ async def vault_wrapper_upsert(
             user_id=request.userId,
             vault_key_hash=request.vaultKeyHash,
             method=request.method,
+            wrapper_id=request.wrapperId,
             encrypted_vault_key=request.encryptedVaultKey,
             salt=request.salt,
             iv=request.iv,
             passkey_credential_id=request.passkeyCredentialId,
             passkey_prf_salt=request.passkeyPrfSalt,
+            passkey_rp_id=request.passkeyRpId,
+            passkey_provider=request.passkeyProvider,
+            passkey_device_label=request.passkeyDeviceLabel,
+            passkey_last_used_at=request.passkeyLastUsedAt,
         )
         return SuccessResponse(success=True)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        message = str(e)
+        if (
+            "requires passkey credential metadata including rp id" in message
+            or "wrapper rp id is not allowed for this environment" in message
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": message, "code": "VAULT_PASSKEY_RP_MISMATCH"},
+            )
+        raise HTTPException(
+            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+        )
     except Exception as e:
         logger.error(
             "vault/wrapper/upsert error user=%s method=%s: %s",
@@ -266,11 +348,13 @@ async def vault_wrapper_upsert(
 
 @router.post("/vault/primary/set", response_model=SuccessResponse)
 async def vault_primary_set(
+    http_request: Request,
     request: VaultPrimaryMethodSetRequest,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     """Set default vault unlock method among already enrolled wrappers."""
     verify_user_id_match(firebase_uid, request.userId)
+    _check_client_version_or_raise(http_request)
     logger.info(
         "vault/primary/set request user=%s primary=%s",
         _mask_user_id(request.userId),
@@ -282,11 +366,20 @@ async def vault_primary_set(
         await service.set_primary_method(
             user_id=request.userId,
             primary_method=request.primaryMethod,
+            primary_wrapper_id=request.primaryWrapperId,
         )
         return SuccessResponse(success=True)
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        message = str(e)
+        if "Primary method/wrapper must be an enrolled wrapper" in message:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": message, "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND"},
+            )
+        raise HTTPException(
+            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+        )
     except Exception as e:
         logger.error(
             "vault/primary/set error user=%s primary=%s: %s",
