@@ -49,6 +49,7 @@ async def create_vault_keys(pool: asyncpg.Pool):
             user_id TEXT PRIMARY KEY,
             vault_key_hash TEXT NOT NULL,
             primary_method TEXT NOT NULL DEFAULT 'passphrase',
+            primary_wrapper_id TEXT NOT NULL DEFAULT 'default',
             recovery_encrypted_vault_key TEXT NOT NULL,
             recovery_salt TEXT NOT NULL,
             recovery_iv TEXT NOT NULL,
@@ -67,18 +68,29 @@ async def create_vault_key_wrappers(pool: asyncpg.Pool):
             id BIGSERIAL PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES vault_keys(user_id) ON DELETE CASCADE,
             method TEXT NOT NULL,
+            wrapper_id TEXT NOT NULL DEFAULT 'default',
             encrypted_vault_key TEXT NOT NULL,
             salt TEXT NOT NULL,
             iv TEXT NOT NULL,
             passkey_credential_id TEXT,
             passkey_prf_salt TEXT,
+            passkey_rp_id TEXT,
+            passkey_provider TEXT,
+            passkey_device_label TEXT,
+            passkey_last_used_at BIGINT,
             created_at BIGINT NOT NULL,
             updated_at BIGINT NOT NULL,
-            UNIQUE(user_id, method)
+            UNIQUE(user_id, method, wrapper_id)
         )
     """)
     await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_user_id ON vault_key_wrappers(user_id)")
     await pool.execute("CREATE INDEX IF NOT EXISTS idx_vkw_method ON vault_key_wrappers(method)")
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vkw_user_method_wrapper ON vault_key_wrappers(user_id, method, wrapper_id)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vkw_passkey_rp_id ON vault_key_wrappers(passkey_rp_id)"
+    )
     print("✅ vault_key_wrappers ready!")
 
 

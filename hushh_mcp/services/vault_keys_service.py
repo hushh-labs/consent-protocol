@@ -13,6 +13,7 @@ The backend never sees plaintext vault key material.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -27,6 +28,7 @@ ALLOWED_METHODS = {
     "passphrase",
     "generated_default_native_biometric",
     "generated_default_web_prf",
+    "generated_default_native_passkey_prf",
 }
 
 
@@ -96,33 +98,100 @@ class VaultKeysService:
             raise ValueError(f"Unsupported vault method: {method}")
         return normalized
 
+    @staticmethod
+    def _normalize_wrapper_id(wrapper_id: Optional[str]) -> str:
+        cleaned = VaultKeysService._clean_text(wrapper_id) or "default"
+        normalized = cleaned.strip()
+        if not normalized:
+            return "default"
+        return normalized
+
+    @staticmethod
+    def _is_passkey_method(method: str) -> bool:
+        return method in {"generated_default_web_prf", "generated_default_native_passkey_prf"}
+
+    @staticmethod
+    def _get_allowed_passkey_rp_ids() -> set[str]:
+        configured = (os.getenv("PASSKEY_ALLOWED_RP_IDS") or "").strip()
+        if not configured:
+            # Safe default for local + current production host.
+            return {
+                "localhost",
+                "127.0.0.1",
+                "hushh-webapp-1006304528804.us-central1.run.app",
+            }
+        return {item.strip().lower() for item in configured.split(",") if item and item.strip()}
+
     @classmethod
     def _normalize_wrapper(cls, wrapper: Dict[str, Any]) -> Dict[str, Any]:
         method = cls._normalize_method(wrapper.get("method"))
-        encrypted_vault_key = cls._clean_base64ish(wrapper.get("encryptedVaultKey")) or ""
+        wrapper_id = cls._normalize_wrapper_id(
+            wrapper.get("wrapperId") or wrapper.get("wrapper_id")
+        )
+        encrypted_vault_key = (
+            cls._clean_base64ish(
+                wrapper.get("encryptedVaultKey") or wrapper.get("encrypted_vault_key")
+            )
+            or ""
+        )
         salt = cls._clean_base64ish(wrapper.get("salt")) or ""
         iv = cls._clean_base64ish(wrapper.get("iv")) or ""
 
         if not encrypted_vault_key or not salt or not iv:
             raise ValueError(f"Wrapper for method '{method}' is missing required ciphertext fields")
 
-        passkey_credential_id = cls._clean_text(wrapper.get("passkeyCredentialId"), allow_none=True)
-        passkey_prf_salt = cls._clean_base64ish(wrapper.get("passkeyPrfSalt"), allow_none=True)
+        passkey_credential_id = cls._clean_text(
+            wrapper.get("passkeyCredentialId") or wrapper.get("passkey_credential_id"),
+            allow_none=True,
+        )
+        passkey_prf_salt = cls._clean_base64ish(
+            wrapper.get("passkeyPrfSalt") or wrapper.get("passkey_prf_salt"),
+            allow_none=True,
+        )
+        passkey_rp_id = cls._clean_text(
+            wrapper.get("passkeyRpId") or wrapper.get("passkey_rp_id"), allow_none=True
+        )
+        passkey_provider = cls._clean_text(
+            wrapper.get("passkeyProvider") or wrapper.get("passkey_provider"),
+            allow_none=True,
+        )
+        passkey_device_label = cls._clean_text(
+            wrapper.get("passkeyDeviceLabel") or wrapper.get("passkey_device_label"),
+            allow_none=True,
+        )
+        passkey_last_used_at_raw = wrapper.get("passkeyLastUsedAt") or wrapper.get(
+            "passkey_last_used_at"
+        )
+        passkey_last_used_at: Optional[int] = None
+        if passkey_last_used_at_raw is not None:
+            try:
+                passkey_last_used_at = int(passkey_last_used_at_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("passkeyLastUsedAt must be an integer timestamp") from exc
 
-        if method == "generated_default_web_prf" and (
-            not passkey_credential_id or not passkey_prf_salt
+        if cls._is_passkey_method(method) and (
+            not passkey_credential_id or not passkey_prf_salt or not passkey_rp_id
         ):
             raise ValueError(
-                "generated_default_web_prf wrapper requires passkey credential metadata"
+                f"{method} wrapper requires passkey credential metadata including rp id"
             )
+        if cls._is_passkey_method(method):
+            allowed_rps = cls._get_allowed_passkey_rp_ids()
+            if allowed_rps and (passkey_rp_id or "").lower() not in allowed_rps:
+                raise ValueError(f"{method} wrapper rp id is not allowed for this environment")
 
         return {
             "method": method,
+            "wrapper_id": wrapper_id,
             "encrypted_vault_key": encrypted_vault_key,
             "salt": salt,
             "iv": iv,
             "passkey_credential_id": passkey_credential_id,
             "passkey_prf_salt": passkey_prf_salt,
+            "passkey_rp_id": passkey_rp_id,
+            "passkey_provider": passkey_provider,
+            "passkey_device_label": passkey_device_label,
+            "passkey_last_used_at": passkey_last_used_at,
         }
 
     async def check_vault_exists(self, user_id: str) -> bool:
@@ -144,7 +213,7 @@ class VaultKeysService:
         header_response = (
             supabase.table("vault_keys")
             .select(
-                "vault_key_hash,primary_method,recovery_encrypted_vault_key,recovery_salt,recovery_iv"
+                "vault_key_hash,primary_method,primary_wrapper_id,recovery_encrypted_vault_key,recovery_salt,recovery_iv"
             )
             .eq("user_id", user_id)
             .limit(1)
@@ -157,7 +226,9 @@ class VaultKeysService:
 
         wrapper_response = (
             supabase.table("vault_key_wrappers")
-            .select("method,encrypted_vault_key,salt,iv,passkey_credential_id,passkey_prf_salt")
+            .select(
+                "method,wrapper_id,encrypted_vault_key,salt,iv,passkey_credential_id,passkey_prf_salt,passkey_rp_id,passkey_provider,passkey_device_label,passkey_last_used_at"
+            )
             .eq("user_id", user_id)
             .execute()
         )
@@ -168,6 +239,9 @@ class VaultKeysService:
             wrappers.append(
                 {
                     "method": self._clean_text(row.get("method")) or "passphrase",
+                    "wrapperId": self._normalize_wrapper_id(
+                        self._clean_text(row.get("wrapper_id"), allow_none=True)
+                    ),
                     "encryptedVaultKey": self._clean_base64ish(row.get("encrypted_vault_key"))
                     or "",
                     "salt": self._clean_base64ish(row.get("salt")) or "",
@@ -178,14 +252,25 @@ class VaultKeysService:
                     "passkeyPrfSalt": self._clean_base64ish(
                         row.get("passkey_prf_salt"), allow_none=True
                     ),
+                    "passkeyRpId": self._clean_text(row.get("passkey_rp_id"), allow_none=True),
+                    "passkeyProvider": self._clean_text(
+                        row.get("passkey_provider"), allow_none=True
+                    ),
+                    "passkeyDeviceLabel": self._clean_text(
+                        row.get("passkey_device_label"), allow_none=True
+                    ),
+                    "passkeyLastUsedAt": row.get("passkey_last_used_at"),
                 }
             )
 
-        wrappers.sort(key=lambda item: item["method"])
+        wrappers.sort(key=lambda item: (item["method"], item.get("wrapperId") or "default"))
 
         payload = {
             "vaultKeyHash": self._clean_base64ish(header.get("vault_key_hash")) or "",
             "primaryMethod": self._clean_text(header.get("primary_method")) or "passphrase",
+            "primaryWrapperId": self._normalize_wrapper_id(
+                self._clean_text(header.get("primary_wrapper_id"), allow_none=True)
+            ),
             "recoveryEncryptedVaultKey": self._clean_base64ish(
                 header.get("recovery_encrypted_vault_key")
             )
@@ -207,6 +292,7 @@ class VaultKeysService:
         recovery_salt: str,
         recovery_iv: str,
         wrappers: list[dict[str, Any]],
+        primary_wrapper_id: Optional[str] = None,
     ) -> bool:
         """Create/update vault state atomically by replacing wrappers in one DB transaction."""
         supabase = self._get_supabase()
@@ -220,6 +306,7 @@ class VaultKeysService:
             raise ValueError("vaultKeyHash is required")
 
         primary = self._normalize_method(primary_method)
+        primary_wrapper = self._normalize_wrapper_id(primary_wrapper_id)
 
         normalized_wrappers = [self._normalize_wrapper(wrapper) for wrapper in wrappers]
         if not normalized_wrappers:
@@ -227,14 +314,21 @@ class VaultKeysService:
 
         methods = [wrapper["method"] for wrapper in normalized_wrappers]
         unique_methods = set(methods)
-        if len(methods) != len(unique_methods):
-            raise ValueError("Duplicate wrapper methods are not allowed")
+        wrapper_keys = {
+            (wrapper["method"], wrapper["wrapper_id"]) for wrapper in normalized_wrappers
+        }
+        if len(wrapper_keys) != len(normalized_wrappers):
+            raise ValueError("Duplicate wrapper method + wrapperId pairs are not allowed")
 
         if "passphrase" not in unique_methods:
             raise ValueError("Passphrase wrapper is mandatory")
 
-        if primary not in unique_methods:
-            raise ValueError("primaryMethod must be present in wrappers")
+        primary_wrapper_exists = any(
+            wrapper["method"] == primary and wrapper["wrapper_id"] == primary_wrapper
+            for wrapper in normalized_wrappers
+        )
+        if not primary_wrapper_exists:
+            raise ValueError("primaryMethod + primaryWrapperId must be present in wrappers")
 
         recovery_encrypted = self._clean_base64ish(recovery_encrypted_vault_key) or ""
         recovery_salt_clean = self._clean_base64ish(recovery_salt) or ""
@@ -248,6 +342,7 @@ class VaultKeysService:
             "user_id": user_id_clean,
             "vault_key_hash": vault_key_hash_clean,
             "primary_method": primary,
+            "primary_wrapper_id": primary_wrapper,
             "recovery_encrypted_vault_key": recovery_encrypted,
             "recovery_salt": recovery_salt_clean,
             "recovery_iv": recovery_iv_clean,
@@ -258,11 +353,16 @@ class VaultKeysService:
             {
                 "user_id": user_id_clean,
                 "method": wrapper["method"],
+                "wrapper_id": wrapper["wrapper_id"],
                 "encrypted_vault_key": wrapper["encrypted_vault_key"],
                 "salt": wrapper["salt"],
                 "iv": wrapper["iv"],
                 "passkey_credential_id": wrapper["passkey_credential_id"],
                 "passkey_prf_salt": wrapper["passkey_prf_salt"],
+                "passkey_rp_id": wrapper["passkey_rp_id"],
+                "passkey_provider": wrapper["passkey_provider"],
+                "passkey_device_label": wrapper["passkey_device_label"],
+                "passkey_last_used_at": wrapper["passkey_last_used_at"],
                 "created_at": now_ms,
                 "updated_at": now_ms,
             }
@@ -277,6 +377,7 @@ class VaultKeysService:
                         user_id,
                         vault_key_hash,
                         primary_method,
+                        primary_wrapper_id,
                         recovery_encrypted_vault_key,
                         recovery_salt,
                         recovery_iv,
@@ -287,6 +388,7 @@ class VaultKeysService:
                         :user_id,
                         :vault_key_hash,
                         :primary_method,
+                        :primary_wrapper_id,
                         :recovery_encrypted_vault_key,
                         :recovery_salt,
                         :recovery_iv,
@@ -296,6 +398,7 @@ class VaultKeysService:
                     ON CONFLICT (user_id) DO UPDATE SET
                         vault_key_hash = EXCLUDED.vault_key_hash,
                         primary_method = EXCLUDED.primary_method,
+                        primary_wrapper_id = EXCLUDED.primary_wrapper_id,
                         recovery_encrypted_vault_key = EXCLUDED.recovery_encrypted_vault_key,
                         recovery_salt = EXCLUDED.recovery_salt,
                         recovery_iv = EXCLUDED.recovery_iv,
@@ -321,31 +424,45 @@ class VaultKeysService:
                         INSERT INTO vault_key_wrappers (
                             user_id,
                             method,
+                            wrapper_id,
                             encrypted_vault_key,
                             salt,
                             iv,
                             passkey_credential_id,
                             passkey_prf_salt,
+                            passkey_rp_id,
+                            passkey_provider,
+                            passkey_device_label,
+                            passkey_last_used_at,
                             created_at,
                             updated_at
                         )
                         VALUES (
                             :user_id,
                             :method,
+                            :wrapper_id,
                             :encrypted_vault_key,
                             :salt,
                             :iv,
                             :passkey_credential_id,
                             :passkey_prf_salt,
+                            :passkey_rp_id,
+                            :passkey_provider,
+                            :passkey_device_label,
+                            :passkey_last_used_at,
                             :created_at,
                             :updated_at
                         )
-                        ON CONFLICT (user_id, method) DO UPDATE SET
+                        ON CONFLICT (user_id, method, wrapper_id) DO UPDATE SET
                             encrypted_vault_key = EXCLUDED.encrypted_vault_key,
                             salt = EXCLUDED.salt,
                             iv = EXCLUDED.iv,
                             passkey_credential_id = EXCLUDED.passkey_credential_id,
                             passkey_prf_salt = EXCLUDED.passkey_prf_salt,
+                            passkey_rp_id = EXCLUDED.passkey_rp_id,
+                            passkey_provider = EXCLUDED.passkey_provider,
+                            passkey_device_label = EXCLUDED.passkey_device_label,
+                            passkey_last_used_at = EXCLUDED.passkey_last_used_at,
                             updated_at = EXCLUDED.updated_at
                         RETURNING method
                         """
@@ -379,8 +496,13 @@ class VaultKeysService:
         encrypted_vault_key: str,
         salt: str,
         iv: str,
+        wrapper_id: Optional[str] = None,
         passkey_credential_id: Optional[str] = None,
         passkey_prf_salt: Optional[str] = None,
+        passkey_rp_id: Optional[str] = None,
+        passkey_provider: Optional[str] = None,
+        passkey_device_label: Optional[str] = None,
+        passkey_last_used_at: Optional[int] = None,
     ) -> bool:
         """Add or update a single wrapper for an existing vault state."""
         supabase = self._get_supabase()
@@ -411,11 +533,16 @@ class VaultKeysService:
         wrapper = self._normalize_wrapper(
             {
                 "method": method_norm,
+                "wrapperId": wrapper_id,
                 "encryptedVaultKey": encrypted_vault_key,
                 "salt": salt,
                 "iv": iv,
                 "passkeyCredentialId": passkey_credential_id,
                 "passkeyPrfSalt": passkey_prf_salt,
+                "passkeyRpId": passkey_rp_id,
+                "passkeyProvider": passkey_provider,
+                "passkeyDeviceLabel": passkey_device_label,
+                "passkeyLastUsedAt": passkey_last_used_at,
             }
         )
         now_ms = int(datetime.now().timestamp() * 1000)
@@ -423,18 +550,23 @@ class VaultKeysService:
         data = {
             "user_id": user_id_clean,
             "method": wrapper["method"],
+            "wrapper_id": wrapper["wrapper_id"],
             "encrypted_vault_key": wrapper["encrypted_vault_key"],
             "salt": wrapper["salt"],
             "iv": wrapper["iv"],
             "passkey_credential_id": wrapper["passkey_credential_id"],
             "passkey_prf_salt": wrapper["passkey_prf_salt"],
+            "passkey_rp_id": wrapper["passkey_rp_id"],
+            "passkey_provider": wrapper["passkey_provider"],
+            "passkey_device_label": wrapper["passkey_device_label"],
+            "passkey_last_used_at": wrapper["passkey_last_used_at"],
             "created_at": now_ms,
             "updated_at": now_ms,
         }
 
         upsert_result = (
             supabase.table("vault_key_wrappers")
-            .upsert(data, on_conflict="user_id,method")
+            .upsert(data, on_conflict="user_id,method,wrapper_id")
             .execute()
         )
         if not upsert_result.data:
@@ -448,7 +580,13 @@ class VaultKeysService:
         self._invalidate_vault_state_cache(user_id_clean)
         return True
 
-    async def set_primary_method(self, *, user_id: str, primary_method: str) -> bool:
+    async def set_primary_method(
+        self,
+        *,
+        user_id: str,
+        primary_method: str,
+        primary_wrapper_id: Optional[str] = None,
+    ) -> bool:
         """Set default unlock method for UX prompt among enrolled wrappers."""
         supabase = self._get_supabase()
         user_id_clean = (user_id or "").strip()
@@ -456,22 +594,30 @@ class VaultKeysService:
             raise ValueError("userId is required")
 
         primary = self._normalize_method(primary_method)
+        primary_wrapper = self._normalize_wrapper_id(primary_wrapper_id)
 
         wrapper_response = (
             supabase.table("vault_key_wrappers")
-            .select("method")
+            .select("method,wrapper_id")
             .eq("user_id", user_id_clean)
             .eq("method", primary)
+            .eq("wrapper_id", primary_wrapper)
             .limit(1)
             .execute()
         )
         if not wrapper_response.data:
-            raise ValueError("Primary method must be an enrolled wrapper")
+            raise ValueError("Primary method/wrapper must be an enrolled wrapper")
 
         now_ms = int(datetime.now().timestamp() * 1000)
         update_result = (
             supabase.table("vault_keys")
-            .update({"primary_method": primary, "updated_at": now_ms})
+            .update(
+                {
+                    "primary_method": primary,
+                    "primary_wrapper_id": primary_wrapper,
+                    "updated_at": now_ms,
+                }
+            )
             .eq("user_id", user_id_clean)
             .execute()
         )

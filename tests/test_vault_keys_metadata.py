@@ -40,6 +40,7 @@ class _FakeSQLConnection:
                     {
                         "vault_key_hash": incoming["vault_key_hash"],
                         "primary_method": incoming["primary_method"],
+                        "primary_wrapper_id": incoming["primary_wrapper_id"],
                         "recovery_encrypted_vault_key": incoming["recovery_encrypted_vault_key"],
                         "recovery_salt": incoming["recovery_salt"],
                         "recovery_iv": incoming["recovery_iv"],
@@ -66,6 +67,7 @@ class _FakeSQLConnection:
                     for idx, row in enumerate(db["vault_key_wrappers"])
                     if row.get("user_id") == incoming.get("user_id")
                     and row.get("method") == incoming.get("method")
+                    and row.get("wrapper_id", "default") == incoming.get("wrapper_id", "default")
                 ),
                 None,
             )
@@ -78,8 +80,13 @@ class _FakeSQLConnection:
                         "encrypted_vault_key": incoming["encrypted_vault_key"],
                         "salt": incoming["salt"],
                         "iv": incoming["iv"],
+                        "wrapper_id": incoming["wrapper_id"],
                         "passkey_credential_id": incoming["passkey_credential_id"],
                         "passkey_prf_salt": incoming["passkey_prf_salt"],
+                        "passkey_rp_id": incoming["passkey_rp_id"],
+                        "passkey_provider": incoming["passkey_provider"],
+                        "passkey_device_label": incoming["passkey_device_label"],
+                        "passkey_last_used_at": incoming["passkey_last_used_at"],
                         "updated_at": incoming["updated_at"],
                     }
                 )
@@ -230,6 +237,7 @@ async def test_get_vault_state_returns_multi_wrapper_payload():
             "user_id": "user-1",
             "vault_key_hash": "hash-1",
             "primary_method": "generated_default_web_prf",
+            "primary_wrapper_id": "default",
             "recovery_encrypted_vault_key": "recovery-enc",
             "recovery_salt": "recovery-salt",
             "recovery_iv": "recovery-iv",
@@ -239,6 +247,7 @@ async def test_get_vault_state_returns_multi_wrapper_payload():
         {
             "user_id": "user-1",
             "method": "passphrase",
+            "wrapper_id": "default",
             "encrypted_vault_key": "enc-pass",
             "salt": "salt-pass",
             "iv": "iv-pass",
@@ -248,11 +257,13 @@ async def test_get_vault_state_returns_multi_wrapper_payload():
         {
             "user_id": "user-1",
             "method": "generated_default_web_prf",
+            "wrapper_id": "default",
             "encrypted_vault_key": "enc-prf",
             "salt": "salt-prf",
             "iv": "iv-prf",
             "passkey_credential_id": "cred-1",
             "passkey_prf_salt": "prf-salt",
+            "passkey_rp_id": "localhost",
         },
     ]
 
@@ -264,6 +275,7 @@ async def test_get_vault_state_returns_multi_wrapper_payload():
     assert result is not None
     assert result["vaultKeyHash"] == "hash-1"
     assert result["primaryMethod"] == "generated_default_web_prf"
+    assert result["primaryWrapperId"] == "default"
     assert len(result["wrappers"]) == 2
     assert {wrapper["method"] for wrapper in result["wrappers"]} == {
         "passphrase",
@@ -284,15 +296,18 @@ async def test_setup_vault_state_persists_passphrase_required_wrapper_set():
         recovery_encrypted_vault_key="recovery-enc",
         recovery_salt="recovery-salt",
         recovery_iv="recovery-iv",
+        primary_wrapper_id="default",
         wrappers=[
             {
                 "method": "passphrase",
+                "wrapperId": "default",
                 "encryptedVaultKey": "enc-pass",
                 "salt": "salt-pass",
                 "iv": "iv-pass",
             },
             {
                 "method": "generated_default_native_biometric",
+                "wrapperId": "default",
                 "encryptedVaultKey": "enc-bio",
                 "salt": "salt-bio",
                 "iv": "iv-bio",
@@ -307,6 +322,101 @@ async def test_setup_vault_state_persists_passphrase_required_wrapper_set():
 
 
 @pytest.mark.asyncio
+async def test_setup_vault_state_allows_multiple_wrappers_for_same_method(monkeypatch):
+    monkeypatch.setenv(
+        "PASSKEY_ALLOWED_RP_IDS",
+        "localhost,hushh-webapp-1006304528804.us-central1.run.app,app.hushh.ai",
+    )
+
+    fake = _FakeSupabase()
+    service = VaultKeysService()
+    service._supabase = fake
+
+    await service.setup_vault_state(
+        user_id="user-1",
+        vault_key_hash="vault-hash",
+        primary_method="generated_default_web_prf",
+        primary_wrapper_id="run-app-rp",
+        recovery_encrypted_vault_key="recovery-enc",
+        recovery_salt="recovery-salt",
+        recovery_iv="recovery-iv",
+        wrappers=[
+            {
+                "method": "passphrase",
+                "wrapperId": "default",
+                "encryptedVaultKey": "enc-pass",
+                "salt": "salt-pass",
+                "iv": "iv-pass",
+            },
+            {
+                "method": "generated_default_web_prf",
+                "wrapperId": "run-app-rp",
+                "encryptedVaultKey": "enc-prf-1",
+                "salt": "salt-prf-1",
+                "iv": "iv-prf-1",
+                "passkeyCredentialId": "cred-1",
+                "passkeyPrfSalt": "prf-salt-1",
+                "passkeyRpId": "hushh-webapp-1006304528804.us-central1.run.app",
+            },
+            {
+                "method": "generated_default_web_prf",
+                "wrapperId": "custom-domain-rp",
+                "encryptedVaultKey": "enc-prf-2",
+                "salt": "salt-prf-2",
+                "iv": "iv-prf-2",
+                "passkeyCredentialId": "cred-2",
+                "passkeyPrfSalt": "prf-salt-2",
+                "passkeyRpId": "app.hushh.ai",
+            },
+        ],
+    )
+
+    wrappers = fake.db["vault_key_wrappers"]
+    assert len(wrappers) == 3
+    web_prf_wrapper_ids = sorted(
+        row["wrapper_id"] for row in wrappers if row["method"] == "generated_default_web_prf"
+    )
+    assert web_prf_wrapper_ids == ["custom-domain-rp", "run-app-rp"]
+    assert fake.db["vault_keys"][0]["primary_wrapper_id"] == "run-app-rp"
+
+
+@pytest.mark.asyncio
+async def test_setup_vault_state_rejects_duplicate_method_wrapper_pairs():
+    fake = _FakeSupabase()
+    service = VaultKeysService()
+    service._supabase = fake
+
+    with pytest.raises(
+        ValueError, match="Duplicate wrapper method \\+ wrapperId pairs are not allowed"
+    ):
+        await service.setup_vault_state(
+            user_id="user-1",
+            vault_key_hash="vault-hash",
+            primary_method="passphrase",
+            primary_wrapper_id="default",
+            recovery_encrypted_vault_key="recovery-enc",
+            recovery_salt="recovery-salt",
+            recovery_iv="recovery-iv",
+            wrappers=[
+                {
+                    "method": "passphrase",
+                    "wrapperId": "default",
+                    "encryptedVaultKey": "enc-pass",
+                    "salt": "salt-pass",
+                    "iv": "iv-pass",
+                },
+                {
+                    "method": "passphrase",
+                    "wrapperId": "default",
+                    "encryptedVaultKey": "enc-pass-2",
+                    "salt": "salt-pass-2",
+                    "iv": "iv-pass-2",
+                },
+            ],
+        )
+
+
+@pytest.mark.asyncio
 async def test_upsert_wrapper_rejects_vault_key_hash_mismatch():
     fake = _FakeSupabase()
     fake.db["vault_keys"].append(
@@ -314,6 +424,7 @@ async def test_upsert_wrapper_rejects_vault_key_hash_mismatch():
             "user_id": "user-1",
             "vault_key_hash": "expected-hash",
             "primary_method": "passphrase",
+            "primary_wrapper_id": "default",
             "recovery_encrypted_vault_key": "recovery-enc",
             "recovery_salt": "recovery-salt",
             "recovery_iv": "recovery-iv",
@@ -348,14 +459,17 @@ async def test_setup_vault_state_requires_passphrase_wrapper():
             recovery_encrypted_vault_key="recovery-enc",
             recovery_salt="recovery-salt",
             recovery_iv="recovery-iv",
+            primary_wrapper_id="default",
             wrappers=[
                 {
                     "method": "generated_default_web_prf",
+                    "wrapperId": "default",
                     "encryptedVaultKey": "enc-prf",
                     "salt": "salt-prf",
                     "iv": "iv-prf",
                     "passkeyCredentialId": "cred-1",
                     "passkeyPrfSalt": "prf-salt",
+                    "passkeyRpId": "localhost",
                 }
             ],
         )
@@ -376,15 +490,18 @@ async def test_setup_vault_state_rolls_back_when_wrapper_insert_fails():
             recovery_encrypted_vault_key="recovery-enc",
             recovery_salt="recovery-salt",
             recovery_iv="recovery-iv",
+            primary_wrapper_id="default",
             wrappers=[
                 {
                     "method": "passphrase",
+                    "wrapperId": "default",
                     "encryptedVaultKey": "enc-pass",
                     "salt": "salt-pass",
                     "iv": "iv-pass",
                 },
                 {
                     "method": "generated_default_native_biometric",
+                    "wrapperId": "default",
                     "encryptedVaultKey": "enc-bio",
                     "salt": "salt-bio",
                     "iv": "iv-bio",
