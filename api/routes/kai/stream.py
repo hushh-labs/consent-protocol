@@ -16,13 +16,14 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from api.routes.kai._streaming import (
     STOCK_ANALYZE_TIMEOUT_SECONDS,
     CanonicalSSEStream,
 )
+from api.routes.kai.run_manager import KaiAnalyzeRunManager
 from hushh_mcp.agents.kai.debate_engine import DebateEngine
 from hushh_mcp.agents.kai.fundamental_agent import FundamentalAgent, FundamentalInsight
 from hushh_mcp.agents.kai.sentiment_agent import SentimentAgent, SentimentInsight
@@ -44,6 +45,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Streaming"])
 _TICKER_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
+_RUN_MANAGER = KaiAnalyzeRunManager()
+
+
+async def _require_vault_owner_token(
+    *,
+    user_id: str,
+    authorization: Optional[str],
+) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing consent token. Call /api/consent/owner-token first.",
+        )
+
+    consent_token = authorization.replace("Bearer ", "")
+    valid, reason, payload = validate_token(consent_token, ConsentScope.VAULT_OWNER)
+
+    if not valid or not payload:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
+
+    if payload.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Token user mismatch")
+
+    return consent_token
 
 
 # ============================================================================
@@ -55,6 +80,18 @@ class StreamAnalyzeRequest(BaseModel):
     """Request for streaming analysis."""
 
     user_id: str
+    ticker: str
+    risk_profile: str = "balanced"
+    context: Optional[Dict[str, Any]] = None
+    run_id: Optional[str] = None
+    resume_cursor: Optional[int] = Field(default=0, ge=0)
+
+
+class StartAnalyzeRunRequest(BaseModel):
+    """Request to create or attach to a session-locked analysis run."""
+
+    user_id: str
+    debate_session_id: str
     ticker: str
     risk_profile: str = "balanced"
     context: Optional[Dict[str, Any]] = None
@@ -2035,6 +2072,49 @@ async def analyze_stream_generator(
         _stream_ctx.reset(stream_token)
 
 
+def _create_sse_response(generator: AsyncGenerator[dict, None]) -> EventSourceResponse:
+    return EventSourceResponse(
+        generator,
+        ping=15,
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+def _parse_cursor(cursor: Optional[int]) -> int:
+    if cursor is None:
+        return 0
+    try:
+        parsed = int(cursor)
+    except Exception as exc:  # pragma: no cover - guard
+        raise HTTPException(status_code=422, detail="cursor must be an integer") from exc
+    if parsed < 0:
+        raise HTTPException(status_code=422, detail="cursor must be >= 0")
+    return parsed
+
+
+def _stream_factory(
+    ticker: str,
+    user_id: str,
+    consent_token: str,
+    risk_profile: str,
+    context: Optional[Dict[str, Any]],
+    request: Request,
+) -> AsyncGenerator[dict, None]:
+    return analyze_stream_generator(
+        ticker=ticker,
+        user_id=user_id,
+        consent_token=consent_token,
+        risk_profile=risk_profile,
+        context=context,
+        request=request,
+    )
+
+
 # ============================================================================
 # SSE ENDPOINTS
 # ============================================================================
@@ -2063,21 +2143,8 @@ async def analyze_stream(
     - decision: Final decision card
     - error: Fatal error
     """
-
-    # Validate consent token
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401, detail="Missing consent token. Call /api/consent/owner-token first."
-        )
-
-    consent_token = authorization.replace("Bearer ", "")
-    valid, reason, payload = validate_token(consent_token, ConsentScope.VAULT_OWNER)
-
-    if not valid or not payload:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
-
-    if payload.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Token user mismatch")
+    # Auth path includes validate_token() inside _require_vault_owner_token().
+    consent_token = await _require_vault_owner_token(user_id=user_id, authorization=authorization)
 
     # Log operation for audit trail (shows what vault.owner token was used for)
     consent_service = ConsentDBService()
@@ -2090,7 +2157,7 @@ async def analyze_stream(
 
     logger.info(f"[Kai Stream] SSE connection opened for {ticker} - user {user_id}")
 
-    return EventSourceResponse(
+    return _create_sse_response(
         analyze_stream_generator(
             ticker=ticker,
             user_id=user_id,
@@ -2098,14 +2165,7 @@ async def analyze_stream(
             risk_profile=risk_profile,
             context=None,
             request=request,
-        ),
-        ping=15,
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
-        },
+        )
     )
 
 
@@ -2117,22 +2177,46 @@ async def analyze_stream_post(
 ):
     """
     POST version of streaming analysis (allows context in body).
+    Also supports streaming an existing resumable run via run_id.
     """
+    # Auth path includes validate_token() inside _require_vault_owner_token().
+    consent_token = await _require_vault_owner_token(
+        user_id=body.user_id,
+        authorization=authorization,
+    )
 
-    # Validate consent token
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401, detail="Missing consent token. Call /api/consent/owner-token first."
+    if body.run_id:
+        run = await _RUN_MANAGER.get_run(body.run_id)
+        if run is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ANALYZE_RUN_NOT_FOUND",
+                    "message": "No run found for requested run_id.",
+                    "run_id": body.run_id,
+                },
+            )
+        if run.user_id != body.user_id:
+            raise HTTPException(status_code=403, detail="Token user mismatch")
+
+        start_cursor = _parse_cursor(body.resume_cursor)
+        if start_cursor > run.latest_cursor:
+            raise HTTPException(
+                status_code=410,
+                detail={
+                    "code": "ANALYZE_RUN_RESUME_EXPIRED",
+                    "message": "Requested cursor is beyond buffered events.",
+                    "run_id": run.run_id,
+                    "latest_cursor": run.latest_cursor,
+                },
+            )
+        return _create_sse_response(
+            _RUN_MANAGER.stream_run_events(
+                run=run,
+                start_cursor=start_cursor,
+                request=request,
+            )
         )
-
-    consent_token = authorization.replace("Bearer ", "")
-    valid, reason, payload = validate_token(consent_token, ConsentScope.VAULT_OWNER)
-
-    if not valid or not payload:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {reason}")
-
-    if payload.user_id != body.user_id:
-        raise HTTPException(status_code=403, detail="Token user mismatch")
 
     # Log operation for audit trail (shows what vault.owner token was used for)
     consent_service = ConsentDBService()
@@ -2147,7 +2231,7 @@ async def analyze_stream_post(
         },
     )
 
-    return EventSourceResponse(
+    return _create_sse_response(
         analyze_stream_generator(
             ticker=body.ticker,
             user_id=body.user_id,
@@ -2155,12 +2239,130 @@ async def analyze_stream_post(
             risk_profile=body.risk_profile,
             context=body.context,
             request=request,
-        ),
-        ping=15,
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
+        )
+    )
+
+
+@router.post("/analyze/run/start")
+async def analyze_run_start(
+    body: StartAnalyzeRunRequest,
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
+):
+    """Start or attach to a session-locked background analyze run."""
+    consent_token = await _require_vault_owner_token(
+        user_id=body.user_id,
+        authorization=authorization,
+    )
+    consent_service = ConsentDBService()
+    await consent_service.log_operation(
+        user_id=body.user_id,
+        operation="kai.analyze.run.start",
+        target=body.ticker,
+        metadata={
+            "risk_profile": body.risk_profile,
+            "debate_session_id": body.debate_session_id,
+            "has_context": body.context is not None,
         },
     )
+    state, run = await _RUN_MANAGER.start_or_get_active(
+        user_id=body.user_id,
+        debate_session_id=body.debate_session_id,
+        ticker=body.ticker,
+        risk_profile=body.risk_profile,
+        context=body.context,
+        consent_token=consent_token,
+        generator_factory=_stream_factory,
+    )
+    if state == "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ANALYZE_RUN_ALREADY_ACTIVE",
+                "message": "A debate run is already active for this client session.",
+                "active_run": run.to_public_dict(),
+            },
+        )
+    return {"run": run.to_public_dict()}
+
+
+@router.get("/analyze/run/active")
+async def analyze_run_active(
+    user_id: str,
+    debate_session_id: str,
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
+):
+    """Get active run for a given user/session."""
+    await _require_vault_owner_token(user_id=user_id, authorization=authorization)
+    run = await _RUN_MANAGER.get_active(user_id=user_id, debate_session_id=debate_session_id)
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "ANALYZE_RUN_NOT_FOUND",
+                "message": "No active run for this client session.",
+            },
+        )
+    return {"run": run.to_public_dict()}
+
+
+@router.get("/analyze/run/{run_id}/stream")
+async def analyze_run_stream(
+    request: Request,
+    run_id: str,
+    user_id: str,
+    cursor: Optional[int] = 0,
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
+):
+    """Replay buffered events (from cursor) and continue streaming live."""
+    await _require_vault_owner_token(user_id=user_id, authorization=authorization)
+    run = await _RUN_MANAGER.get_run(run_id)
+    if run is None or run.user_id != user_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "ANALYZE_RUN_NOT_FOUND",
+                "message": "No run found for requested run_id.",
+                "run_id": run_id,
+            },
+        )
+
+    start_cursor = _parse_cursor(cursor)
+    if start_cursor > run.latest_cursor:
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "ANALYZE_RUN_RESUME_EXPIRED",
+                "message": "Requested cursor is beyond buffered events.",
+                "run_id": run.run_id,
+                "latest_cursor": run.latest_cursor,
+            },
+        )
+
+    return _create_sse_response(
+        _RUN_MANAGER.stream_run_events(
+            run=run,
+            start_cursor=start_cursor,
+            request=request,
+        )
+    )
+
+
+@router.post("/analyze/run/{run_id}/cancel")
+async def analyze_run_cancel(
+    run_id: str,
+    user_id: str,
+    authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
+):
+    """Cancel an active run."""
+    await _require_vault_owner_token(user_id=user_id, authorization=authorization)
+    run = await _RUN_MANAGER.cancel_run(run_id=run_id, user_id=user_id)
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "ANALYZE_RUN_NOT_FOUND",
+                "message": "No run found for requested run_id.",
+                "run_id": run_id,
+            },
+        )
+    return {"run": run.to_public_dict()}
