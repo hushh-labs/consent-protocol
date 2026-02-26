@@ -280,7 +280,11 @@ async def request_consent(request: ConsentRequest):
         request_id=request_id,
         scope_description=get_scope_description(scope_dot),
         poll_timeout_at=poll_timeout_at,
-        metadata={"developer_name": dev_info["name"], "expiry_hours": request.expiry_hours},
+        metadata={
+            "developer_name": dev_info["name"],
+            "expiry_hours": request.expiry_hours,
+            **({"bid_value": request.bid_value} if request.bid_value is not None else {}),
+        },
     )
     logger.info("developer_api.request_created request_id=%s scope=%s", request_id, scope_dot)
 

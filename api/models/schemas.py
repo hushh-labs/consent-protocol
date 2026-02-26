@@ -64,6 +64,7 @@ class ConsentRequest(BaseModel):
     developer_token: str  # Developer's API key
     scope: str  # e.g. "attr.food.*", "world_model.read"
     expiry_hours: int = 24  # How long consent lasts
+    bid_value: Optional[float] = None  # Monetary value offered for consent (USD)
 
 
 class ConsentResponse(BaseModel):
