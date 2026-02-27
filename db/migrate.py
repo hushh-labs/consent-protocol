@@ -47,14 +47,37 @@ async def create_vault_keys(pool: asyncpg.Pool):
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS vault_keys (
             user_id TEXT PRIMARY KEY,
-            vault_key_hash TEXT NOT NULL,
+            vault_status TEXT NOT NULL DEFAULT 'active' CHECK (vault_status IN ('placeholder', 'active')),
+            vault_key_hash TEXT,
             primary_method TEXT NOT NULL DEFAULT 'passphrase',
             primary_wrapper_id TEXT NOT NULL DEFAULT 'default',
-            recovery_encrypted_vault_key TEXT NOT NULL,
-            recovery_salt TEXT NOT NULL,
-            recovery_iv TEXT NOT NULL,
+            recovery_encrypted_vault_key TEXT,
+            recovery_salt TEXT,
+            recovery_iv TEXT,
+            first_login_at BIGINT,
+            last_login_at BIGINT,
+            login_count INTEGER NOT NULL DEFAULT 0,
+            pre_onboarding_completed BOOLEAN,
+            pre_onboarding_skipped BOOLEAN,
+            pre_onboarding_completed_at BIGINT,
+            pre_nav_tour_completed_at BIGINT,
+            pre_nav_tour_skipped_at BIGINT,
+            pre_state_updated_at BIGINT,
             created_at BIGINT NOT NULL,
-            updated_at BIGINT NOT NULL
+            updated_at BIGINT NOT NULL,
+            CONSTRAINT vault_keys_placeholder_integrity_check CHECK (
+                (vault_status = 'placeholder'
+                    AND vault_key_hash IS NULL
+                    AND recovery_encrypted_vault_key IS NULL
+                    AND recovery_salt IS NULL
+                    AND recovery_iv IS NULL)
+                OR
+                (vault_status = 'active'
+                    AND vault_key_hash IS NOT NULL
+                    AND recovery_encrypted_vault_key IS NOT NULL
+                    AND recovery_salt IS NOT NULL
+                    AND recovery_iv IS NOT NULL)
+            )
         )
     """)
     print("✅ vault_keys ready!")

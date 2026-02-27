@@ -89,6 +89,34 @@ class VaultCheckResponse(BaseModel):
     hasVault: bool
 
 
+class VaultBootstrapStateRequest(BaseModel):
+    userId: str | None = None
+
+
+class VaultBootstrapStateResponse(BaseModel):
+    userId: str
+    hasVault: bool
+    vaultStatus: str
+    firstLoginAt: int | None = None
+    lastLoginAt: int | None = None
+    loginCount: int
+    preOnboardingCompleted: bool | None = None
+    preOnboardingSkipped: bool | None = None
+    preOnboardingCompletedAt: int | None = None
+    preNavTourCompletedAt: int | None = None
+    preNavTourSkippedAt: int | None = None
+    preStateUpdatedAt: int | None = None
+
+
+class VaultPreStateUpdateRequest(BaseModel):
+    userId: str | None = None
+    preOnboardingCompleted: bool | None = None
+    preOnboardingSkipped: bool | None = None
+    preOnboardingCompletedAt: int | None = None
+    preNavTourCompletedAt: int | None = None
+    preNavTourSkippedAt: int | None = None
+
+
 class VaultGetRequest(BaseModel):
     userId: str
 
@@ -192,6 +220,92 @@ async def vault_check(
 
     except Exception as e:
         logger.error(f"vault/check error: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/vault/bootstrap-state", response_model=VaultBootstrapStateResponse)
+async def vault_bootstrap_state(
+    request: VaultBootstrapStateRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """
+    Ensure authenticated user has placeholder/active entry and return DB-first
+    pre-vault onboarding/tour state.
+    """
+    user_id = request.userId or firebase_uid
+    verify_user_id_match(firebase_uid, user_id)
+
+    try:
+        service = VaultKeysService()
+        state = await service.get_pre_vault_state(user_id)
+        has_vault = await service.check_vault_exists(user_id, ensure_entry=False)
+
+        return VaultBootstrapStateResponse(
+            userId=user_id,
+            hasVault=has_vault,
+            vaultStatus=state.get("vaultStatus") or "active",
+            firstLoginAt=state.get("firstLoginAt"),
+            lastLoginAt=state.get("lastLoginAt"),
+            loginCount=int(state.get("loginCount") or 0),
+            preOnboardingCompleted=state.get("preOnboardingCompleted"),
+            preOnboardingSkipped=state.get("preOnboardingSkipped"),
+            preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
+            preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
+            preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
+            preStateUpdatedAt=state.get("preStateUpdatedAt"),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+        )
+    except Exception as e:
+        logger.error("vault/bootstrap-state error user=%s: %s", _mask_user_id(user_id), e)
+        raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/vault/pre-vault-state", response_model=VaultBootstrapStateResponse)
+async def vault_pre_vault_state(
+    request: VaultPreStateUpdateRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    """
+    Update DB-first pre-vault onboarding/tour state for the authenticated user.
+    """
+    user_id = request.userId or firebase_uid
+    verify_user_id_match(firebase_uid, user_id)
+
+    try:
+        service = VaultKeysService()
+        state = await service.update_pre_vault_state(
+            user_id=user_id,
+            pre_onboarding_completed=request.preOnboardingCompleted,
+            pre_onboarding_skipped=request.preOnboardingSkipped,
+            pre_onboarding_completed_at=request.preOnboardingCompletedAt,
+            pre_nav_tour_completed_at=request.preNavTourCompletedAt,
+            pre_nav_tour_skipped_at=request.preNavTourSkippedAt,
+        )
+        has_vault = await service.check_vault_exists(user_id, ensure_entry=False)
+
+        return VaultBootstrapStateResponse(
+            userId=user_id,
+            hasVault=has_vault,
+            vaultStatus=state.get("vaultStatus") or "active",
+            firstLoginAt=state.get("firstLoginAt"),
+            lastLoginAt=state.get("lastLoginAt"),
+            loginCount=int(state.get("loginCount") or 0),
+            preOnboardingCompleted=state.get("preOnboardingCompleted"),
+            preOnboardingSkipped=state.get("preOnboardingSkipped"),
+            preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
+            preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
+            preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
+            preStateUpdatedAt=state.get("preStateUpdatedAt"),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+        )
+    except Exception as e:
+        logger.error("vault/pre-vault-state error user=%s: %s", _mask_user_id(user_id), e)
         raise HTTPException(status_code=500, detail="Database error")
 
 

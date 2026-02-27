@@ -464,7 +464,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
 ### OPERATIONAL RULES
 - Use Billions ($B) for all monetary values.
-- Maintain a cold, analytical tone.
+- Keep language clear for everyday investors while preserving institutional rigor.
 - If data is missing (N/A), use your knowledge of the sector to explain what that missing piece usually signifies for a company like this.
 - DO NOT use markdown formatting inside the JSON strings.
 """
@@ -572,6 +572,7 @@ Analyze the provided news articles and assess market sentiment for this stock.
 - Focus on actionable insights, not generic observations
 - Weight recent news more heavily
 - Identify both positive and negative signals
+- Use plain investor language and avoid internal system jargon
 - DO NOT use markdown inside JSON strings
 """
 
@@ -679,6 +680,7 @@ Perform a comprehensive valuation analysis with focus on relative and intrinsic 
 - Use multiple valuation methods (P/E, EV/EBITDA, DCF if possible)
 - Compare to sector averages
 - Consider growth rates when evaluating multiples
+- Keep wording concise and investor-friendly
 - DO NOT use markdown inside JSON strings
 """
 
@@ -747,6 +749,7 @@ Return STRICT JSON with keys:
 Constraints:
 - No markdown.
 - No generic filler.
+- Use investor-friendly language suitable for portfolio owners.
 - Must mention Renaissance tier/screening signal explicitly.
 - Must include at least one concrete user-context personalization (holdings/risk/horizon/style).
 - Must include at least one portfolio impact statement (concentration, diversification, drawdown, or risk tradeoff).
