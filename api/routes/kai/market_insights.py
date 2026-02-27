@@ -256,6 +256,7 @@ async def _get_or_refresh_public_module(
     stale_ttl_seconds: int,
     fetcher: Any,
     warm_source: str = "request",
+    serve_stale_while_revalidate: bool = True,
 ) -> tuple[Any, bool, int, str, bool]:
     """
     Read order:
@@ -316,6 +317,7 @@ async def _get_or_refresh_public_module(
         fresh_ttl_seconds=fresh_ttl_seconds,
         stale_ttl_seconds=stale_ttl_seconds,
         fetcher=wrapped_fetcher,
+        serve_stale_while_revalidate=serve_stale_while_revalidate,
     )
     tier = "live"
     cache_hit = False
@@ -1163,6 +1165,7 @@ async def _refresh_public_market_modules_once() -> None:
             stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
             fetcher=_fetch_macro_bundle,
             warm_source="startup",
+            serve_stale_while_revalidate=False,
         )
     except Exception as exc:
         logger.warning("[Kai Market] background macro refresh failed: %s", exc)
@@ -1174,6 +1177,7 @@ async def _refresh_public_market_modules_once() -> None:
             stale_ttl_seconds=MOVERS_STALE_TTL_SECONDS,
             fetcher=_fetch_movers_from_fmp,
             warm_source="startup",
+            serve_stale_while_revalidate=False,
         )
     except Exception as exc:
         logger.warning("[Kai Market] background movers refresh failed: %s", exc)
@@ -1185,6 +1189,7 @@ async def _refresh_public_market_modules_once() -> None:
             stale_ttl_seconds=SECTORS_STALE_TTL_SECONDS,
             fetcher=lambda: _fetch_sector_rotation_from_fmp(),
             warm_source="startup",
+            serve_stale_while_revalidate=False,
         )
     except Exception as exc:
         logger.warning("[Kai Market] background sectors refresh failed: %s", exc)
@@ -1321,6 +1326,7 @@ async def get_market_insights(
             fresh_ttl_seconds=QUOTES_FRESH_TTL_SECONDS,
             stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
             fetcher=fetch_quotes_bundle,
+            serve_stale_while_revalidate=True,
         )
         quote_bundle = quotes_cache.value if isinstance(quotes_cache.value, dict) else {}
         quote_map = (
@@ -1412,6 +1418,7 @@ async def get_market_insights(
                 fresh_ttl_seconds=RECOMMENDATION_FRESH_TTL_SECONDS,
                 stale_ttl_seconds=RECOMMENDATION_STALE_TTL_SECONDS,
                 fetcher=fetch_recommendation_bundle,
+                serve_stale_while_revalidate=True,
             )
             rec_bundle = rec_cache.value if isinstance(rec_cache.value, dict) else {}
             recommendation = (
@@ -1594,6 +1601,7 @@ async def get_market_insights(
             fresh_ttl_seconds=NEWS_FRESH_TTL_SECONDS,
             stale_ttl_seconds=NEWS_STALE_TTL_SECONDS,
             fetcher=fetch_news_bundle,
+            serve_stale_while_revalidate=True,
         )
         news_bundle = news_cache.value if isinstance(news_cache.value, dict) else {}
         news_tape = news_bundle.get("rows") if isinstance(news_bundle.get("rows"), list) else []
@@ -1613,6 +1621,7 @@ async def get_market_insights(
             fresh_ttl_seconds=FINANCIAL_SUMMARY_FRESH_TTL_SECONDS,
             stale_ttl_seconds=FINANCIAL_SUMMARY_STALE_TTL_SECONDS,
             fetcher=lambda: _get_financial_summary(user_id),
+            serve_stale_while_revalidate=True,
         )
         financial_summary = (
             financial_summary_cache.value if isinstance(financial_summary_cache.value, dict) else {}
@@ -1738,6 +1747,7 @@ async def get_market_insights(
             stale_ttl_seconds=HOME_STALE_TTL_SECONDS,
             fetcher=build_payload,
             warm_source="request",
+            serve_stale_while_revalidate=True,
         )
     except Exception as exc:
         logger.exception("[Kai Market] home payload build failed for %s: %s", user_id, exc)
@@ -1752,7 +1762,7 @@ async def get_market_insights(
     payload = home_value if isinstance(home_value, dict) else {}
     payload["stale"] = bool(payload.get("stale")) or home_stale
     if home_stale:
-        payload["stale_reason"] = "served_stale_cache_after_refresh_failure"
+        payload["stale_reason"] = "served_stale_cache"
     payload["cache_age_seconds"] = home_age_seconds
 
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
