@@ -2291,18 +2291,13 @@ async def analyze_run_active(
     debate_session_id: str,
     authorization: Optional[str] = Header(None, description="Bearer VAULT_OWNER consent token"),
 ):
-    """Get active run for a given user/session."""
+    """Get active run for a given user/session.
+
+    Returns HTTP 200 with ``{"run": null}`` when no active run exists.
+    """
     await _require_vault_owner_token(user_id=user_id, authorization=authorization)
     run = await _RUN_MANAGER.get_active(user_id=user_id, debate_session_id=debate_session_id)
-    if run is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "ANALYZE_RUN_NOT_FOUND",
-                "message": "No active run for this client session.",
-            },
-        )
-    return {"run": run.to_public_dict()}
+    return {"run": run.to_public_dict() if run else None}
 
 
 @router.get("/analyze/run/{run_id}/stream")
