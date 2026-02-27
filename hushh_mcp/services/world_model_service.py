@@ -135,6 +135,7 @@ class WorldModelService:
         self._domain_registry = None
         self._domain_inferrer = None
         self._scope_generator = None
+        self._blob_upsert_rpc_supported: Optional[bool] = None
 
     _SUMMARY_BLOCKLIST = {"holdings", "total_value", "vault_key", "password"}
     _RETIRED_DOMAIN_KEYS = {str(key).strip().lower() for key in RETIRED_DOMAIN_REGISTRY_KEYS}
@@ -177,6 +178,46 @@ class WorldModelService:
     def _run_rpc(self, function_name: str, params: Optional[dict] = None):
         call = self.supabase.rpc(function_name, params or {})
         return call.execute() if hasattr(call, "execute") else call
+
+    def _supports_blob_upsert_rpc(self) -> bool:
+        if self._blob_upsert_rpc_supported is not None:
+            return self._blob_upsert_rpc_supported
+
+        client = self.supabase
+        if not hasattr(client, "execute_raw"):
+            # Non-SQLAlchemy clients may still support rpc(); keep optimistic.
+            self._blob_upsert_rpc_supported = True
+            return True
+
+        try:
+            result = client.execute_raw(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_proc
+                    WHERE proname = :function_name
+                ) AS exists
+                """,
+                {"function_name": "upsert_world_model_data_blob"},
+            )
+            exists = bool(result.data and bool(result.data[0].get("exists")))
+            self._blob_upsert_rpc_supported = exists
+            if not exists:
+                logger.info(
+                    "upsert_world_model_data_blob RPC is not installed; using fallback write path."
+                )
+            return exists
+        except Exception as probe_error:
+            logger.debug("RPC probe failed, attempting RPC path directly: %s", probe_error)
+            self._blob_upsert_rpc_supported = True
+            return True
+
+    @staticmethod
+    def _is_missing_rpc_function_error(error: Exception, function_name: str) -> bool:
+        text = str(error).lower()
+        return (
+            "undefinedfunction" in text or "does not exist" in text
+        ) and function_name.lower() in text
 
     @staticmethod
     def _to_non_negative_int(value: object) -> Optional[int]:
@@ -811,33 +852,43 @@ class WorldModelService:
             ).lower()
 
             blob_stored = False
-            try:
-                rpc_result = self._run_rpc(
-                    "upsert_world_model_data_blob",
-                    {
-                        "p_user_id": user_id,
-                        "p_ciphertext": ciphertext,
-                        "p_iv": iv,
-                        "p_tag": tag,
-                        "p_algorithm": algorithm,
-                    },
-                )
-                if hasattr(rpc_result, "error") and rpc_result.error:
-                    logger.warning(
-                        "upsert_world_model_data_blob RPC returned error for %s/%s: %s",
-                        user_id,
-                        domain,
-                        rpc_result.error,
+            if self._supports_blob_upsert_rpc():
+                try:
+                    rpc_result = self._run_rpc(
+                        "upsert_world_model_data_blob",
+                        {
+                            "p_user_id": user_id,
+                            "p_ciphertext": ciphertext,
+                            "p_iv": iv,
+                            "p_tag": tag,
+                            "p_algorithm": algorithm,
+                        },
                     )
-                else:
-                    blob_stored = True
-            except Exception as rpc_error:
-                logger.info(
-                    "upsert_world_model_data_blob RPC unavailable for %s/%s, using fallback: %s",
-                    user_id,
-                    domain,
-                    rpc_error,
-                )
+                    if hasattr(rpc_result, "error") and rpc_result.error:
+                        logger.warning(
+                            "upsert_world_model_data_blob RPC returned error for %s/%s: %s",
+                            user_id,
+                            domain,
+                            rpc_result.error,
+                        )
+                    else:
+                        self._blob_upsert_rpc_supported = True
+                        blob_stored = True
+                except Exception as rpc_error:
+                    if self._is_missing_rpc_function_error(
+                        rpc_error, "upsert_world_model_data_blob"
+                    ):
+                        self._blob_upsert_rpc_supported = False
+                        logger.info(
+                            "upsert_world_model_data_blob RPC is not installed; disabling RPC path for process."
+                        )
+                    else:
+                        logger.info(
+                            "upsert_world_model_data_blob RPC unavailable for %s/%s, using fallback: %s",
+                            user_id,
+                            domain,
+                            rpc_error,
+                        )
 
             if not blob_stored:
                 # Fallback: existing read-modify-write path for data_version increment.

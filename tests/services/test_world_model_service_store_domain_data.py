@@ -42,6 +42,7 @@ class _StubSupabase:
 async def test_store_domain_data_uses_blob_upsert_rpc_and_skips_fallback_work(monkeypatch):
     service = WorldModelService()
     service._domain_registry = _StubDomainRegistry()
+    service._blob_upsert_rpc_supported = True
 
     rpc_calls = []
 
@@ -83,6 +84,7 @@ async def test_store_domain_data_fallback_increments_data_version_when_rpc_unava
     service = WorldModelService()
     service._domain_registry = _StubDomainRegistry()
     service._supabase = _StubSupabase()
+    service._blob_upsert_rpc_supported = True
 
     def _broken_run_rpc(_function_name: str, _params=None):
         raise RuntimeError("rpc missing")
