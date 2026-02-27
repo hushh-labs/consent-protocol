@@ -3,6 +3,7 @@
 This cache is intentionally process-local and non-persistent.
 It provides:
 - short TTL freshness checks,
+- stale-while-revalidate serving,
 - stale-on-error fallback windows,
 - per-key in-flight dedupe via async locks.
 """
@@ -10,10 +11,13 @@ It provides:
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,6 +31,7 @@ class CacheResult:
     value: Any
     stale: bool
     age_seconds: int
+    stale_reason: str | None = None
 
 
 class MarketInsightsCache:
@@ -34,6 +39,7 @@ class MarketInsightsCache:
         self._entries: dict[str, CacheEntry] = {}
         self._series: dict[str, list[tuple[float, float]]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._refresh_tasks: dict[str, asyncio.Task[Any]] = {}
         self._provider_cooldowns: dict[str, float] = {}
         self._registry_lock = threading.RLock()
 
@@ -52,6 +58,36 @@ class MarketInsightsCache:
     def _set_entry(self, key: str, value: Any, fetched_at: float) -> None:
         with self._registry_lock:
             self._entries[key] = CacheEntry(value=value, fetched_at=fetched_at)
+
+    def _start_background_refresh(
+        self,
+        key: str,
+        *,
+        fetcher: Callable[[], Awaitable[Any]],
+    ) -> None:
+        with self._registry_lock:
+            existing = self._refresh_tasks.get(key)
+            if existing and not existing.done():
+                return
+
+        async def _runner() -> None:
+            try:
+                value = await fetcher()
+                self._set_entry(key, value, time.time())
+            except Exception as exc:
+                logger.debug("[Kai Market Cache] Background refresh failed for %s: %s", key, exc)
+
+        task = asyncio.create_task(_runner())
+        with self._registry_lock:
+            self._refresh_tasks[key] = task
+
+        def _cleanup(done_task: asyncio.Task[Any]) -> None:
+            with self._registry_lock:
+                current = self._refresh_tasks.get(key)
+                if current is done_task:
+                    self._refresh_tasks.pop(key, None)
+
+        task.add_done_callback(_cleanup)
 
     def peek(self, key: str) -> CacheEntry | None:
         with self._registry_lock:
@@ -135,6 +171,7 @@ class MarketInsightsCache:
         fresh_ttl_seconds: int,
         stale_ttl_seconds: int,
         fetcher: Callable[[], Awaitable[Any]],
+        serve_stale_while_revalidate: bool = False,
     ) -> CacheResult:
         now = time.time()
         existing = self._get_entry(key)
@@ -143,6 +180,19 @@ class MarketInsightsCache:
                 value=existing.value,
                 stale=False,
                 age_seconds=max(0, int(now - existing.fetched_at)),
+            )
+
+        if (
+            serve_stale_while_revalidate
+            and existing
+            and (now - existing.fetched_at) <= stale_ttl_seconds
+        ):
+            self._start_background_refresh(key, fetcher=fetcher)
+            return CacheResult(
+                value=existing.value,
+                stale=True,
+                age_seconds=max(0, int(now - existing.fetched_at)),
+                stale_reason="revalidate",
             )
 
         lock = self._get_lock(key)
@@ -169,6 +219,7 @@ class MarketInsightsCache:
                         value=fallback.value,
                         stale=True,
                         age_seconds=max(0, int(now - fallback.fetched_at)),
+                        stale_reason="refresh_failure",
                     )
                 raise
 
