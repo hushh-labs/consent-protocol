@@ -111,6 +111,262 @@ class VaultKeysService:
         return method in {"generated_default_web_prf", "generated_default_native_passkey_prf"}
 
     @staticmethod
+    def _normalize_vault_status(value: Optional[str]) -> str:
+        normalized = (value or "").strip().lower()
+        if normalized in {"placeholder", "active"}:
+            return normalized
+        return "active"
+
+    @staticmethod
+    def _normalize_bool_or_none(value: Any) -> Optional[bool]:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes"}:
+                return True
+            if lowered in {"false", "0", "no"}:
+                return False
+        return None
+
+    @staticmethod
+    def _normalize_int_ms_or_none(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _now_ms() -> int:
+        return int(datetime.now().timestamp() * 1000)
+
+    @classmethod
+    def _serialize_user_entry(cls, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "userId": row.get("user_id"),
+            "vaultStatus": cls._normalize_vault_status(row.get("vault_status")),
+            "firstLoginAt": cls._normalize_int_ms_or_none(row.get("first_login_at")),
+            "lastLoginAt": cls._normalize_int_ms_or_none(row.get("last_login_at")),
+            "loginCount": int(row.get("login_count") or 0),
+            "preOnboardingCompleted": cls._normalize_bool_or_none(
+                row.get("pre_onboarding_completed")
+            ),
+            "preOnboardingSkipped": cls._normalize_bool_or_none(row.get("pre_onboarding_skipped")),
+            "preOnboardingCompletedAt": cls._normalize_int_ms_or_none(
+                row.get("pre_onboarding_completed_at")
+            ),
+            "preNavTourCompletedAt": cls._normalize_int_ms_or_none(
+                row.get("pre_nav_tour_completed_at")
+            ),
+            "preNavTourSkippedAt": cls._normalize_int_ms_or_none(
+                row.get("pre_nav_tour_skipped_at")
+            ),
+            "preStateUpdatedAt": cls._normalize_int_ms_or_none(row.get("pre_state_updated_at")),
+            "createdAt": cls._normalize_int_ms_or_none(row.get("created_at")),
+            "updatedAt": cls._normalize_int_ms_or_none(row.get("updated_at")),
+        }
+
+    async def ensure_user_entry(self, user_id: str) -> Dict[str, Any]:
+        """
+        Ensure a vault_keys row exists for authenticated user presence tracking.
+
+        New users get a placeholder row; existing rows update login markers.
+        """
+        user_id_clean = (user_id or "").strip()
+        if not user_id_clean:
+            raise ValueError("userId is required")
+
+        supabase = self._get_supabase()
+        now_ms = self._now_ms()
+
+        existing_response = (
+            supabase.table("vault_keys")
+            .select(
+                "user_id,vault_status,first_login_at,last_login_at,login_count,"
+                "pre_onboarding_completed,pre_onboarding_skipped,pre_onboarding_completed_at,"
+                "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,pre_state_updated_at,"
+                "created_at,updated_at"
+            )
+            .eq("user_id", user_id_clean)
+            .limit(1)
+            .execute()
+        )
+
+        if not existing_response.data:
+            create_payload = {
+                "user_id": user_id_clean,
+                "vault_status": "placeholder",
+                "vault_key_hash": None,
+                "primary_method": "passphrase",
+                "primary_wrapper_id": "default",
+                "recovery_encrypted_vault_key": None,
+                "recovery_salt": None,
+                "recovery_iv": None,
+                "first_login_at": now_ms,
+                "last_login_at": now_ms,
+                "login_count": 1,
+                "created_at": now_ms,
+                "updated_at": now_ms,
+            }
+            insert_result = supabase.table("vault_keys").insert(create_payload).execute()
+            if not insert_result.data:
+                # Race-safe fallback if another request inserted concurrently.
+                existing_response = (
+                    supabase.table("vault_keys")
+                    .select(
+                        "user_id,vault_status,first_login_at,last_login_at,login_count,"
+                        "pre_onboarding_completed,pre_onboarding_skipped,pre_onboarding_completed_at,"
+                        "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,pre_state_updated_at,"
+                        "created_at,updated_at"
+                    )
+                    .eq("user_id", user_id_clean)
+                    .limit(1)
+                    .execute()
+                )
+                if not existing_response.data:
+                    raise RuntimeError("Failed to ensure user entry in vault_keys")
+                row = existing_response.data[0]
+                return self._serialize_user_entry(row)
+            row = insert_result.data[0]
+            return self._serialize_user_entry(row)
+
+        current = existing_response.data[0]
+        current_first_login = (
+            self._normalize_int_ms_or_none(current.get("first_login_at")) or now_ms
+        )
+        current_login_count = int(current.get("login_count") or 0)
+        update_payload = {
+            "first_login_at": current_first_login,
+            "last_login_at": now_ms,
+            "login_count": current_login_count + 1,
+            "updated_at": now_ms,
+        }
+        update_response = (
+            supabase.table("vault_keys")
+            .update(update_payload)
+            .eq("user_id", user_id_clean)
+            .execute()
+        )
+        if update_response.data:
+            return self._serialize_user_entry(update_response.data[0])
+
+        refreshed = (
+            supabase.table("vault_keys")
+            .select(
+                "user_id,vault_status,first_login_at,last_login_at,login_count,"
+                "pre_onboarding_completed,pre_onboarding_skipped,pre_onboarding_completed_at,"
+                "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,pre_state_updated_at,"
+                "created_at,updated_at"
+            )
+            .eq("user_id", user_id_clean)
+            .limit(1)
+            .execute()
+        )
+        if not refreshed.data:
+            raise RuntimeError("Failed to refresh user entry in vault_keys")
+        return self._serialize_user_entry(refreshed.data[0])
+
+    async def get_pre_vault_state(self, user_id: str) -> Dict[str, Any]:
+        """
+        Return placeholder/active row metadata used for DB-first onboarding/tour gating.
+        """
+        state = await self.ensure_user_entry(user_id)
+        return {
+            "userId": state["userId"],
+            "vaultStatus": state["vaultStatus"],
+            "hasVault": state["vaultStatus"] == "active",
+            "firstLoginAt": state["firstLoginAt"],
+            "lastLoginAt": state["lastLoginAt"],
+            "loginCount": state["loginCount"],
+            "preOnboardingCompleted": state["preOnboardingCompleted"],
+            "preOnboardingSkipped": state["preOnboardingSkipped"],
+            "preOnboardingCompletedAt": state["preOnboardingCompletedAt"],
+            "preNavTourCompletedAt": state["preNavTourCompletedAt"],
+            "preNavTourSkippedAt": state["preNavTourSkippedAt"],
+            "preStateUpdatedAt": state["preStateUpdatedAt"],
+        }
+
+    async def update_pre_vault_state(
+        self,
+        *,
+        user_id: str,
+        pre_onboarding_completed: Optional[bool] = None,
+        pre_onboarding_skipped: Optional[bool] = None,
+        pre_onboarding_completed_at: Optional[int] = None,
+        pre_nav_tour_completed_at: Optional[int] = None,
+        pre_nav_tour_skipped_at: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Persist DB-first pre-vault onboarding/tour markers with basic consistency checks.
+        """
+        current = await self.ensure_user_entry(user_id)
+        user_id_clean = (user_id or "").strip()
+        if not user_id_clean:
+            raise ValueError("userId is required")
+
+        next_completed = (
+            pre_onboarding_completed
+            if pre_onboarding_completed is not None
+            else current["preOnboardingCompleted"]
+        )
+        next_skipped = (
+            pre_onboarding_skipped
+            if pre_onboarding_skipped is not None
+            else current["preOnboardingSkipped"]
+        )
+        next_completed_at = (
+            pre_onboarding_completed_at
+            if pre_onboarding_completed_at is not None
+            else current["preOnboardingCompletedAt"]
+        )
+        next_tour_completed_at = (
+            pre_nav_tour_completed_at
+            if pre_nav_tour_completed_at is not None
+            else current["preNavTourCompletedAt"]
+        )
+        next_tour_skipped_at = (
+            pre_nav_tour_skipped_at
+            if pre_nav_tour_skipped_at is not None
+            else current["preNavTourSkippedAt"]
+        )
+
+        if next_skipped is True and next_completed is not True:
+            raise ValueError("pre_onboarding_skipped requires pre_onboarding_completed")
+        if next_completed_at is not None and next_completed is not True:
+            raise ValueError("pre_onboarding_completed_at requires pre_onboarding_completed=true")
+        if next_tour_completed_at is not None and next_tour_skipped_at is not None:
+            raise ValueError(
+                "pre_nav_tour_completed_at and pre_nav_tour_skipped_at are mutually exclusive"
+            )
+
+        now_ms = self._now_ms()
+        supabase = self._get_supabase()
+        update_payload = {
+            "pre_onboarding_completed": next_completed,
+            "pre_onboarding_skipped": next_skipped,
+            "pre_onboarding_completed_at": next_completed_at,
+            "pre_nav_tour_completed_at": next_tour_completed_at,
+            "pre_nav_tour_skipped_at": next_tour_skipped_at,
+            "pre_state_updated_at": now_ms,
+            "updated_at": now_ms,
+        }
+        updated = (
+            supabase.table("vault_keys")
+            .update(update_payload)
+            .eq("user_id", user_id_clean)
+            .execute()
+        )
+        if not updated.data:
+            raise RuntimeError("Failed to update pre-vault state")
+        return self._serialize_user_entry(updated.data[0])
+
+    @staticmethod
     def _get_allowed_passkey_rp_ids() -> set[str]:
         configured = (os.getenv("PASSKEY_ALLOWED_RP_IDS") or "").strip()
         if not configured:
@@ -194,13 +450,37 @@ class VaultKeysService:
             "passkey_last_used_at": passkey_last_used_at,
         }
 
-    async def check_vault_exists(self, user_id: str) -> bool:
+    async def check_vault_exists(self, user_id: str, *, ensure_entry: bool = True) -> bool:
         """Check if a vault exists for the user."""
+        if ensure_entry:
+            state = await self.ensure_user_entry(user_id)
+            status = state["vaultStatus"]
+        else:
+            supabase = self._get_supabase()
+            header = (
+                supabase.table("vault_keys")
+                .select("vault_status")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if not header.data:
+                return False
+            status = self._normalize_vault_status(header.data[0].get("vault_status"))
+
+        if status != "active":
+            return False
+
         supabase = self._get_supabase()
-        response = (
-            supabase.table("vault_keys").select("user_id").eq("user_id", user_id).limit(1).execute()
+        passphrase_wrapper = (
+            supabase.table("vault_key_wrappers")
+            .select("user_id")
+            .eq("user_id", user_id)
+            .eq("method", "passphrase")
+            .limit(1)
+            .execute()
         )
-        return len(response.data) > 0 if response.data else False
+        return bool(passphrase_wrapper.data)
 
     async def get_vault_state(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Return vault state with recovery wrapper and all enrolled method wrappers."""
@@ -213,7 +493,8 @@ class VaultKeysService:
         header_response = (
             supabase.table("vault_keys")
             .select(
-                "vault_key_hash,primary_method,primary_wrapper_id,recovery_encrypted_vault_key,recovery_salt,recovery_iv"
+                "vault_status,vault_key_hash,primary_method,primary_wrapper_id,"
+                "recovery_encrypted_vault_key,recovery_salt,recovery_iv"
             )
             .eq("user_id", user_id)
             .limit(1)
@@ -221,6 +502,11 @@ class VaultKeysService:
         )
 
         if not header_response.data or len(header_response.data) == 0:
+            self._set_cached_vault_state(user_id, None)
+            return None
+
+        header = header_response.data[0]
+        if self._normalize_vault_status(header.get("vault_status")) != "active":
             self._set_cached_vault_state(user_id, None)
             return None
 
@@ -233,7 +519,6 @@ class VaultKeysService:
             .execute()
         )
 
-        header = header_response.data[0]
         wrappers: list[dict[str, Any]] = []
         for row in wrapper_response.data or []:
             wrappers.append(
@@ -340,12 +625,16 @@ class VaultKeysService:
 
         key_data = {
             "user_id": user_id_clean,
+            "vault_status": "active",
             "vault_key_hash": vault_key_hash_clean,
             "primary_method": primary,
             "primary_wrapper_id": primary_wrapper,
             "recovery_encrypted_vault_key": recovery_encrypted,
             "recovery_salt": recovery_salt_clean,
             "recovery_iv": recovery_iv_clean,
+            "first_login_at": now_ms,
+            "last_login_at": now_ms,
+            "login_count": 1,
             "created_at": now_ms,
             "updated_at": now_ms,
         }
@@ -375,27 +664,36 @@ class VaultKeysService:
                     """
                     INSERT INTO vault_keys (
                         user_id,
+                        vault_status,
                         vault_key_hash,
                         primary_method,
                         primary_wrapper_id,
                         recovery_encrypted_vault_key,
                         recovery_salt,
                         recovery_iv,
+                        first_login_at,
+                        last_login_at,
+                        login_count,
                         created_at,
                         updated_at
                     )
                     VALUES (
                         :user_id,
+                        :vault_status,
                         :vault_key_hash,
                         :primary_method,
                         :primary_wrapper_id,
                         :recovery_encrypted_vault_key,
                         :recovery_salt,
                         :recovery_iv,
+                        :first_login_at,
+                        :last_login_at,
+                        :login_count,
                         :created_at,
                         :updated_at
                     )
                     ON CONFLICT (user_id) DO UPDATE SET
+                        vault_status = 'active',
                         vault_key_hash = EXCLUDED.vault_key_hash,
                         primary_method = EXCLUDED.primary_method,
                         primary_wrapper_id = EXCLUDED.primary_wrapper_id,
