@@ -135,6 +135,7 @@ class _FakeQuery:
         self._op = "select"
         self._upsert_data = None
         self._update_data = None
+        self._insert_data = None
         self._on_conflict = None
 
     def select(self, _fields):
@@ -163,6 +164,11 @@ class _FakeQuery:
         self._update_data = data
         return self
 
+    def insert(self, data):
+        self._op = "insert"
+        self._insert_data = data
+        return self
+
     def _filtered_rows(self):
         rows = self.db[self.table_name]
         for key, value in self._filters.items():
@@ -187,6 +193,14 @@ class _FakeQuery:
                 if all(row.get(key) == value for key, value in self._filters.items()):
                     row.update(self._update_data)
             return _FakeResponse(self._filtered_rows())
+
+        if self._op == "insert":
+            rows = self._insert_data if isinstance(self._insert_data, list) else [self._insert_data]
+            inserted = []
+            for incoming in rows:
+                self.db[self.table_name].append(dict(incoming))
+                inserted.append(dict(incoming))
+            return _FakeResponse(inserted)
 
         if self._op == "upsert":
             rows = self._upsert_data if isinstance(self._upsert_data, list) else [self._upsert_data]
@@ -511,3 +525,74 @@ async def test_setup_vault_state_rolls_back_when_wrapper_insert_fails():
 
     assert fake.db["vault_keys"] == []
     assert fake.db["vault_key_wrappers"] == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_entry_creates_placeholder_row():
+    fake = _FakeSupabase()
+    service = VaultKeysService()
+    service._supabase = fake
+
+    state = await service.ensure_user_entry("user-placeholder")
+
+    assert state["vaultStatus"] == "placeholder"
+    assert state["loginCount"] == 1
+    assert len(fake.db["vault_keys"]) == 1
+    row = fake.db["vault_keys"][0]
+    assert row["vault_status"] == "placeholder"
+    assert row["vault_key_hash"] is None
+    assert row["recovery_encrypted_vault_key"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_vault_exists_false_for_placeholder_and_true_for_active_with_passphrase():
+    fake = _FakeSupabase()
+    service = VaultKeysService()
+    service._supabase = fake
+
+    assert await service.check_vault_exists("user-a") is False
+
+    fake.db["vault_keys"][0]["vault_status"] = "active"
+    fake.db["vault_keys"][0]["vault_key_hash"] = "hash"
+    fake.db["vault_keys"][0]["recovery_encrypted_vault_key"] = "enc"
+    fake.db["vault_keys"][0]["recovery_salt"] = "salt"
+    fake.db["vault_keys"][0]["recovery_iv"] = "iv"
+
+    assert await service.check_vault_exists("user-a", ensure_entry=False) is False
+
+    fake.db["vault_key_wrappers"].append(
+        {
+            "user_id": "user-a",
+            "method": "passphrase",
+            "wrapper_id": "default",
+            "encrypted_vault_key": "enc-pass",
+            "salt": "salt-pass",
+            "iv": "iv-pass",
+        }
+    )
+    assert await service.check_vault_exists("user-a", ensure_entry=False) is True
+
+
+@pytest.mark.asyncio
+async def test_get_vault_state_returns_none_for_placeholder():
+    fake = _FakeSupabase()
+    fake.db["vault_keys"].append(
+        {
+            "user_id": "user-ghost",
+            "vault_status": "placeholder",
+            "vault_key_hash": None,
+            "primary_method": "passphrase",
+            "primary_wrapper_id": "default",
+            "recovery_encrypted_vault_key": None,
+            "recovery_salt": None,
+            "recovery_iv": None,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
+
+    service = VaultKeysService()
+    service._supabase = fake
+
+    result = await service.get_vault_state("user-ghost")
+    assert result is None

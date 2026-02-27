@@ -175,8 +175,8 @@ def _build_fallback_fundamental_insight(ticker: str, error: Exception) -> Fundam
     message = str(error) or "provider unavailable"
     return FundamentalInsight(
         summary=(
-            f"Fundamental stream degraded for {ticker}: {message}. "
-            "Proceeding with conservative baseline assumptions."
+            f"Fundamental inputs are limited for {ticker} ({message}). "
+            "Using a conservative baseline while live coverage recovers."
         ),
         key_metrics={},
         quant_metrics={},
@@ -195,8 +195,8 @@ def _build_fallback_sentiment_insight(ticker: str, error: Exception) -> Sentimen
     message = str(error) or "provider unavailable"
     return SentimentInsight(
         summary=(
-            f"Sentiment stream degraded for {ticker}: {message}. "
-            "Using neutral market-sentiment fallback."
+            f"Sentiment coverage is limited for {ticker} ({message}). "
+            "Using a neutral baseline until live headlines recover."
         ),
         sentiment_score=0.0,
         key_catalysts=[],
@@ -211,8 +211,8 @@ def _build_fallback_valuation_insight(ticker: str, error: Exception) -> Valuatio
     message = str(error) or "provider unavailable"
     return ValuationInsight(
         summary=(
-            f"Valuation stream degraded for {ticker}: {message}. "
-            "Using fair-value fallback until peer quotes recover."
+            f"Valuation coverage is limited for {ticker} ({message}). "
+            "Using a fair-value baseline until peer quotes recover."
         ),
         valuation_metrics={},
         peer_comparison={},
@@ -763,8 +763,8 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
 
         if token_count == 0 and stream_error_message:
             fallback_text = (
-                f"Live stream unavailable ({stream_error_message}). "
-                "Proceeding with deterministic analysis so results still complete."
+                f"Live commentary is temporarily unavailable ({stream_error_message}). "
+                "Continuing analysis so your recommendation still completes."
             )
             fallback_words = fallback_text.split()
             for idx, word in enumerate(fallback_words):
