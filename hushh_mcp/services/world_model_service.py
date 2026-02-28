@@ -897,11 +897,32 @@ class WorldModelService:
                     else:
                         self._blob_upsert_rpc_supported = True
                         blob_stored = True
-                        if hasattr(rpc_result, "data") and rpc_result.data:
-                            candidate = rpc_result.data[0]
-                            raw_version = candidate.get("upsert_world_model_data_blob")
-                            if isinstance(raw_version, (int, float)):
-                                resolved_data_version = int(raw_version)
+                        rpc_payload = getattr(rpc_result, "data", None)
+                        raw_version: object | None = None
+                        if isinstance(rpc_payload, list) and rpc_payload:
+                            first = rpc_payload[0]
+                            if isinstance(first, dict):
+                                raw_version = first.get(
+                                    "upsert_world_model_data_blob",
+                                    first.get("data_version"),
+                                )
+                                if isinstance(first.get("updated_at"), str):
+                                    resolved_updated_at = first.get("updated_at")
+                            else:
+                                raw_version = first
+                        elif isinstance(rpc_payload, dict):
+                            raw_version = rpc_payload.get(
+                                "upsert_world_model_data_blob",
+                                rpc_payload.get("data_version"),
+                            )
+                            if isinstance(rpc_payload.get("updated_at"), str):
+                                resolved_updated_at = rpc_payload.get("updated_at")
+                        elif rpc_payload is not None:
+                            raw_version = rpc_payload
+
+                        parsed_version = self._to_non_negative_int(raw_version)
+                        if parsed_version is not None:
+                            resolved_data_version = parsed_version
                 except Exception as rpc_error:
                     if self._is_missing_rpc_function_error(
                         rpc_error, "upsert_world_model_data_blob"
