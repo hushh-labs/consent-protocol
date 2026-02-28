@@ -222,6 +222,11 @@ class StoreDomainRequest(BaseModel):
     domain: str = Field(..., description="Domain key (e.g., 'financial')")
     encrypted_blob: EncryptedBlob = Field(..., description="Pre-encrypted data from client")
     summary: dict = Field(..., description="Non-sensitive metadata for index")
+    expected_data_version: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional optimistic concurrency guard for world_model_data.data_version",
+    )
 
 
 class StoreDomainResponse(BaseModel):
@@ -229,6 +234,9 @@ class StoreDomainResponse(BaseModel):
 
     success: bool
     message: Optional[str] = None
+    conflict: bool = False
+    data_version: Optional[int] = None
+    updated_at: Optional[str] = None
 
 
 @router.post("/store-domain", response_model=StoreDomainResponse)
@@ -256,7 +264,7 @@ async def store_domain(
 
     # Store encrypted blob + metadata
     canonical_domain = canonical_top_level_domain(request.domain)
-    success = await world_model.store_domain_data(
+    store_result = await world_model.store_domain_data(
         user_id=request.user_id,
         domain=canonical_domain,
         encrypted_blob={
@@ -266,15 +274,33 @@ async def store_domain(
             "algorithm": request.encrypted_blob.algorithm,
         },
         summary=request.summary,
+        expected_data_version=request.expected_data_version,
+        return_result=True,
     )
 
-    if not success:
+    if not store_result.get("success"):
+        if store_result.get("conflict"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "WORLD_MODEL_VERSION_CONFLICT",
+                    "message": (
+                        "World model changed on another device. Refresh latest data and retry."
+                    ),
+                    "current_data_version": store_result.get("data_version"),
+                    "updated_at": store_result.get("updated_at"),
+                },
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to store domain data"
         )
 
     return StoreDomainResponse(
-        success=True, message=f"Successfully stored {canonical_domain} domain data"
+        success=True,
+        message=f"Successfully stored {canonical_domain} domain data",
+        conflict=False,
+        data_version=store_result.get("data_version"),
+        updated_at=store_result.get("updated_at"),
     )
 
 
