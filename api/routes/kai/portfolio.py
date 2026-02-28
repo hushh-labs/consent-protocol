@@ -23,7 +23,7 @@ import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
@@ -34,6 +34,10 @@ from api.routes.kai._streaming import (
     HEARTBEAT_INTERVAL_SECONDS,
     PORTFOLIO_IMPORT_TIMEOUT_SECONDS,
     CanonicalSSEStream,
+)
+from api.routes.kai.import_run_manager import (
+    KaiPortfolioImportRunManager,
+    PortfolioImportRunRecord,
 )
 from hushh_mcp.constants import (
     KAI_LLM_TEMPERATURE,
@@ -66,6 +70,7 @@ from hushh_mcp.services.world_model_service import get_world_model_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_IMPORT_RUN_MANAGER = KaiPortfolioImportRunManager()
 _PICK_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _MAX_PROFILE_PICKS = 8
 
@@ -2320,43 +2325,677 @@ async def get_dashboard_profile_picks(
     )
 
 
-@router.post("/portfolio/import/stream")
-async def import_portfolio_stream(
-    request: Request,
+def _parse_import_cursor(value: Optional[int]) -> int:
+    if value is None:
+        return 0
+    try:
+        cursor = int(value)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "IMPORT_RUN_CURSOR_INVALID", "message": "cursor must be an integer"},
+        ) from exc
+    if cursor < 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "IMPORT_RUN_CURSOR_INVALID", "message": "cursor must be >= 0"},
+        )
+    return cursor
+
+
+def _create_import_sse_response(
+    generator: AsyncGenerator[dict[str, str], None],
+) -> EventSourceResponse:
+    return EventSourceResponse(
+        generator,
+        ping=15,
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _portfolio_import_stream_generator(
+    *,
+    request: Any,
+    content: bytes,
+    filename: str,
+    is_csv_upload: bool,
+) -> AsyncGenerator[dict[str, str], None]:
+    """Generate canonical SSE frames for one portfolio-import run."""
+    HARD_TIMEOUT_SECONDS = PORTFOLIO_IMPORT_TIMEOUT_SECONDS
+    stream = CanonicalSSEStream("portfolio_import")
+
+    from google import genai
+    from google.genai import types
+    from google.genai.types import HttpOptions
+
+    from hushh_mcp.constants import (
+        KAI_PORTFOLIO_IMPORT_ENABLE_THINKING,
+        KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL,
+    )
+
+    thinking_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_THINKING and KAI_LLM_THINKING_ENABLED
+    extraction_model = KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL
+
+    try:
+        async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
+            yield stream.event(
+                "stage",
+                {
+                    "stage": "uploading",
+                    "message": "Processing uploaded file...",
+                },
+            )
+            await asyncio.sleep(0.1)
+
+            client = genai.Client(http_options=HttpOptions(api_version="v1"))
+            model_to_use = extraction_model
+            logger.info(
+                "SSE: Portfolio import model=%s thinking=%s mode=single_pass_no_repair",
+                model_to_use,
+                thinking_enabled,
+            )
+
+            yield stream.event(
+                "stage",
+                {
+                    "stage": "indexing",
+                    "message": "Indexing document structure...",
+                },
+            )
+
+            import_service = get_portfolio_import_service()
+            relevance = await import_service.assess_document_relevance(
+                file_content=content,
+                filename=filename or "uploaded_document",
+            )
+            if not relevance.is_relevant:
+                logger.info(
+                    "[Portfolio Import] Rejected irrelevant upload (confidence=%.3f, source=%s)",
+                    relevance.confidence,
+                    relevance.source,
+                )
+                yield stream.event(
+                    "aborted",
+                    {
+                        "code": "IRRELEVANT_CONTENT",
+                        "reason": "irrelevant_content",
+                        "message": (
+                            "Uploaded document does not look like a brokerage statement. "
+                            "Please upload a brokerage account PDF/CSV statement."
+                        ),
+                        "doc_type": relevance.doc_type,
+                        "confidence": relevance.confidence,
+                        "classifier_source": relevance.source,
+                        "classifier_reason": relevance.reason,
+                    },
+                    terminal=True,
+                )
+                return
+
+            full_extract_prompt = build_statement_extract_prompt_v2()
+            is_pdf_upload = str(filename or "").lower().endswith(".pdf")
+            pdf_context = (
+                _extract_pdf_pass_contexts(content)
+                if is_pdf_upload
+                else {
+                    "positions_text": "",
+                    "summary_text": "",
+                    "positions_confidence": 0.0,
+                    "summary_confidence": 0.0,
+                    "selected_pages": [],
+                }
+            )
+
+            run_started_at = time.perf_counter()
+            parse_diagnostics: dict[str, Any] = {
+                "pass_timings_ms": {},
+                "pass_token_counts": {},
+                "pass_content_sources": {},
+                "pdf_context": pdf_context,
+            }
+            combined_chunk_count = 0
+            combined_thought_count = 0
+
+            yield stream.event(
+                "stage",
+                {
+                    "stage": "scanning",
+                    "message": "Submitting statement to Vertex model...",
+                    "phase": "extract_full",
+                },
+            )
+
+            full_context_parts = [
+                str(pdf_context.get("positions_text") or "").strip(),
+                str(pdf_context.get("summary_text") or "").strip(),
+            ]
+            full_context_excerpt = "\n\n".join(part for part in full_context_parts if part)
+            full_context_confidence = float(
+                max(
+                    float(pdf_context.get("positions_confidence") or 0.0),
+                    float(pdf_context.get("summary_confidence") or 0.0),
+                )
+            )
+
+            extract_full_result: dict[str, Any] = {}
+            async for frame in run_stream_pass_v2(
+                request=request,
+                stream=stream,
+                client=client,
+                types_module=types,
+                phase="extract_full",
+                model_name=model_to_use,
+                prompt=full_extract_prompt,
+                response_schema=FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
+                context_excerpt=full_context_excerpt,
+                context_confidence=full_context_confidence,
+                stage_message="Extracting portfolio statement data...",
+                progress_message="Streaming full extraction",
+                include_holdings_preview=True,
+                result_store=extract_full_result,
+                content=content,
+                is_csv_upload=is_csv_upload,
+                temperature=KAI_LLM_TEMPERATURE,
+                max_output_tokens=KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
+                enforce_response_schema=KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
+                thinking_enabled=thinking_enabled,
+                thinking_level_raw=KAI_LLM_THINKING_LEVEL,
+                heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
+                required_keys=FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
+            ):
+                yield frame
+
+            if extract_full_result.get("client_disconnected"):
+                logger.info("[Portfolio Import] Client disconnected during full extraction")
+                return
+
+            parsed_data = (
+                extract_full_result.get("parsed")
+                if isinstance(extract_full_result.get("parsed"), dict)
+                else {}
+            )
+            parsed_data = _canonicalize_structured_portfolio_payload(parsed_data)
+            parse_diagnostics["extract_full_pass_parse"] = extract_full_result.get(
+                "parse_diagnostics", {}
+            )
+            parse_diagnostics["pass_timings_ms"]["extract_full_ms"] = extract_full_result.get(
+                "elapsed_ms"
+            )
+            parse_diagnostics["pass_token_counts"]["extract_full"] = {
+                "chunks": extract_full_result.get("chunk_count", 0),
+                "thoughts": extract_full_result.get("thought_count", 0),
+            }
+            parse_diagnostics["pass_content_sources"]["extract_full"] = extract_full_result.get(
+                "source"
+            )
+
+            detailed_holdings, _holdings_source = _extract_holdings_list(parsed_data)
+            coverage_metrics = _compute_positions_coverage(
+                holdings=detailed_holdings,
+                total_value=_coerce_optional_number(parsed_data.get("total_value")),
+            )
+            parse_diagnostics["positions_coverage"] = coverage_metrics
+
+            if len(detailed_holdings) == 0:
+                yield stream.event(
+                    "error",
+                    {
+                        "code": "IMPORT_NO_HOLDINGS",
+                        "message": (
+                            "No valid holdings were extracted from the statement. "
+                            "Please retry with a clearer statement export."
+                        ),
+                        "diagnostics": parse_diagnostics,
+                    },
+                    terminal=True,
+                )
+                return
+
+            parsed_data["detailed_holdings"] = detailed_holdings
+            yield stream.event(
+                "stage",
+                {
+                    "stage": "normalizing",
+                    "phase": "normalizing",
+                    "message": "Normalizing extracted statement data...",
+                    "progress_pct": _phase_progress_bounds("normalizing")[0],
+                },
+            )
+
+            normalized_summary = _normalize_portfolio_summary(parsed_data)
+            if normalized_summary:
+                parsed_data["portfolio_summary"] = {
+                    **(
+                        parsed_data.get("portfolio_summary")
+                        if isinstance(parsed_data.get("portfolio_summary"), dict)
+                        else {}
+                    ),
+                    **normalized_summary,
+                }
+            sparse_sections = _detect_sparse_sections(parsed_data)
+            parse_diagnostics["sparse_sections_detected"] = sparse_sections
+
+            detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
+            parsed_data["detailed_holdings"] = detailed_holdings
+            if holdings_source != "detailed_holdings":
+                yield stream.event(
+                    "warning",
+                    {
+                        "code": "HOLDINGS_ALIAS_USED",
+                        "message": (
+                            "Structured holdings were recovered from an alternative field."
+                            if holdings_source != "none"
+                            else "No holdings array found in model output; continuing with empty holdings."
+                        ),
+                        "source_field": holdings_source,
+                        "holdings_count": len(detailed_holdings),
+                        "phase": "normalizing",
+                    },
+                )
+
+            parse_diagnostics["pass_timings_ms"]["total_ms"] = int(
+                (time.perf_counter() - run_started_at) * 1000
+            )
+            combined_stream_text = str(extract_full_result.get("text") or "").strip()
+            combined_chunk_count = int(extract_full_result.get("chunk_count") or 0)
+            combined_thought_count = int(extract_full_result.get("thought_count") or 0)
+            parse_diagnostics["combined_stream"] = {
+                "response_chars": len(combined_stream_text),
+                "chunk_count": combined_chunk_count,
+                "thought_count": combined_thought_count,
+            }
+
+            account_metadata_raw = parsed_data.get("account_metadata")
+            account_metadata = (
+                account_metadata_raw if isinstance(account_metadata_raw, dict) else {}
+            )
+            inferred_account_metadata = _derive_account_metadata_from_filename(filename or "")
+            for key, value in inferred_account_metadata.items():
+                if account_metadata.get(key) in (None, "", []):
+                    account_metadata[key] = value
+            account_info = {
+                "holder_name": account_metadata.get("account_holder"),
+                "account_number": account_metadata.get("account_number"),
+                "account_type": account_metadata.get("account_type"),
+                "brokerage_name": account_metadata.get("institution_name"),
+                "statement_period_start": account_metadata.get("statement_period_start"),
+                "statement_period_end": account_metadata.get("statement_period_end"),
+            }
+
+            portfolio_summary_raw = parsed_data.get("portfolio_summary")
+            portfolio_summary = (
+                portfolio_summary_raw if isinstance(portfolio_summary_raw, dict) else {}
+            )
+            account_summary = {
+                "beginning_value": _coerce_optional_number(
+                    portfolio_summary.get("beginning_value")
+                ),
+                "ending_value": _coerce_optional_number(portfolio_summary.get("ending_value")),
+                "change_in_value": _coerce_optional_number(portfolio_summary.get("total_change")),
+                "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
+                "net_deposits_withdrawals": _coerce_optional_number(
+                    portfolio_summary.get("net_deposits_withdrawals")
+                ),
+                "investment_gain_loss": _coerce_optional_number(
+                    portfolio_summary.get("investment_gain_loss")
+                ),
+                "total_income_period": _coerce_optional_number(
+                    portfolio_summary.get("total_income_period")
+                ),
+                "total_income_ytd": _coerce_optional_number(
+                    portfolio_summary.get("total_income_ytd")
+                ),
+                "total_fees": _coerce_optional_number(portfolio_summary.get("total_fees")),
+            }
+
+            detailed_holdings_raw = parsed_data.get("detailed_holdings")
+            detailed_holdings = (
+                detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
+            )
+            normalized_holdings: list[dict[str, Any]] = []
+            parsed_total = len(detailed_holdings)
+            if parsed_total > 0:
+                yield stream.event(
+                    "progress",
+                    {
+                        "phase": "normalizing",
+                        "message": f"Normalizing {parsed_total} extracted holdings...",
+                        "holdings_extracted": 0,
+                        "holdings_total": parsed_total,
+                        "holdings_raw_count": parsed_total,
+                        "holdings_preview": [],
+                        "progress_pct": _phase_progress_bounds("normalizing")[0],
+                    },
+                )
+            for idx, h in enumerate(detailed_holdings):
+                if await request.is_disconnected():
+                    logger.info(
+                        "[Portfolio Import] Stream worker marked disconnected during normalization"
+                    )
+                    return
+                if not isinstance(h, dict):
+                    logger.warning(
+                        "[Portfolio Import] Skipping non-dict holding row at index %s: %r",
+                        idx,
+                        type(h).__name__,
+                    )
+                    continue
+                normalized = _normalize_raw_holding_row(h, idx)
+                normalized_holdings.append(normalized)
+
+                if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
+                    yield stream.event(
+                        "progress",
+                        {
+                            "phase": "normalizing",
+                            "message": (
+                                f"Parsed {idx + 1} of {parsed_total} holdings"
+                                if parsed_total > 0
+                                else "Parsing holdings..."
+                            ),
+                            "holdings_extracted": idx + 1,
+                            "holdings_total": parsed_total,
+                            "holdings_raw_count": parsed_total,
+                            "holdings_preview": _build_holdings_preview(
+                                normalized_holdings, max_items=40
+                            ),
+                            "progress_pct": _phase_progress_bounds("normalizing")[0]
+                            + min(
+                                _phase_progress_bounds("normalizing")[1]
+                                - _phase_progress_bounds("normalizing")[0],
+                                ((idx + 1) / max(parsed_total, 1))
+                                * (
+                                    _phase_progress_bounds("normalizing")[1]
+                                    - _phase_progress_bounds("normalizing")[0]
+                                ),
+                            ),
+                        },
+                    )
+
+            yield stream.event(
+                "stage",
+                {
+                    "stage": "validating",
+                    "phase": "validating",
+                    "message": "Validating and reconciling normalized holdings...",
+                    "progress_pct": _phase_progress_bounds("validating")[0],
+                },
+            )
+            raw_count = len(normalized_holdings)
+            reconciled_count = 0
+            mismatch_count = 0
+            dropped_reasons: Counter[str] = Counter()
+            validated_holdings: list[dict[str, Any]] = []
+            for row in normalized_holdings:
+                is_valid, reason = _validate_holding_row(row)
+                if not is_valid:
+                    dropped_reasons[reason or "unknown"] += 1
+                    continue
+
+                reconciliation = row.get("reconciliation")
+                if isinstance(reconciliation, dict):
+                    if reconciliation.get("reconciled_fields"):
+                        reconciled_count += 1
+                    if reconciliation.get("mismatch_detected"):
+                        mismatch_count += 1
+                validated_holdings.append(row)
+
+            holdings = _aggregate_holdings_by_symbol(validated_holdings)
+            duplicate_symbol_lot_count = max(0, len(validated_holdings) - len(holdings))
+            unknown_name_count = sum(1 for row in holdings if _is_unknown_name(row.get("name")))
+            placeholder_symbol_count = sum(
+                1 for row in holdings if str(row.get("symbol") or "").startswith("HOLDING_")
+            )
+            zero_qty_zero_price_nonzero_value_count = sum(
+                1
+                for row in holdings
+                if (
+                    (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
+                    and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
+                    and (_coerce_optional_number(row.get("market_value")) or 0.0) > 0.0
+                )
+            )
+            account_header_row_count = dropped_reasons.get("account_header_row", 0)
+            logger.info(
+                "[Portfolio Validation] Validated %s/%s holdings (aggregated=%s)",
+                len(validated_holdings),
+                raw_count,
+                len(holdings),
+            )
+
+            total_value = _coerce_optional_number(parsed_data.get("total_value")) or 0.0
+            if not total_value and account_summary.get("ending_value"):
+                total_value = account_summary["ending_value"] or 0.0
+            if not total_value and holdings:
+                total_value = sum(
+                    _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
+                )
+            parsed_data["asset_allocation"] = _normalize_asset_allocation_rows(
+                parsed_data.get("asset_allocation"),
+                holdings=holdings,
+            )
+            account_summary = _enrich_account_summary_with_holdings(
+                account_summary,
+                holdings=holdings,
+                total_value=total_value,
+            )
+            if account_summary.get("cash_balance") is not None:
+                parsed_data["cash_balance"] = account_summary.get("cash_balance")
+
+            quality_report = build_holdings_quality_report_v2(
+                raw_count=raw_count,
+                validated_count=len(validated_holdings),
+                aggregated_count=len(holdings),
+                dropped_reasons=dropped_reasons,
+                reconciled_count=reconciled_count,
+                mismatch_count=mismatch_count,
+                parse_diagnostics=parse_diagnostics,
+                unknown_name_count=unknown_name_count,
+                placeholder_symbol_count=placeholder_symbol_count,
+                zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
+                account_header_row_count=account_header_row_count,
+                duplicate_symbol_lot_count=duplicate_symbol_lot_count,
+                average_confidence=(
+                    round(
+                        sum(
+                            _coerce_optional_number(row.get("confidence")) or 0.0
+                            for row in holdings
+                        )
+                        / max(len(holdings), 1),
+                        4,
+                    )
+                    if holdings
+                    else 0.0
+                ),
+            )
+            quality_gate_passed, quality_gate = evaluate_import_quality_gate_v2(
+                holdings=holdings,
+                placeholder_symbol_count=placeholder_symbol_count,
+                account_header_row_count=account_header_row_count,
+                expected_total_value=total_value,
+            )
+            quality_report["quality_gate"] = quality_gate
+            quality_report_v2 = build_quality_report_v2(
+                quality_report=quality_report,
+                quality_gate=quality_gate,
+                holdings=holdings,
+            )
+
+            yield stream.event(
+                "progress",
+                {
+                    "phase": "validating",
+                    "message": (
+                        f"Validated {len(validated_holdings)} holdings and aggregated into {len(holdings)} symbols"
+                    ),
+                    "holdings_extracted": len(validated_holdings),
+                    "holdings_total": parsed_total,
+                    "holdings_raw_count": raw_count,
+                    "holdings_validated_count": len(validated_holdings),
+                    "holdings_aggregated_count": len(holdings),
+                    "holdings_dropped_reasons": dict(dropped_reasons),
+                    "holdings_preview": _build_holdings_preview(holdings, max_items=40),
+                    "progress_pct": 98,
+                    "quality_gate": quality_gate,
+                },
+            )
+
+            if not quality_gate_passed:
+                yield stream.event(
+                    "aborted",
+                    {
+                        "code": "IMPORT_QUALITY_GATE_FAILED",
+                        "reason": "quality_gate_failed",
+                        "message": (
+                            "Parsed statement data did not pass strict validation checks. "
+                            "Please retry import or upload a clearer statement."
+                        ),
+                        "quality_gate": quality_gate,
+                        "quality_report_v2": quality_report_v2,
+                    },
+                    terminal=True,
+                )
+                return
+
+            cash_balance = _coerce_optional_number(parsed_data.get("cash_balance"))
+            raw_extract_v2 = dict(parsed_data)
+            portfolio_data_v2 = build_financial_portfolio_canonical_v2(
+                raw_extract_v2=raw_extract_v2,
+                account_info=account_info,
+                account_summary=account_summary,
+                holdings=holdings,
+                asset_allocation=parsed_data.get("asset_allocation"),
+                total_value=total_value,
+                cash_balance=cash_balance,
+                quality_report_v2=quality_report_v2,
+            )
+            portfolio_data_v2.update(
+                {
+                    "statement_details": raw_extract_v2.get("statement_details"),
+                    "management_contacts": raw_extract_v2.get("management_contacts"),
+                    "investment_objective": raw_extract_v2.get("investment_objective"),
+                    "portfolio_detail": raw_extract_v2.get("portfolio_detail"),
+                    "transactions": raw_extract_v2.get("transactions"),
+                    "reconciliation_summary": raw_extract_v2.get("reconciliation_summary"),
+                    "derived_metrics": raw_extract_v2.get("derived_metrics"),
+                    "income_summary": raw_extract_v2.get("income_summary"),
+                    "realized_gain_loss": raw_extract_v2.get("realized_gain_loss"),
+                    "cash_flow": raw_extract_v2.get("cash_flow"),
+                    "cash_management": raw_extract_v2.get("cash_management"),
+                    "projections_and_mrd": raw_extract_v2.get("projections_and_mrd"),
+                    "historical_values": raw_extract_v2.get("historical_values"),
+                    "ytd_metrics": raw_extract_v2.get("ytd_metrics"),
+                    "legal_and_disclosures": raw_extract_v2.get("legal_and_disclosures"),
+                    "parse_fallback": False,
+                    "kpis": {
+                        "holdings_count": len(holdings),
+                        "total_value": total_value,
+                    },
+                }
+            )
+            analytics_v2 = build_financial_analytics_v2(
+                canonical_portfolio_v2=portfolio_data_v2,
+                raw_extract_v2=raw_extract_v2,
+            )
+            coverage_metrics_payload = (
+                parse_diagnostics.get("positions_coverage")
+                if isinstance(parse_diagnostics.get("positions_coverage"), dict)
+                else {}
+            )
+            logger.info(
+                "SSE: Portfolio V2 ready - holdings=%s total_value=%s",
+                len(holdings),
+                total_value,
+            )
+            phase_token_counts = (
+                parse_diagnostics.get("pass_token_counts")
+                if isinstance(parse_diagnostics.get("pass_token_counts"), dict)
+                else {}
+            )
+            total_phase_thoughts = sum(
+                int((value.get("thoughts") or 0))
+                for value in phase_token_counts.values()
+                if isinstance(value, dict)
+            )
+
+            yield stream.event(
+                "complete",
+                {
+                    "portfolio_data_v2": portfolio_data_v2,
+                    "raw_extract_v2": raw_extract_v2,
+                    "analytics_v2": analytics_v2,
+                    "quality_report_v2": quality_report_v2,
+                    "timings_ms": build_timing_payload(diagnostics=parse_diagnostics),
+                    "token_counts": build_token_counts_payload(diagnostics=parse_diagnostics),
+                    "coverage_metrics": coverage_metrics_payload,
+                    "success": True,
+                    "parse_fallback": False,
+                    "quality_gate": quality_gate,
+                    "thought_count": max(combined_thought_count, total_phase_thoughts),
+                    "holdings_raw_count": raw_count,
+                    "holdings_validated_count": len(validated_holdings),
+                    "holdings_aggregated_count": len(holdings),
+                    "holdings_dropped_reasons": dict(dropped_reasons),
+                    "diagnostics": parse_diagnostics,
+                },
+                terminal=True,
+            )
+
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[Portfolio Import] Hard timeout (%ss) reached, stopping LLM", HARD_TIMEOUT_SECONDS
+        )
+        yield stream.event(
+            "error",
+            {
+                "code": "IMPORT_TIMEOUT",
+                "message": (
+                    f"Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. "
+                    "Please retry; parsing may still complete on the next attempt."
+                ),
+            },
+            terminal=True,
+        )
+    except Exception as e:
+        logger.error("SSE streaming error: %s", e)
+        import traceback
+
+        logger.error(traceback.format_exc())
+        yield stream.event(
+            "error",
+            {"code": "IMPORT_STREAM_FAILED", "message": str(e)},
+            terminal=True,
+        )
+
+
+def _portfolio_import_stream_factory(
+    run: PortfolioImportRunRecord,
+    background_request: Any,
+) -> AsyncGenerator[dict[str, str], None]:
+    return _portfolio_import_stream_generator(
+        request=background_request,
+        content=run.content,
+        filename=run.filename,
+        is_csv_upload=run.is_csv_upload,
+    )
+
+
+@router.post("/portfolio/import/run/start")
+async def start_portfolio_import_run(
     file: UploadFile,
     user_id: str = Form(..., description="User's ID"),
     token_data: dict = Depends(require_vault_owner_token),
 ):
-    """
-    SSE streaming endpoint for portfolio import with real-time progress.
-
-    Streams deterministic Gemini extraction progress as Server-Sent Events (SSE).
-    Uses one V2 schema-constrained extraction pass (no semantic repair pass).
-
-    **Event Types (canonical)**:
-    - `stage`: Current processing stage + heartbeat metadata
-    - `thinking`: Best-effort thought summaries
-    - `chunk`: Streamed JSON text chunks from extraction
-    - `aborted`: Graceful terminal halt (e.g., irrelevant content)
-    - `complete`: Final parsed portfolio payload
-    - `error`: Structured terminal error payload
-
-    **Authentication**: Requires valid VAULT_OWNER token.
-
-    **Disconnection Handling (Production-Grade)**:
-    - Layer 1: sse_starlette ping every 15s detects dead connections (app crash, force-close)
-    - Layer 2: asyncio.timeout(360) hard ceiling prevents runaway LLM calls
-    - Layer 3: backend heartbeats every 3-5s while waiting for model output
-    - Layer 4: request.is_disconnected() checked per-chunk for fast cleanup
-    """
-    # Verify user_id matches token
     if token_data["user_id"] != user_id:
-        logger.warning(f"User ID mismatch: token={token_data['user_id']}, request={user_id}")
+        logger.warning("User ID mismatch: token=%s, request=%s", token_data["user_id"], user_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
         )
 
-    # Validate file
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -2370,643 +3009,159 @@ async def import_portfolio_stream(
             detail="Invalid file type. Please upload a PDF or CSV statement.",
         )
 
-    # Read file content
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
-    async def event_generator():
-        """Generate SSE events for streaming portfolio parsing."""
-        HARD_TIMEOUT_SECONDS = PORTFOLIO_IMPORT_TIMEOUT_SECONDS
-        stream = CanonicalSSEStream("portfolio_import")
-
-        from google import genai
-        from google.genai import types
-        from google.genai.types import HttpOptions
-
-        from hushh_mcp.constants import (
-            KAI_PORTFOLIO_IMPORT_ENABLE_THINKING,
-            KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL,
+    state, run = await _IMPORT_RUN_MANAGER.start_or_get_active(
+        user_id=user_id,
+        filename=file.filename,
+        content=content,
+        is_csv_upload=is_csv_upload,
+        generator_factory=_portfolio_import_stream_factory,
+    )
+    if state == "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IMPORT_RUN_ALREADY_ACTIVE",
+                "message": "A portfolio import run is already active for this user.",
+                "active_run": run.to_public_dict(),
+            },
         )
 
-        thinking_enabled = KAI_PORTFOLIO_IMPORT_ENABLE_THINKING and KAI_LLM_THINKING_ENABLED
-        extraction_model = KAI_PORTFOLIO_IMPORT_PRIMARY_MODEL
+    return {"run": run.to_public_dict()}
 
-        try:
-            async with asyncio.timeout(HARD_TIMEOUT_SECONDS):
-                # Stage 1: Uploading
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "uploading",
-                        "message": "Processing uploaded file...",
-                    },
-                )
-                await asyncio.sleep(0.1)  # Small delay for UI feedback
 
-                # SDK auto-configures from GOOGLE_API_KEY and GOOGLE_GENAI_USE_VERTEXAI env vars
-                client = genai.Client(http_options=HttpOptions(api_version="v1"))
-                model_to_use = extraction_model
-                logger.info(
-                    "SSE: Portfolio import model=%s thinking=%s mode=single_pass_no_repair",
-                    model_to_use,
-                    thinking_enabled,
-                )
+@router.get("/portfolio/import/run/active")
+async def get_active_portfolio_import_run(
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
+        )
+    run = await _IMPORT_RUN_MANAGER.get_active(user_id=user_id)
+    return {"run": run.to_public_dict() if run else None}
 
-                # Stage 2: Indexing
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "indexing",
-                        "message": "Indexing document structure...",
-                    },
-                )
 
-                import_service = get_portfolio_import_service()
-                relevance = await import_service.assess_document_relevance(
-                    file_content=content,
-                    filename=file.filename or "uploaded_document",
-                )
-                if not relevance.is_relevant:
-                    logger.info(
-                        "[Portfolio Import] Rejected irrelevant upload (confidence=%.3f, source=%s)",
-                        relevance.confidence,
-                        relevance.source,
-                    )
-                    yield stream.event(
-                        "aborted",
-                        {
-                            "code": "IRRELEVANT_CONTENT",
-                            "reason": "irrelevant_content",
-                            "message": (
-                                "Uploaded document does not look like a brokerage statement. "
-                                "Please upload a brokerage account PDF/CSV statement."
-                            ),
-                            "doc_type": relevance.doc_type,
-                            "confidence": relevance.confidence,
-                            "classifier_source": relevance.source,
-                            "classifier_reason": relevance.reason,
-                        },
-                        terminal=True,
-                    )
-                    return
+@router.get("/portfolio/import/run/{run_id}/stream")
+async def stream_portfolio_import_run(
+    request: Request,
+    run_id: str,
+    user_id: str,
+    cursor: Optional[int] = 0,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
+        )
 
-                full_extract_prompt = build_statement_extract_prompt_v2()
+    run = await _IMPORT_RUN_MANAGER.get_run(run_id)
+    if run is None or run.user_id != user_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "IMPORT_RUN_NOT_FOUND",
+                "message": "No import run found for requested run_id.",
+                "run_id": run_id,
+            },
+        )
 
-                pdf_context = (
-                    _extract_pdf_pass_contexts(content)
-                    if is_pdf_upload
-                    else {
-                        "positions_text": "",
-                        "summary_text": "",
-                        "positions_confidence": 0.0,
-                        "summary_confidence": 0.0,
-                        "selected_pages": [],
-                    }
-                )
+    start_cursor = _parse_import_cursor(cursor)
+    if start_cursor > run.latest_cursor:
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "IMPORT_RUN_RESUME_EXPIRED",
+                "message": "Requested cursor is beyond buffered events.",
+                "run_id": run.run_id,
+                "latest_cursor": run.latest_cursor,
+            },
+        )
 
-                run_started_at = time.perf_counter()
-                parse_diagnostics: dict[str, Any] = {
-                    "pass_timings_ms": {},
-                    "pass_token_counts": {},
-                    "pass_content_sources": {},
-                    "pdf_context": pdf_context,
-                }
-                combined_stream_text = ""
-                combined_chunk_count = 0
-                combined_thought_count = 0
+    return _create_import_sse_response(
+        _IMPORT_RUN_MANAGER.stream_run_events(
+            run=run,
+            start_cursor=start_cursor,
+            request=request,
+        )
+    )
 
-                # Stage 3: Scanning (real runtime milestone: handoff to model stream request)
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "scanning",
-                        "message": "Submitting statement to Vertex model...",
-                        "phase": "extract_full",
-                    },
-                )
 
-                full_context_parts = [
-                    str(pdf_context.get("positions_text") or "").strip(),
-                    str(pdf_context.get("summary_text") or "").strip(),
-                ]
-                full_context_excerpt = "\n\n".join(part for part in full_context_parts if part)
-                full_context_confidence = float(
-                    max(
-                        float(pdf_context.get("positions_confidence") or 0.0),
-                        float(pdf_context.get("summary_confidence") or 0.0),
-                    )
-                )
+@router.post("/portfolio/import/run/{run_id}/cancel")
+async def cancel_portfolio_import_run(
+    run_id: str,
+    user_id: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    if token_data["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
+        )
+    run = await _IMPORT_RUN_MANAGER.cancel_run(run_id=run_id, user_id=user_id)
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "IMPORT_RUN_NOT_FOUND",
+                "message": "No import run found for requested run_id.",
+                "run_id": run_id,
+            },
+        )
+    return {"run": run.to_public_dict()}
 
-                extract_full_result: dict[str, Any] = {}
-                async for frame in run_stream_pass_v2(
-                    request=request,
-                    stream=stream,
-                    client=client,
-                    types_module=types,
-                    phase="extract_full",
-                    model_name=model_to_use,
-                    prompt=full_extract_prompt,
-                    response_schema=FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
-                    context_excerpt=full_context_excerpt,
-                    context_confidence=full_context_confidence,
-                    stage_message="Extracting portfolio statement data...",
-                    progress_message="Streaming full extraction",
-                    include_holdings_preview=True,
-                    result_store=extract_full_result,
-                    content=content,
-                    is_csv_upload=is_csv_upload,
-                    temperature=KAI_LLM_TEMPERATURE,
-                    max_output_tokens=KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
-                    enforce_response_schema=KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
-                    thinking_enabled=thinking_enabled,
-                    thinking_level_raw=KAI_LLM_THINKING_LEVEL,
-                    heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
-                    required_keys=FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
-                ):
-                    yield frame
 
-                if extract_full_result.get("client_disconnected"):
-                    logger.info("[Portfolio Import] Client disconnected during full extraction")
-                    return
+@router.post("/portfolio/import/stream")
+async def import_portfolio_stream(
+    request: Request,
+    file: UploadFile,
+    user_id: str = Form(..., description="User's ID"),
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """Backward-compatible import stream endpoint.
 
-                parsed_data = (
-                    extract_full_result.get("parsed")
-                    if isinstance(extract_full_result.get("parsed"), dict)
-                    else {}
-                )
-                parsed_data = _canonicalize_structured_portfolio_payload(parsed_data)
-                parse_diagnostics["extract_full_pass_parse"] = extract_full_result.get(
-                    "parse_diagnostics", {}
-                )
-                parse_diagnostics["pass_timings_ms"]["extract_full_ms"] = extract_full_result.get(
-                    "elapsed_ms"
-                )
-                parse_diagnostics["pass_token_counts"]["extract_full"] = {
-                    "chunks": extract_full_result.get("chunk_count", 0),
-                    "thoughts": extract_full_result.get("thought_count", 0),
-                }
-                parse_diagnostics["pass_content_sources"]["extract_full"] = extract_full_result.get(
-                    "source"
-                )
+    Starts a resumable background import run and streams its events from cursor 0.
+    """
+    if token_data["user_id"] != user_id:
+        logger.warning("User ID mismatch: token=%s, request=%s", token_data["user_id"], user_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User ID does not match token"
+        )
 
-                detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
-                coverage_metrics = _compute_positions_coverage(
-                    holdings=detailed_holdings,
-                    total_value=_coerce_optional_number(parsed_data.get("total_value")),
-                )
-                parse_diagnostics["positions_coverage"] = coverage_metrics
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
 
-                if len(detailed_holdings) == 0:
-                    yield stream.event(
-                        "error",
-                        {
-                            "code": "IMPORT_NO_HOLDINGS",
-                            "message": (
-                                "No valid holdings were extracted from the statement. "
-                                "Please retry with a clearer statement export."
-                            ),
-                            "diagnostics": parse_diagnostics,
-                        },
-                        terminal=True,
-                    )
-                    return
+    filename_lower = file.filename.lower()
+    content_type = (file.content_type or "").lower()
+    is_csv_upload = filename_lower.endswith(".csv") or "csv" in content_type
+    is_pdf_upload = filename_lower.endswith(".pdf") or "pdf" in content_type
+    if not (is_pdf_upload or is_csv_upload):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload a PDF or CSV statement.",
+        )
 
-                parsed_data["detailed_holdings"] = detailed_holdings
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10MB.")
 
-                # Stage 4: Normalizing
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "normalizing",
-                        "phase": "normalizing",
-                        "message": "Normalizing extracted statement data...",
-                        "progress_pct": _phase_progress_bounds("normalizing")[0],
-                    },
-                )
+    state, run = await _IMPORT_RUN_MANAGER.start_or_get_active(
+        user_id=user_id,
+        filename=file.filename,
+        content=content,
+        is_csv_upload=is_csv_upload,
+        generator_factory=_portfolio_import_stream_factory,
+    )
+    if state == "active":
+        logger.info("[Portfolio Import] Reusing active run %s for user %s", run.run_id, user_id)
 
-                normalized_summary = _normalize_portfolio_summary(parsed_data)
-                if normalized_summary:
-                    parsed_data["portfolio_summary"] = {
-                        **(
-                            parsed_data.get("portfolio_summary")
-                            if isinstance(parsed_data.get("portfolio_summary"), dict)
-                            else {}
-                        ),
-                        **normalized_summary,
-                    }
-                sparse_sections = _detect_sparse_sections(parsed_data)
-                parse_diagnostics["sparse_sections_detected"] = sparse_sections
-
-                detailed_holdings, holdings_source = _extract_holdings_list(parsed_data)
-                parsed_data["detailed_holdings"] = detailed_holdings
-                if holdings_source != "detailed_holdings":
-                    yield stream.event(
-                        "warning",
-                        {
-                            "code": "HOLDINGS_ALIAS_USED",
-                            "message": (
-                                "Structured holdings were recovered from an alternative field."
-                                if holdings_source != "none"
-                                else "No holdings array found in model output; continuing with empty holdings."
-                            ),
-                            "source_field": holdings_source,
-                            "holdings_count": len(detailed_holdings),
-                            "phase": "normalizing",
-                        },
-                    )
-
-                parse_diagnostics["pass_timings_ms"]["total_ms"] = int(
-                    (time.perf_counter() - run_started_at) * 1000
-                )
-                combined_stream_text = str(extract_full_result.get("text") or "").strip()
-                combined_chunk_count = int(extract_full_result.get("chunk_count") or 0)
-                combined_thought_count = int(extract_full_result.get("thought_count") or 0)
-                parse_diagnostics["combined_stream"] = {
-                    "response_chars": len(combined_stream_text),
-                    "chunk_count": combined_chunk_count,
-                    "thought_count": combined_thought_count,
-                }
-
-                # Transform Gemini response to match frontend expected structure
-                account_metadata_raw = parsed_data.get("account_metadata")
-                account_metadata = (
-                    account_metadata_raw if isinstance(account_metadata_raw, dict) else {}
-                )
-                inferred_account_metadata = _derive_account_metadata_from_filename(
-                    file.filename or ""
-                )
-                for key, value in inferred_account_metadata.items():
-                    if account_metadata.get(key) in (None, "", []):
-                        account_metadata[key] = value
-                account_info = {
-                    "holder_name": account_metadata.get("account_holder"),
-                    "account_number": account_metadata.get("account_number"),
-                    "account_type": account_metadata.get("account_type"),
-                    "brokerage_name": account_metadata.get("institution_name"),
-                    "statement_period_start": account_metadata.get("statement_period_start"),
-                    "statement_period_end": account_metadata.get("statement_period_end"),
-                }
-
-                portfolio_summary_raw = parsed_data.get("portfolio_summary")
-                portfolio_summary = (
-                    portfolio_summary_raw if isinstance(portfolio_summary_raw, dict) else {}
-                )
-                account_summary = {
-                    "beginning_value": _coerce_optional_number(
-                        portfolio_summary.get("beginning_value")
-                    ),
-                    "ending_value": _coerce_optional_number(portfolio_summary.get("ending_value")),
-                    "change_in_value": _coerce_optional_number(
-                        portfolio_summary.get("total_change")
-                    ),
-                    "cash_balance": _coerce_optional_number(parsed_data.get("cash_balance")),
-                    "net_deposits_withdrawals": _coerce_optional_number(
-                        portfolio_summary.get("net_deposits_withdrawals")
-                    ),
-                    "investment_gain_loss": _coerce_optional_number(
-                        portfolio_summary.get("investment_gain_loss")
-                    ),
-                    "total_income_period": _coerce_optional_number(
-                        portfolio_summary.get("total_income_period")
-                    ),
-                    "total_income_ytd": _coerce_optional_number(
-                        portfolio_summary.get("total_income_ytd")
-                    ),
-                    "total_fees": _coerce_optional_number(portfolio_summary.get("total_fees")),
-                }
-
-                detailed_holdings_raw = parsed_data.get("detailed_holdings")
-                detailed_holdings = (
-                    detailed_holdings_raw if isinstance(detailed_holdings_raw, list) else []
-                )
-                normalized_holdings: list[dict[str, Any]] = []
-                parsed_total = len(detailed_holdings)
-                if parsed_total > 0:
-                    yield stream.event(
-                        "progress",
-                        {
-                            "phase": "normalizing",
-                            "message": f"Normalizing {parsed_total} extracted holdings...",
-                            "holdings_extracted": 0,
-                            "holdings_total": parsed_total,
-                            "holdings_raw_count": parsed_total,
-                            "holdings_preview": [],
-                            "progress_pct": _phase_progress_bounds("normalizing")[0],
-                        },
-                    )
-                for idx, h in enumerate(detailed_holdings):
-                    if await request.is_disconnected():
-                        logger.info(
-                            "[Portfolio Import] Client disconnected during normalization, stopping stream cleanup"
-                        )
-                        return
-                    if not isinstance(h, dict):
-                        logger.warning(
-                            "[Portfolio Import] Skipping non-dict holding row at index %s: %r",
-                            idx,
-                            type(h).__name__,
-                        )
-                        continue
-                    normalized = _normalize_raw_holding_row(h, idx)
-                    normalized_holdings.append(normalized)
-
-                    if parsed_total <= 10 or (idx + 1) == parsed_total or (idx + 1) % 5 == 0:
-                        yield stream.event(
-                            "progress",
-                            {
-                                "phase": "normalizing",
-                                "message": (
-                                    f"Parsed {idx + 1} of {parsed_total} holdings"
-                                    if parsed_total > 0
-                                    else "Parsing holdings..."
-                                ),
-                                "holdings_extracted": idx + 1,
-                                "holdings_total": parsed_total,
-                                "holdings_raw_count": parsed_total,
-                                "holdings_preview": _build_holdings_preview(
-                                    normalized_holdings, max_items=40
-                                ),
-                                "progress_pct": _phase_progress_bounds("normalizing")[0]
-                                + min(
-                                    _phase_progress_bounds("normalizing")[1]
-                                    - _phase_progress_bounds("normalizing")[0],
-                                    ((idx + 1) / max(parsed_total, 1))
-                                    * (
-                                        _phase_progress_bounds("normalizing")[1]
-                                        - _phase_progress_bounds("normalizing")[0]
-                                    ),
-                                ),
-                            },
-                        )
-
-                # ---- Validation pass: reject hallucinated or incomplete entries ----
-                yield stream.event(
-                    "stage",
-                    {
-                        "stage": "validating",
-                        "phase": "validating",
-                        "message": "Validating and reconciling normalized holdings...",
-                        "progress_pct": _phase_progress_bounds("validating")[0],
-                    },
-                )
-                raw_count = len(normalized_holdings)
-                reconciled_count = 0
-                mismatch_count = 0
-                dropped_reasons: Counter[str] = Counter()
-                validated_holdings: list[dict[str, Any]] = []
-                for row in normalized_holdings:
-                    is_valid, reason = _validate_holding_row(row)
-                    if not is_valid:
-                        dropped_reasons[reason or "unknown"] += 1
-                        continue
-
-                    reconciliation = row.get("reconciliation")
-                    if isinstance(reconciliation, dict):
-                        if reconciliation.get("reconciled_fields"):
-                            reconciled_count += 1
-                        if reconciliation.get("mismatch_detected"):
-                            mismatch_count += 1
-
-                    validated_holdings.append(row)
-
-                holdings = _aggregate_holdings_by_symbol(validated_holdings)
-                duplicate_symbol_lot_count = max(0, len(validated_holdings) - len(holdings))
-                unknown_name_count = sum(1 for row in holdings if _is_unknown_name(row.get("name")))
-                placeholder_symbol_count = sum(
-                    1 for row in holdings if str(row.get("symbol") or "").startswith("HOLDING_")
-                )
-                zero_qty_zero_price_nonzero_value_count = sum(
-                    1
-                    for row in holdings
-                    if (
-                        (_coerce_optional_number(row.get("quantity")) or 0.0) == 0.0
-                        and (_coerce_optional_number(row.get("price")) or 0.0) == 0.0
-                        and (_coerce_optional_number(row.get("market_value")) or 0.0) > 0.0
-                    )
-                )
-                account_header_row_count = dropped_reasons.get("account_header_row", 0)
-                logger.info(
-                    "[Portfolio Validation] Validated %s/%s holdings (aggregated=%s)",
-                    len(validated_holdings),
-                    raw_count,
-                    len(holdings),
-                )
-
-                # Calculate total_value if not provided
-                total_value = _coerce_optional_number(parsed_data.get("total_value")) or 0.0
-                if not total_value and account_summary.get("ending_value"):
-                    total_value = account_summary["ending_value"] or 0.0
-                if not total_value and holdings:
-                    total_value = sum(
-                        _coerce_optional_number(h.get("market_value")) or 0 for h in holdings
-                    )
-                parsed_data["asset_allocation"] = _normalize_asset_allocation_rows(
-                    parsed_data.get("asset_allocation"),
-                    holdings=holdings,
-                )
-                account_summary = _enrich_account_summary_with_holdings(
-                    account_summary,
-                    holdings=holdings,
-                    total_value=total_value,
-                )
-                if account_summary.get("cash_balance") is not None:
-                    parsed_data["cash_balance"] = account_summary.get("cash_balance")
-
-                quality_report = build_holdings_quality_report_v2(
-                    raw_count=raw_count,
-                    validated_count=len(validated_holdings),
-                    aggregated_count=len(holdings),
-                    dropped_reasons=dropped_reasons,
-                    reconciled_count=reconciled_count,
-                    mismatch_count=mismatch_count,
-                    parse_diagnostics=parse_diagnostics,
-                    unknown_name_count=unknown_name_count,
-                    placeholder_symbol_count=placeholder_symbol_count,
-                    zero_qty_zero_price_nonzero_value_count=zero_qty_zero_price_nonzero_value_count,
-                    account_header_row_count=account_header_row_count,
-                    duplicate_symbol_lot_count=duplicate_symbol_lot_count,
-                    average_confidence=(
-                        round(
-                            sum(
-                                _coerce_optional_number(row.get("confidence")) or 0.0
-                                for row in holdings
-                            )
-                            / max(len(holdings), 1),
-                            4,
-                        )
-                        if holdings
-                        else 0.0
-                    ),
-                )
-                quality_gate_passed, quality_gate = evaluate_import_quality_gate_v2(
-                    holdings=holdings,
-                    placeholder_symbol_count=placeholder_symbol_count,
-                    account_header_row_count=account_header_row_count,
-                    expected_total_value=total_value,
-                )
-                quality_report["quality_gate"] = quality_gate
-                quality_report_v2 = build_quality_report_v2(
-                    quality_report=quality_report,
-                    quality_gate=quality_gate,
-                    holdings=holdings,
-                )
-
-                yield stream.event(
-                    "progress",
-                    {
-                        "phase": "validating",
-                        "message": (
-                            f"Validated {len(validated_holdings)} holdings and aggregated into {len(holdings)} symbols"
-                        ),
-                        "holdings_extracted": len(validated_holdings),
-                        "holdings_total": parsed_total,
-                        "holdings_raw_count": raw_count,
-                        "holdings_validated_count": len(validated_holdings),
-                        "holdings_aggregated_count": len(holdings),
-                        "holdings_dropped_reasons": dict(dropped_reasons),
-                        "holdings_preview": _build_holdings_preview(holdings, max_items=40),
-                        "progress_pct": 98,
-                        "quality_gate": quality_gate,
-                    },
-                )
-
-                if not quality_gate_passed:
-                    yield stream.event(
-                        "aborted",
-                        {
-                            "code": "IMPORT_QUALITY_GATE_FAILED",
-                            "reason": "quality_gate_failed",
-                            "message": (
-                                "Parsed statement data did not pass strict validation checks. "
-                                "Please retry import or upload a clearer statement."
-                            ),
-                            "quality_gate": quality_gate,
-                            "quality_report_v2": quality_report_v2,
-                        },
-                        terminal=True,
-                    )
-                    return
-
-                cash_balance = _coerce_optional_number(parsed_data.get("cash_balance"))
-                raw_extract_v2 = dict(parsed_data)
-                portfolio_data_v2 = build_financial_portfolio_canonical_v2(
-                    raw_extract_v2=raw_extract_v2,
-                    account_info=account_info,
-                    account_summary=account_summary,
-                    holdings=holdings,
-                    asset_allocation=parsed_data.get("asset_allocation"),
-                    total_value=total_value,
-                    cash_balance=cash_balance,
-                    quality_report_v2=quality_report_v2,
-                )
-                portfolio_data_v2.update(
-                    {
-                        "statement_details": raw_extract_v2.get("statement_details"),
-                        "management_contacts": raw_extract_v2.get("management_contacts"),
-                        "investment_objective": raw_extract_v2.get("investment_objective"),
-                        "portfolio_detail": raw_extract_v2.get("portfolio_detail"),
-                        "transactions": raw_extract_v2.get("transactions"),
-                        "reconciliation_summary": raw_extract_v2.get("reconciliation_summary"),
-                        "derived_metrics": raw_extract_v2.get("derived_metrics"),
-                        "income_summary": raw_extract_v2.get("income_summary"),
-                        "realized_gain_loss": raw_extract_v2.get("realized_gain_loss"),
-                        "cash_flow": raw_extract_v2.get("cash_flow"),
-                        "cash_management": raw_extract_v2.get("cash_management"),
-                        "projections_and_mrd": raw_extract_v2.get("projections_and_mrd"),
-                        "historical_values": raw_extract_v2.get("historical_values"),
-                        "ytd_metrics": raw_extract_v2.get("ytd_metrics"),
-                        "legal_and_disclosures": raw_extract_v2.get("legal_and_disclosures"),
-                        "parse_fallback": False,
-                        "kpis": {
-                            "holdings_count": len(holdings),
-                            "total_value": total_value,
-                        },
-                    }
-                )
-                analytics_v2 = build_financial_analytics_v2(
-                    canonical_portfolio_v2=portfolio_data_v2,
-                    raw_extract_v2=raw_extract_v2,
-                )
-                coverage_metrics_payload = (
-                    parse_diagnostics.get("positions_coverage")
-                    if isinstance(parse_diagnostics.get("positions_coverage"), dict)
-                    else {}
-                )
-                logger.info(
-                    "SSE: Portfolio V2 ready - holdings=%s total_value=%s",
-                    len(holdings),
-                    total_value,
-                )
-                phase_token_counts = (
-                    parse_diagnostics.get("pass_token_counts")
-                    if isinstance(parse_diagnostics.get("pass_token_counts"), dict)
-                    else {}
-                )
-                total_phase_thoughts = sum(
-                    int((value.get("thoughts") or 0))
-                    for value in phase_token_counts.values()
-                    if isinstance(value, dict)
-                )
-
-                # Stage 5: Complete
-                yield stream.event(
-                    "complete",
-                    {
-                        "portfolio_data_v2": portfolio_data_v2,
-                        "raw_extract_v2": raw_extract_v2,
-                        "analytics_v2": analytics_v2,
-                        "quality_report_v2": quality_report_v2,
-                        "timings_ms": build_timing_payload(diagnostics=parse_diagnostics),
-                        "token_counts": build_token_counts_payload(diagnostics=parse_diagnostics),
-                        "coverage_metrics": coverage_metrics_payload,
-                        "success": True,
-                        "parse_fallback": False,
-                        "quality_gate": quality_gate,
-                        "thought_count": max(combined_thought_count, total_phase_thoughts),
-                        "holdings_raw_count": raw_count,
-                        "holdings_validated_count": len(validated_holdings),
-                        "holdings_aggregated_count": len(holdings),
-                        "holdings_dropped_reasons": dict(dropped_reasons),
-                        "diagnostics": parse_diagnostics,
-                    },
-                    terminal=True,
-                )
-
-            # end of asyncio.timeout context
-
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"[Portfolio Import] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
-            )
-            yield stream.event(
-                "error",
-                {
-                    "code": "IMPORT_TIMEOUT",
-                    "message": (
-                        f"Portfolio import timed out after {HARD_TIMEOUT_SECONDS}s. "
-                        "Please retry; parsing may still complete on the next attempt."
-                    ),
-                },
-                terminal=True,
-            )
-        except Exception as e:
-            logger.error(f"SSE streaming error: {e}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            yield stream.event(
-                "error",
-                {"code": "IMPORT_STREAM_FAILED", "message": str(e)},
-                terminal=True,
-            )
-
-    return EventSourceResponse(
-        event_generator(),
-        ping=15,  # Send ping every 15s — detects dead connections (app crash, force-close, network drop)
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        },
+    return _create_import_sse_response(
+        _IMPORT_RUN_MANAGER.stream_run_events(
+            run=run,
+            start_cursor=0,
+            request=request,
+        )
     )

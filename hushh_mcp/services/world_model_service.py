@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from db.db_client import get_db
 from hushh_mcp.services.domain_contracts import (
@@ -794,7 +794,9 @@ class WorldModelService:
         domain: str,
         encrypted_blob: dict,
         summary: dict,
-    ) -> bool:
+        expected_data_version: Optional[int] = None,
+        return_result: bool = False,
+    ) -> bool | dict[str, Any]:
         """
         Store encrypted domain data and update index.
 
@@ -818,12 +820,19 @@ class WorldModelService:
                 }
 
         Returns:
-            bool: Success status
+            bool: Success status by default.
+            dict: Detailed result when return_result=True.
         """
+        result: dict[str, Any] = {
+            "success": False,
+            "conflict": False,
+            "data_version": None,
+            "updated_at": None,
+        }
         domain = self._canonicalize_domain_key(domain)
         if not domain:
             logger.error("store_domain_data called with empty domain for user %s", user_id)
-            return False
+            return result if return_result else False
 
         try:
             try:
@@ -851,7 +860,21 @@ class WorldModelService:
                 default="aes-256-gcm",
             ).lower()
 
+            current_data: Optional[dict] = None
+            current_version = 0
+            if expected_data_version is not None:
+                current_data = await self.get_encrypted_data(user_id)
+                if current_data is not None:
+                    current_version = int(current_data.get("data_version", 0) or 0)
+                if current_version != expected_data_version:
+                    result["conflict"] = True
+                    result["data_version"] = current_version
+                    result["updated_at"] = current_data.get("updated_at") if current_data else None
+                    return result if return_result else False
+
             blob_stored = False
+            resolved_data_version: Optional[int] = None
+            resolved_updated_at: Optional[str] = None
             if self._supports_blob_upsert_rpc():
                 try:
                     rpc_result = self._run_rpc(
@@ -874,6 +897,11 @@ class WorldModelService:
                     else:
                         self._blob_upsert_rpc_supported = True
                         blob_stored = True
+                        if hasattr(rpc_result, "data") and rpc_result.data:
+                            candidate = rpc_result.data[0]
+                            raw_version = candidate.get("upsert_world_model_data_blob")
+                            if isinstance(raw_version, (int, float)):
+                                resolved_data_version = int(raw_version)
                 except Exception as rpc_error:
                     if self._is_missing_rpc_function_error(
                         rpc_error, "upsert_world_model_data_blob"
@@ -892,19 +920,23 @@ class WorldModelService:
 
             if not blob_stored:
                 # Fallback: existing read-modify-write path for data_version increment.
-                current_data = await self.get_encrypted_data(user_id)
-                current_version = 0
                 if current_data is not None:
                     current_version = current_data.get("data_version", 0) or 0
+                else:
+                    current_data = await self.get_encrypted_data(user_id)
+                    if current_data is not None:
+                        current_version = current_data.get("data_version", 0) or 0
 
+                resolved_data_version = int(current_version) + 1
+                resolved_updated_at = datetime.utcnow().isoformat()
                 data = {
                     "user_id": user_id,
                     "encrypted_data_ciphertext": ciphertext,
                     "encrypted_data_iv": iv,
                     "encrypted_data_tag": tag,
                     "algorithm": algorithm,
-                    "data_version": current_version + 1,
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "data_version": resolved_data_version,
+                    "updated_at": resolved_updated_at,
                 }
 
                 if current_data is None:
@@ -917,12 +949,21 @@ class WorldModelService:
             # 3. Update world_model_index_v2
             summary_ok = await self.update_domain_summary(user_id, domain, summary)
             if not summary_ok:
-                return False
+                return result if return_result else False
 
-            return True
+            if resolved_data_version is None:
+                post_write = await self.get_encrypted_data(user_id)
+                if post_write is not None:
+                    resolved_data_version = int(post_write.get("data_version", 0) or 0)
+                    resolved_updated_at = post_write.get("updated_at")
+
+            result["success"] = True
+            result["data_version"] = resolved_data_version
+            result["updated_at"] = resolved_updated_at
+            return result if return_result else True
         except Exception as e:
             logger.error(f"Error storing domain data: {e}")
-            return False
+            return result if return_result else False
 
     async def get_encrypted_data(self, user_id: str) -> Optional[dict]:
         """
