@@ -181,6 +181,126 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _is_recommendation_gap_text(detail: str | None) -> bool:
+    text = str(detail or "").strip().lower()
+    if not text:
+        return True
+    return text in {
+        "no live recommendation feed available.",
+        "recommendation unavailable.",
+        "target consensus unavailable.",
+    }
+
+
+def _fallback_recommendation_from_quote(
+    symbol: str, quote: dict[str, Any] | None
+) -> dict[str, Any]:
+    change_pct = _safe_float((quote or {}).get("change_percent"))
+    if change_pct is None:
+        return {
+            "signal": "HOLD",
+            "detail": "Using a neutral stance while analyst consensus refreshes.",
+            "source": "Momentum Fallback",
+            "degraded": True,
+        }
+    if change_pct >= 1.5:
+        return {
+            "signal": "BUY",
+            "detail": f"{symbol} is showing positive momentum today while analyst consensus refreshes.",
+            "source": "Momentum Fallback",
+            "degraded": True,
+        }
+    if change_pct <= -1.5:
+        return {
+            "signal": "REDUCE",
+            "detail": f"{symbol} is under pressure today while analyst consensus refreshes.",
+            "source": "Momentum Fallback",
+            "degraded": True,
+        }
+    return {
+        "signal": "HOLD",
+        "detail": f"{symbol} is trading near a neutral range while analyst consensus refreshes.",
+        "source": "Momentum Fallback",
+        "degraded": True,
+    }
+
+
+def _spotlight_rank(row: dict[str, Any]) -> tuple[int, float]:
+    score = 0
+    if not bool(row.get("degraded")):
+        score += 3
+    recommendation = str(row.get("recommendation") or "").upper().strip()
+    if recommendation == "BUY":
+        score += 3
+    elif recommendation == "REDUCE":
+        score += 2
+    elif recommendation == "HOLD":
+        score += 1
+
+    detail = str(row.get("recommendation_detail") or "").strip()
+    if detail and not _is_recommendation_gap_text(detail):
+        score += 2
+
+    headline = str(row.get("headline") or "").strip()
+    if headline:
+        score += 2
+
+    if _safe_float(row.get("price")) is not None:
+        score += 1
+
+    return score, abs(_safe_float(row.get("change_pct")) or 0.0)
+
+
+def _spotlight_confidence(row: dict[str, Any]) -> float:
+    confidence = 0.45
+    if not bool(row.get("degraded")):
+        confidence += 0.2
+
+    recommendation = str(row.get("recommendation") or "").upper().strip()
+    if recommendation == "BUY":
+        confidence += 0.12
+    elif recommendation == "REDUCE":
+        confidence += 0.1
+    elif recommendation == "HOLD":
+        confidence += 0.06
+
+    detail = str(row.get("recommendation_detail") or "").strip()
+    if detail and not _is_recommendation_gap_text(detail):
+        confidence += 0.08
+
+    if str(row.get("headline") or "").strip():
+        confidence += 0.06
+
+    change_abs = abs(_safe_float(row.get("change_pct")) or 0.0)
+    if change_abs >= 2.5:
+        confidence += 0.08
+    elif change_abs >= 1.0:
+        confidence += 0.04
+
+    return round(max(0.35, min(0.95, confidence)), 2)
+
+
+def _spotlight_story(row: dict[str, Any]) -> str:
+    recommendation = str(row.get("recommendation") or "HOLD").upper().strip()
+    detail = str(row.get("recommendation_detail") or "").strip()
+    if detail and not _is_recommendation_gap_text(detail):
+        return detail
+
+    symbol = str(row.get("symbol") or "This name").strip() or "This name"
+    change_pct = _safe_float(row.get("change_pct"))
+    momentum = (
+        f" ({change_pct:+.2f}% today)"
+        if isinstance(change_pct, float) and not (change_pct != change_pct)
+        else ""
+    )
+
+    if recommendation == "BUY":
+        return f"{symbol} shows positive momentum{momentum} while consensus updates refresh."
+    if recommendation == "REDUCE":
+        return f"{symbol} is showing downside pressure{momentum}; monitor risk closely."
+    return f"{symbol} is range-bound{momentum} with a neutral near-term setup."
+
+
 def _scheduled_market_status_fallback() -> dict[str, Any]:
     try:
         ny_now = datetime.now(ZoneInfo("America/New_York"))
@@ -653,8 +773,8 @@ async def _fetch_recommendation(symbol: str, quote_price: float | None) -> dict[
                         )
 
     return {
-        "signal": "NEUTRAL",
-        "detail": "No live recommendation feed available.",
+        "signal": "HOLD",
+        "detail": "Using a neutral stance while analyst consensus refreshes.",
         "source": "Fallback",
         "degraded": True,
     }
@@ -1458,7 +1578,7 @@ async def get_market_insights(
         async def build_watchlist_row(symbol: str) -> tuple[dict[str, Any], dict[str, str], bool]:
             quote = quote_map.get(symbol) if isinstance(quote_map, dict) else None
             quote_price = _safe_float((quote or {}).get("price"))
-            rec_key = f"recommendation:{symbol}:{round(quote_price or 0, 4)}"
+            rec_key = f"recommendation:{symbol}"
 
             async def fetch_recommendation_bundle() -> dict[str, Any]:
                 async with rec_semaphore:
@@ -1477,13 +1597,10 @@ async def get_market_insights(
             recommendation = (
                 rec_bundle.get("recommendation")
                 if isinstance(rec_bundle.get("recommendation"), dict)
-                else {
-                    "signal": "NEUTRAL",
-                    "detail": "No live recommendation feed available.",
-                    "source": "Fallback",
-                    "degraded": True,
-                }
+                else _fallback_recommendation_from_quote(symbol, quote)
             )
+            if _is_recommendation_gap_text(recommendation.get("detail")):
+                recommendation = _fallback_recommendation_from_quote(symbol, quote)
             row = {
                 "symbol": symbol,
                 "symbol_quality": "tradable_ticker",
@@ -1495,6 +1612,7 @@ async def get_market_insights(
                 "sector": str((quote or {}).get("sector") or "").strip() or None,
                 "recommendation": str(recommendation.get("signal") or "NEUTRAL"),
                 "recommendation_detail": str(recommendation.get("detail") or "").strip() or None,
+                "recommendation_source": str(recommendation.get("source") or "Fallback"),
                 "source_tags": sorted(
                     set(
                         [
@@ -1663,6 +1781,16 @@ async def get_market_insights(
         )
         stale = stale or news_cache.stale
 
+        news_by_symbol: dict[str, dict[str, Any]] = {}
+        for news in news_tape:
+            if not isinstance(news, dict):
+                continue
+            symbol = str(news.get("symbol") or "").strip().upper()
+            title = str(news.get("title") or "").strip()
+            if not symbol or not title or symbol in news_by_symbol:
+                continue
+            news_by_symbol[symbol] = news
+
         market_overview = _build_market_overview(spy_quote, qqq_quote, vix_payload, status_payload)
 
         sparkline_points, sparkline_degraded, sparkline_sources = await _build_sparkline_points(
@@ -1709,6 +1837,19 @@ async def get_market_insights(
             source_tags=["PMP/FMP", "Finnhub", "Fallback"],
         )
 
+        spotlight_candidates: list[dict[str, Any]] = []
+        for row in watchlist_rows:
+            symbol = str(row.get("symbol") or "").strip().upper()
+            related_news = news_by_symbol.get(symbol) or {}
+            spotlight_candidates.append(
+                {
+                    **row,
+                    "headline": str(related_news.get("title") or "").strip() or None,
+                    "headline_url": str(related_news.get("url") or "").strip() or None,
+                    "headline_source": str(related_news.get("source_name") or "").strip() or None,
+                }
+            )
+        spotlight_candidates.sort(key=_spotlight_rank, reverse=True)
         spotlights = [
             {
                 "symbol": row.get("symbol"),
@@ -1717,20 +1858,17 @@ async def get_market_insights(
                 "change_pct": row.get("change_pct"),
                 "recommendation": row.get("recommendation"),
                 "recommendation_detail": row.get("recommendation_detail"),
-                "headline": next(
-                    (
-                        news.get("title")
-                        for news in news_tape
-                        if isinstance(news, dict)
-                        and str(news.get("symbol") or "") == str(row.get("symbol") or "")
-                    ),
-                    None,
-                ),
+                "recommendation_source": row.get("recommendation_source"),
+                "story": _spotlight_story(row),
+                "confidence": _spotlight_confidence(row),
+                "headline": row.get("headline"),
+                "headline_url": row.get("headline_url"),
+                "headline_source": row.get("headline_source"),
                 "source_tags": row.get("source_tags") or [],
                 "as_of": row.get("as_of"),
                 "degraded": bool(row.get("degraded")),
             }
-            for row in watchlist_rows[:2]
+            for row in spotlight_candidates[:2]
         ]
 
         themes = [
