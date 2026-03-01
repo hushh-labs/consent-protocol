@@ -138,6 +138,16 @@ Rules:
 - `round`/`phase` are explicit producer metadata; frontend must not infer them.
 - Every stream ends with exactly one terminal `decision` or `error`.
 
+### Portfolio Import Quality Gate Semantics
+
+Portfolio import quality checks now use severity semantics instead of hard-failing all strict mismatches:
+
+- `severity=pass`: import is fully accepted.
+- `severity=warn`: import is accepted with partial coverage warning (`parse_fallback=true` in complete payload).
+- `severity=fail`: import is blocked (used for unusable parses like zero holdings after normalization).
+
+Hard blocks remain only for unrelated/unreadable uploads (`IRRELEVANT_CONTENT` / `EMPTY_OR_UNREADABLE`).
+
 ### Agent Execution Order
 
 Agents always execute sequentially in this order:

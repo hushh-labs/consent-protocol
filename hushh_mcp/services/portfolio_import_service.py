@@ -2031,12 +2031,10 @@ Statement text (first 12000 chars):
 
         This is the PRIMARY extraction method that uses Gemini's PDF vision
         capabilities to extract ALL financial data from brokerage statements.
-
-        Falls back to regex-based extraction if LLM fails.
         """
         import asyncio
 
-        portfolio = ComprehensivePortfolio(extraction_method="unknown")
+        portfolio = ComprehensivePortfolio(extraction_method="gemini_vision")
 
         # Strategy 1: Gemini PDF Vision (PRIMARY)
         logger.info("=" * 60)
@@ -2064,37 +2062,12 @@ Statement text (first 12000 chars):
                 portfolio = asyncio.run(self._parse_with_gemini_comprehensive(pdf_bytes, filename))
 
             if portfolio and portfolio.holdings:
-                account_info = portfolio.account_info
-                account_summary = portfolio.account_summary
-                needs_backfill = (
-                    account_info is None
-                    or not str(account_info.account_number or "").strip()
-                    or not str(account_info.statement_period_start or "").strip()
-                    or not str(account_info.statement_period_end or "").strip()
-                    or account_summary is None
-                    or (
-                        (account_summary.beginning_value or 0.0) == 0.0
-                        and (account_summary.ending_value or 0.0) == 0.0
-                    )
-                )
-                if needs_backfill:
-                    try:
-                        fallback_enhanced = self.parse(pdf_bytes, filename)
-                        if fallback_enhanced and fallback_enhanced.holdings:
-                            self._merge_comprehensive_with_enhanced_fallback(
-                                portfolio, fallback_enhanced
-                            )
-                    except Exception as fallback_error:
-                        logger.warning(
-                            "Gemini metadata backfill via regex parser failed: %s", fallback_error
-                        )
-
                 logger.info(f"Gemini Vision extracted {len(portfolio.holdings)} holdings")
                 logger.info(f"Total value: ${portfolio.total_value:,.2f}")
                 portfolio.extraction_method = "gemini_vision"
                 return portfolio
             else:
-                logger.warning("Gemini Vision returned no holdings, falling back to regex")
+                logger.warning("Gemini Vision returned no holdings.")
 
         except Exception as e:
             logger.error(f"Gemini Vision extraction failed: {e}")
@@ -2102,26 +2075,7 @@ Statement text (first 12000 chars):
 
             logger.error(traceback.format_exc())
 
-        # Strategy 2: Regex-based extraction (FALLBACK)
-        logger.info("=" * 60)
-        logger.info("Strategy 2: Falling back to regex-based extraction")
-        logger.info("=" * 60)
-
-        try:
-            # Use existing parse method
-            enhanced_portfolio = self.parse(pdf_bytes, filename)
-
-            if enhanced_portfolio and enhanced_portfolio.holdings:
-                # Convert EnhancedPortfolio to ComprehensivePortfolio
-                portfolio = self._convert_enhanced_to_comprehensive(enhanced_portfolio)
-                portfolio.extraction_method = "regex"
-                logger.info(f"Regex extracted {len(portfolio.holdings)} holdings")
-                return portfolio
-
-        except Exception as e:
-            logger.error(f"Regex extraction also failed: {e}")
-
-        logger.error("All extraction strategies failed")
+        logger.error("LLM extraction failed; no fallback parser is enabled.")
         return portfolio
 
     async def _parse_with_gemini_comprehensive(
@@ -3390,19 +3344,16 @@ Content sample:
                         comprehensive_portfolio
                     )
                 else:
-                    # Final fallback to legacy parsers
-                    logger.warning("Comprehensive parser found no holdings, trying legacy parsers")
-                    if "fidelity" in filename.lower():
-                        enhanced_portfolio = self.parser.parse_fidelity_pdf(file_content)
-                    elif "jpmorgan" in filename.lower() or "chase" in filename.lower():
-                        enhanced_portfolio = self.parser.parse_jpmorgan_pdf(file_content)
-                    else:
-                        enhanced_portfolio = self.parser.parse_fidelity_pdf(file_content)
+                    logger.warning("Comprehensive parser found no holdings (LLM-only mode)")
+                    enhanced_portfolio = None
 
                 if not enhanced_portfolio or not enhanced_portfolio.holdings:
                     return ImportResult(
                         success=False,
-                        error="No holdings found in PDF. The parser tried LLM vision, regex, and table extraction but couldn't extract holdings. Please try CSV export or contact support.",
+                        error=(
+                            "No holdings found in PDF from LLM extraction. "
+                            "Please retry import shortly."
+                        ),
                     )
             else:
                 return ImportResult(

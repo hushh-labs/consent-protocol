@@ -36,12 +36,10 @@ from api.routes.kai.portfolio import (  # noqa: E402
 )
 from hushh_mcp.constants import (  # noqa: E402
     GEMINI_MODEL,
-    KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA,
     KAI_PORTFOLIO_IMPORT_MAX_OUTPUT_TOKENS,
 )
 from hushh_mcp.kai_import import (  # noqa: E402
     FINANCIAL_STATEMENT_EXTRACT_V2_REQUIRED_KEYS,
-    FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA,
     build_statement_extract_prompt_v2,
 )
 
@@ -128,8 +126,6 @@ async def _run_model_for_pdf(
         "response_mime_type": "application/json",
         "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
     }
-    if KAI_PORTFOLIO_IMPORT_ENFORCE_RESPONSE_SCHEMA:
-        config_kwargs["response_schema"] = FINANCIAL_STATEMENT_EXTRACT_V2_RESPONSE_SCHEMA
     config = types.GenerateContentConfig(**config_kwargs)
 
     response = None
