@@ -71,5 +71,5 @@ def test_portfolio_route_has_no_hardcoded_pre_measure_percentages():
     ):
         assert disallowed not in source
 
-    assert 'f"Parsed {idx + 1} of {parsed_total} holdings"' in source
+    assert 'f"Confirmed {idx + 1} of {parsed_total} holdings"' in source
     assert "holdings_extracted" in source

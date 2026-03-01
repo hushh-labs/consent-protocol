@@ -65,6 +65,11 @@ Migration scripts use `DB_*` variables only (same as runtime). `db/migrate.py` u
 
 Kai portfolio import model selection is constants-driven in `hushh_mcp/constants.py` (`KAI_PORTFOLIO_IMPORT_*` constants) rather than per-environment toggles. Runtime environment controls provider/auth (`GOOGLE_GENAI_USE_VERTEXAI`, Vertex project/location credentials, API key).
 
+## Kai Portfolio Import Upload Limits
+
+Portfolio import endpoints accept statement uploads up to **25MB** (`/api/kai/portfolio/import`, `/api/kai/portfolio/import/run/start`, `/api/kai/portfolio/import/stream`).
+This accommodates longer brokerage statements while preserving relevance/quality gates.
+
 Kai generation behavior for import/optimize/debate is also constants-driven (not `.env` toggles):
 
 - `KAI_LLM_TEMPERATURE=0.0` (deterministic)
