@@ -121,12 +121,15 @@ def evaluate_import_quality_gate_v2(
         severity = "fail"
         reasons.append("no_holdings_extracted")
 
-    # Prompt-trust flow is strict pass/fail only.
     if severity == "pass":
+        warn_reasons: list[str] = []
         if rows_with_symbol_pct < 0.6:
-            reasons.append("low_symbol_coverage")
+            warn_reasons.append("low_symbol_coverage")
         if rows_with_market_value_pct < 0.5:
-            reasons.append("low_market_value_coverage")
+            warn_reasons.append("low_market_value_coverage")
+        if warn_reasons:
+            severity = "warn"
+            reasons.extend(warn_reasons)
 
     passed = severity != "fail"
     return passed, {
