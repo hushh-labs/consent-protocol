@@ -114,6 +114,8 @@ class ConsentDBService:
                             metadata = {}
                     expiry_hours = metadata.get("expiry_hours", 24)
 
+                    bid_value = metadata.get("bid_value")
+
                     results.append(
                         {
                             "id": row.get("request_id"),
@@ -123,6 +125,7 @@ class ConsentDBService:
                             "requestedAt": row.get("issued_at"),
                             "pollTimeoutAt": poll_timeout_at,
                             "expiryHours": expiry_hours,
+                            **({"bidValue": bid_value} if bid_value is not None else {}),
                         }
                     )
 
@@ -154,6 +157,7 @@ class ConsentDBService:
                         metadata = json.loads(metadata) if metadata else {}
                     except json.JSONDecodeError:
                         metadata = {}
+                bid_value = metadata.get("bid_value")
                 return {
                     "request_id": row.get("request_id"),
                     "developer": row.get("agent_id"),
@@ -162,6 +166,7 @@ class ConsentDBService:
                     "poll_timeout_at": row.get("poll_timeout_at"),
                     "issued_at": row.get("issued_at"),
                     "metadata": metadata,
+                    **({"bid_value": bid_value} if bid_value is not None else {}),
                 }
         return None
 
@@ -344,26 +349,28 @@ class ConsentDBService:
                     metadata = None
 
             token_id = row.get("token_id")
-            items.append(
-                {
-                    "id": str(row.get("id")),
-                    "token_id": token_id[:20] + "..."
-                    if token_id and len(token_id) > 20
-                    else token_id or "N/A",
-                    "agent_id": row.get("agent_id"),
-                    "scope": row.get("scope"),
-                    "action": row.get("action"),
-                    "issued_at": row.get("issued_at"),
-                    "expires_at": row.get("expires_at"),
-                    "request_id": row.get("request_id"),
-                    "scope_description": row.get("scope_description"),
-                    "metadata": metadata,
-                    # Detect timed out: REQUESTED with poll_timeout_at in the past
-                    "is_timed_out": row.get("action") == "REQUESTED"
-                    and row.get("poll_timeout_at")
-                    and row.get("poll_timeout_at") < now_ms,
-                }
-            )
+            bid_value = metadata.get("bid_value") if metadata else None
+            item = {
+                "id": str(row.get("id")),
+                "token_id": token_id[:20] + "..."
+                if token_id and len(token_id) > 20
+                else token_id or "N/A",
+                "agent_id": row.get("agent_id"),
+                "scope": row.get("scope"),
+                "action": row.get("action"),
+                "issued_at": row.get("issued_at"),
+                "expires_at": row.get("expires_at"),
+                "request_id": row.get("request_id"),
+                "scope_description": row.get("scope_description"),
+                "metadata": metadata,
+                # Detect timed out: REQUESTED with poll_timeout_at in the past
+                "is_timed_out": row.get("action") == "REQUESTED"
+                and row.get("poll_timeout_at")
+                and row.get("poll_timeout_at") < now_ms,
+            }
+            if bid_value is not None:
+                item["bid_value"] = bid_value
+            items.append(item)
 
         return {
             "items": items,
