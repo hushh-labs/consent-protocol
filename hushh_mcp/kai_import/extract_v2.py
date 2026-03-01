@@ -9,151 +9,82 @@ import re
 import time
 from typing import Any, AsyncGenerator
 
-_LIVE_SYMBOL_RE = re.compile(
-    r'"(?:symbol|symbol_cusip|ticker|cusip|security_id|security)"\s*:\s*"([^"]{1,64})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_NAME_RE = re.compile(
-    r'"(?:description|name|security_name|holding_name|security_description)"\s*:\s*"([^"]{1,180})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_ASSET_RE = re.compile(
-    r'"(?:asset_class|asset_type|security_type|type)"\s*:\s*"([^"]{1,64})"',
-    flags=re.IGNORECASE,
-)
-_LIVE_QTY_RE = re.compile(
-    r'"(?:quantity|shares|units|qty)"\s*:\s*(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
-    flags=re.IGNORECASE,
-)
-_LIVE_VALUE_RE = re.compile(
-    r'"(?:market_value|current_value|value|position_value|marketValue)"\s*:\s*'
-    r'(?:"([^"]{1,40})"|([-+]?\d[\d,]*(?:\.\d+)?))',
-    flags=re.IGNORECASE,
-)
-_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
-_MISSING_COMMA_AFTER_STRING_RE = re.compile(r'("(?:[^"\\]|\\.)*")\s+("[^"]+"\s*:)')
-_MISSING_COMMA_AFTER_VALUE_RE = re.compile(r"([0-9}\]])\s+(\"[^\"]+\"\s*:)")
+
+class ImportStrictParseError(ValueError):
+    """Raised when strict JSON parsing/schema checks fail for import extraction."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
-def _strip_code_fences(text: str) -> str:
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
-    if stripped.endswith("```"):
-        stripped = stripped[:-3]
-    return stripped.strip()
+def is_retryable_extract_error(exc: Exception) -> bool:
+    raw = str(exc or "").lower()
+    if not raw:
+        return False
+    retryable_markers = (
+        "429",
+        "too many requests",
+        "resource exhausted",
+        "timeout",
+        "timed out",
+        "connection",
+        "temporarily unavailable",
+    )
+    return any(marker in raw for marker in retryable_markers)
 
 
 def _to_object(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
-    raise ValueError("Parsed response is not a JSON object")
+    raise ImportStrictParseError("IMPORT_JSON_INVALID", "Model response is not a JSON object.")
 
 
-def _balance_json_delimiters(text: str) -> str:
-    stack: list[str] = []
-    in_string = False
-    escape = False
-
-    for char in text:
-        if escape:
-            escape = False
-            continue
-        if char == "\\" and in_string:
-            escape = True
-            continue
-        if char == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if char in "{[":
-            stack.append(char)
-        elif char == "}" and stack and stack[-1] == "{":
-            stack.pop()
-        elif char == "]" and stack and stack[-1] == "[":
-            stack.pop()
-
-    balanced = text
-    if in_string:
-        balanced += '"'
-
-    while stack:
-        opener = stack.pop()
-        balanced += "}" if opener == "{" else "]"
-    return balanced
-
-
-def parse_json_with_single_repair_v2(
+def parse_json_strict_v2(
     raw_text: str,
     *,
     required_keys: set[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    diagnostics: dict[str, Any] = {
-        "raw_length": len(raw_text),
+    candidate = str(raw_text or "").strip()
+    if not candidate:
+        raise ImportStrictParseError("IMPORT_JSON_INVALID", "Empty model response.")
+
+    try:
+        parsed = _to_object(json.loads(candidate))
+    except json.JSONDecodeError as exc:
+        raise ImportStrictParseError(
+            "IMPORT_JSON_INVALID",
+            f"Model returned invalid JSON: {exc.msg}",
+        ) from exc
+
+    if required_keys:
+        missing = sorted(k for k in required_keys if k not in parsed)
+        extra = sorted(k for k in parsed if k not in required_keys)
+        if missing or extra:
+            fragments: list[str] = []
+            if missing:
+                fragments.append("missing keys: " + ", ".join(missing))
+            if extra:
+                fragments.append("unexpected keys: " + ", ".join(extra))
+            raise ImportStrictParseError(
+                "IMPORT_SCHEMA_INVALID",
+                "Top-level schema mismatch (" + "; ".join(fragments) + ").",
+            )
+
+    diagnostics = {
+        "mode": "strict_json_only",
+        "raw_length": len(candidate),
         "repair_attempted": False,
         "repair_applied": False,
         "repair_actions": [],
     }
-
-    candidate = raw_text.strip()
-    if not candidate:
-        raise ValueError("Empty model response")
-
-    try:
-        parsed = _to_object(json.loads(candidate))
-    except Exception:
-        diagnostics["repair_attempted"] = True
-        repaired = _strip_code_fences(candidate)
-        actions: list[str] = []
-
-        normalized_quotes = (
-            repaired.replace("“", '"').replace("”", '"').replace("’", "'").replace("\u00a0", " ")
-        )
-        if normalized_quotes != repaired:
-            actions.append("normalized_quotes")
-            repaired = normalized_quotes
-
-        start = repaired.find("{")
-        end = repaired.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            sliced = repaired[start : end + 1]
-            if sliced != repaired:
-                actions.append("sliced_outer_object")
-                repaired = sliced
-
-        without_trailing = _TRAILING_COMMA_RE.sub(r"\1", repaired)
-        if without_trailing != repaired:
-            actions.append("removed_trailing_commas")
-            repaired = without_trailing
-
-        with_missing_commas = _MISSING_COMMA_AFTER_STRING_RE.sub(r"\1, \2", repaired)
-        with_missing_commas = _MISSING_COMMA_AFTER_VALUE_RE.sub(r"\1, \2", with_missing_commas)
-        if with_missing_commas != repaired:
-            actions.append("inserted_missing_commas")
-            repaired = with_missing_commas
-
-        balanced = _balance_json_delimiters(repaired)
-        if balanced != repaired:
-            actions.append("balanced_delimiters")
-            repaired = balanced
-
-        diagnostics["repair_actions"] = actions
-        diagnostics["repair_applied"] = bool(actions)
-        parsed = _to_object(json.loads(repaired))
-
-    if required_keys:
-        missing = sorted(k for k in required_keys if k not in parsed)
-        if missing:
-            raise ValueError(f"Missing required keys: {', '.join(missing)}")
-
     return parsed, diagnostics
 
 
 def _phase_progress_bounds_v2(phase: str) -> tuple[float, float]:
     ranges: dict[str, tuple[float, float]] = {
-        "extract_full": (20.0, 82.0),
-        "normalizing": (82.0, 92.0),
+        "extract_full": (3.0, 78.0),
+        "normalizing": (78.0, 92.0),
         "validating": (92.0, 99.0),
     }
     return ranges.get(phase, (0.0, 100.0))
@@ -167,22 +98,26 @@ def _phase_progress_from_chunks_v2(phase: str, chunk_count: int) -> float:
     return min(end, start + min(span, math.log1p(max(chunk_count, 1)) * (span / 2.4)))
 
 
-def _normalize_symbol(value: str) -> str:
-    return re.sub(r"[^A-Z0-9.\-]", "", str(value or "").upper()).strip()
-
-
-def _normalize_text(value: str) -> str:
-    return str(value or "").strip()
-
-
-def _parse_live_number(raw: str | None) -> float | None:
+def _parse_live_number(raw: Any) -> float | None:
     if raw is None:
         return None
+    if isinstance(raw, (int, float)):
+        value = float(raw)
+        return value if math.isfinite(value) else None
     text = str(raw).strip()
     if not text:
         return None
     negative = text.startswith("(") and text.endswith(")")
-    cleaned = text.replace(",", "").replace("$", "").replace("(", "").replace(")", "")
+    cleaned = (
+        text.replace(",", "")
+        .replace("$", "")
+        .replace("%", "")
+        .replace("(", "")
+        .replace(")", "")
+        .strip()
+    )
+    if not cleaned:
+        return None
     try:
         value = float(cleaned)
     except Exception:
@@ -190,65 +125,127 @@ def _parse_live_number(raw: str | None) -> float | None:
     return -value if negative else value
 
 
-def _estimate_stream_holdings(full_response: str) -> int:
-    lower = full_response.lower()
-    direct_markers = (
-        '"detailed_holdings"',
-        '"holdings"',
-        '"positions"',
-        '"securities"',
-    )
-    total = 0
-    for marker in direct_markers:
-        idx = lower.rfind(marker)
-        if idx == -1:
-            continue
-        snippet = full_response[idx : idx + 50000]
-        ids = set(_LIVE_SYMBOL_RE.findall(snippet))
-        if ids:
-            total = max(total, len(ids))
-    if total == 0:
-        total = len(set(_LIVE_SYMBOL_RE.findall(full_response)))
-    return total
+def _normalize_symbol(value: Any) -> str:
+    return re.sub(r"[^A-Z0-9.\-]", "", str(value or "").upper()).strip()
 
 
-def _extract_live_holdings_preview_from_text(
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _extract_confirmed_holding_objects_from_stream(
     full_response: str,
+    *,
+    max_items: int = 80,
+) -> list[dict[str, Any]]:
+    """Extract fully-closed holding JSON objects from detailed_holdings stream text."""
+    if max_items <= 0:
+        return []
+
+    lower = full_response.lower()
+    key_idx = lower.find('"detailed_holdings"')
+    if key_idx < 0:
+        return []
+
+    array_start = full_response.find("[", key_idx)
+    if array_start < 0:
+        return []
+
+    out: list[dict[str, Any]] = []
+    in_string = False
+    escape = False
+    object_depth = 0
+    object_start: int | None = None
+
+    for idx in range(array_start + 1, len(full_response)):
+        ch = full_response[idx]
+
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+
+        if object_start is None:
+            if ch == "]":
+                break
+            if ch == "{":
+                object_start = idx
+                object_depth = 1
+            continue
+
+        if ch == "{":
+            object_depth += 1
+            continue
+        if ch == "}":
+            object_depth -= 1
+            if object_depth == 0 and object_start is not None:
+                snippet = full_response[object_start : idx + 1]
+                object_start = None
+                try:
+                    parsed = json.loads(snippet)
+                except Exception:
+                    continue
+                if isinstance(parsed, dict):
+                    out.append(parsed)
+                    if len(out) >= max_items:
+                        break
+
+    return out
+
+
+def _build_holdings_preview_from_objects(
+    objects: list[dict[str, Any]],
     *,
     max_items: int = 40,
 ) -> list[dict[str, Any]]:
     if max_items <= 0:
         return []
-
     preview: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    anchors = [
-        full_response.lower().rfind('"detailed_holdings"'),
-        full_response.lower().rfind('"holdings"'),
-        full_response.lower().rfind('"positions"'),
-    ]
-    anchor = max([idx for idx in anchors if idx >= 0], default=0)
-    snippet = full_response[anchor:]
+    for row in objects:
+        symbol = _normalize_symbol(
+            row.get("symbol")
+            or row.get("ticker")
+            or row.get("symbol_cusip")
+            or row.get("cusip")
+            or row.get("security_id")
+            or row.get("security")
+        )
+        name = _normalize_text(
+            row.get("name")
+            or row.get("description")
+            or row.get("security_name")
+            or row.get("holding_name")
+            or row.get("security_description")
+        )
+        quantity = _parse_live_number(
+            row.get("quantity") or row.get("shares") or row.get("units") or row.get("qty")
+        )
+        market_value = _parse_live_number(
+            row.get("market_value")
+            or row.get("current_value")
+            or row.get("marketValue")
+            or row.get("value")
+            or row.get("position_value")
+        )
+        asset_type = _normalize_text(
+            row.get("asset_type")
+            or row.get("asset_class")
+            or row.get("security_type")
+            or row.get("type")
+        )
 
-    symbols = [
-        _normalize_symbol(match)
-        for match in _LIVE_SYMBOL_RE.findall(snippet)
-        if _normalize_symbol(match)
-    ]
-    names = [_normalize_text(match) for match in _LIVE_NAME_RE.findall(snippet)]
-    assets = [_normalize_text(match) for match in _LIVE_ASSET_RE.findall(snippet)]
-
-    qty_matches = [first or second for first, second in _LIVE_QTY_RE.findall(snippet)]
-    value_matches = [first or second for first, second in _LIVE_VALUE_RE.findall(snippet)]
-
-    for idx, symbol in enumerate(symbols):
-        name = names[idx] if idx < len(names) else ""
-        asset_type = assets[idx] if idx < len(assets) else ""
-        quantity = _parse_live_number(qty_matches[idx]) if idx < len(qty_matches) else None
-        market_value = _parse_live_number(value_matches[idx]) if idx < len(value_matches) else None
-
-        fingerprint = f"{symbol}|{name}|{quantity}|{market_value}|{asset_type}"
+        if not symbol and not name:
+            continue
+        fingerprint = f"{symbol}|{name.lower()}|{quantity}|{market_value}|{asset_type.lower()}"
         if fingerprint in seen:
             continue
         seen.add(fingerprint)
@@ -306,7 +303,6 @@ async def run_stream_pass_v2(
     types_module: Any,
     model_name: str,
     prompt: str,
-    response_schema: dict[str, Any],
     context_excerpt: str,
     context_confidence: float,
     stage_message: str,
@@ -317,7 +313,6 @@ async def run_stream_pass_v2(
     is_csv_upload: bool,
     temperature: float,
     max_output_tokens: int,
-    enforce_response_schema: bool,
     thinking_enabled: bool,
     thinking_level_raw: str,
     heartbeat_interval_seconds: float,
@@ -332,24 +327,24 @@ async def run_stream_pass_v2(
         context_excerpt=context_excerpt,
         excerpt_confidence=context_confidence,
     )
+
     config_kwargs: dict[str, Any] = {
         "temperature": temperature,
         "max_output_tokens": max_output_tokens,
         "response_mime_type": "application/json",
         "automatic_function_calling": types_module.AutomaticFunctionCallingConfig(disable=True),
     }
-    if enforce_response_schema:
-        config_kwargs["response_schema"] = response_schema
     if thinking_enabled:
         thinking_level = getattr(
             types_module.ThinkingLevel,
-            str(thinking_level_raw).upper(),
-            types_module.ThinkingLevel.MEDIUM,
+            str(thinking_level_raw or "LOW").upper(),
+            types_module.ThinkingLevel.LOW,
         )
         config_kwargs["thinking_config"] = types_module.ThinkingConfig(
-            include_thoughts=True,
+            include_thoughts=False,
             thinking_level=thinking_level,
         )
+
     config = types_module.GenerateContentConfig(**config_kwargs)
 
     yield stream.event(
@@ -365,11 +360,8 @@ async def run_stream_pass_v2(
     pass_started = time.perf_counter()
     response_text = ""
     chunk_count = 0
-    thought_count = 0
-    streamed_holdings_estimate = 0
     latest_holdings_preview: list[dict[str, Any]] = []
-    current_stream_stage: str = "extracting"
-    thinking_stage_emitted = False
+    streamed_holdings_confirmed = 0
     loop_started_at = asyncio.get_running_loop().time()
     last_progress_emit_at = loop_started_at
 
@@ -398,15 +390,11 @@ async def run_stream_pass_v2(
             next_chunk_task = None
         except asyncio.TimeoutError:
             elapsed_seconds = int(asyncio.get_running_loop().time() - loop_started_at)
-            heartbeat_message = (
-                f"{progress_message} ({elapsed_seconds}s elapsed)"
-                if current_stream_stage == "extracting"
-                else f"Reasoning in {phase} pass... ({elapsed_seconds}s elapsed)"
-            )
+            heartbeat_message = "Still reviewing your statement..."
             yield stream.event(
                 "stage",
                 {
-                    "stage": "extracting" if current_stream_stage == "extracting" else "thinking",
+                    "stage": "extracting",
                     "phase": phase,
                     "message": heartbeat_message,
                     "heartbeat": True,
@@ -430,73 +418,51 @@ async def run_stream_pass_v2(
                     part_text = str(getattr(part, "text", "") or "")
                     if not part_text:
                         continue
-                    is_thought = bool(getattr(part, "thought", False))
-                    if is_thought:
-                        thought_count += 1
-                        current_stream_stage = "thinking"
-                        if not thinking_stage_emitted:
-                            thinking_stage_emitted = True
-                            yield stream.event(
-                                "stage",
-                                {
-                                    "stage": "thinking",
-                                    "phase": phase,
-                                    "message": f"Reasoning through {phase.replace('_', ' ')}...",
-                                    "progress_pct": _phase_progress_from_chunks_v2(
-                                        phase, chunk_count
-                                    ),
-                                },
-                            )
-                        yield stream.event(
-                            "thinking",
-                            {
-                                "phase": phase,
-                                "thought": part_text,
-                                "count": thought_count,
-                                "token_source": "thought",
-                                "message": f"Reasoning through {phase.replace('_', ' ')}...",
-                                "progress_pct": _phase_progress_from_chunks_v2(phase, chunk_count),
-                            },
+                    # Import stream is investor-facing; never emit thought chunks.
+                    if bool(getattr(part, "thought", False)):
+                        continue
+                    response_text += part_text
+                    chunk_count += 1
+                    appended_response_text = True
+
+                    if include_holdings_preview:
+                        confirmed_objects = _extract_confirmed_holding_objects_from_stream(
+                            response_text,
+                            max_items=80,
                         )
-                    else:
-                        current_stream_stage = "extracting"
-                        response_text += part_text
-                        chunk_count += 1
-                        appended_response_text = True
-                        if include_holdings_preview:
-                            streamed_holdings_estimate = max(
-                                streamed_holdings_estimate,
-                                _estimate_stream_holdings(response_text),
-                            )
-                            latest_holdings_preview = _extract_live_holdings_preview_from_text(
-                                response_text,
-                                max_items=40,
-                            )
-                        yield stream.event(
-                            "chunk",
-                            {
-                                "phase": phase,
-                                "text": part_text,
-                                "total_chars": len(response_text),
-                                "chunk_count": chunk_count,
-                                "token_source": "response",
-                                "holdings_detected": streamed_holdings_estimate,
-                                "holdings_preview": latest_holdings_preview,
-                                "progress_pct": _phase_progress_from_chunks_v2(phase, chunk_count),
-                            },
+                        streamed_holdings_confirmed = len(confirmed_objects)
+                        latest_holdings_preview = _build_holdings_preview_from_objects(
+                            confirmed_objects,
+                            max_items=40,
                         )
+
+                    yield stream.event(
+                        "chunk",
+                        {
+                            "phase": phase,
+                            "text": part_text,
+                            "total_chars": len(response_text),
+                            "chunk_count": chunk_count,
+                            "token_source": "response",
+                            "holdings_detected": streamed_holdings_confirmed,
+                            "holdings_preview": latest_holdings_preview,
+                            "progress_pct": _phase_progress_from_chunks_v2(phase, chunk_count),
+                        },
+                    )
 
         if not appended_response_text and getattr(chunk, "text", None):
             text_chunk = str(chunk.text)
             response_text += text_chunk
             chunk_count += 1
             if include_holdings_preview:
-                streamed_holdings_estimate = max(
-                    streamed_holdings_estimate,
-                    _estimate_stream_holdings(response_text),
+                confirmed_objects = _extract_confirmed_holding_objects_from_stream(
+                    response_text,
+                    max_items=80,
                 )
-                latest_holdings_preview = _extract_live_holdings_preview_from_text(
-                    response_text, max_items=40
+                streamed_holdings_confirmed = len(confirmed_objects)
+                latest_holdings_preview = _build_holdings_preview_from_objects(
+                    confirmed_objects,
+                    max_items=40,
                 )
             yield stream.event(
                 "chunk",
@@ -506,7 +472,7 @@ async def run_stream_pass_v2(
                     "total_chars": len(response_text),
                     "chunk_count": chunk_count,
                     "token_source": "response",
-                    "holdings_detected": streamed_holdings_estimate,
+                    "holdings_detected": streamed_holdings_confirmed,
                     "holdings_preview": latest_holdings_preview,
                     "progress_pct": _phase_progress_from_chunks_v2(phase, chunk_count),
                 },
@@ -519,24 +485,23 @@ async def run_stream_pass_v2(
                 "progress",
                 {
                     "phase": phase,
-                    "message": (
-                        f"{progress_message}: {chunk_count} chunks, {len(response_text):,} chars"
-                    ),
+                    "message": "Still reviewing your statement...",
                     "chunk_count": chunk_count,
                     "total_chars": len(response_text),
-                    "holdings_detected": streamed_holdings_estimate,
+                    "holdings_detected": streamed_holdings_confirmed,
                     "holdings_preview": latest_holdings_preview,
                     "progress_pct": _phase_progress_from_chunks_v2(phase, chunk_count),
                 },
             )
 
     if not response_text.strip():
-        raise ValueError(f"Empty model response from {phase} pass")
+        raise ImportStrictParseError("IMPORT_JSON_INVALID", "Empty model response from extractor.")
 
-    parsed_payload, pass_parse_diagnostics = parse_json_with_single_repair_v2(
+    parsed_payload, pass_parse_diagnostics = parse_json_strict_v2(
         response_text,
         required_keys=required_keys,
     )
+
     pass_elapsed_ms = int((time.perf_counter() - pass_started) * 1000)
     result_store.update(
         {
@@ -545,13 +510,14 @@ async def run_stream_pass_v2(
             "parsed": parsed_payload,
             "text": response_text,
             "chunk_count": chunk_count,
-            "thought_count": thought_count,
+            "thought_count": 0,
             "elapsed_ms": pass_elapsed_ms,
-            "holdings_detected": streamed_holdings_estimate,
+            "holdings_detected": streamed_holdings_confirmed,
             "holdings_preview": latest_holdings_preview,
             "parse_diagnostics": pass_parse_diagnostics,
         }
     )
+
     yield stream.event(
         "stage",
         {
@@ -559,9 +525,9 @@ async def run_stream_pass_v2(
             "phase": phase,
             "message": f"{phase.replace('_', ' ').title()} pass complete ({chunk_count} chunks)",
             "chunk_count": chunk_count,
-            "thought_count": thought_count,
+            "thought_count": 0,
             "total_chars": len(response_text),
-            "holdings_detected": streamed_holdings_estimate,
+            "holdings_detected": streamed_holdings_confirmed,
             "holdings_preview": latest_holdings_preview,
             "content_source": content_source,
             "duration_ms": pass_elapsed_ms,

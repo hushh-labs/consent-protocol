@@ -12,6 +12,7 @@ import secrets
 from datetime import datetime, timezone
 from time import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -59,6 +60,8 @@ PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
     429: 5 * 60,
 }
 FMP_GLOBAL_COOLDOWN_KEY = "fmp:global"
+VIX_SERIES_KEY = "macro:vix"
+VIX_SERIES_MAX_AGE_SECONDS = 24 * 60 * 60
 
 SECTOR_ETF_MAP: dict[str, str] = {
     "Technology": "XLK",
@@ -176,6 +179,43 @@ def _safe_int(value: Any) -> int | None:
         return int(out)
     except Exception:
         return None
+
+
+def _scheduled_market_status_fallback() -> dict[str, Any]:
+    try:
+        ny_now = datetime.now(ZoneInfo("America/New_York"))
+        weekday = ny_now.weekday()
+        minutes_now = ny_now.hour * 60 + ny_now.minute
+        open_minutes = 9 * 60 + 30
+        close_minutes = 16 * 60
+
+        if weekday >= 5:
+            value = "Closed (weekend)"
+        elif minutes_now < open_minutes:
+            value = "Closed (pre-market)"
+        elif minutes_now >= close_minutes:
+            value = "Closed (after-hours)"
+        else:
+            value = "Open (regular hours)"
+
+        as_of = ny_now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return {
+            "label": "Market Status",
+            "value": value,
+            "delta_pct": None,
+            "as_of": as_of,
+            "source": "US Session Schedule",
+            "degraded": True,
+        }
+    except Exception:
+        return {
+            "label": "Market Status",
+            "value": "Status delayed",
+            "delta_pct": None,
+            "as_of": None,
+            "source": "Unavailable",
+            "degraded": True,
+        }
 
 
 def _normalize_symbols(raw: str | None) -> list[str]:
@@ -354,14 +394,7 @@ def _recommendation_from_counts(payload: dict[str, Any]) -> tuple[str, str]:
 async def _fetch_market_status() -> dict[str, Any]:
     api_key = _finnhub_api_key()
     if not api_key:
-        return {
-            "label": "Market Status",
-            "value": "Unknown",
-            "delta_pct": None,
-            "as_of": None,
-            "source": "Unavailable",
-            "degraded": True,
-        }
+        return _scheduled_market_status_fallback()
 
     url = "https://finnhub.io/api/v1/stock/market-status"
     timeout = httpx.Timeout(connect=3.0, read=5.0, write=5.0, pool=3.0)
@@ -379,7 +412,16 @@ async def _fetch_market_status() -> dict[str, Any]:
                 .isoformat()
                 .replace("+00:00", "Z")
             )
-        value = f"{'Open' if is_open else 'Closed'} ({session})"
+        session_lc = session.lower()
+        if session_lc in {"regular", "regular hours"}:
+            session_label = "regular hours"
+        elif session_lc in {"premarket", "pre-market"}:
+            session_label = "pre-market"
+        elif session_lc in {"postmarket", "post-market"}:
+            session_label = "after-hours"
+        else:
+            session_label = "regular hours" if is_open else "off-hours"
+        value = f"{'Open' if is_open else 'Closed'} ({session_label})"
         return {
             "label": "Market Status",
             "value": value,
@@ -417,14 +459,32 @@ async def _fetch_vix_signal() -> dict[str, Any]:
                 payload = res.json() or []
                 if isinstance(payload, list) and payload:
                     row = payload[0] or {}
+                    price = _safe_float(row.get("price"))
+                    if price is not None:
+                        market_insights_cache.append_series_point(VIX_SERIES_KEY, price)
                     return {
                         "label": "Volatility",
-                        "value": _safe_float(row.get("price")),
+                        "value": price,
                         "delta_pct": _safe_float(row.get("changePercentage")),
                         "as_of": None,
                         "source": "PMP/FMP",
                         "degraded": False,
                     }
+
+    cached_vix_points = market_insights_cache.get_series_points(
+        VIX_SERIES_KEY,
+        max_age_seconds=VIX_SERIES_MAX_AGE_SECONDS,
+    )
+    if cached_vix_points:
+        _, last_price = cached_vix_points[-1]
+        return {
+            "label": "Volatility",
+            "value": float(last_price),
+            "delta_pct": None,
+            "as_of": None,
+            "source": "Cache (VIX)",
+            "degraded": True,
+        }
 
     return {
         "label": "Volatility",
@@ -458,14 +518,7 @@ async def _fetch_macro_bundle() -> dict[str, Any]:
         statuses["market_status"] = "partial" if market_status.get("degraded") else "ok"
     except Exception as exc:
         logger.warning("[Kai Market] market status failed: %s", exc)
-        market_status = {
-            "label": "Market Status",
-            "value": "Unknown",
-            "delta_pct": None,
-            "as_of": None,
-            "source": "Unavailable",
-            "degraded": True,
-        }
+        market_status = _scheduled_market_status_fallback()
         statuses["market_status"] = _provider_status_from_exception(exc)
 
     return {

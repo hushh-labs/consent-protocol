@@ -130,7 +130,7 @@ def test_quality_report_includes_required_quality_counters():
         dropped_reasons=Counter({"account_header_row": 1, "placeholder_symbol": 2}),
         reconciled_count=3,
         mismatch_count=1,
-        parse_diagnostics={"repair_applied": True, "repair_actions": ["balanced_delimiters"]},
+        parse_diagnostics={"mode": "strict_json_only"},
         unknown_name_count=0,
         placeholder_symbol_count=0,
         zero_qty_zero_price_nonzero_value_count=0,
@@ -146,4 +146,5 @@ def test_quality_report_includes_required_quality_counters():
     assert report["dropped_reasons"]["account_header_row"] == 1
     assert report["duplicate_symbol_lot_count"] == 1
     assert report["average_confidence"] == 0.84
-    assert report["parse_repair_applied"] is True
+    assert "pass_timings_ms" in report
+    assert "pass_token_counts" in report
