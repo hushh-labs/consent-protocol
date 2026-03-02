@@ -163,31 +163,19 @@ When an external MCP agent (e.g., Claude Desktop) needs user data:
 
 ## RPCs
 
-### merge_domain_summary
+Runtime world-model code supports optional RPC accelerators, but always keeps fallback read/write paths when functions are missing.
 
-Atomically merges a JSONB object into `domain_summaries` without a read-modify-write cycle.
+### Core helper functions used by application code
 
-```sql
-SELECT merge_domain_summary(
-  p_user_id  := 'firebase-uid',
-  p_domain   := 'financial',
-  p_summary  := '{"account_count": 2, "last_import": "2026-02-11"}'::jsonb
-);
-```
+| Function | Purpose |
+| --- | --- |
+| `get_user_world_model_metadata(p_user_id text)` | Preferred metadata read helper |
+| `update_world_model_data_timestamp()` | Timestamp maintenance helper |
+| `consent_audit_notify()` | Consent-audit trigger helper |
 
-Effect: Deep-merges the provided summary into the `financial` key of `domain_summaries`, and ensures `financial` appears in `available_domains`.
+### Optional legacy/migration functions
 
-### remove_domain_summary_key
-
-Atomically removes a specific key from a domain's summary.
-
-```sql
-SELECT remove_domain_summary_key(
-  p_user_id  := 'firebase-uid',
-  p_domain   := 'financial',
-  p_key      := 'total_value'
-);
-```
+Functions such as `merge_domain_summary` and `remove_domain_summary_key` may exist in some environments/migrations, but must not be treated as mandatory runtime dependencies.
 
 ---
 
@@ -290,6 +278,17 @@ Tracks all available data domains in the system.
 Seeded domains: `financial`, `subscriptions`, `health`, `travel`, `food`, `professional`, `entertainment`, `shopping`, `social`, `location`, `general`.
 
 New domains auto-register when first stored via `WorldModelService`.
+
+---
+
+## Related Runtime Tables (Non-World-Model)
+
+These tables are used by adjacent Kai/runtime subsystems and are fact-checked in the runtime DB snapshot:
+
+| Table | Purpose |
+| --- | --- |
+| `kai_market_cache_entries` | Server-side cached market payloads for Kai views |
+| `tickers` | Ticker master/enrichment metadata used by market and picks flows |
 
 ---
 

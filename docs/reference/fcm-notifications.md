@@ -61,7 +61,7 @@ gcloud is used for **GCP resources** that support the FCM-based flow:
 | Task | gcloud usage |
 |------|--------------|
 | **Enable APIs** | `gcloud services enable fcm.googleapis.com` (optional; Firebase/Cloud Messaging may already be enabled with Firebase). |
-| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env-vars.md](./reference/env-vars.md)). |
+| **Store service account secret** | Store `FIREBASE_SERVICE_ACCOUNT_JSON` in Secret Manager so the backend can send FCM: `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=sa.json` (see [env-vars.md](./env-vars.md)). |
 | **Deploy backend/frontend** | Deploy consent-protocol to Cloud Run via `gcloud run deploy` (see [Deployment](#deployment) in the root README). |
 | **Get an OAuth token for FCM HTTP v1 (testing)** | You can obtain an access token (e.g. Application Default Credentials after `gcloud auth application-default login`) and send a **test** message via the FCM HTTP v1 API with `curl`. This does not replace the Firebase Console or the app for normal operation. |
 
