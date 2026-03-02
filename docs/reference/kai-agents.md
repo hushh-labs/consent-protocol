@@ -143,10 +143,13 @@ Rules:
 Portfolio import quality checks now use severity semantics instead of hard-failing all strict mismatches:
 
 - `severity=pass`: import is fully accepted.
-- `severity=warn`: import is accepted with partial coverage warning (`parse_fallback=true` in complete payload).
-- `severity=fail`: import is blocked (used for unusable parses like zero holdings after normalization).
+- `severity=warn`: import continues, and `quality_gate.reasons` explains partial coverage.
+- `severity=fail`: import is blocked (used for unusable parses like missing required keys or zero holdings).
 
-Hard blocks remain only for unrelated/unreadable uploads (`IRRELEVANT_CONTENT` / `EMPTY_OR_UNREADABLE`).
+Strict terminal codes for import extraction:
+- `IMPORT_JSON_INVALID`
+- `IMPORT_SCHEMA_INVALID`
+- `IMPORT_NO_HOLDINGS`
 
 ### Agent Execution Order
 
