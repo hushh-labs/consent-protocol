@@ -66,6 +66,10 @@ def _parse_cors_allowed_origins() -> list[str]:
 from slowapi import _rate_limit_exceeded_handler  # noqa: E402
 from slowapi.errors import RateLimitExceeded  # noqa: E402
 
+from api.middlewares.observability import (  # noqa: E402
+    configure_opentelemetry,
+    observability_middleware,
+)
 from api.middlewares.rate_limit import limiter  # noqa: E402
 from api.routes import (  # noqa: E402
     account,
@@ -92,9 +96,11 @@ app = FastAPI(
     root_path=root_path,
 )
 
+app.middleware("http")(observability_middleware)
+
 # Rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # CORS allowlist: explicit origins only (no wildcard regex).
 cors_origins = _parse_cors_allowed_origins()
@@ -109,6 +115,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+configure_opentelemetry(app)
 
 
 # ============================================================================
