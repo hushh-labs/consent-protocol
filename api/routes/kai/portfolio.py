@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from api.middleware import require_vault_owner_token
+from api.middlewares.observability import get_request_id
 from api.routes.kai._streaming import (
     HEARTBEAT_INTERVAL_SECONDS,
     PORTFOLIO_IMPORT_TIMEOUT_SECONDS,
@@ -2382,8 +2383,34 @@ def _parse_import_cursor(value: Optional[int]) -> int:
 def _create_import_sse_response(
     generator: AsyncGenerator[dict[str, str], None],
 ) -> EventSourceResponse:
+    async def _instrumented() -> AsyncGenerator[dict[str, str], None]:
+        started = time.perf_counter()
+        event_count = 0
+        saw_terminal = False
+        request_id = get_request_id() or "unknown"
+        logger.info(
+            "stream.lifecycle_start stream=portfolio_import request_id=%s",
+            request_id,
+        )
+        try:
+            async for frame in generator:
+                event_count += 1
+                data = frame.get("data") if isinstance(frame, dict) else None
+                if isinstance(data, str) and '"terminal":true' in data.replace(" ", "").lower():
+                    saw_terminal = True
+                yield frame
+        finally:
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            logger.info(
+                "stream.lifecycle_end stream=portfolio_import request_id=%s duration_ms=%s event_count=%s terminal=%s",
+                request_id,
+                duration_ms,
+                event_count,
+                saw_terminal,
+            )
+
     return EventSourceResponse(
-        generator,
+        _instrumented(),
         ping=15,
         headers={
             "Cache-Control": "no-cache",

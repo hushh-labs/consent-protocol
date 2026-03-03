@@ -7,6 +7,13 @@ Available middlewares:
 - logging: Structured request logging
 """
 
+from .observability import configure_opentelemetry, get_request_id, observability_middleware
 from .rate_limit import get_rate_limit_key, limiter
 
-__all__ = ["limiter", "get_rate_limit_key"]
+__all__ = [
+    "limiter",
+    "get_rate_limit_key",
+    "observability_middleware",
+    "get_request_id",
+    "configure_opentelemetry",
+]

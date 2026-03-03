@@ -81,6 +81,13 @@ google-adk==1.23.0
 flask>=3.0.0
 python-a2a>=0.4.0
 
+# 🔎 Observability (OpenTelemetry + Cloud Trace)
+opentelemetry-api>=1.33.0
+opentelemetry-sdk>=1.33.0
+opentelemetry-instrumentation-fastapi>=0.54b0
+opentelemetry-instrumentation-httpx>=0.54b0
+opentelemetry-exporter-gcp-trace>=1.8.0
+
 # 🛠️ Utilities
 wrapt>=1.14.0  # Required for Python 3.11+ compatibility
 rsa>=4.9
