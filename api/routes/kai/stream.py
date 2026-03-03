@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -19,6 +20,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from api.middlewares.observability import get_request_id
 from api.routes.kai._streaming import (
     STOCK_ANALYZE_TIMEOUT_SECONDS,
     CanonicalSSEStream,
@@ -2073,8 +2075,34 @@ async def analyze_stream_generator(
 
 
 def _create_sse_response(generator: AsyncGenerator[dict, None]) -> EventSourceResponse:
+    async def _instrumented() -> AsyncGenerator[dict, None]:
+        started = time.perf_counter()
+        event_count = 0
+        saw_terminal = False
+        request_id = get_request_id() or "unknown"
+        logger.info(
+            "stream.lifecycle_start stream=kai_analyze request_id=%s",
+            request_id,
+        )
+        try:
+            async for frame in generator:
+                event_count += 1
+                data = frame.get("data") if isinstance(frame, dict) else None
+                if isinstance(data, str) and '"terminal":true' in data.replace(" ", "").lower():
+                    saw_terminal = True
+                yield frame
+        finally:
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            logger.info(
+                "stream.lifecycle_end stream=kai_analyze request_id=%s duration_ms=%s event_count=%s terminal=%s",
+                request_id,
+                duration_ms,
+                event_count,
+                saw_terminal,
+            )
+
     return EventSourceResponse(
-        generator,
+        _instrumented(),
         ping=15,
         headers={
             "Cache-Control": "no-cache",

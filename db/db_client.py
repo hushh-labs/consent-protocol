@@ -20,6 +20,7 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Optional, Union
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -68,18 +69,32 @@ def get_db_engine() -> Engine:
         db_user = os.getenv("DB_USER")
         db_password = os.getenv("DB_PASSWORD")
         db_host = os.getenv("DB_HOST")
+        db_unix_socket = os.getenv("DB_UNIX_SOCKET")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "postgres")
 
-        if not all([db_user, db_password, db_host]):
+        if not db_user or not db_password or not (db_host or db_unix_socket):
             raise EnvironmentError(
-                "Database credentials not set. Required: DB_USER, DB_PASSWORD, DB_HOST. "
+                "Database credentials not set. Required: DB_USER, DB_PASSWORD, and one of DB_HOST/DB_UNIX_SOCKET. "
                 "Optional: DB_PORT (default 5432), DB_NAME (default postgres)"
             )
+        if db_unix_socket:
+            # Cloud SQL Unix socket path must be passed in query host param.
+            encoded_socket = quote_plus(db_unix_socket)
+            database_url = (
+                f"postgresql+psycopg2://{db_user}:{db_password}@/{db_name}?host={encoded_socket}"
+            )
+            target = db_unix_socket
+        else:
+            ssl_suffix = (
+                "?sslmode=require"
+                if ("supabase.com" in str(db_host) or "pooler.supabase" in str(db_host))
+                else ""
+            )
+            database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}{ssl_suffix}"
+            target = f"{db_host}:{db_port}/{db_name}"
 
-        database_url = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
-
-        logger.info(f"Initializing database connection to {db_host}:{db_port}/{db_name}")
+        logger.info(f"Initializing database connection to {target}")
         _engine = create_engine(database_url, poolclass=NullPool)
         logger.info("Database engine initialized")
 
