@@ -75,7 +75,7 @@ gcloud is used for **GCP resources** that support the FCM-based flow:
    - Pushes the event into a per-user in-app queue for SSE.
 3. **Web client**: Requests permission, gets FCM token (`getToken` with VAPID key), registers token via `POST /api/notifications/register`; handles **onMessage** (foreground) and **notificationclick** (service worker) to open `/consents?tab=pending`.
 
-See the plan in `.cursor/plans/` and [consent-protocol.md](consent-protocol.md) for full flow.
+See the plan in `.cursor/plans/` and [consent-protocol.md](./consent-protocol.md) for full flow.
 
 ---
 
@@ -159,4 +159,4 @@ The **device registration token** must come from the client (web app’s `getTok
 | Where is the VAPID key set? | **Firebase Console** → Project Settings → Cloud Messaging → Web configuration → Key pair. Set in frontend as `NEXT_PUBLIC_FIREBASE_VAPID_KEY`. |
 | Where is the service account JSON set? | **Firebase Console** → Project Settings → Service accounts → Generate key. Store in **GCP Secret Manager** and inject into the backend (see [env-vars.md](./env-vars.md)). |
 
-See also: [env-vars.md](./env-vars.md), [consent-protocol.md](consent-protocol.md).
+See also: [env-vars.md](./env-vars.md), [consent-protocol.md](./consent-protocol.md).

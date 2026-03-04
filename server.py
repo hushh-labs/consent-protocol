@@ -77,12 +77,10 @@ from api.routes import (  # noqa: E402
     consent,
     db_proxy,
     debug_firebase,
-    developer,
     health,
     notifications,
     session,
     sse,
-    sync,
 )
 
 # Dynamic root_path for Swagger docs in production
@@ -132,9 +130,6 @@ app.include_router(agents.router)
 # Consent management routes (/api/consent/...)
 app.include_router(consent.router)
 
-# Developer API v1 routes (/api/v1/...)
-app.include_router(developer.router)
-
 # Session token routes (/api/consent/issue-token, /api/user/lookup, etc.)
 app.include_router(session.router)
 
@@ -173,15 +168,10 @@ from api.routes import tickers  # noqa: E402
 
 app.include_router(tickers.router)
 
-# Phase 2: Identity Resolution (Consent-then-encrypt flow)
+# Identity compatibility routes
 from api.routes import identity  # noqa: E402
 
 app.include_router(identity.router)
-
-# Phase 6: Fundamental Analysis Agent
-from api.routes import analysis  # noqa: E402
-
-app.include_router(analysis.router)
 
 # Phase 7: World Model (Dynamic Domain Management)
 from api.routes import world_model  # noqa: E402
@@ -190,9 +180,6 @@ app.include_router(world_model.router)
 
 # Account deletion and management
 app.include_router(account.router)
-
-# Data synchronization
-app.include_router(sync.router)
 
 logger.info(
     "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED"
