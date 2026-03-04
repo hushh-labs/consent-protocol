@@ -96,7 +96,7 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 - All Kai streaming routes use canonical SSE envelopes (`schema_version`, `stream_id`, `stream_kind`, `seq`, `event`, `terminal`, `payload`).
 - Route producers must emit explicit `event:` frames with envelope `event` parity.
 - No legacy stream shape support is permitted for new work.
-- Contract reference: `docs/reference/streaming-contract.md`.
+- Contract reference: `docs/reference/streaming/streaming-contract.md`.
 
 ---
 

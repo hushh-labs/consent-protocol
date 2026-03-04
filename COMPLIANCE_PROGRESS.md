@@ -81,7 +81,7 @@ await service.store_attribute(domain="food", ...)
 **TODO**:
 - `components/dashboard/domain-nav.tsx` - Fetch domains from API
 - `components/consent/consent-dialog.tsx` - Dynamic scope descriptions
-- `components/dashboard/user-profile.tsx` - Dynamic domain icons
+- `app/profile/page.tsx` - Dynamic domain icons
 - `app/consents/page.tsx` - Dynamic scope info
 
 ### 7. Portfolio PDF Parser (PENDING)
