@@ -20,6 +20,11 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+# Install runtime dependencies needed by operational jobs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /root/.local
 
