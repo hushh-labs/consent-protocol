@@ -394,6 +394,21 @@ async def test_setup_vault_state_allows_multiple_wrappers_for_same_method(monkey
     assert fake.db["vault_keys"][0]["primary_wrapper_id"] == "run-app-rp"
 
 
+def test_allowed_passkey_rp_ids_derive_from_frontend_and_cors(monkeypatch):
+    monkeypatch.delenv("PASSKEY_ALLOWED_RP_IDS", raising=False)
+    monkeypatch.setenv("FRONTEND_URL", "https://kai.hushh.ai")
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://kai.hushh.ai,https://hushh-webapp-rpphvsc3tq-uc.a.run.app",
+    )
+
+    allowed = VaultKeysService._get_allowed_passkey_rp_ids()
+
+    assert "localhost" in allowed
+    assert "kai.hushh.ai" in allowed
+    assert "hushh-webapp-rpphvsc3tq-uc.a.run.app" in allowed
+
+
 @pytest.mark.asyncio
 async def test_setup_vault_state_rejects_duplicate_method_wrapper_pairs():
     fake = _FakeSupabase()
