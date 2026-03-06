@@ -25,7 +25,8 @@ What is in `.env` / GCP Secret Manager must match exactly what the code reads --
 | `DB_PORT` | same | No | Default: 5432. |
 | `DB_NAME` | same | No | Default: postgres. |
 | `FRONTEND_URL` | `server.py` | Yes (prod) | CORS origin. |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | `api/utils/firebase_admin.py` | Yes | Service account JSON string. Firebase Console > Project Settings > Service accounts > Generate new private key. Store in GCP Secret Manager for production. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `api/utils/firebase_admin.py` | Yes | Default Firebase Admin credential for server operations (FCM/admin). |
+| `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON` | `api/utils/firebase_admin.py`, `api/utils/firebase_auth.py` | Recommended | Optional auth-only Firebase Admin credential for ID token verification (falls back to `FIREBASE_SERVICE_ACCOUNT_JSON` if unset). |
 | `GOOGLE_API_KEY` | `hushh_mcp/config.py`, services | Yes | Gemini / Vertex AI API key. |
 | `DEFAULT_CONSENT_TOKEN_EXPIRY_MS` | `hushh_mcp/config.py` | No | Token TTL (default: 24h). |
 | `DEFAULT_TRUST_LINK_EXPIRY_MS` | `hushh_mcp/config.py` | No | TrustLink TTL. |
@@ -96,6 +97,7 @@ Optional local-only vars used by migration/reset utilities:
 | `FRONTEND_URL` | Yes | GCP Secret Manager |
 | `GOOGLE_API_KEY` | Yes | GCP Secret Manager |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes | GCP Secret Manager |
+| `FIREBASE_AUTH_SERVICE_ACCOUNT_JSON` | Yes | GCP Secret Manager |
 | `DB_HOST` | No | Cloud Run env var |
 | `DB_PORT` | No | Cloud Run env var |
 | `DB_NAME` | No | Cloud Run env var |
