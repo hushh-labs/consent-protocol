@@ -229,4 +229,76 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id", "scope"],
             },
         ),
+        Tool(
+            name="list_ria_profiles",
+            description=(
+                "List discoverable RIA marketplace profiles (read-only). "
+                "Supports query, firm filter, and verification status filter."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "firm": {"type": "string"},
+                    "verification_status": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="get_ria_profile",
+            description="Get a discoverable RIA marketplace profile by RIA profile ID (read-only).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "ria_id": {"type": "string"},
+                },
+                "required": ["ria_id"],
+            },
+        ),
+        Tool(
+            name="list_marketplace_investors",
+            description=(
+                "List discoverable investor marketplace profiles (opt-in app investors only, read-only)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="get_ria_verification_status",
+            description=(
+                "Get RIA verification status for a user_id (read-only). "
+                "Requires a valid VAULT_OWNER consent token for the same user."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "consent_token": {"type": "string"},
+                },
+                "required": ["user_id", "consent_token"],
+            },
+        ),
+        Tool(
+            name="get_ria_client_access_summary",
+            description=(
+                "Get relationship/access summary for an RIA user (read-only). "
+                "Requires a valid VAULT_OWNER consent token for the same user."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "consent_token": {"type": "string"},
+                },
+                "required": ["user_id", "consent_token"],
+            },
+        ),
     ]

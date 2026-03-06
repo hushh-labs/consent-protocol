@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from api.middleware import require_firebase_auth
+from api.routes import iam, marketplace, ria
+from hushh_mcp.services.ria_iam_service import RIAIAMPolicyError, RIAIAMService
+
+
+def _build_app() -> FastAPI:
+    app = FastAPI()
+    app.include_router(iam.router)
+    app.include_router(ria.router)
+    app.include_router(marketplace.router)
+    app.dependency_overrides[require_firebase_auth] = lambda: "user_test_123"
+    return app
+
+
+def test_iam_persona_returns_actor_state(monkeypatch):
+    async def _mock_get_persona_state(self, user_id: str):
+        assert user_id == "user_test_123"
+        return {
+            "user_id": user_id,
+            "personas": ["investor", "ria"],
+            "last_active_persona": "ria",
+            "investor_marketplace_opt_in": True,
+        }
+
+    monkeypatch.setattr(RIAIAMService, "get_persona_state", _mock_get_persona_state)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/iam/persona")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["last_active_persona"] == "ria"
+    assert payload["investor_marketplace_opt_in"] is True
+
+
+def test_ria_request_enforces_verification_policy(monkeypatch):
+    async def _mock_create(self, user_id: str, **kwargs):  # noqa: ANN003
+        assert user_id == "user_test_123"
+        raise RIAIAMPolicyError("RIA verification incomplete", status_code=403)
+
+    monkeypatch.setattr(RIAIAMService, "create_ria_consent_request", _mock_create)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/ria/requests",
+        json={
+            "subject_user_id": "investor_1",
+            "requester_actor_type": "ria",
+            "subject_actor_type": "investor",
+            "scope_template_id": "ria_financial_summary_v1",
+            "duration_mode": "preset",
+            "duration_hours": 168,
+        },
+    )
+
+    assert response.status_code == 403
+    assert "verification" in response.json()["detail"].lower()
+
+
+def test_marketplace_rias_public_read(monkeypatch):
+    async def _mock_search(self, **kwargs):  # noqa: ANN003
+        assert kwargs.get("limit") == 20
+        return [
+            {
+                "id": "ria_1",
+                "display_name": "RIA Alpha",
+                "verification_status": "finra_verified",
+            }
+        ]
+
+    monkeypatch.setattr(RIAIAMService, "search_marketplace_rias", _mock_search)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/marketplace/rias")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["display_name"] == "RIA Alpha"
