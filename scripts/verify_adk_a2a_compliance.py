@@ -81,6 +81,23 @@ def main() -> int:
                 r"fetch_peer_data",
             ],
         ),
+        _check_patterns(
+            ROOT / "mcp_modules/tools/ria_read_tools.py",
+            [
+                r"list_ria_profiles",
+                r"get_ria_profile",
+                r"list_marketplace_investors",
+                r"_authorize_user",
+            ],
+        ),
+        _check_patterns(
+            ROOT / "api/routes/ria.py",
+            [
+                r"prefix=\"/api/ria\"",
+                r"onboarding/status",
+                r"/workspace/\{investor_user_id\}",
+            ],
+        ),
     ]
 
     ok = all(item["ok"] for item in checks)

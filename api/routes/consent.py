@@ -24,6 +24,7 @@ from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
 from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.ria_iam_service import RIAIAMService
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,14 @@ async def approve_consent(
         expires_at=token.expires_at,
     )
     logger.info("consent.granted_event_saved")
+    try:
+        await RIAIAMService().sync_relationship_from_consent_action(
+            user_id=userId,
+            request_id=requestId,
+            action="CONSENT_GRANTED",
+        )
+    except Exception:
+        logger.exception("ria.relationship_sync_failed action=CONSENT_GRANTED")
 
     # Return token with export key for MCP decryption
     return {
@@ -250,6 +259,14 @@ async def deny_consent(
         request_id=requestId,
     )
     logger.info("consent.denied_event_saved")
+    try:
+        await RIAIAMService().sync_relationship_from_consent_action(
+            user_id=userId,
+            request_id=requestId,
+            action="CONSENT_DENIED",
+        )
+    except Exception:
+        logger.exception("ria.relationship_sync_failed action=CONSENT_DENIED")
 
     return {"status": "denied", "message": f"Consent denied to {pending_request['developer']}"}
 
@@ -286,6 +303,14 @@ async def cancel_consent(
         request_id=payload.requestId,
         scope_description=pending_request.get("scope_description"),
     )
+    try:
+        await RIAIAMService().sync_relationship_from_consent_action(
+            user_id=payload.userId,
+            request_id=payload.requestId,
+            action="CANCELLED",
+        )
+    except Exception:
+        logger.exception("ria.relationship_sync_failed action=CANCELLED")
 
     return {"status": "cancelled", "requestId": payload.requestId}
 
@@ -479,6 +504,16 @@ async def revoke_consent(
             request_id=request_id,
         )
         logger.info("consent.revoked_event_saved scope=%s", scope)
+        try:
+            await RIAIAMService().sync_relationship_from_consent_action(
+                user_id=userId,
+                request_id=request_id,
+                action="REVOKED",
+                agent_id=agent_id,
+                scope=scope,
+            )
+        except Exception:
+            logger.exception("ria.relationship_sync_failed action=REVOKED")
 
         # Return special flag for VAULT_OWNER revocation so client knows to lock vault
         is_vault_owner = scope == "vault.owner" or scope == "VAULT_OWNER"
