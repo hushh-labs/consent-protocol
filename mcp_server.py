@@ -42,6 +42,11 @@ from mcp_modules.tools import (
     handle_get_financial,
     handle_get_food,
     handle_get_professional,
+    handle_get_ria_client_access_summary,
+    handle_get_ria_profile,
+    handle_get_ria_verification_status,
+    handle_list_marketplace_investors,
+    handle_list_ria_profiles,
     handle_list_scopes,
     handle_request_consent,
     handle_validate_token,
@@ -104,6 +109,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         "list_scopes": handle_list_scopes,
         "discover_user_domains": handle_discover_user_domains,
         "check_consent_status": handle_check_consent_status,
+        "list_ria_profiles": handle_list_ria_profiles,
+        "get_ria_profile": handle_get_ria_profile,
+        "list_marketplace_investors": handle_list_marketplace_investors,
+        "get_ria_verification_status": handle_get_ria_verification_status,
+        "get_ria_client_access_summary": handle_get_ria_client_access_summary,
     }
 
     handler = handlers.get(name)

@@ -115,6 +115,31 @@ async def read_resource(uri: str) -> str:
                     "purpose": "Create TrustLink for agent delegation",
                     "when_to_use": "When one agent needs to delegate access to another",
                 },
+                {
+                    "name": "list_ria_profiles",
+                    "purpose": "List discoverable RIA marketplace profiles (read-only)",
+                    "when_to_use": "When building advisor discovery experiences",
+                },
+                {
+                    "name": "get_ria_profile",
+                    "purpose": "Get discoverable RIA profile details by id (read-only)",
+                    "when_to_use": "After advisor selection from marketplace search",
+                },
+                {
+                    "name": "list_marketplace_investors",
+                    "purpose": "List discoverable opt-in investor profiles (read-only)",
+                    "when_to_use": "When building RIA client discovery experiences",
+                },
+                {
+                    "name": "get_ria_verification_status",
+                    "purpose": "Get RIA verification status for a user (read-only)",
+                    "when_to_use": "With same-user VAULT_OWNER token during advisor control-plane checks",
+                },
+                {
+                    "name": "get_ria_client_access_summary",
+                    "purpose": "Get RIA relationship/access summary (read-only)",
+                    "when_to_use": "With same-user VAULT_OWNER token before advisor workspace actions",
+                },
             ],
             "recommended_flow": [
                 "1. discover_user_domains(user_id) to get domains and scope strings for this user",
