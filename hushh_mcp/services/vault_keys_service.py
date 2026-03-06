@@ -17,6 +17,7 @@ import os
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 
@@ -368,15 +369,48 @@ class VaultKeysService:
 
     @staticmethod
     def _get_allowed_passkey_rp_ids() -> set[str]:
+        # Always allow localhost variants for local tooling and tests.
+        allowed = {"localhost", "127.0.0.1"}
+
+        def normalize_host(raw: Optional[str]) -> Optional[str]:
+            cleaned = (raw or "").strip().lower()
+            if not cleaned:
+                return None
+            try:
+                if "://" in cleaned:
+                    parsed = urlparse(cleaned)
+                    host = (parsed.hostname or "").strip().lower()
+                else:
+                    host = cleaned.split("/")[0].split(":")[0].strip().lower()
+            except Exception:
+                return None
+            if not host:
+                return None
+            if host == "127.0.0.1":
+                return "localhost"
+            return host
+
+        def collect_from_csv(raw: Optional[str]) -> set[str]:
+            hosts: set[str] = set()
+            for item in (raw or "").split(","):
+                host = normalize_host(item)
+                if host:
+                    hosts.add(host)
+            return hosts
+
         configured = (os.getenv("PASSKEY_ALLOWED_RP_IDS") or "").strip()
-        if not configured:
-            # Safe default for local + current production host.
-            return {
-                "localhost",
-                "127.0.0.1",
-                "hushh-webapp-1006304528804.us-central1.run.app",
-            }
-        return {item.strip().lower() for item in configured.split(",") if item and item.strip()}
+        if configured:
+            allowed.update(collect_from_csv(configured))
+            return allowed
+
+        # If explicit RP IDs are not configured, derive from frontend/CORS settings
+        # so domain migrations (run.app <-> custom domain) remain functional.
+        allowed.update(collect_from_csv(os.getenv("FRONTEND_URL")))
+        allowed.update(collect_from_csv(os.getenv("CORS_ALLOWED_ORIGINS")))
+
+        # Keep legacy production fallback for older deployments that only use defaults.
+        allowed.add("hushh-webapp-1006304528804.us-central1.run.app")
+        return allowed
 
     @classmethod
     def _normalize_wrapper(cls, wrapper: Dict[str, Any]) -> Dict[str, Any]:
