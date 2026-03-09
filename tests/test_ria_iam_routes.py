@@ -5,7 +5,11 @@ from fastapi.testclient import TestClient
 
 from api.middleware import require_firebase_auth
 from api.routes import iam, marketplace, ria
-from hushh_mcp.services.ria_iam_service import RIAIAMPolicyError, RIAIAMService
+from hushh_mcp.services.ria_iam_service import (
+    IAMSchemaNotReadyError,
+    RIAIAMPolicyError,
+    RIAIAMService,
+)
 
 
 def _build_app() -> FastAPI:
@@ -38,6 +42,25 @@ def test_iam_persona_returns_actor_state(monkeypatch):
     assert payload["investor_marketplace_opt_in"] is True
 
 
+def test_iam_persona_schema_not_ready_returns_compat_payload(monkeypatch):
+    async def _mock_get_persona_state(self, user_id: str):
+        assert user_id == "user_test_123"
+        raise IAMSchemaNotReadyError("IAM schema is not ready")
+
+    monkeypatch.setattr(RIAIAMService, "get_persona_state", _mock_get_persona_state)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/iam/persona")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_id"] == "user_test_123"
+    assert payload["personas"] == ["investor"]
+    assert payload["last_active_persona"] == "investor"
+    assert payload["iam_schema_ready"] is False
+    assert payload["mode"] == "compat_investor"
+
+
 def test_ria_request_enforces_verification_policy(monkeypatch):
     async def _mock_create(self, user_id: str, **kwargs):  # noqa: ANN003
         assert user_id == "user_test_123"
@@ -62,6 +85,21 @@ def test_ria_request_enforces_verification_policy(monkeypatch):
     assert "verification" in response.json()["detail"].lower()
 
 
+def test_ria_clients_schema_not_ready_returns_503(monkeypatch):
+    async def _mock_clients(self, user_id: str):
+        assert user_id == "user_test_123"
+        raise IAMSchemaNotReadyError("IAM schema is not ready")
+
+    monkeypatch.setattr(RIAIAMService, "list_ria_clients", _mock_clients)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/ria/clients")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["code"] == "IAM_SCHEMA_NOT_READY"
+
+
 def test_marketplace_rias_public_read(monkeypatch):
     async def _mock_search(self, **kwargs):  # noqa: ANN003
         assert kwargs.get("limit") == 20
@@ -82,3 +120,18 @@ def test_marketplace_rias_public_read(monkeypatch):
     data = response.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["display_name"] == "RIA Alpha"
+
+
+def test_marketplace_schema_not_ready_returns_503(monkeypatch):
+    async def _mock_search(self, **kwargs):  # noqa: ANN003
+        _ = kwargs
+        raise IAMSchemaNotReadyError("IAM schema is not ready")
+
+    monkeypatch.setattr(RIAIAMService, "search_marketplace_rias", _mock_search)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/marketplace/rias")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["code"] == "IAM_SCHEMA_NOT_READY"
