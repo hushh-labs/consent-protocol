@@ -25,12 +25,35 @@ _ALLOWED_PERSONAS: set[str] = {"investor", "ria"}
 _ALLOWED_ACTOR_TYPES: set[str] = {"investor", "ria"}
 _DURATION_PRESETS_HOURS: set[int] = {24, 24 * 7, 24 * 30, 24 * 90}
 _MAX_DURATION_HOURS = 24 * 365
+_IAM_REQUIRED_TABLES: tuple[str, ...] = (
+    "actor_profiles",
+    "ria_profiles",
+    "ria_firms",
+    "ria_firm_memberships",
+    "ria_verification_events",
+    "advisor_investor_relationships",
+    "consent_scope_templates",
+    "marketplace_public_profiles",
+)
+_RUNTIME_PERSONA_STATE_TABLE = "runtime_persona_state"
 
 
 class RIAIAMPolicyError(Exception):
     def __init__(self, message: str, status_code: int = 400):
         super().__init__(message)
         self.status_code = status_code
+
+
+class IAMSchemaNotReadyError(Exception):
+    def __init__(
+        self,
+        message: str = (
+            "IAM schema is not ready. Run `python db/migrate.py --iam` and "
+            "`python scripts/verify_iam_schema.py`."
+        ),
+    ):
+        super().__init__(message)
+        self.code = "IAM_SCHEMA_NOT_READY"
 
 
 @dataclass(frozen=True)
@@ -68,6 +91,90 @@ class RIAIAMService:
 
     async def _conn(self) -> asyncpg.Connection:
         return await asyncpg.connect(get_database_url(), ssl=get_database_ssl())
+
+    @staticmethod
+    async def _table_exists(conn: asyncpg.Connection, table_name: str) -> bool:
+        return bool(await conn.fetchval("SELECT to_regclass($1)", f"public.{table_name}"))
+
+    async def _is_iam_schema_ready(self, conn: asyncpg.Connection) -> bool:
+        for table_name in _IAM_REQUIRED_TABLES:
+            if not await self._table_exists(conn, table_name):
+                return False
+        return True
+
+    async def _ensure_iam_schema_ready(self, conn: asyncpg.Connection) -> None:
+        if not await self._is_iam_schema_ready(conn):
+            raise IAMSchemaNotReadyError()
+
+    @staticmethod
+    def _persona_response(
+        *,
+        user_id: str,
+        personas: list[str],
+        last_active_persona: str,
+        investor_marketplace_opt_in: bool,
+        iam_schema_ready: bool,
+        mode: Literal["full", "compat_investor"],
+    ) -> dict[str, Any]:
+        safe_personas = [persona for persona in personas if persona in _ALLOWED_PERSONAS]
+        if not safe_personas:
+            safe_personas = ["investor"]
+        safe_last = (
+            last_active_persona if last_active_persona in safe_personas else safe_personas[0]
+        )
+        return {
+            "user_id": user_id,
+            "personas": safe_personas,
+            "last_active_persona": safe_last,
+            "investor_marketplace_opt_in": bool(investor_marketplace_opt_in),
+            "iam_schema_ready": iam_schema_ready,
+            "mode": mode,
+        }
+
+    async def _runtime_persona_table_ready(self, conn: asyncpg.Connection) -> bool:
+        return await self._table_exists(conn, _RUNTIME_PERSONA_STATE_TABLE)
+
+    async def _get_runtime_last_persona(
+        self,
+        conn: asyncpg.Connection,
+        user_id: str,
+    ) -> str:
+        if not await self._runtime_persona_table_ready(conn):
+            return "investor"
+        row = await conn.fetchrow(
+            """
+            SELECT last_active_persona
+            FROM runtime_persona_state
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+        if row is None:
+            return "investor"
+        candidate = str(row["last_active_persona"] or "").strip().lower()
+        return candidate if candidate in _ALLOWED_PERSONAS else "investor"
+
+    async def _set_runtime_last_persona(
+        self,
+        conn: asyncpg.Connection,
+        user_id: str,
+        persona: str,
+    ) -> None:
+        normalized = self._normalize_persona(persona)
+        if not await self._runtime_persona_table_ready(conn):
+            return
+        await conn.execute(
+            """
+            INSERT INTO runtime_persona_state (user_id, last_active_persona)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE
+            SET
+              last_active_persona = $2,
+              updated_at = NOW()
+            """,
+            user_id,
+            normalized,
+        )
 
     async def _ensure_vault_user_row(self, conn: asyncpg.Connection, user_id: str) -> None:
         now_ms = self._now_ms()
@@ -155,25 +262,53 @@ class RIAIAMService:
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_iam_schema_ready(conn)
                 row = await self._ensure_actor_profile_row(conn, user_id)
                 return dict(row)
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def get_persona_state(self, user_id: str) -> dict[str, Any]:
-        row = await self.ensure_actor_profile(user_id)
-        personas = [p for p in row.get("personas", []) if p in _ALLOWED_PERSONAS]
-        if not personas:
-            personas = ["investor"]
-        last = row.get("last_active_persona")
-        if last not in personas:
-            last = personas[0]
-        return {
-            "user_id": row.get("user_id"),
-            "personas": personas,
-            "last_active_persona": last,
-            "investor_marketplace_opt_in": bool(row.get("investor_marketplace_opt_in", False)),
-        }
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_vault_user_row(conn, user_id)
+                schema_ready = await self._is_iam_schema_ready(conn)
+                if not schema_ready:
+                    # Compatibility mode: preserve investor continuity while IAM schema is unavailable.
+                    last_persona = await self._get_runtime_last_persona(conn, user_id)
+                    safe_last = "investor" if last_persona == "ria" else last_persona
+                    await self._set_runtime_last_persona(conn, user_id, safe_last)
+                    return self._persona_response(
+                        user_id=user_id,
+                        personas=["investor"],
+                        last_active_persona=safe_last,
+                        investor_marketplace_opt_in=False,
+                        iam_schema_ready=False,
+                        mode="compat_investor",
+                    )
+
+                row = await self._ensure_actor_profile_row(conn, user_id)
+                await self._set_runtime_last_persona(
+                    conn,
+                    user_id,
+                    str(row["last_active_persona"]),
+                )
+                return self._persona_response(
+                    user_id=str(row["user_id"]),
+                    personas=list(row["personas"] or []),
+                    last_active_persona=str(row["last_active_persona"]),
+                    investor_marketplace_opt_in=bool(row["investor_marketplace_opt_in"]),
+                    iam_schema_ready=True,
+                    mode="full",
+                )
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            logger.warning("iam.schema_not_ready fallback user_id=%s", user_id)
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
 
     async def switch_persona(self, user_id: str, persona: str) -> dict[str, Any]:
         target = self._normalize_persona(persona)
@@ -181,6 +316,21 @@ class RIAIAMService:
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
+                schema_ready = await self._is_iam_schema_ready(conn)
+                if not schema_ready:
+                    if target != "investor":
+                        raise IAMSchemaNotReadyError(
+                            "RIA persona is unavailable until IAM schema migration is applied."
+                        )
+                    await self._set_runtime_last_persona(conn, user_id, "investor")
+                    return self._persona_response(
+                        user_id=user_id,
+                        personas=["investor"],
+                        last_active_persona="investor",
+                        investor_marketplace_opt_in=False,
+                        iam_schema_ready=False,
+                        mode="compat_investor",
+                    )
                 row = await conn.fetchrow(
                     """
                     INSERT INTO actor_profiles (
@@ -205,12 +355,21 @@ class RIAIAMService:
                 )
                 if row is None:
                     raise RuntimeError("Failed to switch persona")
-                return {
-                    "user_id": row["user_id"],
-                    "personas": [p for p in row["personas"] if p in _ALLOWED_PERSONAS],
-                    "last_active_persona": row["last_active_persona"],
-                    "investor_marketplace_opt_in": bool(row["investor_marketplace_opt_in"]),
-                }
+                await self._set_runtime_last_persona(
+                    conn,
+                    user_id,
+                    str(row["last_active_persona"]),
+                )
+                return self._persona_response(
+                    user_id=str(row["user_id"]),
+                    personas=list(row["personas"] or []),
+                    last_active_persona=str(row["last_active_persona"]),
+                    investor_marketplace_opt_in=bool(row["investor_marketplace_opt_in"]),
+                    iam_schema_ready=True,
+                    mode="full",
+                )
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
@@ -219,6 +378,7 @@ class RIAIAMService:
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_iam_schema_ready(conn)
                 profile = await conn.fetchrow(
                     """
                     INSERT INTO actor_profiles (
@@ -264,6 +424,8 @@ class RIAIAMService:
                     "user_id": profile["user_id"],
                     "investor_marketplace_opt_in": bool(profile["investor_marketplace_opt_in"]),
                 }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
@@ -335,6 +497,7 @@ class RIAIAMService:
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_iam_schema_ready(conn)
                 await conn.execute(
                     """
                     INSERT INTO actor_profiles (
@@ -537,13 +700,17 @@ class RIAIAMService:
                     "verification_message": verification_result.message,
                     "firm_id": firm_id,
                 }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def get_ria_onboarding_status(self, user_id: str) -> dict[str, Any]:
-        await self.ensure_actor_profile(user_id)
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
+            await self._ensure_vault_user_row(conn, user_id)
+            await self._ensure_actor_profile_row(conn, user_id)
             ria = await conn.fetchrow(
                 """
                 SELECT
@@ -595,12 +762,15 @@ class RIAIAMService:
                 "verification_expires_at": ria["verification_expires_at"],
                 "latest_verification_event": event,
             }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def list_ria_firms(self, user_id: str) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             rows = await conn.fetch(
                 """
                 SELECT
@@ -621,12 +791,15 @@ class RIAIAMService:
                 user_id,
             )
             return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def list_ria_clients(self, user_id: str) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             rows = await conn.fetch(
                 """
                 SELECT
@@ -649,12 +822,15 @@ class RIAIAMService:
                 user_id,
             )
             return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def list_ria_requests(self, user_id: str) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             ria = await conn.fetchrow(
                 "SELECT id FROM ria_profiles WHERE user_id = $1",
                 user_id,
@@ -694,6 +870,8 @@ class RIAIAMService:
                 latest_by_request[str(request_id)] = payload
 
             return list(latest_by_request.values())
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
@@ -736,6 +914,7 @@ class RIAIAMService:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
                 await self._ensure_vault_user_row(conn, subject_user_id)
+                await self._ensure_iam_schema_ready(conn)
                 await self._ensure_actor_profile_row(conn, user_id, include_ria_persona=True)
                 await self._ensure_actor_profile_row(conn, subject_user_id)
 
@@ -928,12 +1107,15 @@ class RIAIAMService:
                     "requester_entity_id": str(ria["id"]),
                     "status": "REQUESTED",
                 }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def get_ria_workspace(self, user_id: str, investor_user_id: str) -> dict[str, Any]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             ria = await self._get_ria_profile_by_user(conn, user_id)
             relationship = await conn.fetchrow(
                 """
@@ -1008,6 +1190,8 @@ class RIAIAMService:
                 "relationship_status": relationship["status"],
                 "scope": relationship["granted_scope"],
             }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
@@ -1026,6 +1210,8 @@ class RIAIAMService:
         conn = await self._conn()
         try:
             async with conn.transaction():
+                if not await self._is_iam_schema_ready(conn):
+                    return
                 row: asyncpg.Record | None = None
                 if request_id:
                     row = await conn.fetchrow(
@@ -1135,6 +1321,9 @@ class RIAIAMService:
                         """,
                         relationship["id"],
                     )
+        except asyncpg.exceptions.UndefinedTableError:
+            # Non-blocking path: consent lifecycle should not fail for investor flows.
+            return
         finally:
             await conn.close()
 
@@ -1148,6 +1337,7 @@ class RIAIAMService:
     ) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             limit_safe = max(1, min(limit, 50))
             rows = await conn.fetch(
                 """
@@ -1205,12 +1395,15 @@ class RIAIAMService:
                 limit_safe,
             )
             return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
     async def get_marketplace_ria_profile(self, ria_id: str) -> dict[str, Any] | None:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             row = await conn.fetchrow(
                 """
                 SELECT
@@ -1250,6 +1443,8 @@ class RIAIAMService:
                 ria_id,
             )
             return dict(row) if row else None
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
 
@@ -1261,6 +1456,7 @@ class RIAIAMService:
     ) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
+            await self._ensure_iam_schema_ready(conn)
             limit_safe = max(1, min(limit, 50))
             rows = await conn.fetch(
                 """
@@ -1285,5 +1481,7 @@ class RIAIAMService:
                 limit_safe,
             )
             return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
         finally:
             await conn.close()
