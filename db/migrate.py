@@ -17,6 +17,7 @@ Environment:
 import argparse
 import asyncio
 import sys
+from pathlib import Path
 
 import asyncpg
 from dotenv import load_dotenv
@@ -34,6 +35,12 @@ except EnvironmentError as e:
     print(f"❌ ERROR: {e}")
     print("   Set DB_USER, DB_PASSWORD, DB_HOST in .env (and optionally DB_PORT, DB_NAME).")
     sys.exit(1)
+
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+IAM_MIGRATION_FILES = (
+    "020_ria_iam_foundation.sql",
+    "021_runtime_persona_state.sql",
+)
 
 
 # ============================================================================
@@ -591,6 +598,22 @@ async def run_consent_migration(pool: asyncpg.Pool):
     print("Consent protocol tables ready!")
 
 
+async def run_iam_migration(pool: asyncpg.Pool):
+    """Apply IAM foundation schema through explicit migration files."""
+    print("Running IAM schema migration (explicit mode)...")
+
+    async with pool.acquire() as conn:
+        for filename in IAM_MIGRATION_FILES:
+            migration_path = MIGRATIONS_DIR / filename
+            if not migration_path.exists():
+                raise FileNotFoundError(f"IAM migration file missing: {migration_path}")
+            sql = migration_path.read_text(encoding="utf-8")
+            print(f"  -> applying {filename}")
+            await conn.execute(sql)
+
+    print("IAM schema migration complete!")
+
+
 async def run_init_migration(pool: asyncpg.Pool):
     """
     Initialize all tables in correct dependency order.
@@ -664,6 +687,7 @@ async def show_status(pool: asyncpg.Pool):
         "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
+        "runtime_persona_state",
     ]:
         if table in all_tables:
             try:
@@ -689,6 +713,7 @@ Examples:
   python db/migrate.py --init                    # First-time setup (RECOMMENDED)
   python db/migrate.py --table world_model_data  # Create single table
   python db/migrate.py --consent                 # Create all consent tables
+  python db/migrate.py --iam                     # Apply IAM schema foundation (020 + 021)
   python db/migrate.py --full                    # Full reset (WARNING: DESTRUCTIVE!)
   python db/migrate.py --status                  # Show table summary
         """,
@@ -710,6 +735,11 @@ Examples:
     )
     parser.add_argument("--consent", action="store_true", help="Create all consent-related tables")
     parser.add_argument(
+        "--iam",
+        action="store_true",
+        help="Apply IAM schema foundation migrations (020 + 021)",
+    )
+    parser.add_argument(
         "--full", action="store_true", help="Drop and recreate ALL tables (DESTRUCTIVE!)"
     )
     parser.add_argument(
@@ -719,7 +749,7 @@ Examples:
 
     args = parser.parse_args()
 
-    if not any([args.init, args.table, args.consent, args.full, args.clear, args.status]):
+    if not any([args.init, args.table, args.consent, args.iam, args.full, args.clear, args.status]):
         parser.print_help()
         return
 
@@ -763,6 +793,9 @@ Examples:
 
         if args.consent:
             await run_consent_migration(pool)
+
+        if args.iam:
+            await run_iam_migration(pool)
 
         if args.clear:
             await clear_table(pool, args.clear)

@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.middleware import require_firebase_auth
-from hushh_mcp.services.ria_iam_service import RIAIAMPolicyError, RIAIAMService
+from hushh_mcp.services.ria_iam_service import (
+    IAMSchemaNotReadyError,
+    RIAIAMPolicyError,
+    RIAIAMService,
+)
 
 router = APIRouter(prefix="/api/ria", tags=["RIA"])
 
@@ -35,6 +40,17 @@ class RIAConsentRequestCreate(BaseModel):
     reason: str | None = None
 
 
+def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": message or "IAM schema is not ready",
+            "code": "IAM_SCHEMA_NOT_READY",
+            "hint": "Run `python db/migrate.py --iam` and `python scripts/verify_iam_schema.py`.",
+        },
+    )
+
+
 @router.post("/onboarding/submit")
 async def submit_onboarding(
     payload: RIAOnboardingSubmitRequest,
@@ -54,6 +70,8 @@ async def submit_onboarding(
             primary_firm_name=payload.primary_firm_name,
             primary_firm_role=payload.primary_firm_role,
         )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -61,25 +79,37 @@ async def submit_onboarding(
 @router.get("/onboarding/status")
 async def onboarding_status(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
-    return await service.get_ria_onboarding_status(firebase_uid)
+    try:
+        return await service.get_ria_onboarding_status(firebase_uid)
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/firms")
 async def ria_firms(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
-    return {"items": await service.list_ria_firms(firebase_uid)}
+    try:
+        return {"items": await service.list_ria_firms(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/clients")
 async def ria_clients(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
-    return {"items": await service.list_ria_clients(firebase_uid)}
+    try:
+        return {"items": await service.list_ria_clients(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/requests")
 async def ria_requests(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
-    return {"items": await service.list_ria_requests(firebase_uid)}
+    try:
+        return {"items": await service.list_ria_requests(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.post("/requests")
@@ -101,6 +131,8 @@ async def create_ria_request(
             firm_id=payload.firm_id,
             reason=payload.reason,
         )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -113,5 +145,7 @@ async def ria_workspace(
     service = RIAIAMService()
     try:
         return await service.get_ria_workspace(firebase_uid, investor_user_id)
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
