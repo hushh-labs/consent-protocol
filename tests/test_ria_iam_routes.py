@@ -4,12 +4,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.middleware import require_firebase_auth
-from api.routes import iam, marketplace, ria
+from api.routes import iam, invites, marketplace, ria
 from hushh_mcp.services.ria_iam_service import (
     IAMSchemaNotReadyError,
     RIAIAMPolicyError,
     RIAIAMService,
 )
+
+TEST_INVITE_ID = "invite-demo-id"
+TEST_INVITE_VALUE = "invite-demo-value"
 
 
 def _build_app() -> FastAPI:
@@ -17,6 +20,7 @@ def _build_app() -> FastAPI:
     app.include_router(iam.router)
     app.include_router(ria.router)
     app.include_router(marketplace.router)
+    app.include_router(invites.router)
     app.dependency_overrides[require_firebase_auth] = lambda: "user_test_123"
     return app
 
@@ -135,3 +139,71 @@ def test_marketplace_schema_not_ready_returns_503(monkeypatch):
     assert response.status_code == 503
     payload = response.json()
     assert payload["code"] == "IAM_SCHEMA_NOT_READY"
+
+
+def test_ria_invites_create(monkeypatch):
+    async def _mock_create(self, user_id: str, **kwargs):  # noqa: ANN003
+        assert user_id == "user_test_123"
+        assert kwargs["scope_template_id"] == "ria_financial_summary_v1"
+        return {
+            "items": [
+                {
+                    "invite_id": "invite_1",
+                    "invite_token": TEST_INVITE_VALUE,
+                    "status": "sent",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(RIAIAMService, "create_ria_invites", _mock_create)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/ria/invites",
+        json={
+            "scope_template_id": "ria_financial_summary_v1",
+            "duration_mode": "preset",
+            "duration_hours": 168,
+            "targets": [{"display_name": "Taylor", "email": "taylor@example.com"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["invite_token"] == TEST_INVITE_VALUE
+
+
+def test_public_invite_lookup(monkeypatch):
+    async def _mock_get(self, invite_token: str):
+        assert invite_token == TEST_INVITE_VALUE
+        return {
+            "invite_token": invite_token,
+            "status": "sent",
+            "ria": {"display_name": "RIA Alpha"},
+        }
+
+    monkeypatch.setattr(RIAIAMService, "get_ria_invite", _mock_get)
+
+    client = TestClient(_build_app())
+    response = client.get(f"/api/invites/{TEST_INVITE_VALUE}")
+
+    assert response.status_code == 200
+    assert response.json()["ria"]["display_name"] == "RIA Alpha"
+
+
+def test_accept_invite(monkeypatch):
+    async def _mock_accept(self, invite_token: str, user_id: str):
+        assert invite_token == TEST_INVITE_VALUE
+        assert user_id == "user_test_123"
+        return {
+            "invite_token": invite_token,
+            "request_id": "req_1",
+            "status": "accepted",
+        }
+
+    monkeypatch.setattr(RIAIAMService, "accept_ria_invite", _mock_accept)
+
+    client = TestClient(_build_app())
+    response = client.post(f"/api/invites/{TEST_INVITE_VALUE}/accept")
+
+    assert response.status_code == 200
+    assert response.json()["request_id"] == "req_1"

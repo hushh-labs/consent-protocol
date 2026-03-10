@@ -40,6 +40,30 @@ class RIAConsentRequestCreate(BaseModel):
     reason: str | None = None
 
 
+class RIAInviteTarget(BaseModel):
+    display_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    investor_user_id: str | None = None
+    source: str | None = None
+    delivery_channel: str | None = None
+
+
+class RIAInviteCreateRequest(BaseModel):
+    scope_template_id: str = Field(..., min_length=1)
+    duration_mode: str = Field(default="preset")
+    duration_hours: int | None = None
+    firm_id: str | None = None
+    reason: str | None = None
+    targets: list[RIAInviteTarget] = Field(default_factory=list)
+
+
+class RIAMarketplaceDiscoverabilityRequest(BaseModel):
+    enabled: bool
+    headline: str | None = None
+    strategy_summary: str | None = None
+
+
 def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
     return JSONResponse(
         status_code=503,
@@ -110,6 +134,56 @@ async def ria_requests(firebase_uid: str = Depends(require_firebase_auth)):
         return {"items": await service.list_ria_requests(firebase_uid)}
     except IAMSchemaNotReadyError as exc:
         return _iam_schema_not_ready_response(str(exc))
+
+
+@router.get("/invites")
+async def ria_invites(firebase_uid: str = Depends(require_firebase_auth)):
+    service = RIAIAMService()
+    try:
+        return {"items": await service.list_ria_invites(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+
+
+@router.post("/invites")
+async def create_ria_invites(
+    payload: RIAInviteCreateRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.create_ria_invites(
+            firebase_uid,
+            scope_template_id=payload.scope_template_id,
+            duration_mode=payload.duration_mode,
+            duration_hours=payload.duration_hours,
+            firm_id=payload.firm_id,
+            reason=payload.reason,
+            targets=[target.model_dump() for target in payload.targets],
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/marketplace/discoverability")
+async def update_ria_marketplace_discoverability(
+    payload: RIAMarketplaceDiscoverabilityRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.set_ria_marketplace_discoverability(
+            firebase_uid,
+            enabled=payload.enabled,
+            headline=payload.headline,
+            strategy_summary=payload.strategy_summary,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post("/requests")

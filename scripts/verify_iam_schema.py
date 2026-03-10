@@ -23,6 +23,7 @@ REQUIRED_TABLES = (
     "ria_firm_memberships",
     "ria_verification_events",
     "advisor_investor_relationships",
+    "ria_client_invites",
     "consent_scope_templates",
     "marketplace_public_profiles",
     "runtime_persona_state",
