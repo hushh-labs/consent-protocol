@@ -40,6 +40,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 IAM_MIGRATION_FILES = (
     "020_ria_iam_foundation.sql",
     "021_runtime_persona_state.sql",
+    "022_ria_invites.sql",
 )
 
 

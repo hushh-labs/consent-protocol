@@ -181,11 +181,12 @@ app.include_router(world_model.router)
 # Account deletion and management
 app.include_router(account.router)
 
-from api.routes import iam, marketplace, ria  # noqa: E402
+from api.routes import iam, invites, marketplace, ria  # noqa: E402
 
 app.include_router(iam.router)
 app.include_router(ria.router)
 app.include_router(marketplace.router)
+app.include_router(invites.router)
 logger.info("ria.routes_enabled")
 
 logger.info(

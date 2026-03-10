@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import asyncpg
@@ -32,6 +32,7 @@ _IAM_REQUIRED_TABLES: tuple[str, ...] = (
     "ria_firm_memberships",
     "ria_verification_events",
     "advisor_investor_relationships",
+    "ria_client_invites",
     "consent_scope_templates",
     "marketplace_public_profiles",
 )
@@ -476,6 +477,47 @@ class RIAIAMService:
                 return {}
         return {}
 
+    @staticmethod
+    def _next_action_for_relationship_status(status: str) -> str:
+        normalized = (status or "").strip().lower()
+        if normalized == "approved":
+            return "open_workspace"
+        if normalized == "request_pending":
+            return "await_consent"
+        if normalized in {"revoked", "expired"}:
+            return "re_request"
+        if normalized == "blocked":
+            return "resolve_block"
+        return "request_access"
+
+    @staticmethod
+    def _resolve_duration_hours(
+        template: ScopeTemplate,
+        *,
+        duration_mode: str,
+        duration_hours: int | None,
+    ) -> tuple[str, int]:
+        mode = (duration_mode or "preset").strip().lower()
+        resolved_duration_hours: int
+        if mode == "preset":
+            resolved_duration_hours = int(duration_hours or template.default_duration_hours)
+            if resolved_duration_hours not in _DURATION_PRESETS_HOURS:
+                raise RIAIAMPolicyError("Invalid preset duration", status_code=400)
+        elif mode == "custom":
+            if duration_hours is None:
+                raise RIAIAMPolicyError(
+                    "duration_hours is required for custom mode", status_code=400
+                )
+            resolved_duration_hours = int(duration_hours)
+            if resolved_duration_hours <= 0:
+                raise RIAIAMPolicyError("duration_hours must be positive", status_code=400)
+            cap = min(template.max_duration_hours, _MAX_DURATION_HOURS)
+            if resolved_duration_hours > cap:
+                raise RIAIAMPolicyError("duration exceeds allowed cap", status_code=400)
+        else:
+            raise RIAIAMPolicyError("Invalid duration_mode", status_code=400)
+        return mode, resolved_duration_hours
+
     async def submit_ria_onboarding(
         self,
         user_id: str,
@@ -800,7 +842,7 @@ class RIAIAMService:
         conn = await self._conn()
         try:
             await self._ensure_iam_schema_ready(conn)
-            rows = await conn.fetch(
+            relationship_rows = await conn.fetch(
                 """
                 SELECT
                   rel.id,
@@ -811,17 +853,125 @@ class RIAIAMService:
                   rel.consent_granted_at,
                   rel.revoked_at,
                   mp.display_name AS investor_display_name,
-                  mp.headline AS investor_headline
+                  mp.headline AS investor_headline,
+                  invite.id AS invite_id,
+                  invite.invite_token,
+                  invite.source AS acquisition_source,
+                  invite.status AS invite_status,
+                  invite.delivery_channel,
+                  consent.expires_at AS consent_expires_at
                 FROM ria_profiles rp
                 JOIN advisor_investor_relationships rel ON rel.ria_profile_id = rp.id
                 LEFT JOIN marketplace_public_profiles mp
                   ON mp.user_id = rel.investor_user_id AND mp.profile_type = 'investor'
+                LEFT JOIN LATERAL (
+                  SELECT
+                    i.id,
+                    i.invite_token,
+                    i.source,
+                    i.status,
+                    i.delivery_channel
+                  FROM ria_client_invites i
+                  WHERE i.ria_profile_id = rp.id
+                    AND (
+                      i.accepted_by_user_id = rel.investor_user_id
+                      OR (
+                        i.target_investor_user_id IS NOT NULL
+                        AND i.target_investor_user_id = rel.investor_user_id
+                      )
+                    )
+                  ORDER BY i.accepted_at DESC NULLS LAST, i.created_at DESC
+                  LIMIT 1
+                ) invite ON TRUE
+                LEFT JOIN LATERAL (
+                  SELECT expires_at
+                  FROM consent_audit
+                  WHERE user_id = rel.investor_user_id
+                    AND agent_id = ('ria:' || rp.id::text)
+                    AND scope = rel.granted_scope
+                    AND action = 'CONSENT_GRANTED'
+                  ORDER BY issued_at DESC
+                  LIMIT 1
+                ) consent ON TRUE
                 WHERE rp.user_id = $1
                 ORDER BY rel.updated_at DESC
                 """,
                 user_id,
             )
-            return [dict(row) for row in rows]
+            invite_rows = await conn.fetch(
+                """
+                SELECT
+                  i.id,
+                  i.invite_token,
+                  i.target_investor_user_id,
+                  i.target_display_name,
+                  i.target_email,
+                  i.target_phone,
+                  i.source,
+                  i.status,
+                  i.delivery_channel,
+                  i.scope_template_id,
+                  i.expires_at,
+                  i.created_at
+                FROM ria_profiles rp
+                JOIN ria_client_invites i ON i.ria_profile_id = rp.id
+                LEFT JOIN advisor_investor_relationships rel
+                  ON rel.ria_profile_id = rp.id
+                  AND rel.investor_user_id = COALESCE(i.accepted_by_user_id, i.target_investor_user_id)
+                WHERE rp.user_id = $1
+                  AND i.status = 'sent'
+                  AND i.expires_at > NOW()
+                  AND rel.id IS NULL
+                ORDER BY i.created_at DESC
+                """,
+                user_id,
+            )
+
+            items: list[dict[str, Any]] = []
+            for row in relationship_rows:
+                payload = dict(row)
+                payload["acquisition_source"] = payload.get("acquisition_source") or (
+                    "marketplace" if payload.get("investor_display_name") else "manual"
+                )
+                payload["next_action"] = self._next_action_for_relationship_status(
+                    str(payload.get("status") or "")
+                )
+                payload["is_invite_only"] = False
+                items.append(payload)
+
+            for row in invite_rows:
+                payload = dict(row)
+                headline = (
+                    payload.get("target_email") or payload.get("target_phone") or "Invite pending"
+                )
+                items.append(
+                    {
+                        "id": f"invite:{payload['id']}",
+                        "invite_id": str(payload["id"]),
+                        "invite_token": payload["invite_token"],
+                        "investor_user_id": payload.get("target_investor_user_id"),
+                        "status": "invited",
+                        "granted_scope": None,
+                        "last_request_id": None,
+                        "consent_granted_at": None,
+                        "revoked_at": None,
+                        "investor_display_name": payload.get("target_display_name")
+                        or payload.get("target_email")
+                        or payload.get("target_phone")
+                        or "Invited investor",
+                        "investor_headline": headline,
+                        "acquisition_source": payload.get("source") or "manual",
+                        "invite_status": payload.get("status"),
+                        "delivery_channel": payload.get("delivery_channel"),
+                        "consent_expires_at": None,
+                        "invite_expires_at": payload.get("expires_at"),
+                        "next_action": "await_acceptance",
+                        "scope_template_id": payload.get("scope_template_id"),
+                        "is_invite_only": True,
+                    }
+                )
+
+            return items
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -842,18 +992,30 @@ class RIAIAMService:
             rows = await conn.fetch(
                 """
                 SELECT
-                  request_id,
-                  user_id,
-                  scope,
-                  action,
-                  issued_at,
-                  expires_at,
-                  metadata
-                FROM consent_audit
-                WHERE agent_id = $1
-                  AND request_id IS NOT NULL
-                  AND action IN ('REQUESTED', 'CONSENT_GRANTED', 'CONSENT_DENIED', 'CANCELLED', 'REVOKED', 'TIMEOUT')
-                ORDER BY issued_at DESC
+                  audit.request_id,
+                  audit.user_id,
+                  audit.scope,
+                  audit.action,
+                  audit.issued_at,
+                  audit.expires_at,
+                  audit.metadata,
+                  mp.display_name AS subject_display_name,
+                  mp.headline AS subject_headline
+                FROM consent_audit audit
+                LEFT JOIN marketplace_public_profiles mp
+                  ON mp.user_id = audit.user_id
+                  AND mp.profile_type = 'investor'
+                WHERE audit.agent_id = $1
+                  AND audit.request_id IS NOT NULL
+                  AND audit.action IN (
+                    'REQUESTED',
+                    'CONSENT_GRANTED',
+                    'CONSENT_DENIED',
+                    'CANCELLED',
+                    'REVOKED',
+                    'TIMEOUT'
+                  )
+                ORDER BY audit.issued_at DESC
                 """,
                 agent_id,
             )
@@ -870,6 +1032,491 @@ class RIAIAMService:
                 latest_by_request[str(request_id)] = payload
 
             return list(latest_by_request.values())
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def list_ria_invites(self, user_id: str) -> list[dict[str, Any]]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            rows = await conn.fetch(
+                """
+                SELECT
+                  i.id,
+                  i.invite_token,
+                  i.target_display_name,
+                  i.target_email,
+                  i.target_phone,
+                  i.target_investor_user_id,
+                  i.source,
+                  i.delivery_channel,
+                  i.status,
+                  i.scope_template_id,
+                  i.duration_mode,
+                  i.duration_hours,
+                  i.reason,
+                  i.accepted_by_user_id,
+                  i.accepted_request_id,
+                  i.expires_at,
+                  i.accepted_at,
+                  i.created_at
+                FROM ria_profiles rp
+                JOIN ria_client_invites i ON i.ria_profile_id = rp.id
+                WHERE rp.user_id = $1
+                ORDER BY i.created_at DESC
+                """,
+                user_id,
+            )
+            return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def create_ria_invites(
+        self,
+        user_id: str,
+        *,
+        scope_template_id: str,
+        duration_mode: str,
+        duration_hours: int | None,
+        firm_id: str | None,
+        reason: str | None,
+        targets: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not targets:
+            raise RIAIAMPolicyError("At least one invite target is required", status_code=400)
+
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_iam_schema_ready(conn)
+                await self._ensure_actor_profile_row(conn, user_id, include_ria_persona=True)
+
+                ria = await self._get_ria_profile_by_user(conn, user_id)
+                if ria["verification_status"] not in {"finra_verified", "active"}:
+                    raise RIAIAMPolicyError(
+                        "RIA verification incomplete; cannot send invites",
+                        status_code=403,
+                    )
+
+                template = await self._load_scope_template(conn, scope_template_id)
+                if (
+                    template.requester_actor_type != "ria"
+                    or template.subject_actor_type != "investor"
+                ):
+                    raise RIAIAMPolicyError(
+                        "Scope template actor direction mismatch",
+                        status_code=400,
+                    )
+
+                mode, resolved_duration_hours = self._resolve_duration_hours(
+                    template,
+                    duration_mode=duration_mode,
+                    duration_hours=duration_hours,
+                )
+
+                if firm_id:
+                    membership = await conn.fetchrow(
+                        """
+                        SELECT 1
+                        FROM ria_firm_memberships
+                        WHERE ria_profile_id = $1
+                          AND firm_id = $2::uuid
+                          AND membership_status = 'active'
+                        """,
+                        ria["id"],
+                        firm_id,
+                    )
+                    if membership is None:
+                        raise RIAIAMPolicyError("Firm membership is not active", status_code=403)
+
+                created_items: list[dict[str, Any]] = []
+                expires_at = datetime.now(tz=timezone.utc) + timedelta(
+                    hours=resolved_duration_hours
+                )
+
+                for raw_target in targets:
+                    display_name = str(raw_target.get("display_name") or "").strip() or None
+                    email = str(raw_target.get("email") or "").strip().lower() or None
+                    phone = str(raw_target.get("phone") or "").strip() or None
+                    investor_user_id = str(raw_target.get("investor_user_id") or "").strip() or None
+                    source = str(raw_target.get("source") or "manual").strip().lower() or "manual"
+                    delivery_channel = (
+                        str(raw_target.get("delivery_channel") or "share_link").strip().lower()
+                        or "share_link"
+                    )
+                    if source not in {"manual", "marketplace", "csv"}:
+                        raise RIAIAMPolicyError("Invalid invite source", status_code=400)
+                    if delivery_channel not in {"share_link", "email", "sms"}:
+                        raise RIAIAMPolicyError("Invalid invite delivery channel", status_code=400)
+                    if not any([display_name, email, phone, investor_user_id]):
+                        raise RIAIAMPolicyError(
+                            "Invite target requires a name, contact, or investor user id",
+                            status_code=400,
+                        )
+
+                    if investor_user_id:
+                        await self._ensure_vault_user_row(conn, investor_user_id)
+                        await self._ensure_actor_profile_row(conn, investor_user_id)
+
+                    invite_token = uuid.uuid4().hex
+                    invite_row = await conn.fetchrow(
+                        """
+                        INSERT INTO ria_client_invites (
+                          invite_token,
+                          ria_profile_id,
+                          firm_id,
+                          target_display_name,
+                          target_email,
+                          target_phone,
+                          target_investor_user_id,
+                          source,
+                          delivery_channel,
+                          status,
+                          scope_template_id,
+                          duration_mode,
+                          duration_hours,
+                          reason,
+                          expires_at,
+                          metadata
+                        )
+                        VALUES (
+                          $1,
+                          $2,
+                          $3::uuid,
+                          NULLIF($4, ''),
+                          NULLIF($5, ''),
+                          NULLIF($6, ''),
+                          $7,
+                          $8,
+                          $9,
+                          'sent',
+                          $10,
+                          $11,
+                          $12,
+                          NULLIF($13, ''),
+                          $14,
+                          $15::jsonb
+                        )
+                        RETURNING id, invite_token, status, expires_at
+                        """,
+                        invite_token,
+                        ria["id"],
+                        firm_id,
+                        display_name or "",
+                        email or "",
+                        phone or "",
+                        investor_user_id,
+                        source,
+                        delivery_channel,
+                        template.template_id,
+                        mode,
+                        resolved_duration_hours,
+                        (reason or "").strip(),
+                        expires_at,
+                        json.dumps(
+                            {
+                                "template_name": template.template_name,
+                                "requester_actor_type": "ria",
+                                "subject_actor_type": "investor",
+                            }
+                        ),
+                    )
+                    if invite_row is None:
+                        raise RuntimeError("Failed to create invite")
+
+                    created_items.append(
+                        {
+                            "invite_id": str(invite_row["id"]),
+                            "invite_token": invite_row["invite_token"],
+                            "invite_path": f"/kai/onboarding?invite={invite_row['invite_token']}",
+                            "status": invite_row["status"],
+                            "expires_at": invite_row["expires_at"],
+                            "scope_template_id": template.template_id,
+                            "duration_mode": mode,
+                            "duration_hours": resolved_duration_hours,
+                            "source": source,
+                            "delivery_channel": delivery_channel,
+                            "target_display_name": display_name,
+                            "target_email": email,
+                            "target_phone": phone,
+                            "target_investor_user_id": investor_user_id,
+                        }
+                    )
+
+                return {"items": created_items}
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def set_ria_marketplace_discoverability(
+        self,
+        user_id: str,
+        *,
+        enabled: bool,
+        headline: str | None = None,
+        strategy_summary: str | None = None,
+    ) -> dict[str, Any]:
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_iam_schema_ready(conn)
+                await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_actor_profile_row(conn, user_id, include_ria_persona=True)
+
+                ria = await conn.fetchrow(
+                    """
+                    SELECT id, display_name, verification_status, strategy
+                    FROM ria_profiles
+                    WHERE user_id = $1
+                    """,
+                    user_id,
+                )
+                if ria is None:
+                    raise RIAIAMPolicyError("RIA profile not found", status_code=404)
+
+                await conn.execute(
+                    """
+                    INSERT INTO marketplace_public_profiles (
+                      user_id,
+                      profile_type,
+                      display_name,
+                      headline,
+                      strategy_summary,
+                      verification_badge,
+                      metadata,
+                      is_discoverable
+                    )
+                    VALUES (
+                      $1,
+                      'ria',
+                      $2,
+                      NULLIF($3, ''),
+                      NULLIF($4, ''),
+                      $5,
+                      '{}'::jsonb,
+                      $6
+                    )
+                    ON CONFLICT (user_id) DO UPDATE
+                    SET
+                      display_name = EXCLUDED.display_name,
+                      headline = COALESCE(EXCLUDED.headline, marketplace_public_profiles.headline),
+                      strategy_summary = COALESCE(
+                        EXCLUDED.strategy_summary,
+                        marketplace_public_profiles.strategy_summary
+                      ),
+                      verification_badge = EXCLUDED.verification_badge,
+                      is_discoverable = EXCLUDED.is_discoverable,
+                      updated_at = NOW()
+                    """,
+                    user_id,
+                    ria["display_name"],
+                    (headline or "").strip(),
+                    (strategy_summary or str(ria["strategy"] or "")).strip(),
+                    str(ria["verification_status"] or ""),
+                    bool(enabled),
+                )
+
+                return {
+                    "user_id": user_id,
+                    "is_discoverable": bool(enabled),
+                    "verification_status": str(ria["verification_status"] or ""),
+                }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def get_ria_invite(self, invite_token: str) -> dict[str, Any]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            row = await conn.fetchrow(
+                """
+                SELECT
+                  i.id,
+                  i.invite_token,
+                  i.status,
+                  i.firm_id,
+                  i.scope_template_id,
+                  i.duration_mode,
+                  i.duration_hours,
+                  i.reason,
+                  i.expires_at,
+                  i.target_display_name,
+                  i.target_email,
+                  i.target_phone,
+                  i.accepted_by_user_id,
+                  i.accepted_request_id,
+                  rp.id AS ria_profile_id,
+                  rp.user_id AS ria_user_id,
+                  rp.display_name AS ria_display_name,
+                  rp.verification_status,
+                  rp.bio,
+                  rp.strategy,
+                  mp.headline,
+                  mp.strategy_summary,
+                  COALESCE(
+                    json_agg(
+                      DISTINCT jsonb_build_object(
+                        'firm_id', f.id,
+                        'legal_name', f.legal_name,
+                        'role_title', m.role_title,
+                        'is_primary', m.is_primary
+                      )
+                    ) FILTER (WHERE f.id IS NOT NULL),
+                    '[]'::json
+                  ) AS firms
+                FROM ria_client_invites i
+                JOIN ria_profiles rp ON rp.id = i.ria_profile_id
+                LEFT JOIN marketplace_public_profiles mp
+                  ON mp.user_id = rp.user_id
+                  AND mp.profile_type = 'ria'
+                LEFT JOIN ria_firm_memberships m
+                  ON m.ria_profile_id = rp.id
+                  AND m.membership_status = 'active'
+                LEFT JOIN ria_firms f ON f.id = m.firm_id
+                WHERE i.invite_token = $1
+                GROUP BY
+                  i.id,
+                  i.invite_token,
+                  i.status,
+                  i.firm_id,
+                  i.scope_template_id,
+                  i.duration_mode,
+                  i.duration_hours,
+                  i.reason,
+                  i.expires_at,
+                  i.target_display_name,
+                  i.target_email,
+                  i.target_phone,
+                  i.accepted_by_user_id,
+                  i.accepted_request_id,
+                  rp.id,
+                  rp.user_id,
+                  rp.display_name,
+                  rp.verification_status,
+                  rp.bio,
+                  rp.strategy,
+                  mp.headline,
+                  mp.strategy_summary
+                """,
+                invite_token,
+            )
+            if row is None:
+                raise RIAIAMPolicyError("Invite not found", status_code=404)
+
+            payload = dict(row)
+            if payload["status"] == "cancelled":
+                raise RIAIAMPolicyError("Invite is no longer available", status_code=410)
+            if payload["status"] == "sent" and payload["expires_at"] <= datetime.now(
+                tz=timezone.utc
+            ):
+                await conn.execute(
+                    """
+                    UPDATE ria_client_invites
+                    SET status = 'expired', updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    payload["id"],
+                )
+                payload["status"] = "expired"
+            if payload["status"] == "expired":
+                raise RIAIAMPolicyError("Invite has expired", status_code=410)
+
+            return {
+                "invite_id": str(payload["id"]),
+                "invite_token": payload["invite_token"],
+                "status": payload["status"],
+                "firm_id": str(payload["firm_id"]) if payload.get("firm_id") else None,
+                "scope_template_id": payload["scope_template_id"],
+                "duration_mode": payload["duration_mode"],
+                "duration_hours": payload["duration_hours"],
+                "reason": payload["reason"],
+                "expires_at": payload["expires_at"],
+                "target_display_name": payload["target_display_name"],
+                "target_email": payload["target_email"],
+                "target_phone": payload["target_phone"],
+                "accepted_by_user_id": payload["accepted_by_user_id"],
+                "accepted_request_id": payload["accepted_request_id"],
+                "ria": {
+                    "id": str(payload["ria_profile_id"]),
+                    "user_id": payload["ria_user_id"],
+                    "display_name": payload["ria_display_name"],
+                    "verification_status": payload["verification_status"],
+                    "headline": payload["headline"],
+                    "strategy_summary": payload["strategy_summary"] or payload["strategy"],
+                    "bio": payload["bio"],
+                    "firms": payload["firms"] or [],
+                },
+            }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def accept_ria_invite(self, invite_token: str, user_id: str) -> dict[str, Any]:
+        invite = await self.get_ria_invite(invite_token)
+        if invite["status"] == "accepted":
+            if invite.get("accepted_by_user_id") == user_id and invite.get("accepted_request_id"):
+                return {
+                    "invite_token": invite_token,
+                    "request_id": invite["accepted_request_id"],
+                    "status": "accepted",
+                    "ria": invite["ria"],
+                }
+            raise RIAIAMPolicyError("Invite has already been accepted", status_code=409)
+        ria_user_id = str(invite["ria"]["user_id"])
+        request = await self.create_ria_consent_request(
+            ria_user_id,
+            subject_user_id=user_id,
+            requester_actor_type="ria",
+            subject_actor_type="investor",
+            scope_template_id=str(invite["scope_template_id"]),
+            selected_scope=None,
+            duration_mode=str(invite["duration_mode"]),
+            duration_hours=int(invite["duration_hours"]) if invite["duration_hours"] else None,
+            firm_id=invite.get("firm_id"),
+            reason=str(invite.get("reason") or "") or None,
+            invite_id=str(invite["invite_id"]),
+            invite_token=invite_token,
+            request_origin="invite_acceptance",
+        )
+
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            updated = await conn.execute(
+                """
+                UPDATE ria_client_invites
+                SET
+                  status = 'accepted',
+                  accepted_by_user_id = $2,
+                  accepted_request_id = $3,
+                  accepted_at = NOW(),
+                  updated_at = NOW()
+                WHERE invite_token = $1
+                  AND status = 'sent'
+                """,
+                invite_token,
+                user_id,
+                request["request_id"],
+            )
+            if updated.endswith("0"):
+                logger.warning("RIA invite accept race detected for token=%s", invite_token)
+            return {
+                "invite_token": invite_token,
+                "request_id": request["request_id"],
+                "status": "accepted",
+                "scope": request["scope"],
+                "expires_at": request["expires_at"],
+                "ria": invite["ria"],
+            }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -903,6 +1550,9 @@ class RIAIAMService:
         duration_hours: int | None,
         firm_id: str | None,
         reason: str | None,
+        invite_id: str | None = None,
+        invite_token: str | None = None,
+        request_origin: str | None = None,
     ) -> dict[str, Any]:
         requester = self._normalize_actor(requester_actor_type)
         subject = self._normalize_actor(subject_actor_type)
@@ -944,25 +1594,11 @@ class RIAIAMService:
                         "Selected scope is not allowed for this template", status_code=400
                     )
 
-                mode = (duration_mode or "preset").strip().lower()
-                resolved_duration_hours: int
-                if mode == "preset":
-                    resolved_duration_hours = int(duration_hours or template.default_duration_hours)
-                    if resolved_duration_hours not in _DURATION_PRESETS_HOURS:
-                        raise RIAIAMPolicyError("Invalid preset duration", status_code=400)
-                elif mode == "custom":
-                    if duration_hours is None:
-                        raise RIAIAMPolicyError(
-                            "duration_hours is required for custom mode", status_code=400
-                        )
-                    resolved_duration_hours = int(duration_hours)
-                    if resolved_duration_hours <= 0:
-                        raise RIAIAMPolicyError("duration_hours must be positive", status_code=400)
-                    cap = min(template.max_duration_hours, _MAX_DURATION_HOURS)
-                    if resolved_duration_hours > cap:
-                        raise RIAIAMPolicyError("duration exceeds allowed cap", status_code=400)
-                else:
-                    raise RIAIAMPolicyError("Invalid duration_mode", status_code=400)
+                mode, resolved_duration_hours = self._resolve_duration_hours(
+                    template,
+                    duration_mode=duration_mode,
+                    duration_hours=duration_hours,
+                )
 
                 if firm_id:
                     membership = await conn.fetchrow(
@@ -993,6 +1629,9 @@ class RIAIAMService:
                     "duration_mode": mode,
                     "duration_hours": resolved_duration_hours,
                     "reason": (reason or "").strip() or None,
+                    "request_origin": (request_origin or "").strip() or "direct_ria_request",
+                    "invite_id": invite_id,
+                    "invite_token": invite_token,
                 }
 
                 await conn.execute(
@@ -1119,11 +1758,22 @@ class RIAIAMService:
             ria = await self._get_ria_profile_by_user(conn, user_id)
             relationship = await conn.fetchrow(
                 """
-                SELECT id, status, granted_scope, last_request_id, consent_granted_at, revoked_at
-                FROM advisor_investor_relationships
-                WHERE investor_user_id = $1
-                  AND ria_profile_id = $2
-                ORDER BY updated_at DESC
+                SELECT
+                  rel.id,
+                  rel.status,
+                  rel.granted_scope,
+                  rel.last_request_id,
+                  rel.consent_granted_at,
+                  rel.revoked_at,
+                  mp.display_name AS investor_display_name,
+                  mp.headline AS investor_headline
+                FROM advisor_investor_relationships rel
+                LEFT JOIN marketplace_public_profiles mp
+                  ON mp.user_id = rel.investor_user_id
+                  AND mp.profile_type = 'investor'
+                WHERE rel.investor_user_id = $1
+                  AND rel.ria_profile_id = $2
+                ORDER BY rel.updated_at DESC
                 LIMIT 1
                 """,
                 investor_user_id,
@@ -1176,12 +1826,17 @@ class RIAIAMService:
                     "available_domains": [],
                     "domain_summaries": {},
                     "total_attributes": 0,
+                    "investor_display_name": relationship["investor_display_name"],
+                    "investor_headline": relationship["investor_headline"],
                     "relationship_status": relationship["status"],
                     "scope": relationship["granted_scope"],
+                    "consent_expires_at": consent_row["expires_at"],
                 }
 
             return {
                 "investor_user_id": investor_user_id,
+                "investor_display_name": relationship["investor_display_name"],
+                "investor_headline": relationship["investor_headline"],
                 "workspace_ready": True,
                 "available_domains": list(metadata["available_domains"] or []),
                 "domain_summaries": dict(metadata["domain_summaries"] or {}),
@@ -1189,6 +1844,7 @@ class RIAIAMService:
                 "updated_at": metadata["updated_at"],
                 "relationship_status": relationship["status"],
                 "scope": relationship["granted_scope"],
+                "consent_expires_at": consent_row["expires_at"],
             }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
