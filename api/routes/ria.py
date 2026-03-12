@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.middleware import require_firebase_auth
+from hushh_mcp.services.consent_center_service import ConsentCenterService
 from hushh_mcp.services.ria_iam_service import (
     IAMSchemaNotReadyError,
     RIAIAMPolicyError,
@@ -100,6 +101,31 @@ async def submit_onboarding(
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post("/onboarding/dev-activate")
+async def dev_activate_onboarding(
+    payload: RIAOnboardingSubmitRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.activate_ria_dev_onboarding(
+            firebase_uid,
+            display_name=payload.display_name,
+            legal_name=payload.legal_name,
+            finra_crd=payload.finra_crd,
+            sec_iard=payload.sec_iard,
+            bio=payload.bio,
+            strategy=payload.strategy,
+            disclosures_url=payload.disclosures_url,
+            primary_firm_name=payload.primary_firm_name,
+            primary_firm_role=payload.primary_firm_role,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get("/onboarding/status")
 async def onboarding_status(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
@@ -129,9 +155,9 @@ async def ria_clients(firebase_uid: str = Depends(require_firebase_auth)):
 
 @router.get("/requests")
 async def ria_requests(firebase_uid: str = Depends(require_firebase_auth)):
-    service = RIAIAMService()
+    service = ConsentCenterService()
     try:
-        return {"items": await service.list_ria_requests(firebase_uid)}
+        return {"items": await service.list_outgoing_requests(firebase_uid)}
     except IAMSchemaNotReadyError as exc:
         return _iam_schema_not_ready_response(str(exc))
 
