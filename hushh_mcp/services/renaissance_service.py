@@ -12,6 +12,12 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from hushh_mcp.services.universe_list_service import (
+    SecurityListDescriptor,
+    SecurityListMember,
+    UniverseListService,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +51,7 @@ TIER_DESCRIPTIONS = {
 }
 
 
-class RenaissanceService:
+class RenaissanceService(UniverseListService):
     """
     Service for querying the Renaissance investable universe.
 
@@ -65,6 +71,59 @@ class RenaissanceService:
 
             self._db = get_db()
         return self._db
+
+    def list_descriptors(self) -> list[SecurityListDescriptor]:
+        return [
+            SecurityListDescriptor(
+                list_id="renaissance_universe",
+                slug="renaissance-universe",
+                list_type="benchmark",
+                owner_type="system",
+                visibility="shared",
+                title="Renaissance investable universe",
+                description="System-curated benchmark universe used by Kai for investability context.",
+                source_table="renaissance_universe",
+            ),
+            SecurityListDescriptor(
+                list_id="renaissance_avoid",
+                slug="renaissance-avoid",
+                list_type="avoid",
+                owner_type="system",
+                visibility="shared",
+                title="Renaissance avoid list",
+                description="System-curated exclusions that disqualify securities from recommendation flows.",
+                source_table="renaissance_avoid",
+            ),
+            SecurityListDescriptor(
+                list_id="renaissance_screening_criteria",
+                slug="renaissance-screening-criteria",
+                list_type="screening",
+                owner_type="system",
+                visibility="shared",
+                title="Renaissance screening criteria",
+                description="System-curated screening rubric that grounds Kai analysis and future RIA template uploads.",
+                source_table="renaissance_screening_criteria",
+            ),
+        ]
+
+    async def list_members(self, list_id: str) -> list[SecurityListMember]:
+        if list_id != "renaissance_universe":
+            return []
+        stocks = await self.get_all_investable()
+        return [
+            SecurityListMember(
+                ticker=stock.ticker,
+                company_name=stock.company_name,
+                sector=stock.sector,
+                metadata={
+                    "tier": stock.tier,
+                    "tier_rank": stock.tier_rank,
+                    "fcf_billions": stock.fcf_billions,
+                    "investment_thesis": stock.investment_thesis,
+                },
+            )
+            for stock in stocks
+        ]
 
     async def is_investable(self, ticker: str) -> tuple[bool, Optional[RenaissanceStock]]:
         """

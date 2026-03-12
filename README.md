@@ -39,12 +39,12 @@ cp .env.example .env
 # Edit .env with your Supabase, Gemini, and Firebase credentials
 
 # Run server
-make dev
+make local-backend
 ```
 
 Health check: `curl http://localhost:8000/health`
 
-**Available commands:** Run `make help` to see all available targets (dev, lint, test, format, typecheck, security, ci-local).
+**Available commands:** Run `make help` to see all available targets (local, uat, prod, lint, test, ci-local).
 
 ## Using This In a Host Monorepo
 
