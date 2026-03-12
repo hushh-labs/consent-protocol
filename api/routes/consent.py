@@ -17,14 +17,15 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from api.middleware import require_vault_owner_token
+from api.middleware import require_firebase_auth, require_vault_owner_token
 from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.consent.scope_helpers import get_scope_description as get_dynamic_scope_description
 from hushh_mcp.consent.scope_helpers import resolve_scope_to_enum
 from hushh_mcp.consent.token import issue_token, validate_token
 from hushh_mcp.constants import ConsentScope
+from hushh_mcp.services.consent_center_service import ConsentCenterService
 from hushh_mcp.services.consent_db import ConsentDBService
-from hushh_mcp.services.ria_iam_service import RIAIAMService
+from hushh_mcp.services.ria_iam_service import RIAIAMPolicyError, RIAIAMService
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,18 @@ def get_scope_description(scope: str) -> str:
 class CancelConsentRequest(BaseModel):
     userId: str
     requestId: str
+
+
+class GenericConsentRequestCreate(BaseModel):
+    subject_user_id: str
+    requester_actor_type: str = "ria"
+    subject_actor_type: str = "investor"
+    scope_template_id: str
+    selected_scope: str | None = None
+    duration_mode: str = "preset"
+    duration_hours: int | None = None
+    firm_id: str | None = None
+    reason: str | None = None
 
 
 @router.get("/pending")
@@ -313,6 +326,40 @@ async def cancel_consent(
         logger.exception("ria.relationship_sync_failed action=CANCELLED")
 
     return {"status": "cancelled", "requestId": payload.requestId}
+
+
+@router.get("/center")
+async def get_consent_center(firebase_uid: str = Depends(require_firebase_auth)):
+    service = ConsentCenterService()
+    return await service.get_center(firebase_uid)
+
+
+@router.get("/requests/outgoing")
+async def get_outgoing_requests(firebase_uid: str = Depends(require_firebase_auth)):
+    service = ConsentCenterService()
+    return {"items": await service.list_outgoing_requests(firebase_uid)}
+
+
+@router.post("/requests")
+async def create_generic_consent_request(
+    payload: GenericConsentRequestCreate,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    try:
+        return await RIAIAMService().create_ria_consent_request(
+            firebase_uid,
+            subject_user_id=payload.subject_user_id,
+            requester_actor_type=payload.requester_actor_type,
+            subject_actor_type=payload.subject_actor_type,
+            scope_template_id=payload.scope_template_id,
+            selected_scope=payload.selected_scope,
+            duration_mode=payload.duration_mode,
+            duration_hours=payload.duration_hours,
+            firm_id=payload.firm_id,
+            reason=payload.reason,
+        )
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.post("/vault-owner-token")

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.middleware import require_firebase_auth
-from api.routes import iam, invites, marketplace, ria
+from api.routes import consent, iam, invites, marketplace, ria
 from hushh_mcp.services.ria_iam_service import (
     IAMSchemaNotReadyError,
     RIAIAMPolicyError,
@@ -17,6 +17,7 @@ TEST_INVITE_VALUE = "invite-demo-value"
 
 def _build_app() -> FastAPI:
     app = FastAPI()
+    app.include_router(consent.router)
     app.include_router(iam.router)
     app.include_router(ria.router)
     app.include_router(marketplace.router)
@@ -207,3 +208,56 @@ def test_accept_invite(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["request_id"] == "req_1"
+
+
+def test_consent_center_returns_combined_surface(monkeypatch):
+    async def _mock_center(self, user_id: str):
+        assert user_id == "user_test_123"
+        return {
+            "user_id": user_id,
+            "persona_state": {"last_active_persona": "investor"},
+            "summary": {"incoming_requests": 1},
+            "incoming_requests": [{"id": "req_1", "kind": "incoming_request"}],
+            "outgoing_requests": [],
+            "active_grants": [],
+            "history": [],
+            "invites": [],
+            "developer_requests": [],
+        }
+
+    from hushh_mcp.services.consent_center_service import ConsentCenterService
+
+    monkeypatch.setattr(ConsentCenterService, "get_center", _mock_center)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/consent/center")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["incoming_requests"] == 1
+    assert payload["incoming_requests"][0]["kind"] == "incoming_request"
+
+
+def test_generic_consent_request_routes_to_ria_request_creation(monkeypatch):
+    async def _mock_create(self, user_id: str, **kwargs):  # noqa: ANN003
+        assert user_id == "user_test_123"
+        assert kwargs["scope_template_id"] == "ria_financial_summary_v1"
+        return {"request_id": "req_generic_1", "status": "REQUESTED"}
+
+    monkeypatch.setattr(RIAIAMService, "create_ria_consent_request", _mock_create)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/consent/requests",
+        json={
+            "subject_user_id": "investor_1",
+            "requester_actor_type": "ria",
+            "subject_actor_type": "investor",
+            "scope_template_id": "ria_financial_summary_v1",
+            "duration_mode": "preset",
+            "duration_hours": 168,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["request_id"] == "req_generic_1"
