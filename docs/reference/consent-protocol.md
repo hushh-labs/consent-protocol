@@ -111,7 +111,15 @@ GET  /api/investors/*          # Public SEC data
 GET  /api/v1/list-scopes
 ```
 
-### 2. Bootstrap Routes (Firebase Only)
+### 2. Developer Routes (Developer API Enabled)
+
+```
+GET  /api/v1/list-scopes              # Generic scope catalog
+GET  /api/v1/user-scopes/{user_id}    # Developer-token protected dynamic scope discovery
+POST /api/v1/request-consent          # Create or reuse consent for one discovered scope
+```
+
+### 3. Bootstrap Routes (Firebase Only)
 
 These routes issue or manage VAULT_OWNER tokens:
 
@@ -122,7 +130,7 @@ POST /api/consent/pending/approve      # Approve before having token
 POST /api/consent/pending/deny         # Deny before having token
 ```
 
-### 3. Consent-Gated Routes (VAULT_OWNER Required)
+### 4. Consent-Gated Routes (VAULT_OWNER Required)
 
 ALL data access routes require VAULT_OWNER token:
 
@@ -341,8 +349,8 @@ attr.{domain}.{subintent}.*      # All attributes under a subintent subtree
 Examples:
 
 - `attr.financial.holdings`
-- `attr.food.dietary_restrictions`
-- `attr.professional.*`
+- `attr.{domain}.{path}`
+- `attr.{domain}.*`
 - `attr.financial.profile.*`
 
 Dynamic scopes are discovered at runtime from world model metadata and `domain_registry`.

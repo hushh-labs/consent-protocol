@@ -131,7 +131,7 @@ When an external MCP agent (e.g., Claude Desktop) needs user data:
 
 ```
 1. MCP Agent → POST /api/v1/request-consent
-   { user_id, scope: "attr.food.*", agent_id: "claude-mcp" }
+   { user_id, scope: "attr.{discovered_domain}.*", agent_id: "claude-mcp" }
 
 2. Backend creates consent_audit record (PENDING)
    Backend sends FCM push notification to user
@@ -140,7 +140,7 @@ When an external MCP agent (e.g., Claude Desktop) needs user data:
 
 4. User approves:
    a. Client decrypts full blob with K_vault
-   b. Client filters to only requested scope (e.g., food domain)
+   b. Client filters to only the requested discovered scope branch
    c. Client generates K_export (one-time key)
    d. Client re-encrypts scoped subset with K_export
    e. Client POST /api/consent/pending/approve
