@@ -42,6 +42,16 @@ What is in `.env` / GCP Secret Manager must match exactly what the code reads --
 | `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` | Recommended | Service auth token for `/api/user/lookup`. |
 | `ROOT_PATH` | `server.py` | No | FastAPI root path for reverse proxy. |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env | No | Set `True` for Vertex AI in production. |
+| `PLAID_ENV` / `PLAID_ENVIRONMENT` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Plaid environment. Defaults to `sandbox`. |
+| `PLAID_CLIENT_ID` | `hushh_mcp/services/plaid_portfolio_service.py` | If Plaid enabled | Plaid client ID. |
+| `PLAID_SECRET` | `hushh_mcp/services/plaid_portfolio_service.py` | If Plaid enabled | Plaid secret for the selected environment. |
+| `PLAID_CLIENT_NAME` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Link display name. Defaults to `Hushh Kai`. |
+| `PLAID_COUNTRY_CODES` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Comma-separated country codes, default `US`. |
+| `PLAID_WEBHOOK_URL` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended | Public webhook URL for `/api/kai/plaid/webhook`. Localhost must use a tunnel. Plaid webhook URLs are provided during Link token creation; they are not dashboard-allowlisted. |
+| `PLAID_REDIRECT_PATH` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended for OAuth | Relative callback path used with `FRONTEND_URL`. Default: `/kai/plaid/oauth/return`. |
+| `PLAID_REDIRECT_URI` / `PLAID_OAUTH_REDIRECT_URI` | `hushh_mcp/services/plaid_portfolio_service.py` | Optional override | Full allowlisted redirect URI, including path. Use only when overriding `FRONTEND_URL + PLAID_REDIRECT_PATH`. |
+| `PLAID_TOKEN_ENCRYPTION_KEY` | `hushh_mcp/services/plaid_portfolio_service.py` | Recommended | Encryption key for stored Plaid access tokens. If omitted, backend derives a fallback key from Plaid credentials. |
+| `PLAID_TX_HISTORY_DAYS` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Investment transaction lookback window. Default `730`. |
 
 ---
 
@@ -85,6 +95,21 @@ Optional local-only vars used by migration/reset utilities:
 
 - `KAI_TEST_USER_ID`
 - `KAI_TEST_PASSPHRASE`
+
+## Kai Brokerage Boundary
+
+Plaid variables above enable read-only brokerage connectivity only:
+
+- holdings
+- investment transactions
+- refresh/webhooks
+- OAuth resume
+
+There are no live-trading broker execution environment variables yet. Future execution will use a separate broker-adapter layer with distinct consent scopes and approval flows; it must not reuse Plaid connectivity as an execution channel.
+
+Webhook maintenance:
+
+- If `PLAID_WEBHOOK_URL` changes after users have already linked institutions, existing Items will need a one-time `/item/webhook/update` maintenance pass from an operator.
 
 ---
 

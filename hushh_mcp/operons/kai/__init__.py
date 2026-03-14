@@ -14,6 +14,12 @@ from .analysis import (
     analyze_sentiment,
     analyze_valuation,
 )
+from .brokerage import (
+    build_brokerage_freshness_context,
+    build_brokerage_holdings_context,
+    prepare_order_intent,
+    summarize_brokerage_activity,
+)
 from .calculators import (
     calculate_financial_ratios,
     calculate_sentiment_score,
@@ -32,6 +38,11 @@ __all__ = [
     "analyze_sentiment",
     "analyze_valuation",
     "analyze_stock_with_gemini",
+    # Brokerage operons
+    "build_brokerage_holdings_context",
+    "summarize_brokerage_activity",
+    "build_brokerage_freshness_context",
+    "prepare_order_intent",
     # Calculator operons
     "calculate_financial_ratios",
     "calculate_sentiment_score",
