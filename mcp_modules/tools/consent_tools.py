@@ -21,6 +21,7 @@ from mcp_modules.config import (
     DEVELOPER_API_ENABLED,
     FASTAPI_URL,
     FRONTEND_URL,
+    MCP_AGENT_ID,
     MCP_DEVELOPER_TOKEN,
     PRODUCTION_MODE,
     resolve_scope_api,
@@ -169,6 +170,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                 f"{FASTAPI_URL}/api/v1/request-consent",
                 json={
                     "developer_token": MCP_DEVELOPER_TOKEN,
+                    "agent_id": MCP_AGENT_ID,
                     "user_id": user_id,
                     "scope": scope_dot,
                     "expiry_hours": 24,
@@ -230,12 +232,33 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                                 "status": "granted",
                                 "consent_token": data.get("consent_token"),
                                 "user_id": user_id,
-                                "scope": scope_str,
+                                "scope": data.get("scope", scope_dot),
                                 "message": "Consent already granted.",
                             }
                         ),
                     )
                 ]
+
+            if status == "denied_recently":
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "status": "denied_recently",
+                                "user_id": user_id,
+                                "scope": data.get("scope", scope_dot),
+                                "message": data.get(
+                                    "message",
+                                    "This scope was recently denied. Wait before requesting again.",
+                                ),
+                            }
+                        ),
+                    )
+                ]
+
+            if status and status != "pending":
+                return [TextContent(type="text", text=json.dumps(data))]
 
             request_id = data.get("request_id")
             if not request_id:
@@ -250,7 +273,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         {
                             "status": "pending",
                             "user_id": user_id,
-                            "scope": scope_str,
+                            "scope": data.get("scope", scope_dot),
                             "request_id": request_id,
                             "message": "Consent request submitted. User approval is pending in Hushh app.",
                             "dashboard_url": f"{FRONTEND_URL}/consents?tab=pending",

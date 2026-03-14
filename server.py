@@ -77,6 +77,7 @@ from api.routes import (  # noqa: E402
     consent,
     db_proxy,
     debug_firebase,
+    developer,
     health,
     notifications,
     session,
@@ -132,6 +133,9 @@ app.include_router(consent.router)
 
 # Session token routes (/api/consent/issue-token, /api/user/lookup, etc.)
 app.include_router(session.router)
+
+# Developer API routes (/api/v1/*)
+app.include_router(developer.router)
 
 # Database proxy routes (/db/vault/...) - for iOS native app
 app.include_router(db_proxy.router)

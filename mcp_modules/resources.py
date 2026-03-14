@@ -31,6 +31,12 @@ async def list_resources() -> list[Resource]:
             description="What the Hushh connector does, tool list, recommended flow, and supported scopes",
             mimeType="application/json",
         ),
+        Resource(
+            uri="hushh://info/developer-api",
+            name="Developer API Contract",
+            description="Versioned developer API contract for dynamic scope discovery and consent requests",
+            mimeType="application/json",
+        ),
     ]
 
 
@@ -64,7 +70,8 @@ async def read_resource(uri: str) -> str:
             "scope_examples": [
                 "world_model.read - Full world model (all domains)",
                 "world_model.write - Write to world model",
-                "attr.{domain}.* - One domain (domain key from discover_user_domains or metadata; e.g. attr.financial.*, attr.food.*)",
+                "attr.{domain}.* - One discovered domain branch",
+                "attr.{domain}.{subintent}.* - One discovered nested branch when metadata exposes subintents",
             ],
             "zero_knowledge": True,
             "server_sees_plaintext": False,
@@ -78,12 +85,12 @@ async def read_resource(uri: str) -> str:
                 {
                     "name": "request_consent",
                     "purpose": "Request user consent for a scope",
-                    "when_to_use": "Before accessing any user data; pass scope from discover_user_domains or list_scopes",
+                    "when_to_use": "Before accessing any user data; pass one scope returned by discover_user_domains(user_id)",
                 },
                 {
                     "name": "validate_token",
                     "purpose": "Validate a consent token",
-                    "when_to_use": "Before using a token with get_* tools or external APIs",
+                    "when_to_use": "Before using a token with get_scoped_data, compatibility tools, or external APIs",
                 },
                 {
                     "name": "discover_user_domains",
@@ -92,8 +99,13 @@ async def read_resource(uri: str) -> str:
                 },
                 {
                     "name": "list_scopes",
-                    "purpose": "List available scope categories",
-                    "when_to_use": "Static reference for scope names if not using discover_user_domains",
+                    "purpose": "List canonical dynamic scope patterns",
+                    "when_to_use": "Static reference for scope shapes only; not a substitute for per-user scope discovery",
+                },
+                {
+                    "name": "get_scoped_data",
+                    "purpose": "Get the approved export payload for any valid consent token",
+                    "when_to_use": "Recommended for all new integrations after consent is granted",
                 },
                 {
                     "name": "check_consent_status",
@@ -101,14 +113,19 @@ async def read_resource(uri: str) -> str:
                     "when_to_use": "After request_consent when status is pending",
                 },
                 {
+                    "name": "get_financial_profile",
+                    "purpose": "Compatibility-only named getter for finance-root integrations",
+                    "when_to_use": "Only when maintaining an older named financial integration",
+                },
+                {
                     "name": "get_food_preferences",
-                    "purpose": "Get food/dining preferences",
-                    "when_to_use": "After consent for attr.food.* or world_model.read",
+                    "purpose": "Compatibility-only named getter for legacy food/dining integrations",
+                    "when_to_use": "Only when maintaining an older named-domain integration",
                 },
                 {
                     "name": "get_professional_profile",
-                    "purpose": "Get professional profile",
-                    "when_to_use": "After consent for attr.professional.* or world_model.read",
+                    "purpose": "Compatibility-only named getter for legacy professional integrations",
+                    "when_to_use": "Only when maintaining an older named-domain integration",
                 },
                 {
                     "name": "delegate_to_agent",
@@ -143,17 +160,65 @@ async def read_resource(uri: str) -> str:
             ],
             "recommended_flow": [
                 "1. discover_user_domains(user_id) to get domains and scope strings for this user",
-                "2. request_consent(user_id, scope) for each scope needed (e.g. world_model.read or attr.food.*)",
+                "2. request_consent(user_id, scope) for each scope needed (e.g. world_model.read or one discovered attr scope)",
                 "3. If status is pending, return control to caller; user approves in app and caller can re-check status later",
-                "4. Use the returned consent_token with get_* tools or world-model data APIs",
+                "4. Use the returned consent_token with get_scoped_data (recommended) or compatibility-only named getters",
             ],
             "scopes_are_dynamic": True,
-            "supported_scopes": "world_model.read, world_model.write, attr.{domain}.*, and attr.{domain}.{subintent}.* when metadata exposes subintents. No fixed list.",
+            "supported_scopes": "world_model.read, world_model.write, attr.{domain}.*, attr.{domain}.{subintent}.*, and attr.{domain}.{path}. No fixed domain list.",
             "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/v1/user-scopes/{user_id} (developer-auth) and validates against world_model_index_v2 + domain_registry metadata.",
             "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
             "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). Delivery is FCM-first in production; consent SSE/polling is disabled for this flow.",
+            "compatibility_policy": "Named getters such as get_food_preferences and get_professional_profile remain compatibility surfaces only. New integrations should use get_scoped_data.",
         }
         return json.dumps(connector_info, indent=2)
+
+    elif uri_str == "hushh://info/developer-api":
+        developer_api_info = {
+            "version": "v1",
+            "base_path": "/api/v1",
+            "dynamic_scopes": True,
+            "endpoints": [
+                {
+                    "method": "GET",
+                    "path": "/api/v1/list-scopes",
+                    "auth": "Developer API enabled",
+                    "purpose": "Public generic scope catalog (patterns only, no user data)",
+                },
+                {
+                    "method": "GET",
+                    "path": "/api/v1/user-scopes/{user_id}",
+                    "auth": "X-MCP-Developer-Token",
+                    "purpose": "Per-user discovered scopes and available domains",
+                },
+                {
+                    "method": "POST",
+                    "path": "/api/v1/request-consent",
+                    "auth": "developer_token body field or X-MCP-Developer-Token header",
+                    "purpose": "Create or reuse consent for one discovered scope",
+                },
+            ],
+            "requestable_scopes": [
+                "world_model.read",
+                "world_model.write",
+                "attr.{domain}.*",
+                "attr.{domain}.{subintent}.*",
+                "attr.{domain}.{path}",
+            ],
+            "recommended_mcp_flow": [
+                "discover_user_domains",
+                "request_consent",
+                "check_consent_status",
+                "get_scoped_data",
+            ],
+            "scale_notes": [
+                "Prefer discovered scopes over hardcoded domain keys.",
+                "Treat named domain getters as compatibility-only surfaces.",
+                "Use agent_id per integrating app or MCP server to keep consent state partitioned at scale.",
+                "Cache scope catalogs briefly, but always expect runtime change when user data changes.",
+            ],
+        }
+        return json.dumps(developer_api_info, indent=2)
 
     else:
         logger.warning(f"❌ Unknown resource URI: {uri_str}")

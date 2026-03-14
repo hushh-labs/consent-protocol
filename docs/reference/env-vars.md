@@ -37,6 +37,7 @@ What is in `.env` / GCP Secret Manager must match exactly what the code reads --
 | `APP_REVIEW_MODE` / `HUSHH_APP_REVIEW_MODE` | `api/routes/health.py` | No | App review mode toggle. |
 | `REVIEWER_UID` | `api/routes/health.py` | If app review | Firebase UID used for custom token minting. |
 | `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Defaults off in production. |
+| `DEVELOPER_API_ENABLED` | `api/routes/developer.py`, `server.py` | No | Enables `/api/v1/*`; defaults false in production unless explicitly enabled. |
 | `SYNC_REMOTE_ENABLED` | `api/routes/sync.py` | No | Defaults false; sync endpoints return 501 when disabled. |
 | `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` | Recommended | Service auth token for `/api/user/lookup`. |
 | `ROOT_PATH` | `server.py` | No | FastAPI root path for reverse proxy. |
@@ -54,6 +55,7 @@ These are read by `mcp_server.py` (separate from the main FastAPI server):
 | `FRONTEND_URL` | `http://localhost:3000` | Frontend URL for user-facing links. |
 | `PRODUCTION_MODE` | `true` | Require real user approval via Hushh app. |
 | `MCP_DEVELOPER_TOKEN` | `mcp_dev_claude_desktop` | Developer token registered in FastAPI. |
+| `MCP_AGENT_ID` | `hushh-mcp` | Stable developer app / MCP identity for `/api/v1/request-consent`. |
 | `CONSENT_TIMEOUT_SECONDS` | `120` | Max wait for user consent approval. |
 
 ---

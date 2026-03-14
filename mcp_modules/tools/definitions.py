@@ -34,14 +34,14 @@ def get_tool_definitions() -> list[Tool]:
                         "type": "string",
                         "description": (
                             "Data scope to access. Use world_model.read for full world model, "
-                            "or attr.{domain}.* for one domain (e.g. attr.financial.*, attr.food.*). "
-                            "Domains per user from discover_user_domains(user_id). Each scope requires separate consent."
+                            "or one of the dynamic attr scopes discovered for this user. "
+                            "Domains per user come from discover_user_domains(user_id). Each scope requires separate consent."
                         ),
                         "examples": [
                             "world_model.read",
-                            "attr.financial.*",
-                            "attr.food.*",
-                            "attr.health.*",
+                            "attr.{domain}.*",
+                            "attr.{domain}.{subintent}.*",
+                            "attr.{domain}.{path}",
                         ],
                     },
                     "reason": {
@@ -75,14 +75,43 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["token"],
             },
         ),
-        # Tool 3: Get Financial Profile
+        # Tool 3: Get Scoped Data
+        Tool(
+            name="get_scoped_data",
+            description=(
+                "📦 Retrieve the approved scoped export for any valid consent token. "
+                "This is the recommended dynamic data-access tool for all new integrations. "
+                "The returned payload already reflects the exact scope the user approved."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "The user's unique identifier or email address",
+                    },
+                    "consent_token": {
+                        "type": "string",
+                        "description": "Valid consent token for the approved scope",
+                    },
+                    "expected_scope": {
+                        "type": "string",
+                        "description": (
+                            "Optional safety check. Use a discovered scope string if the caller "
+                            "wants to verify the token is scoped exactly as expected."
+                        ),
+                    },
+                },
+                "required": ["user_id", "consent_token"],
+            },
+        ),
+        # Tool 4: Get Financial Profile
         Tool(
             name="get_financial_profile",
             description=(
-                "💰 Retrieve user's financial profile including portfolio holdings, "
-                "investments, and financial preferences. "
-                "REQUIRES: Valid consent token with attr.financial.* or world_model.read scope. "
-                "Will be DENIED without proper consent. A food token WILL NOT work - scopes are isolated."
+                "💰 Compatibility-only wrapper for financial profile access. "
+                "New integrations should prefer get_scoped_data with a discovered scope "
+                "or world_model.read."
             ),
             inputSchema={
                 "type": "object",
@@ -99,14 +128,13 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id", "consent_token"],
             },
         ),
-        # Tool 4: Get Food Preferences
+        # Tool 5: Get Food Preferences
         Tool(
             name="get_food_preferences",
             description=(
-                "🍽️ Retrieve user's food preferences including dietary restrictions, "
-                "favorite cuisines, and monthly dining budget. "
-                "REQUIRES: Valid consent token with attr.food.* or world_model.read scope. "
-                "Will be DENIED without proper consent."
+                "🍽️ Compatibility-only wrapper for legacy food/dining access. "
+                "New integrations should prefer get_scoped_data with a discovered scope "
+                "instead of relying on named domain getters."
             ),
             inputSchema={
                 "type": "object",
@@ -117,20 +145,23 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with attr.food.* or world_model.read scope",
+                        "description": (
+                            "Compatibility token for this legacy wrapper. "
+                            "Current runtime expects a token that authorizes the exported data, "
+                            "typically world_model.read. New integrations should use get_scoped_data."
+                        ),
                     },
                 },
                 "required": ["user_id", "consent_token"],
             },
         ),
-        # Tool 4: Get Professional Profile
+        # Tool 6: Get Professional Profile
         Tool(
             name="get_professional_profile",
             description=(
-                "💼 Retrieve user's professional profile including job title, skills, "
-                "experience level, and job preferences. "
-                "REQUIRES: Valid consent token with attr.professional.* or world_model.read scope. "
-                "A food token WILL NOT work - scopes are isolated."
+                "💼 Compatibility-only wrapper for legacy professional-profile access. "
+                "New integrations should prefer get_scoped_data with a discovered scope "
+                "instead of relying on named domain getters."
             ),
             inputSchema={
                 "type": "object",
@@ -141,13 +172,17 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "consent_token": {
                         "type": "string",
-                        "description": "Valid consent token with attr.professional.* or world_model.read scope",
+                        "description": (
+                            "Compatibility token for this legacy wrapper. "
+                            "Current runtime expects a token that authorizes the exported data, "
+                            "typically world_model.read. New integrations should use get_scoped_data."
+                        ),
                     },
                 },
                 "required": ["user_id", "consent_token"],
             },
         ),
-        # Tool 5: Delegate to Agent (TrustLink)
+        # Tool 7: Delegate to Agent (TrustLink)
         Tool(
             name="delegate_to_agent",
             description=(
@@ -180,21 +215,21 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["from_agent", "to_agent", "scope", "user_id"],
             },
         ),
-        # Tool 6: List Available Scopes
+        # Tool 8: List Available Scopes
         Tool(
             name="list_scopes",
             description=(
-                "📋 List all available consent scopes and their descriptions. "
-                "Use this to understand what data categories exist before requesting consent."
+                "📋 List canonical dynamic scope patterns and their descriptions. "
+                "Use this as a reference, but always call discover_user_domains before requesting attr scopes."
             ),
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
-        # Tool 6b: Discover user's domains and scopes (per-user discovery)
+        # Tool 9: Discover user's domains and scopes (per-user discovery)
         Tool(
             name="discover_user_domains",
             description=(
                 "Discover which domains a user has and the scope strings to request. "
-                "Call this before request_consent to know which scopes (e.g. attr.financial.*, attr.food.*) "
+                "Call this before request_consent to know which scopes "
                 "are available for that user. Returns user_id, list of domain keys, and available_scopes."
             ),
             inputSchema={
@@ -208,7 +243,7 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id"],
             },
         ),
-        # Tool 7: Check Consent Status (Production Flow)
+        # Tool 10: Check Consent Status (Production Flow)
         Tool(
             name="check_consent_status",
             description=(

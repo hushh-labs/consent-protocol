@@ -1,6 +1,6 @@
 # mcp/tools/data_tools.py
 """
-Data access handlers (food preferences, professional profile).
+Data access handlers (generic scoped export plus compatibility named getters).
 
 SECURITY: Uses validate_token_with_db for cross-instance revocation consistency.
 This ensures tokens revoked on one Cloud Run instance are rejected on all instances.
@@ -47,6 +47,146 @@ async def resolve_email_to_uid(user_id: str) -> str:
         logger.warning(f"⚠️ Email lookup failed: {e}")
 
     return user_id
+
+
+async def _fetch_decrypted_export(consent_token: str):
+    """
+    Fetch encrypted export data from the backend and decrypt it locally.
+
+    The export is already scope-filtered by the approval flow, so callers
+    receive only the approved subset.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            export_response = await client.get(
+                f"{FASTAPI_URL}/api/consent/data",
+                params={"consent_token": consent_token},
+                timeout=10.0,
+            )
+
+            if export_response.status_code == 404:
+                logger.warning("⚠️ No export data found for consent token")
+                return None
+
+            export_response.raise_for_status()
+            export_data = export_response.json()
+
+            export_key_hex = export_data.get("export_key")
+            encrypted_data = export_data.get("encrypted_data")
+            iv = export_data.get("iv")
+            tag = export_data.get("tag")
+
+            if not all([export_key_hex, encrypted_data, iv, tag]):
+                logger.warning("⚠️ Incomplete export payload for consent token")
+                return None
+
+            key_bytes = bytes.fromhex(export_key_hex)
+            iv_bytes = base64.b64decode(iv)
+            ciphertext_bytes = base64.b64decode(encrypted_data)
+            tag_bytes = base64.b64decode(tag)
+
+            combined = ciphertext_bytes + tag_bytes
+            aesgcm = AESGCM(key_bytes)
+            plaintext = aesgcm.decrypt(iv_bytes, combined, None)
+            return json.loads(plaintext.decode("utf-8"))
+    except Exception as e:
+        logger.warning("⚠️ Scoped export fetch/decrypt failed: %s", e)
+        return None
+
+
+async def handle_get_scoped_data(args: dict) -> list[TextContent]:
+    """
+    Get scope-filtered export data for any approved consent token.
+
+    This is the scalable dynamic replacement for named domain getters.
+    """
+    user_id = args.get("user_id")
+    consent_token = args.get("consent_token")
+    expected_scope = args.get("expected_scope")
+
+    user_id = await resolve_email_to_uid(user_id)
+
+    valid, reason, token_obj = await validate_token_with_db(
+        consent_token,
+        expected_scope=expected_scope,
+    )
+
+    if not valid:
+        logger.warning("🚫 ACCESS DENIED (scoped): %s", reason)
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "access_denied",
+                        "error": f"Consent validation failed: {reason}",
+                        **({"required_scope": expected_scope} if expected_scope else {}),
+                        "privacy_notice": "Hushh requires explicit scoped consent before accessing personal data.",
+                        "remedy": "Call discover_user_domains first, then request_consent with one of the discovered scopes.",
+                    }
+                ),
+            )
+        ]
+
+    if token_obj.user_id != user_id:
+        logger.warning(
+            "🚫 ACCESS DENIED: User mismatch (token=%s, request=%s)",
+            token_obj.user_id,
+            user_id,
+        )
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "access_denied",
+                        "error": "Token user_id does not match requested user_id",
+                        "privacy_notice": "Tokens are bound to specific users and cannot be transferred.",
+                    }
+                ),
+            )
+        ]
+
+    scoped_data = await _fetch_decrypted_export(consent_token)
+    granted_scope = token_obj.scope_str or token_obj.scope.value
+
+    if scoped_data is None:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "status": "no_data",
+                        "error": "No scoped export data found for this token",
+                        "user_id": user_id,
+                        "scope": granted_scope,
+                        "consent_verified": True,
+                        "message": "The user has not approved export data for this scope yet, or the export has expired.",
+                    }
+                ),
+            )
+        ]
+
+    payload_keys = sorted(scoped_data.keys()) if isinstance(scoped_data, dict) else None
+
+    return [
+        TextContent(
+            type="text",
+            text=json.dumps(
+                {
+                    "status": "success",
+                    "user_id": user_id,
+                    "scope": granted_scope,
+                    **({"expected_scope": expected_scope} if expected_scope else {}),
+                    "consent_verified": True,
+                    "data": scoped_data,
+                    **({"top_level_keys": payload_keys} if payload_keys is not None else {}),
+                    "privacy_note": "This payload contains only the subset the user approved for this consent token.",
+                    "zero_knowledge": True,
+                }
+            ),
+        )
+    ]
 
 
 async def handle_get_financial(args: dict) -> list[TextContent]:
@@ -246,7 +386,7 @@ async def handle_get_food(args: dict) -> list[TextContent]:
 
     Compliance:
     ✅ HushhMCP: Consent BEFORE data access
-    ✅ HushhMCP: Scoped Access (attr.food.* or world_model.read required)
+    ✅ HushhMCP: Compatibility wrapper over the governed export path
     ✅ HushhMCP: User ID must match token
     ✅ Privacy: Denied without valid consent
     """
@@ -352,7 +492,8 @@ async def handle_get_food(args: dict) -> list[TextContent]:
                         "status": "no_data",
                         "error": "No food preferences data found in vault",
                         "user_id": user_id,
-                        "scope": "attr.food.*",
+                        "scope": getattr(token_obj, "scope", "world_model.read"),
+                        "compatibility_wrapper": "get_food_preferences",
                         "consent_verified": True,
                         "message": "The user has not saved any food preferences yet, or the data export was not included with consent approval.",
                         "suggestion": "Ask the user to update their food preferences in the Hushh app and re-approve consent.",
@@ -370,7 +511,8 @@ async def handle_get_food(args: dict) -> list[TextContent]:
                 {
                     "status": "success",
                     "user_id": user_id,
-                    "scope": "attr.food.*",
+                    "scope": getattr(token_obj, "scope", "world_model.read"),
+                    "compatibility_wrapper": "get_food_preferences",
                     "consent_verified": True,
                     "consent_token_used": consent_token[:30] + "...",
                     "data": food_data,
@@ -388,8 +530,8 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
 
     Compliance:
     ✅ HushhMCP: Different scope = Different token required
-    ✅ HushhMCP: Food token CANNOT access professional data
-    ✅ HushhMCP: Scope isolation is enforced cryptographically
+    ✅ HushhMCP: Compatibility wrapper over the governed export path
+    ✅ HushhMCP: Scope isolation remains enforced by the consent token
     """
     user_id = args.get("user_id")
     consent_token = args.get("consent_token")
@@ -483,7 +625,8 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
                         "status": "no_data",
                         "error": "No professional profile data found in vault",
                         "user_id": user_id,
-                        "scope": "attr.professional.*",
+                        "scope": getattr(token_obj, "scope", "world_model.read"),
+                        "compatibility_wrapper": "get_professional_profile",
                         "consent_verified": True,
                         "message": "The user has not saved any professional profile yet, or the data export was not included with consent approval.",
                         "suggestion": "Ask the user to update their professional profile in the Hushh app and re-approve consent.",
@@ -501,7 +644,8 @@ async def handle_get_professional(args: dict) -> list[TextContent]:
                 {
                     "status": "success",
                     "user_id": user_id,
-                    "scope": "attr.professional.*",
+                    "scope": getattr(token_obj, "scope", "world_model.read"),
+                    "compatibility_wrapper": "get_professional_profile",
                     "consent_verified": True,
                     "data": professional_data,
                     "privacy_note": "This data was accessed with valid user consent.",

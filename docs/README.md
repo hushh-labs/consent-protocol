@@ -17,6 +17,7 @@ consent-protocol/
 │   ├── middlewares/            # Rate limiting, auth helpers
 │   └── routes/                # All API endpoint routers
 │       ├── consent.py         # Consent token management
+│       ├── developer.py       # Versioned developer API (/api/v1)
 │       ├── world_model.py     # World model CRUD
 │       ├── notifications.py   # FCM push tokens
 │       ├── kai/               # Kai financial agent routes
@@ -36,6 +37,7 @@ consent-protocol/
     ├── mcp-setup.md           # MCP server setup for Claude Desktop
     └── reference/
         ├── agent-development.md   # DNA model, operons, contribution guide
+        ├── developer-api.md       # Published developer API contract
         ├── world-model.md         # Two-table architecture, BYOK
         ├── kai-agents.md          # 3-agent debate system
         ├── consent-protocol.md    # Token model and security
@@ -71,6 +73,7 @@ Health check: `curl http://localhost:8000/health`
 | Goal | Document |
 | ---- | -------- |
 | Build a new agent or operon | [reference/agent-development.md](./reference/agent-development.md) |
+| Publish against the developer API / MCP | [reference/developer-api.md](./reference/developer-api.md) |
 | Understand data encryption and storage | [reference/world-model.md](./reference/world-model.md) |
 | Learn the 3-agent debate system | [reference/kai-agents.md](./reference/kai-agents.md) |
 | Understand the consent token model | [reference/consent-protocol.md](./reference/consent-protocol.md) |
