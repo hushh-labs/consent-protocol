@@ -256,9 +256,10 @@ Compatibility notes:
 Use runtime reconciliation/audit tools for drift repair and verification:
 
 ```bash
-node scripts/ops/audit-world-model-user.mjs --userId <uid> --passphrase '<passphrase>'
 python scripts/ops/reconcile_financial_domain.py --user-id <uid> --passphrase '<passphrase>'
 ```
+
+For user-level validation, spot-check `/api/world-model/metadata/{user_id}` together with the relevant domain payload in your local API client or app runtime and confirm the dashboard context matches the metadata counts.
 
 ---
 
