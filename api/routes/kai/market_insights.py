@@ -21,6 +21,7 @@ from api.middleware import require_vault_owner_token
 from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_market_news
 from hushh_mcp.services.market_cache_store import get_market_cache_store_service
 from hushh_mcp.services.market_insights_cache import market_insights_cache
+from hushh_mcp.services.renaissance_service import TIER_WEIGHTS, get_renaissance_service
 from hushh_mcp.services.symbol_master_service import get_symbol_master_service
 from hushh_mcp.services.world_model_service import get_world_model_service
 
@@ -46,6 +47,7 @@ FINANCIAL_SUMMARY_STALE_TTL_SECONDS = 1800
 
 DEFAULT_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]
 WATCHLIST_MAX = 8
+RENAISSANCE_LIST_MAX = 12
 NEWS_SYMBOL_MAX = 3
 NEWS_ROWS_MAX = 12
 QUOTE_FANOUT_CONCURRENCY = 4
@@ -110,6 +112,7 @@ def _empty_market_home_payload(
             "portfolio_value_bucket": None,
         },
         "watchlist": [],
+        "renaissance_list": [],
         "movers": {
             "gainers": [],
             "losers": [],
@@ -223,6 +226,19 @@ def _fallback_recommendation_from_quote(
         "source": "Momentum Fallback",
         "degraded": True,
     }
+
+
+def _recommendation_bias_from_tier(tier: str | None) -> str:
+    normalized = str(tier or "").strip().upper()
+    if normalized == "ACE":
+        return "STRONG_BUY"
+    if normalized == "KING":
+        return "BUY"
+    if normalized == "QUEEN":
+        return "HOLD_TO_BUY"
+    if normalized == "JACK":
+        return "HOLD"
+    return "NEUTRAL"
 
 
 def _spotlight_rank(row: dict[str, Any]) -> tuple[int, float]:
@@ -1459,8 +1475,17 @@ async def get_market_insights(
         aggregated_cache_tier = "memory"
         aggregated_cache_hit = True
 
+        renaissance_service = get_renaissance_service()
+        renaissance_universe = await renaissance_service.get_all_investable()
+        renaissance_rows_source = renaissance_universe[:RENAISSANCE_LIST_MAX]
+        renaissance_symbols = [
+            str(stock.ticker or "").strip().upper()
+            for stock in renaissance_rows_source
+            if str(stock.ticker or "").strip()
+        ]
+
         core_symbols = ["SPY", "QQQ"]
-        symbol_set = sorted({*watchlist_symbols, *core_symbols})
+        symbol_set = sorted({*watchlist_symbols, *core_symbols, *renaissance_symbols})
         quotes_key = f"quotes:{','.join(symbol_set)}"
 
         async def fetch_quotes_bundle() -> dict[str, Any]:
@@ -1573,6 +1598,7 @@ async def get_market_insights(
         aggregated_cache_hit = aggregated_cache_hit and macro_cache_hit
 
         watchlist_rows: list[dict[str, Any]] = []
+        renaissance_rows: list[dict[str, Any]] = []
         rec_semaphore = asyncio.Semaphore(RECOMMENDATION_FANOUT_CONCURRENCY)
 
         async def build_watchlist_row(symbol: str) -> tuple[dict[str, Any], dict[str, str], bool]:
@@ -1639,6 +1665,35 @@ async def get_market_insights(
             watchlist_rows.append(row)
             provider_status.update(status_map)
             stale = stale or row_stale
+
+        for stock in renaissance_rows_source:
+            symbol = str(stock.ticker or "").strip().upper()
+            quote = quote_map.get(symbol) if isinstance(quote_map, dict) else None
+            quote_source = str((quote or {}).get("source") or "").strip() or "Unknown"
+            renaissance_rows.append(
+                {
+                    "symbol": symbol,
+                    "company_name": str(stock.company_name or symbol),
+                    "sector": str(stock.sector or "").strip() or None,
+                    "tier": str(stock.tier or "").strip().upper() or None,
+                    "tier_rank": int(stock.tier_rank or 0),
+                    "conviction_weight": float(
+                        TIER_WEIGHTS.get(str(stock.tier or "").strip().upper(), 0.5)
+                    ),
+                    "recommendation_bias": _recommendation_bias_from_tier(stock.tier),
+                    "investment_thesis": str(stock.investment_thesis or "").strip() or None,
+                    "fcf_billions": _safe_float(stock.fcf_billions),
+                    "price": _safe_float((quote or {}).get("price")),
+                    "change_pct": _safe_float((quote or {}).get("change_percent")),
+                    "volume": _safe_int((quote or {}).get("volume")),
+                    "market_cap": _safe_float((quote or {}).get("market_cap")),
+                    "source_tags": sorted(set(["Renaissance", quote_source])),
+                    "degraded": bool(not quote),
+                    "as_of": (quote or {}).get("fetched_at")
+                    if isinstance((quote or {}).get("fetched_at"), str)
+                    else None,
+                }
+            )
 
         (
             movers_value,
@@ -1899,6 +1954,7 @@ async def get_market_insights(
             "provider_status": provider_status,
             "hero": hero,
             "watchlist": watchlist_rows,
+            "renaissance_list": renaissance_rows,
             "movers": movers_payload,
             "sector_rotation": sector_rotation,
             "news_tape": news_tape,

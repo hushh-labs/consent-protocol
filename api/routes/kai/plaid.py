@@ -44,7 +44,7 @@ class PlaidRefreshRequest(BaseModel):
 
 class PlaidSourcePreferenceRequest(BaseModel):
     user_id: str
-    active_source: Literal["statement", "plaid", "combined"]
+    active_source: Literal["statement", "plaid"]
 
 
 def _verify_user(token_data: dict[str, Any], requested_user_id: str) -> None:

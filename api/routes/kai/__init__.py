@@ -10,6 +10,7 @@ This package organizes Kai routes into logical modules:
 - stream.py: SSE streaming analysis endpoint
 - decisions.py: Decision history (reads from domain_summaries; legacy CRUD returns 410)
 - consent.py: Kai-specific consent grants
+- support.py: Profile support and bug-report messaging via Gmail API
 
 All sub-routers are aggregated into `kai_router` for backward compatibility.
 """
@@ -26,6 +27,7 @@ from .market_insights import router as market_insights_router
 from .plaid import router as plaid_router
 from .portfolio import router as portfolio_router
 from .stream import router as stream_router
+from .support import router as support_router
 
 # Create the main Kai router with prefix
 kai_router = APIRouter(prefix="/api/kai", tags=["kai"])
@@ -61,6 +63,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/plaid/refresh/{run_id}",
     "/plaid/source",
     "/plaid/webhook",
+    "/support/message",
     "/dashboard/profile-picks/{user_id}",
     "/portfolio/analyze-losers",
     "/portfolio/analyze-losers/stream",
@@ -78,6 +81,7 @@ kai_router.include_router(stream_router)
 kai_router.include_router(decisions_router)
 kai_router.include_router(losers_router)
 kai_router.include_router(market_insights_router)
+kai_router.include_router(support_router)
 
 # Export for server.py
 router = kai_router

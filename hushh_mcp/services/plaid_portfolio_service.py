@@ -32,7 +32,7 @@ from hushh_mcp.kai_import import build_financial_analytics_v2
 
 logger = logging.getLogger(__name__)
 
-PortfolioSource = Literal["statement", "plaid", "combined"]
+PortfolioSource = Literal["statement", "plaid"]
 
 _READONLY_ITEM_STATUSES = {"active", "error", "relink_required", "permission_revoked"}
 _ACTIVE_ITEM_STATUSES = {"active", "error", "relink_required"}
@@ -463,7 +463,7 @@ class PlaidPortfolioService:
         if not result.data:
             return "statement"
         active_source = _clean_text(result.data[0].get("active_source"), default="statement")
-        return active_source if active_source in {"statement", "plaid", "combined"} else "statement"
+        return active_source if active_source in {"statement", "plaid"} else "statement"
 
     def set_active_source(self, *, user_id: str, active_source: PortfolioSource) -> PortfolioSource:
         self.db.execute_raw(
@@ -1545,7 +1545,7 @@ class PlaidPortfolioService:
         )
 
         current_source = self.get_active_source(user_id)
-        if current_source not in {"plaid", "combined"}:
+        if current_source != "plaid":
             self.set_active_source(user_id=user_id, active_source="plaid")
 
         cleaned_resume_session_id = _clean_text(resume_session_id) or None
