@@ -605,7 +605,10 @@ class UserScopesResponse(BaseModel):
     user_id: str
     scopes: List[str] = Field(
         default_factory=list,
-        description="Available scope strings, e.g. attr.financial.*, attr.food.*",
+        description=(
+            "Available scope strings for this user, for example world_model.read, "
+            "attr.{domain}.*, attr.{domain}.{subintent}.*, or attr.{domain}.{path}."
+        ),
     )
 
 

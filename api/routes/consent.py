@@ -209,7 +209,7 @@ async def approve_consent(
         }
         logger.info("   Stored encrypted export for token (DB + cache)")
 
-    # Log CONSENT_GRANTED to database with requested scope (dot notation, e.g. attr.food.* or world_model.read)
+    # Log CONSENT_GRANTED with the normalized requested scope string.
     await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],

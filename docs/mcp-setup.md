@@ -106,42 +106,49 @@ Create or edit the file (replace paths with your actual directory locations):
 2. **Reopen** Claude Desktop
 3. Look for the **tool icon** in the input area -- this indicates connected MCP servers
 
-## Available Tools (9 tools)
+## Available Tools (15 tools)
 
-Once connected, the MCP host has access to these 9 tools:
+Once connected, the MCP host has access to these 15 tools:
 
 | Tool                       | Description                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------- |
-| `request_consent`          | Request user consent for a scope (e.g. `world_model.read`, `attr.food.*`)       |
+| `request_consent`          | Request user consent for a discovered scope (for example `world_model.read` or `attr.{domain}.*`) |
 | `validate_token`           | Validate a consent token's signature, expiration, and scope before use          |
+| `get_scoped_data`          | Recommended generic data-access tool for any approved dynamic scope             |
 | `get_financial_profile`    | Get financial profile data (requires `attr.financial.*` or `world_model.read`)  |
-| `get_food_preferences`     | Get food/dining preferences (requires `attr.food.*` or `world_model.read`)     |
-| `get_professional_profile` | Get professional profile (requires `attr.professional.*` or `world_model.read`) |
+| `get_food_preferences`     | Compatibility-only named getter for older food/dining integrations              |
+| `get_professional_profile` | Compatibility-only named getter for older professional integrations             |
 | `delegate_to_agent`        | Create a TrustLink for agent-to-agent (A2A) delegation                          |
 | `list_scopes`              | List dynamic consent scope categories from backend metadata                      |
 | `discover_user_domains`    | Discover which domains a user has and the scope strings to request              |
 | `check_consent_status`     | Check current status of a pending consent request                               |
+| `list_ria_profiles`        | List discoverable marketplace RIA profiles                                      |
+| `get_ria_profile`          | Get one discoverable RIA profile by id                                          |
+| `list_marketplace_investors` | List discoverable opt-in investor profiles                                   |
+| `get_ria_verification_status` | Read RIA verification status with VAULT_OWNER authority                      |
+| `get_ria_client_access_summary` | Read RIA relationship/access summary with VAULT_OWNER authority           |
 
-## MCP Resources (3 resources)
+## MCP Resources (4 resources)
 
-The server also exposes three read-only MCP resources that agents can query for self-documentation:
+The server also exposes four read-only MCP resources that agents can query for self-documentation:
 
 | URI                        | Name                                | Description                                                           |
 | -------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
 | `hushh://info/server`      | Server Information                  | Server version, transport, tool count, and compliance checklist       |
 | `hushh://info/protocol`    | Protocol Information                | HushhMCP protocol principles, token format, scope model, ZK details  |
 | `hushh://info/connector`   | Connector usage and capabilities    | Full tool list, recommended flow, supported scopes, backend details   |
+| `hushh://info/developer-api` | Developer API Contract            | Versioned `/api/v1` contract for discovery and consent requests       |
 
-Agents can read `hushh://info/connector` for a machine-readable summary of every tool, the recommended flow, and the dynamic scope model.
+Agents can read `hushh://info/connector` for a machine-readable summary of the recommended MCP flow, and `hushh://info/developer-api` for the publishable developer API contract.
 
 ## Recommended Flow
 
 Scopes are **dynamic** -- they are derived from the world model registry (`world_model_index_v2.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
 
-1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings (e.g. `attr.financial.*`, `attr.financial.profile.*`). Under the hood this calls `/api/v1/user-scopes/{user_id}` with `X-MCP-Developer-Token`.
+1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}` with `X-MCP-Developer-Token`.
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
 3. **Wait for approval** -- If the response status is `pending`, return control to the caller and wait for user action in the Hushh app. Re-check later using `check_consent_status(user_id, scope)`.
-4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_financial_profile`, `get_food_preferences`, `get_professional_profile`, or other data tools.
+4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_scoped_data`. Only use named getters when maintaining older compatibility integrations.
 
 ### Scope model
 
@@ -155,7 +162,23 @@ Scopes are resolved dynamically from user metadata + domain registry. There is n
 
 ## Zero-Knowledge Export
 
-Data returned by `get_*` tools is fetched from an encrypted vault export. The backend encrypts with an export key (`K_export`), and the MCP server decrypts using AES-GCM on the client side. The server never stores plaintext user data at rest.
+Data returned by `get_scoped_data` and compatibility `get_*` tools is fetched from an encrypted vault export. The backend encrypts with an export key (`K_export`), and the MCP server decrypts using AES-GCM on the client side. The server never stores plaintext user data at rest.
+
+## Developer API
+
+The publishable developer API surface is versioned under `/api/v1`:
+
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| `GET` | `/api/v1/list-scopes` | Developer API enabled | Generic dynamic scope catalog |
+| `GET` | `/api/v1/user-scopes/{user_id}` | `X-MCP-Developer-Token` | Per-user discovered scopes and domains |
+| `POST` | `/api/v1/request-consent` | `developer_token` body field or `X-MCP-Developer-Token` | Create or reuse consent for one discovered scope |
+
+Scale rules:
+
+- Always discover scopes per user instead of hardcoding domain keys.
+- Prefer `get_scoped_data` for all new integrations.
+- Set a distinct `MCP_AGENT_ID` per integrating app or MCP deployment so consent state partitions cleanly.
 
 ## Production Mode
 
@@ -177,6 +200,7 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
 | `DEVELOPER_API_ENABLED`        | `true` (dev), `false` (prod) | Controls `/api/v1/*` developer API availability |
 | `MCP_DEVELOPER_TOKEN`          | _(none)_                 | Developer token for service-auth `/api/user/lookup`   |
+| `MCP_AGENT_ID`                | `hushh-mcp`             | Logical app / MCP identity sent to `/api/v1/request-consent` |
 | `CONSENT_TIMEOUT_SECONDS`      | `120`                    | Max wait time for user to approve consent             |
 
 ## Demo Script
@@ -187,15 +211,15 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 You: "What Hushh tools do you have access to?"
 ```
 
-The agent should list all 9 tools and 3 resources.
+The agent should list all 15 tools and 4 resources.
 
 ### Step 2: Discover User Domains
 
 ```
 You: "Discover what data domains are available for user@example.com"
 -> Calls discover_user_domains("user@example.com")
--> Returns domains like: financial, food, professional, health
--> Returns scope strings like: attr.financial.*, attr.food.*, etc.
+-> Returns domains that actually exist for that user
+-> Returns scope strings like: attr.{domain}.*, attr.{domain}.{subintent}.*, etc.
 ```
 
 ### Step 3: Request Consent
@@ -218,17 +242,17 @@ You: "Request consent to access financial data for user@example.com"
 ### Step 5: Access Data with Consent
 
 ```
-You: "Get the financial profile for user@example.com using that token"
--> Calls get_financial_profile with the consent token
--> SUCCESS: returns decrypted financial data (zero-knowledge export)
+You: "Get the approved scoped data for user@example.com using that token"
+-> Calls get_scoped_data with the consent token
+-> SUCCESS: returns the decrypted scoped export (zero-knowledge export)
 ```
 
 ### Step 6: Test Scope Isolation
 
 ```
-You: "Get professional profile using the financial token"
--> DENIED: the financial-scoped token cannot access professional data
--> Agent must request separate consent for attr.professional.*
+You: "Use a token granted for one discovered branch against a different branch"
+-> DENIED: the token remains scope-isolated
+-> Agent must request separate consent for the different discovered scope
 ```
 
 ## Troubleshooting
@@ -238,7 +262,7 @@ You: "Get professional profile using the financial token"
 | Server not found               | Check `PYTHONPATH` in config points to `consent-protocol` directory      |
 | Import errors                  | Run `pip install -r requirements.txt`                                    |
 | Claude doesn't see tools       | Fully restart Claude Desktop (check system tray / menu bar)              |
-| Tools count mismatch           | Ensure you have the latest `mcp_server.py`; there should be 9 tools     |
+| Tools count mismatch           | Ensure you have the latest `mcp_server.py`; there should be 15 tools    |
 | Consent request never appears  | User must have the Hushh app installed; FCM push notifications deliver consent requests |
 | Consent times out              | Default timeout is 120s; check `CONSENT_TIMEOUT_SECONDS` env var        |
 | Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the world model, not a fixed list |
