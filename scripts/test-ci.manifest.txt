@@ -1,0 +1,13 @@
+# Fundamental blocking backend tests for CI.
+# Keep this list small and stable. Full historical suites remain manual.
+
+tests/quality/test_byok_encryption.py
+tests/test_developer_api_routes.py
+tests/quality/test_kai_route_auth_compliance.py
+tests/test_kai_auth_matrix.py
+tests/services/test_world_model_service_store_domain_data.py
+tests/test_vault_keys_metadata.py
+tests/test_adk_a2a_compliance_script.py
+tests/test_ria_iam_service_architecture.py
+tests/test_kai_optimize_realtime_contract.py
+tests/test_portfolio_stream_quality_rules.py

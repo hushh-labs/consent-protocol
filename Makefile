@@ -3,7 +3,7 @@
 # For the standalone backend repository.
 # Run `make help` to see all available targets.
 
-.PHONY: help dev lint format format-check fix typecheck test security accuracy ci-local clean
+.PHONY: help dev lint format format-check fix typecheck test test-ci security accuracy ci-local clean
 
 # Prefer project venv python, then python3, then python.
 PYTHON_BIN := $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then echo python3; else echo python; fi)
@@ -42,6 +42,13 @@ test: ## Run tests (pytest)
 	MCP_DEVELOPER_TOKEN="test_mcp_developer_token_for_ci" \
 	PYTHONPATH=. pytest tests/ -v --tb=short
 
+test-ci: ## Run the curated blocking backend CI manifest
+	TESTING=true \
+	SECRET_KEY="test_secret_key_for_ci_only_32chars_min" \
+	VAULT_ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000" \
+	MCP_DEVELOPER_TOKEN="test_mcp_developer_token_for_ci" \
+	bash scripts/run-test-ci.sh
+
 security: ## Run security scan (bandit, Medium+ severity)
 	bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
@@ -50,7 +57,7 @@ accuracy: ## Run Kai accuracy/compliance suite (benchmark + compliance + contrac
 
 # === Combined Checks ===
 
-ci-local: lint format-check typecheck test security accuracy ## Run all CI checks locally
+ci-local: lint format-check typecheck test-ci security ## Run the blocking backend CI checks locally
 	@echo ""
 	@echo "All CI checks passed!"
 

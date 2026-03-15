@@ -2,6 +2,10 @@
 
 This guide explains how to connect the Hushh Consent MCP Server to Claude Desktop or other MCP hosts. The server uses the `mcp` Python SDK with stdio transport (JSON-RPC 2.0 over stdin/stdout).
 
+For repo-wide coding-agent setup guidance, including `shadcn` and `plaid` MCP examples for Codex-style agents, see:
+
+- `docs/reference/operations/coding-agent-mcp.md`
+
 ## Prerequisites
 
 - Python 3.13+
