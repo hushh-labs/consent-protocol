@@ -138,7 +138,18 @@ CREATE OR REPLACE FUNCTION consent_audit_notify()
 RETURNS TRIGGER AS $$
 DECLARE payload TEXT;
 BEGIN
-  payload := json_build_object('user_id', NEW.user_id, 'request_id', COALESCE(NEW.request_id, ''), 'action', NEW.action, 'scope', COALESCE(NEW.scope, ''), 'agent_id', COALESCE(NEW.agent_id, ''), 'issued_at', NEW.issued_at)::TEXT;
+  payload := json_build_object(
+    'user_id', NEW.user_id,
+    'request_id', COALESCE(NEW.request_id, ''),
+    'action', NEW.action,
+    'scope', COALESCE(NEW.scope, ''),
+    'agent_id', COALESCE(NEW.agent_id, ''),
+    'scope_description', COALESCE(NEW.scope_description, ''),
+    'issued_at', NEW.issued_at,
+    'bundle_id', COALESCE(NEW.metadata->>'bundle_id', ''),
+    'bundle_label', COALESCE(NEW.metadata->>'bundle_label', ''),
+    'bundle_scope_count', COALESCE(NEW.metadata->>'bundle_scope_count', '1')
+  )::TEXT;
   PERFORM pg_notify('consent_audit_new', payload);
   RETURN NEW;
 END;
@@ -157,6 +168,28 @@ CREATE TABLE IF NOT EXISTS user_push_tokens (
     UNIQUE (user_id, platform)
 );
 CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_id ON user_push_tokens(user_id);
+
+-- 4c. internal_access_events (self/internal app activity; not user-facing consent history)
+CREATE TABLE IF NOT EXISTS internal_access_events (
+    id SERIAL PRIMARY KEY,
+    token_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    action TEXT NOT NULL,
+    issued_at BIGINT NOT NULL,
+    expires_at BIGINT,
+    revoked_at BIGINT,
+    metadata JSONB,
+    token_type VARCHAR(20) DEFAULT 'internal',
+    request_id VARCHAR(32),
+    scope_description TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_id ON internal_access_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_action ON internal_access_events(user_id, action);
+CREATE INDEX IF NOT EXISTS idx_internal_access_events_issued_at ON internal_access_events(issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_scope_agent
+    ON internal_access_events(user_id, agent_id, scope, issued_at DESC);
 
 -- Verification: Show all created tables
 SELECT table_name 

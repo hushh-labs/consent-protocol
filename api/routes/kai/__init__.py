@@ -69,6 +69,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/portfolio/analyze-losers",
     "/portfolio/analyze-losers/stream",
     "/market/insights/{user_id}",
+    "/stock-preview/{user_id}",
 ]
 
 # Include all sub-routers (no prefix since main router has /api/kai)

@@ -30,6 +30,9 @@ def _env_truthy(name: str, fallback: str = "false") -> bool:
 
 
 def _consent_sse_enabled() -> bool:
+    if _env_truthy("CONSENT_WEB_FALLBACK_ENABLED", "true"):
+        return True
+
     explicit = os.getenv("CONSENT_SSE_ENABLED")
     if explicit is not None:
         return _env_truthy("CONSENT_SSE_ENABLED")
@@ -102,6 +105,11 @@ async def consent_event_generator(user_id: str, request: Request) -> AsyncGenera
                         "action": event["action"],
                         "scope": event["scope"],
                         "agent_id": event["agent_id"],
+                        "scope_description": event.get("scope_description"),
+                        "bundle_id": event.get("bundle_id"),
+                        "bundle_label": event.get("bundle_label"),
+                        "bundle_scope_count": event.get("bundle_scope_count"),
+                        "expires_at": event.get("expires_at"),
                         "timestamp": event["issued_at"],
                     }
                 ),
@@ -138,6 +146,10 @@ async def consent_event_generator(user_id: str, request: Request) -> AsyncGenera
                         "action": data.get("action", "REQUESTED"),
                         "scope": data.get("scope", ""),
                         "agent_id": data.get("agent_id", ""),
+                        "scope_description": data.get("scope_description", ""),
+                        "bundle_id": data.get("bundle_id", ""),
+                        "bundle_label": data.get("bundle_label", ""),
+                        "bundle_scope_count": data.get("bundle_scope_count", "1"),
                         "timestamp": data.get("issued_at", 0),
                     }
                 ),

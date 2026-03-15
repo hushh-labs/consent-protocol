@@ -13,6 +13,17 @@ from .connection import get_pool
 logger = logging.getLogger(__name__)
 
 
+def _is_internal_event(agent_id: str, action: str, scope: str) -> bool:
+    normalized_agent = str(agent_id or "").strip().lower()
+    normalized_action = str(action or "").strip().upper()
+    normalized_scope = str(scope or "").strip().lower()
+    return (
+        normalized_action == "OPERATION_PERFORMED"
+        or normalized_agent in {"self", "agent_kai", "kai"}
+        or (normalized_scope == "vault.owner" and normalized_agent in {"", "system"})
+    )
+
+
 async def insert_event(
     user_id: str,
     agent_id: str,
@@ -38,19 +49,26 @@ async def insert_event(
     issued_at = int(datetime.now().timestamp() * 1000)
     token_id = token_id or f"evt_{issued_at}"
 
-    query = """
-        INSERT INTO consent_audit (
+    table_name = (
+        "internal_access_events" if _is_internal_event(agent_id, action, scope) else "consent_audit"
+    )
+
+    query = f"""
+        INSERT INTO {table_name} (
             token_id, user_id, agent_id, scope, action,
-            request_id, scope_description, issued_at, expires_at, poll_timeout_at, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            request_id, scope_description, issued_at, expires_at, metadata
+            {", poll_timeout_at" if table_name == "consent_audit" else ""}
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            {", $11" if table_name == "consent_audit" else ""}
+        )
         RETURNING id
     """
 
     metadata_json = json.dumps(metadata or {})
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            query,
+        params = [
             token_id,
             user_id,
             agent_id,
@@ -60,11 +78,28 @@ async def insert_event(
             scope_description,
             issued_at,
             expires_at,
-            poll_timeout_at,
             metadata_json,
-        )
+        ]
+        if table_name == "consent_audit":
+            params.append(poll_timeout_at)
+            # reorder to match consent_audit column order
+            params = [
+                token_id,
+                user_id,
+                agent_id,
+                scope,
+                action,
+                request_id,
+                scope_description,
+                issued_at,
+                expires_at,
+                poll_timeout_at,
+                metadata_json,
+            ]
+
+        row = await conn.fetchrow(query, *params)
         event_id = row["id"]
-        logger.info(f"Inserted {action} event: {event_id}")
+        logger.info("Inserted %s event into %s: %s", action, table_name, event_id)
         return int(event_id)
 
 
