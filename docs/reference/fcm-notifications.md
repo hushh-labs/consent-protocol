@@ -101,6 +101,7 @@ Consent requests reach the user only when the following chain is in place:
    - Same Firebase project as auth.  
    - **Cloud Messaging**: Ensure Cloud Messaging is enabled.  
    - **Web Push**: Under Project Settings → Cloud Messaging → “Web configuration”, generate a **Key pair** (VAPID key). Use the **Key pair** value as `NEXT_PUBLIC_FIREBASE_VAPID_KEY` in the frontend.
+   - **Environment model**: If the app uses one Firebase identity plane across dev/UAT/prod and only the databases differ, keep the same Firebase project/web config aligned across those environments. Do not point auth at one Firebase project and web messaging at another.
 
 2. **Backend**  
    - **FIREBASE_SERVICE_ACCOUNT_JSON**: Service account JSON (Firebase Console → Project Settings → Service accounts → Generate new private key). Stored in GCP Secret Manager and injected into consent-protocol (see [env-vars.md](./env-vars.md)).
@@ -113,6 +114,56 @@ Consent requests reach the user only when the following chain is in place:
      `gcloud secrets create FIREBASE_SERVICE_ACCOUNT_JSON --data-file=path/to/sa.json`  
      (or use Secret Manager in Cloud Console.)  
    - Deploy backend so it has access to this secret (e.g. Cloud Run with `--set-secrets`).
+
+---
+
+## Web fallback delivery
+
+Web consent delivery now uses two lanes:
+
+1. **Primary**: Browser FCM push
+2. **Fallback**: Authenticated SSE + inbox while the tab is open
+
+The client exposes these delivery states:
+
+| State | Meaning |
+|------|---------|
+| `push_active` | Browser FCM is healthy and token registration succeeded. |
+| `push_blocked` | Browser permission is blocked, so the app falls back to live SSE alerts while the tab is open. |
+| `push_failed_fallback_active` | Push registration failed or is misconfigured, but SSE fallback is active. |
+| `inbox_only` | Neither push nor live SSE is currently active. Requests still appear in the consent center on next load. |
+
+If web push fails, the app:
+
+- clears stale browser push subscriptions,
+- clears cached Firebase web push IndexedDB state,
+- retries the SDK path,
+- attempts a manual FCM registration path,
+- then activates authenticated SSE fallback if push still fails.
+
+Closed-tab behavior remains limited by browser push availability: if push is disabled or misconfigured and the tab is closed, the durable fallback is the consent inbox on next app open.
+
+---
+
+## Operator runbook for web push failures
+
+When web consent notifications fail:
+
+1. Confirm browser permission is allowed for the active origin.
+2. Open the consent center and check the reported delivery mode.
+3. Use `Retry push registration` in the consent center after any config changes.
+4. Verify a successful registration creates a row in `user_push_tokens`.
+5. In Firebase Console, open the active project:
+   - **Project Settings → Cloud Messaging → Web configuration**
+   - confirm the Web Push key pair matches the Firebase project used for login and token verification
+   - update `NEXT_PUBLIC_FIREBASE_VAPID_KEY` to the public key from that same project
+6. If the browser still returns `401 Unauthorized` from `fcmregistrations.googleapis.com`, first check for a Firebase project mismatch between auth verification and web messaging before assuming the VAPID key itself is wrong.
+
+Remember:
+
+- `gcloud` can enable APIs and manage secrets.
+- `gcloud` cannot create or rotate the Firebase Console Web Push key pair.
+- A healthy fallback path on web is **SSE + inbox**, not repeated FCM retry loops.
 
 ---
 
