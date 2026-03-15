@@ -19,12 +19,9 @@ fi
 "$PYTHON_BIN" -m mypy --config-file pyproject.toml --ignore-missing-imports
 "$PYTHON_BIN" -m bandit -r hushh_mcp/ api/ -c pyproject.toml -ll
 
-if [ -d tests ] && [ -n "$(find tests -name 'test_*.py' -o -name '*_test.py' | head -1)" ]; then
-  TESTING="${TESTING:-true}" \
-  SECRET_KEY="${SECRET_KEY:-test_secret_key_for_ci_only_32chars_min}" \
-  VAULT_ENCRYPTION_KEY="${VAULT_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}" \
-  MCP_DEVELOPER_TOKEN="${MCP_DEVELOPER_TOKEN:-test_mcp_developer_token_for_ci}" \
-  "$PYTHON_BIN" -m pytest tests/ -v --tb=short --cov=hushh_mcp --cov-report=xml --cov-report=term
+if [ -f scripts/run-test-ci.sh ]; then
+  bash scripts/run-test-ci.sh
 else
-  echo "⚠ No test files found, skipping pytest."
+  echo "❌ scripts/run-test-ci.sh not found."
+  exit 1
 fi
