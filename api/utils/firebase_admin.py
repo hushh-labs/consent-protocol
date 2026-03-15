@@ -11,12 +11,14 @@ Credential sources (in priority order):
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Optional, Tuple
 
 AUTH_APP_NAME = "hushh-auth"
 DEFAULT_SERVICE_ACCOUNT_ENV = "FIREBASE_SERVICE_ACCOUNT_JSON"
 AUTH_SERVICE_ACCOUNT_ENV = "FIREBASE_AUTH_SERVICE_ACCOUNT_JSON"
+logger = logging.getLogger(__name__)
 
 
 def _load_service_account_from_env(var_name: str) -> Optional[dict[str, Any]]:
@@ -43,6 +45,17 @@ def _project_id_from_app(app: Any, fallback: Optional[dict[str, Any]] = None) ->
         maybe = fallback.get("project_id")
         if isinstance(maybe, str) and maybe.strip():
             return maybe.strip()
+    return None
+
+
+def _project_id_from_service_account(
+    service_account: Optional[dict[str, Any]],
+) -> Optional[str]:
+    if not service_account or not isinstance(service_account, dict):
+        return None
+    maybe = service_account.get("project_id")
+    if isinstance(maybe, str) and maybe.strip():
+        return maybe.strip()
     return None
 
 
@@ -87,12 +100,34 @@ def ensure_firebase_admin() -> Tuple[bool, Optional[str]]:
     except ValueError:
         pass
 
-    # Prefer explicit service account JSON for local dev
+    # Prefer explicit service account JSON for local dev. When auth and default
+    # Firebase credentials diverge, keep the default app aligned with the auth
+    # project so token verification and FCM/web messaging stay on the same
+    # Firebase identity plane.
     sa = _load_service_account_from_env(DEFAULT_SERVICE_ACCOUNT_ENV)
-    if sa:
-        cred = credentials.Certificate(sa)
+    auth_sa = _load_service_account_from_env(AUTH_SERVICE_ACCOUNT_ENV)
+    selected_sa = sa or auth_sa
+
+    default_project_id = _project_id_from_service_account(sa)
+    auth_project_id = _project_id_from_service_account(auth_sa)
+    if (
+        sa
+        and auth_sa
+        and default_project_id
+        and auth_project_id
+        and default_project_id != auth_project_id
+    ):
+        logger.warning(
+            "Firebase Admin default/auth project mismatch detected (default=%s auth=%s). Using auth Firebase credential as the default app for unified identity + FCM behavior.",
+            default_project_id,
+            auth_project_id,
+        )
+        selected_sa = auth_sa
+
+    if selected_sa:
+        cred = credentials.Certificate(selected_sa)
         app = firebase_admin.initialize_app(cred)
-        return True, _project_id_from_app(app, sa)
+        return True, _project_id_from_app(app, selected_sa)
 
     # Fall back to ADC (Cloud Run / local gcloud)
     try:
