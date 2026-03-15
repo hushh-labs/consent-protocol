@@ -61,6 +61,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/plaid/exchange-public-token",
     "/plaid/refresh",
     "/plaid/refresh/{run_id}",
+    "/plaid/refresh/{run_id}/cancel",
     "/plaid/source",
     "/plaid/webhook",
     "/support/message",

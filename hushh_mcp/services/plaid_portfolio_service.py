@@ -140,6 +140,7 @@ class PlaidPortfolioService:
     def __init__(self) -> None:
         self._db = None
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._refresh_tasks_by_run_id: dict[str, asyncio.Task[Any]] = {}
         self._warned_fallback_encryption_key = False
         self._runtime_config: PlaidRuntimeConfig | None = None
         self._client: PlaidHttpClient | None = None
@@ -162,11 +163,22 @@ class PlaidPortfolioService:
             self._client = PlaidHttpClient(self.config)
         return self._client
 
-    def _track_background_task(self, task: asyncio.Task[Any]) -> None:
+    def _track_background_task(
+        self,
+        task: asyncio.Task[Any],
+        *,
+        run_id: str | None = None,
+    ) -> None:
         self._background_tasks.add(task)
+        if run_id:
+            self._refresh_tasks_by_run_id[run_id] = task
 
         def _cleanup(completed: asyncio.Task[Any]) -> None:
             self._background_tasks.discard(completed)
+            if run_id:
+                existing = self._refresh_tasks_by_run_id.get(run_id)
+                if existing is completed:
+                    self._refresh_tasks_by_run_id.pop(run_id, None)
 
         task.add_done_callback(_cleanup)
 
@@ -227,9 +239,6 @@ class PlaidPortfolioService:
 
     def _manual_entry_enabled(self) -> bool:
         return self.config.manual_entry_enabled
-
-    def _crypto_wallet_enabled(self) -> bool:
-        return self.config.crypto_wallet_enabled
 
     def _resolve_encryption_key(self) -> bytes:
         configured = _clean_text(os.getenv("PLAID_TOKEN_ENCRYPTION_KEY"))
@@ -364,6 +373,28 @@ class PlaidPortfolioService:
             {"user_id": user_id, "run_id": run_id},
         )
         return result.data[0] if result.data else None
+
+    def _refresh_run_status(self, *, run_id: str) -> str | None:
+        result = self.db.execute_raw(
+            """
+            SELECT status
+            FROM kai_plaid_refresh_runs
+            WHERE run_id = :run_id
+            LIMIT 1
+            """,
+            {"run_id": run_id},
+        )
+        if not result.data:
+            return None
+        return _clean_text(result.data[0].get("status")) or None
+
+    def _is_refresh_run_active(self, run: dict[str, Any] | None) -> bool:
+        if not isinstance(run, dict):
+            return False
+        return _clean_text(run.get("status")) in {"queued", "running"}
+
+    def _is_refresh_run_canceled(self, *, run_id: str) -> bool:
+        return self._refresh_run_status(run_id=run_id) == "canceled"
 
     def _create_link_session(
         self,
@@ -579,6 +610,16 @@ class PlaidPortfolioService:
                 "refresh_requested": refresh_requested,
             },
         )
+
+    def _sync_status_after_cancel(self, item_row: dict[str, Any]) -> str:
+        current_status = _clean_text(item_row.get("status"), default="active")
+        if current_status == "relink_required":
+            return "action_required"
+        if current_status == "permission_revoked":
+            return "failed"
+        if _clean_text(item_row.get("last_sync_at")):
+            return "stale"
+        return "idle"
 
     def _update_refresh_run(
         self,
@@ -1423,11 +1464,9 @@ class PlaidPortfolioService:
                     "account_subtypes": ["all"],
                 }
             },
-            "investments": {
-                "manual_entry_enabled": self._manual_entry_enabled(),
-                "crypto_wallet_entry_enabled": self._crypto_wallet_enabled(),
-            },
         }
+        if self._manual_entry_enabled():
+            payload["investments"] = {"allow_manual_entry": True}
         webhook_url = self._webhook_url()
         if webhook_url:
             payload["webhook"] = webhook_url
@@ -1575,6 +1614,17 @@ class PlaidPortfolioService:
         if not target_rows:
             raise RuntimeError("No active Plaid Item is available to refresh.")
 
+        latest_runs = self._latest_run_by_item(user_id=user_id)
+        blocking_runs = [
+            latest_runs.get(_clean_text(row.get("item_id")))
+            for row in target_rows
+            if self._is_refresh_run_active(latest_runs.get(_clean_text(row.get("item_id"))))
+        ]
+        if blocking_runs:
+            raise RuntimeError(
+                "A Plaid refresh is already in progress. Let it finish or cancel it first."
+            )
+
         runs: list[dict[str, Any]] = []
         for row in target_rows:
             current_item_id = _clean_text(row.get("item_id"))
@@ -1595,7 +1645,7 @@ class PlaidPortfolioService:
                     run_id=_clean_text(run.get("run_id")),
                 )
             )
-            self._track_background_task(task)
+            self._track_background_task(task, run_id=_clean_text(run.get("run_id")) or None)
             runs.append(run)
 
         return {
@@ -1607,6 +1657,60 @@ class PlaidPortfolioService:
                 }
                 for run in runs
             ],
+        }
+
+    async def cancel_refresh_run(self, *, user_id: str, run_id: str) -> dict[str, Any] | None:
+        run = self._get_refresh_run(user_id=user_id, run_id=run_id)
+        if run is None:
+            return None
+
+        status = _clean_text(run.get("status"), default="queued")
+        if status not in {"queued", "running"}:
+            return {
+                **run,
+                "result_summary_json": _json_load(run.get("result_summary_json"), fallback={}),
+            }
+
+        item_id = _clean_text(run.get("item_id"))
+        item_row = self._fetch_item_row(user_id=user_id, item_id=item_id) if item_id else None
+        result_summary = {
+            "canceled_by": "user",
+            "canceled_at": _utcnow_iso(),
+        }
+        self._update_refresh_run(
+            run_id=run_id,
+            status="canceled",
+            error_message="Refresh canceled by user.",
+            result_summary=result_summary,
+            completed=True,
+        )
+        if item_row is not None:
+            self._mark_item_sync_status(
+                item_id=item_id,
+                sync_status=self._sync_status_after_cancel(item_row),
+                status=_clean_text(item_row.get("status"), default="active"),
+            )
+
+        task = self._refresh_tasks_by_run_id.get(run_id)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception(
+                    "plaid.refresh_cancel_task_failed user_id=%s run_id=%s",
+                    user_id,
+                    run_id,
+                )
+
+        refreshed = self._get_refresh_run(user_id=user_id, run_id=run_id)
+        if refreshed is None:
+            return None
+        return {
+            **refreshed,
+            "result_summary_json": _json_load(refreshed.get("result_summary_json"), fallback={}),
         }
 
     async def update_item_webhooks(
@@ -1714,6 +1818,15 @@ class PlaidPortfolioService:
                 else:
                     raise
 
+            if self._is_refresh_run_canceled(run_id=run_id):
+                logger.info(
+                    "plaid.refresh_canceled_before_sync user_id=%s item_id=%s run_id=%s",
+                    user_id,
+                    item_id,
+                    run_id,
+                )
+                return
+
             sync_result = await self._sync_item_snapshot(
                 user_id=user_id,
                 item_id=item_id,
@@ -1724,6 +1837,14 @@ class PlaidPortfolioService:
                 sync_status="completed",
             )
             result_summary = sync_result.get("summary") if isinstance(sync_result, dict) else {}
+            if self._is_refresh_run_canceled(run_id=run_id):
+                logger.info(
+                    "plaid.refresh_canceled_after_sync user_id=%s item_id=%s run_id=%s",
+                    user_id,
+                    item_id,
+                    run_id,
+                )
+                return
             self._update_refresh_run(
                 run_id=run_id,
                 status="completed",
@@ -1733,6 +1854,30 @@ class PlaidPortfolioService:
                 completed=True,
             )
             self._mark_item_sync_status(item_id=item_id, sync_status="completed", status="active")
+        except asyncio.CancelledError:
+            logger.info(
+                "plaid.refresh_worker_canceled user_id=%s item_id=%s run_id=%s",
+                user_id,
+                item_id,
+                run_id,
+            )
+            if not self._is_refresh_run_canceled(run_id=run_id):
+                self._update_refresh_run(
+                    run_id=run_id,
+                    status="canceled",
+                    error_message="Refresh canceled by user.",
+                    result_summary={
+                        "canceled_by": "user",
+                        "canceled_at": _utcnow_iso(),
+                    },
+                    completed=True,
+                )
+                self._mark_item_sync_status(
+                    item_id=item_id,
+                    sync_status=self._sync_status_after_cancel(item_row),
+                    status=_clean_text(item_row.get("status"), default="active"),
+                )
+            raise
         except PlaidApiError as exc:
             logger.warning(
                 "plaid.refresh_failed user_id=%s item_id=%s error_code=%s status=%s",

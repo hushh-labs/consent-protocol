@@ -47,6 +47,10 @@ class PlaidSourcePreferenceRequest(BaseModel):
     active_source: Literal["statement", "plaid"]
 
 
+class PlaidRefreshCancelRequest(BaseModel):
+    user_id: str
+
+
 def _verify_user(token_data: dict[str, Any], requested_user_id: str) -> None:
     if token_data["user_id"] != requested_user_id:
         raise HTTPException(
@@ -216,6 +220,39 @@ async def get_plaid_refresh_run(
         raise
     except Exception as exc:
         logger.exception("kai.plaid.refresh_run_failed user_id=%s run_id=%s", user_id, run_id)
+        raise _to_http_exception(exc) from exc
+
+
+@router.post("/plaid/refresh/{run_id}/cancel")
+async def cancel_plaid_refresh_run(
+    run_id: str,
+    request: PlaidRefreshCancelRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    _verify_user(token_data, request.user_id)
+    try:
+        run = await get_plaid_portfolio_service().cancel_refresh_run(
+            user_id=request.user_id,
+            run_id=run_id,
+        )
+        if run is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "PLAID_REFRESH_RUN_NOT_FOUND",
+                    "message": "No Plaid refresh run found for this user.",
+                    "run_id": run_id,
+                },
+            )
+        return {"run": run}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "kai.plaid.refresh_cancel_failed user_id=%s run_id=%s",
+            request.user_id,
+            run_id,
+        )
         raise _to_http_exception(exc) from exc
 
 
