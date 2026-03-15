@@ -19,7 +19,10 @@ BEGIN
     'scope', COALESCE(NEW.scope, ''),
     'agent_id', COALESCE(NEW.agent_id, ''),
     'scope_description', COALESCE(NEW.scope_description, ''),
-    'issued_at', NEW.issued_at
+    'issued_at', NEW.issued_at,
+    'bundle_id', COALESCE(NEW.metadata->>'bundle_id', ''),
+    'bundle_label', COALESCE(NEW.metadata->>'bundle_label', ''),
+    'bundle_scope_count', COALESCE(NEW.metadata->>'bundle_scope_count', '1')
   )::TEXT;
   PERFORM pg_notify('consent_audit_new', payload);
   RETURN NEW;

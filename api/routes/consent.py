@@ -107,6 +107,7 @@ async def approve_consent(
     encryptedData = body.get("encryptedData")  # Base64 ciphertext
     encryptedIv = body.get("encryptedIv")  # Base64 IV
     encryptedTag = body.get("encryptedTag")  # Base64 auth tag
+    requested_duration_hours = body.get("durationHours")
 
     # Verify user is approving their own consent
     if token_data["user_id"] != userId:
@@ -133,6 +134,8 @@ async def approve_consent(
     # Optional metadata on pending request (used for expiry hints)
     metadata = pending_request.get("metadata", {})
     expiry_hours = metadata.get("expiry_hours", 24)
+    if isinstance(requested_duration_hours, int) and requested_duration_hours > 0:
+        expiry_hours = min(requested_duration_hours, 24 * 365)
 
     # MODULAR COMPLIANCE CHECK: Idempotency
     # Before issuing a NEW token, check if a valid token for this scope/agent already exists.
@@ -169,6 +172,7 @@ async def approve_consent(
             # Note: Export Key is ephemeral for the SESSION. If we reuse token, the Client might need the key.
             # But in ZK flow, Client HAS the key. We just need to authorize.
             "expires_at": existing_token.get("expires_at"),
+            "bundle_id": metadata.get("bundle_id"),
         }
 
     # CRITICAL FIX: Pass original scope STRING to issue_token, not enum
@@ -236,6 +240,7 @@ async def approve_consent(
         "consent_token": token.token,
         "export_key": exportKey,  # MCP uses this to decrypt
         "expires_at": token.expires_at,
+        "bundle_id": metadata.get("bundle_id"),
     }
 
 
@@ -374,7 +379,7 @@ async def issue_vault_owner_token(request: Request):
     - Requires Firebase ID token verification
     - Only issued to the user for their own vault
     - 24-hour expiry (renewable)
-    - Logged to consent_audit
+    - Logged to the internal access ledger
 
     CONSENT-FIRST ARCHITECTURE:
     - Vault owners use this token instead of bypassing authentication
@@ -402,10 +407,14 @@ async def issue_vault_owner_token(request: Request):
                 status_code=403, detail="Cannot issue VAULT_OWNER token for another user"
             )
 
-        # Check for existing active VAULT_OWNER token in DB
+        # Check for existing active VAULT_OWNER token in the internal ledger
         now_ms = int(time.time() * 1000)
         service = ConsentDBService()
-        active_tokens = await service.get_active_tokens(user_id)
+        active_tokens = await service.get_active_internal_tokens(
+            user_id,
+            agent_id="self",
+            scope=ConsentScope.VAULT_OWNER.value,
+        )
 
         for t in active_tokens:
             # Match scope = vault.owner and agent = self
@@ -450,15 +459,16 @@ async def issue_vault_owner_token(request: Request):
             expires_in_ms=24 * 60 * 60 * 1000,  # 24 hours
         )
 
-        # Store in consent_audit (CONSENT_GRANTED for get_active_tokens() compatibility)
+        # Store in the internal ledger so self-session churn stays out of the investor consent feed.
         service = ConsentDBService()
-        await service.insert_event(
+        await service.insert_internal_event(
             user_id=user_id,
             agent_id="self",
             scope="vault.owner",
-            action="CONSENT_GRANTED",  # Use CONSENT_GRANTED for active token queries
-            token_id=token_obj.token,  # Store FULL token (not truncated)
+            action="CONSENT_GRANTED",
+            token_id=token_obj.token,
             expires_at=token_obj.expires_at,
+            scope_description="Vault owner session",
         )
 
         logger.info("vault_owner.token_issued")
@@ -501,13 +511,15 @@ async def revoke_consent(
 
         logger.info("consent.revoke_requested scope=%s", scope)
 
-        # Get the active token for this scope
+        # Get the active token for this scope from the correct ledger.
         service = ConsentDBService()
         active_tokens = await service.get_active_tokens(userId)
-        logger.info("consent.revoke_active_token_count=%s", len(active_tokens))
+        internal_tokens = await service.get_active_internal_tokens(userId)
+        all_active_tokens = [*internal_tokens, *active_tokens]
+        logger.info("consent.revoke_active_token_count=%s", len(all_active_tokens))
 
         token_to_revoke = None
-        for token in active_tokens:
+        for token in all_active_tokens:
             if token.get("scope") == scope:
                 token_to_revoke = token
                 break
@@ -541,7 +553,6 @@ async def revoke_consent(
         logger.info("consent.revoke_persist_event")
 
         # Log REVOKED event to database (link to original request_id for trail)
-        service = ConsentDBService()
         await service.insert_event(
             user_id=userId,
             agent_id=agent_id,
@@ -549,6 +560,7 @@ async def revoke_consent(
             action="REVOKED",
             token_id=revoke_token_id,
             request_id=request_id,
+            scope_description="Vault owner session" if agent_id == "self" else None,
         )
         logger.info("consent.revoked_event_saved scope=%s", scope)
         try:

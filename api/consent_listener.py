@@ -70,6 +70,7 @@ async def _handle_notify(payload_str: str):
         _notify_received_count += 1
         _last_notify_user_id = user_id
         _last_notify_action = action
+        data = await _enrich_notify_payload(data)
         logger.info("Consent NOTIFY received user_id=%s action=%s", user_id, action)
         # Push to in-app queue so SSE generator can send consent_update
         async with _consent_notify_queues_lock:
@@ -85,6 +86,80 @@ async def _handle_notify(payload_str: str):
         logger.warning("Consent notify invalid JSON: %s", e)
     except Exception as e:
         logger.exception("Consent notify handle error: %s", e)
+
+
+async def _enrich_notify_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Backfill fields for older trigger payloads so SSE/push still render useful request details."""
+    if data.get("scope_description") and data.get("bundle_id"):
+        return data
+
+    request_id = str(data.get("request_id") or "").strip()
+    user_id = str(data.get("user_id") or "").strip()
+    if not user_id:
+        return data
+
+    try:
+        from db.db_client import get_db
+
+        db = get_db()
+        if request_id:
+            result = db.execute_raw(
+                """
+                SELECT scope_description, metadata
+                FROM consent_audit
+                WHERE user_id = :user_id
+                  AND request_id = :request_id
+                ORDER BY issued_at DESC
+                LIMIT 1
+                """,
+                {"user_id": user_id, "request_id": request_id},
+            )
+        else:
+            result = db.execute_raw(
+                """
+                SELECT scope_description, metadata
+                FROM consent_audit
+                WHERE user_id = :user_id
+                  AND scope = :scope
+                  AND agent_id = :agent_id
+                  AND action = :action
+                ORDER BY issued_at DESC
+                LIMIT 1
+                """,
+                {
+                    "user_id": user_id,
+                    "scope": data.get("scope", ""),
+                    "agent_id": data.get("agent_id", ""),
+                    "action": data.get("action", ""),
+                },
+            )
+        rows = result.data or []
+        row = rows[0] if rows else None
+        if not row:
+            return data
+        metadata = row.get("metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        return {
+            **data,
+            "scope_description": data.get("scope_description")
+            or row.get("scope_description")
+            or "",
+            "bundle_id": data.get("bundle_id") or metadata.get("bundle_id") or "",
+            "bundle_label": data.get("bundle_label") or metadata.get("bundle_label") or "",
+            "bundle_scope_count": data.get("bundle_scope_count")
+            or metadata.get("bundle_scope_count")
+            or "1",
+        }
+    except Exception as err:
+        logger.warning("Consent notify payload enrichment failed: %s", err)
+        return data
 
 
 async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
@@ -116,6 +191,9 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
         scope = data.get("scope", "")
         agent_id = data.get("agent_id", "")
         scope_description = data.get("scope_description", "")
+        bundle_id = data.get("bundle_id", "")
+        bundle_label = data.get("bundle_label", "")
+        bundle_scope_count = str(data.get("bundle_scope_count", "1"))
         for row in result.data:
             token = row.get("token")
             if not token:
@@ -129,6 +207,9 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
                     "scope": scope,
                     "agent_id": agent_id,
                     "scope_description": scope_description,
+                    "bundle_id": bundle_id,
+                    "bundle_label": bundle_label,
+                    "bundle_scope_count": bundle_scope_count,
                     "deep_link": "/consents?tab=pending",
                 },
                 token=token,
