@@ -41,6 +41,20 @@ class RIAConsentRequestCreate(BaseModel):
     reason: str | None = None
 
 
+class RIAConsentBundleCreate(BaseModel):
+    subject_user_id: str = Field(..., min_length=1)
+    scope_template_id: str = Field(..., min_length=1)
+    selected_scopes: list[str] = Field(default_factory=list)
+    firm_id: str | None = None
+    reason: str | None = None
+
+
+class RIAPicksUploadRequest(BaseModel):
+    csv_content: str = Field(..., min_length=1)
+    source_filename: str | None = None
+    label: str | None = None
+
+
 class RIAInviteTarget(BaseModel):
     display_name: str | None = None
     email: str | None = None
@@ -162,6 +176,26 @@ async def ria_requests(firebase_uid: str = Depends(require_firebase_auth)):
         return _iam_schema_not_ready_response(str(exc))
 
 
+@router.get("/request-bundles")
+async def ria_request_bundles(firebase_uid: str = Depends(require_firebase_auth)):
+    service = RIAIAMService()
+    try:
+        return {"items": await service.list_ria_request_bundles(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+
+
+@router.get("/request-scopes")
+async def ria_request_scopes(firebase_uid: str = Depends(require_firebase_auth)):
+    service = RIAIAMService()
+    try:
+        return {"items": await service.list_requestable_scope_templates(firebase_uid)}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get("/invites")
 async def ria_invites(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
@@ -230,6 +264,59 @@ async def create_ria_request(
             duration_hours=payload.duration_hours,
             firm_id=payload.firm_id,
             reason=payload.reason,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/request-bundles")
+async def create_ria_request_bundle(
+    payload: RIAConsentBundleCreate,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.create_ria_consent_bundle(
+            firebase_uid,
+            subject_user_id=payload.subject_user_id,
+            scope_template_id=payload.scope_template_id,
+            selected_scopes=payload.selected_scopes,
+            firm_id=payload.firm_id,
+            reason=payload.reason,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/picks")
+async def ria_pick_uploads(firebase_uid: str = Depends(require_firebase_auth)):
+    service = RIAIAMService()
+    try:
+        uploads = await service.list_ria_pick_uploads(firebase_uid)
+        active_rows = await service.get_active_ria_pick_rows(firebase_uid)
+        return {"items": uploads, "active_rows": active_rows}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/picks")
+async def upload_ria_picks(
+    payload: RIAPicksUploadRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.upload_ria_pick_list(
+            firebase_uid,
+            csv_content=payload.csv_content,
+            source_filename=payload.source_filename,
+            label=payload.label,
         )
     except IAMSchemaNotReadyError as exc:
         return _iam_schema_not_ready_response(str(exc))

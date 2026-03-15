@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import os
@@ -12,6 +14,7 @@ import asyncpg
 
 from api.utils.firebase_admin import ensure_firebase_admin
 from db.connection import get_database_ssl, get_database_url
+from hushh_mcp.consent.scope_helpers import get_scope_description
 from hushh_mcp.services.ria_verification import (
     FinraVerificationAdapter,
     VerificationGateway,
@@ -630,6 +633,321 @@ class RIAIAMService:
         else:
             raise RIAIAMPolicyError("Invalid duration_mode", status_code=400)
         return mode, resolved_duration_hours
+
+    @staticmethod
+    def _scope_metadata(scope: str) -> dict[str, Any]:
+        normalized_scope = str(scope or "").strip()
+        return {
+            "scope": normalized_scope,
+            "label": get_scope_description(normalized_scope),
+            "description": get_scope_description(normalized_scope),
+            "kind": "world_model"
+            if normalized_scope == "world_model.read"
+            else "portfolio_domain"
+            if normalized_scope.startswith("attr.financial.")
+            else "profile_domain",
+            "summary_only": normalized_scope != "world_model.read",
+        }
+
+    async def list_requestable_scope_templates(self, user_id: str) -> list[dict[str, Any]]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            ria = await self._get_ria_profile_by_user(conn, user_id)
+            if ria["verification_status"] not in {"finra_verified", "active"}:
+                raise RIAIAMPolicyError(
+                    "RIA verification incomplete; cannot request investor scopes",
+                    status_code=403,
+                )
+            rows = await conn.fetch(
+                """
+                SELECT
+                  template_id,
+                  template_name,
+                  description,
+                  allowed_scopes,
+                  default_duration_hours,
+                  max_duration_hours
+                FROM consent_scope_templates
+                WHERE requester_actor_type = 'ria'
+                  AND subject_actor_type = 'investor'
+                  AND active = TRUE
+                ORDER BY template_name ASC
+                """
+            )
+            items: list[dict[str, Any]] = []
+            for row in rows:
+                allowed_scopes = [str(scope) for scope in list(row["allowed_scopes"] or [])]
+                items.append(
+                    {
+                        "template_id": str(row["template_id"]),
+                        "template_name": str(row["template_name"]),
+                        "description": row["description"],
+                        "default_duration_hours": int(row["default_duration_hours"]),
+                        "max_duration_hours": int(row["max_duration_hours"]),
+                        "scopes": [self._scope_metadata(scope) for scope in allowed_scopes],
+                    }
+                )
+            return items
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def _create_ria_consent_request_record(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        ria: asyncpg.Record,
+        subject_user_id: str,
+        template: ScopeTemplate,
+        chosen_scope: str,
+        firm_id: str | None,
+        reason: str | None,
+        invite_id: str | None,
+        invite_token: str | None,
+        request_origin: str | None,
+        bundle_id: str | None,
+        bundle_label: str | None,
+        bundle_scope_count: int | None,
+    ) -> dict[str, Any]:
+        request_id = uuid.uuid4().hex
+        now_ms = self._now_ms()
+        expires_at_ms = now_ms + (template.default_duration_hours * 60 * 60 * 1000)
+        agent_id = f"ria:{ria['id']}"
+
+        metadata = {
+            "requester_actor_type": "ria",
+            "subject_actor_type": "investor",
+            "requester_entity_id": str(ria["id"]),
+            "firm_id": firm_id,
+            "scope_template_id": template.template_id,
+            "duration_mode": "investor_decides",
+            "duration_hours": None,
+            "request_timeout_hours": template.default_duration_hours,
+            "reason": (reason or "").strip() or None,
+            "request_origin": (request_origin or "").strip() or "direct_ria_request",
+            "invite_id": invite_id,
+            "invite_token": invite_token,
+            "bundle_id": bundle_id,
+            "bundle_label": bundle_label,
+            "bundle_scope_count": bundle_scope_count or 1,
+        }
+
+        await conn.execute(
+            """
+            INSERT INTO consent_audit (
+              token_id,
+              user_id,
+              agent_id,
+              scope,
+              action,
+              issued_at,
+              expires_at,
+              request_id,
+              scope_description,
+              metadata
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              'REQUESTED',
+              $5,
+              $6,
+              $7,
+              $8,
+              $9::jsonb
+            )
+            """,
+            f"req_{request_id}",
+            subject_user_id,
+            agent_id,
+            chosen_scope,
+            now_ms,
+            expires_at_ms,
+            request_id,
+            template.template_name,
+            json.dumps(metadata),
+        )
+
+        relationship = await conn.fetchrow(
+            """
+            SELECT id
+            FROM advisor_investor_relationships
+            WHERE investor_user_id = $1
+              AND ria_profile_id = $2
+              AND (
+                (firm_id IS NULL AND $3::uuid IS NULL)
+                OR firm_id = $3::uuid
+              )
+            LIMIT 1
+            """,
+            subject_user_id,
+            ria["id"],
+            firm_id,
+        )
+
+        if relationship is None:
+            await conn.execute(
+                """
+                INSERT INTO advisor_investor_relationships (
+                  investor_user_id,
+                  ria_profile_id,
+                  firm_id,
+                  status,
+                  last_request_id,
+                  granted_scope,
+                  created_at,
+                  updated_at
+                )
+                VALUES (
+                  $1,
+                  $2,
+                  $3::uuid,
+                  'request_pending',
+                  $4,
+                  $5,
+                  NOW(),
+                  NOW()
+                )
+                """,
+                subject_user_id,
+                ria["id"],
+                firm_id,
+                request_id,
+                chosen_scope,
+            )
+        else:
+            await conn.execute(
+                """
+                UPDATE advisor_investor_relationships
+                SET
+                  status = 'request_pending',
+                  last_request_id = $2,
+                  granted_scope = COALESCE(granted_scope, $3),
+                  updated_at = NOW()
+                WHERE id = $1
+                """,
+                relationship["id"],
+                request_id,
+                chosen_scope,
+            )
+
+        return {
+            "request_id": request_id,
+            "subject_user_id": subject_user_id,
+            "scope": chosen_scope,
+            "duration_hours": template.default_duration_hours,
+            "duration_mode": "investor_decides",
+            "expires_at": expires_at_ms,
+            "scope_template_id": template.template_id,
+            "requester_entity_id": str(ria["id"]),
+            "status": "REQUESTED",
+            "metadata": metadata,
+        }
+
+    async def create_ria_consent_bundle(
+        self,
+        user_id: str,
+        *,
+        subject_user_id: str,
+        scope_template_id: str,
+        selected_scopes: list[str],
+        firm_id: str | None,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_vault_user_row(conn, user_id)
+                await self._ensure_vault_user_row(conn, subject_user_id)
+                await self._ensure_iam_schema_ready(conn)
+                await self._ensure_actor_profile_row(conn, user_id, include_ria_persona=True)
+                await self._ensure_actor_profile_row(conn, subject_user_id)
+
+                ria = await self._get_ria_profile_by_user(conn, user_id)
+                if ria["verification_status"] not in {"finra_verified", "active"}:
+                    raise RIAIAMPolicyError(
+                        "RIA verification incomplete; cannot create consent requests",
+                        status_code=403,
+                    )
+
+                template = await self._load_scope_template(conn, scope_template_id)
+                normalized_scopes = [
+                    str(scope or "").strip()
+                    for scope in selected_scopes
+                    if str(scope or "").strip()
+                ]
+                deduped_scopes = list(dict.fromkeys(normalized_scopes))
+                if not deduped_scopes:
+                    deduped_scopes = list(template.allowed_scopes[:1])
+                invalid_scopes = [
+                    scope for scope in deduped_scopes if scope not in template.allowed_scopes
+                ]
+                if invalid_scopes:
+                    raise RIAIAMPolicyError(
+                        "Selected scope is not allowed for this template", status_code=400
+                    )
+
+                if firm_id:
+                    membership = await conn.fetchrow(
+                        """
+                        SELECT 1
+                        FROM ria_firm_memberships
+                        WHERE ria_profile_id = $1
+                          AND firm_id = $2::uuid
+                          AND membership_status = 'active'
+                        """,
+                        ria["id"],
+                        firm_id,
+                    )
+                    if membership is None:
+                        raise RIAIAMPolicyError("Firm membership is not active", status_code=403)
+
+                bundle_id = uuid.uuid4().hex
+                bundle_label = template.template_name
+                created_requests: list[dict[str, Any]] = []
+                for scope in deduped_scopes:
+                    created_requests.append(
+                        await self._create_ria_consent_request_record(
+                            conn,
+                            ria=ria,
+                            subject_user_id=subject_user_id,
+                            template=template,
+                            chosen_scope=scope,
+                            firm_id=firm_id,
+                            reason=reason,
+                            invite_id=None,
+                            invite_token=None,
+                            request_origin="direct_ria_request_bundle",
+                            bundle_id=bundle_id,
+                            bundle_label=bundle_label,
+                            bundle_scope_count=len(deduped_scopes),
+                        )
+                    )
+
+                expires_at = (
+                    max(int(item["expires_at"]) for item in created_requests)
+                    if created_requests
+                    else None
+                )
+                return {
+                    "bundle_id": bundle_id,
+                    "bundle_label": bundle_label,
+                    "subject_user_id": subject_user_id,
+                    "status": "REQUESTED",
+                    "request_count": len(created_requests),
+                    "requests": created_requests,
+                    "request_ids": [item["request_id"] for item in created_requests],
+                    "selected_scopes": [item["scope"] for item in created_requests],
+                    "expires_at": expires_at,
+                }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
 
     async def submit_ria_onboarding(
         self,
@@ -1358,6 +1676,49 @@ class RIAIAMService:
         finally:
             await conn.close()
 
+    async def list_ria_request_bundles(self, user_id: str) -> list[dict[str, Any]]:
+        requests = await self.list_ria_requests(user_id)
+        bundles: dict[str, dict[str, Any]] = {}
+        for item in requests:
+            metadata = self._parse_metadata(item.get("metadata"))
+            bundle_id = str(metadata.get("bundle_id") or item.get("request_id") or uuid.uuid4().hex)
+            bundle = bundles.setdefault(
+                bundle_id,
+                {
+                    "bundle_id": bundle_id,
+                    "bundle_label": metadata.get("bundle_label") or "Portfolio access request",
+                    "subject_user_id": item.get("user_id"),
+                    "subject_display_name": item.get("subject_display_name"),
+                    "subject_headline": item.get("subject_headline"),
+                    "status": item.get("action"),
+                    "issued_at": item.get("issued_at"),
+                    "expires_at": item.get("expires_at"),
+                    "request_count": 0,
+                    "requests": [],
+                },
+            )
+            bundle["request_count"] += 1
+            bundle["requests"].append(
+                {
+                    "request_id": item.get("request_id"),
+                    "scope": item.get("scope"),
+                    "action": item.get("action"),
+                    "issued_at": item.get("issued_at"),
+                    "expires_at": item.get("expires_at"),
+                    "scope_metadata": self._scope_metadata(str(item.get("scope") or "")),
+                }
+            )
+            if str(item.get("action") or "").upper() == "REQUESTED":
+                bundle["status"] = "REQUESTED"
+            if not bundle.get("subject_display_name") and item.get("subject_display_name"):
+                bundle["subject_display_name"] = item.get("subject_display_name")
+            if not bundle.get("subject_headline") and item.get("subject_headline"):
+                bundle["subject_headline"] = item.get("subject_headline")
+
+        bundle_list = list(bundles.values())
+        bundle_list.sort(key=lambda item: int(item.get("issued_at") or 0), reverse=True)
+        return bundle_list
+
     async def list_ria_invites(self, user_id: str) -> list[dict[str, Any]]:
         conn = await self._conn()
         try:
@@ -1389,6 +1750,308 @@ class RIAIAMService:
                 ORDER BY i.created_at DESC
                 """,
                 user_id,
+            )
+            return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    @staticmethod
+    def _parse_pick_csv(content: str) -> list[dict[str, Any]]:
+        reader = csv.DictReader(io.StringIO(content))
+        if not reader.fieldnames:
+            raise RIAIAMPolicyError("Uploaded CSV is missing a header row", status_code=400)
+
+        normalized_headers = {str(name or "").strip().lower() for name in reader.fieldnames}
+        required_headers = {"ticker", "company_name", "sector", "tier", "investment_thesis"}
+        missing_headers = sorted(required_headers - normalized_headers)
+        if missing_headers:
+            raise RIAIAMPolicyError(
+                f"Uploaded CSV is missing required columns: {', '.join(missing_headers)}",
+                status_code=400,
+            )
+
+        rows: list[dict[str, Any]] = []
+        for index, row in enumerate(reader, start=1):
+            ticker = str(row.get("ticker") or "").strip().upper()
+            if not ticker:
+                continue
+            rows.append(
+                {
+                    "sort_order": index,
+                    "ticker": ticker,
+                    "company_name": str(row.get("company_name") or "").strip() or None,
+                    "sector": str(row.get("sector") or "").strip() or None,
+                    "tier": str(row.get("tier") or "").strip() or None,
+                    "tier_rank": int(row["tier_rank"])
+                    if str(row.get("tier_rank") or "").strip().isdigit()
+                    else None,
+                    "conviction_weight": float(row["conviction_weight"])
+                    if str(row.get("conviction_weight") or "").strip()
+                    else None,
+                    "recommendation_bias": str(row.get("recommendation_bias") or "").strip()
+                    or None,
+                    "investment_thesis": str(row.get("investment_thesis") or "").strip() or None,
+                    "fcf_billions": float(row["fcf_billions"])
+                    if str(row.get("fcf_billions") or "").strip()
+                    else None,
+                }
+            )
+
+        if not rows:
+            raise RIAIAMPolicyError("Uploaded CSV did not contain any valid rows", status_code=400)
+        return rows
+
+    async def upload_ria_pick_list(
+        self,
+        user_id: str,
+        *,
+        csv_content: str,
+        source_filename: str | None,
+        label: str | None,
+    ) -> dict[str, Any]:
+        rows = self._parse_pick_csv(csv_content)
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_iam_schema_ready(conn)
+                ria = await self._get_ria_profile_by_user(conn, user_id)
+                await conn.execute(
+                    """
+                    UPDATE ria_pick_uploads
+                    SET status = 'archived', updated_at = NOW()
+                    WHERE ria_profile_id = $1
+                      AND status = 'active'
+                    """,
+                    ria["id"],
+                )
+                upload = await conn.fetchrow(
+                    """
+                    INSERT INTO ria_pick_uploads (
+                      ria_profile_id,
+                      uploaded_by_user_id,
+                      label,
+                      status,
+                      source_filename,
+                      row_count,
+                      template_version,
+                      activated_at,
+                      updated_at
+                    )
+                    VALUES ($1, $2, $3, 'active', $4, $5, 1, NOW(), NOW())
+                    RETURNING id, created_at, activated_at
+                    """,
+                    ria["id"],
+                    user_id,
+                    (label or "").strip() or "Active picks",
+                    (source_filename or "").strip() or None,
+                    len(rows),
+                )
+                if upload is None:
+                    raise RIAIAMPolicyError("Failed to create RIA picks upload", status_code=500)
+
+                for row in rows:
+                    await conn.execute(
+                        """
+                        INSERT INTO ria_pick_upload_rows (
+                          upload_id,
+                          sort_order,
+                          ticker,
+                          company_name,
+                          sector,
+                          tier,
+                          tier_rank,
+                          conviction_weight,
+                          recommendation_bias,
+                          investment_thesis,
+                          fcf_billions
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        """,
+                        upload["id"],
+                        row["sort_order"],
+                        row["ticker"],
+                        row["company_name"],
+                        row["sector"],
+                        row["tier"],
+                        row["tier_rank"],
+                        row["conviction_weight"],
+                        row["recommendation_bias"],
+                        row["investment_thesis"],
+                        row["fcf_billions"],
+                    )
+
+                return {
+                    "upload_id": str(upload["id"]),
+                    "label": (label or "").strip() or "Active picks",
+                    "row_count": len(rows),
+                    "status": "active",
+                    "created_at": upload["created_at"],
+                    "activated_at": upload["activated_at"],
+                }
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def list_ria_pick_uploads(self, user_id: str) -> list[dict[str, Any]]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            ria = await self._get_ria_profile_by_user(conn, user_id)
+            rows = await conn.fetch(
+                """
+                SELECT
+                  id,
+                  label,
+                  status,
+                  source_filename,
+                  row_count,
+                  activated_at,
+                  created_at,
+                  updated_at
+                FROM ria_pick_uploads
+                WHERE ria_profile_id = $1
+                ORDER BY created_at DESC
+                """,
+                ria["id"],
+            )
+            return [
+                {
+                    "upload_id": str(row["id"]),
+                    "label": row["label"],
+                    "status": row["status"],
+                    "source_filename": row["source_filename"],
+                    "row_count": int(row["row_count"] or 0),
+                    "activated_at": row["activated_at"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in rows
+            ]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def get_active_ria_pick_rows(self, user_id: str) -> list[dict[str, Any]]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            ria = await self._get_ria_profile_by_user(conn, user_id)
+            rows = await conn.fetch(
+                """
+                SELECT
+                  r.ticker,
+                  r.company_name,
+                  r.sector,
+                  r.tier,
+                  r.tier_rank,
+                  r.conviction_weight,
+                  r.recommendation_bias,
+                  r.investment_thesis,
+                  r.fcf_billions
+                FROM ria_pick_uploads u
+                JOIN ria_pick_upload_rows r ON r.upload_id = u.id
+                WHERE u.ria_profile_id = $1
+                  AND u.status = 'active'
+                ORDER BY r.sort_order ASC
+                """,
+                ria["id"],
+            )
+            return [dict(row) for row in rows]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def list_investor_pick_sources(self, investor_user_id: str) -> list[dict[str, Any]]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            rows = await conn.fetch(
+                """
+                SELECT
+                  rel.ria_profile_id,
+                  rp.user_id AS ria_user_id,
+                  COALESCE(mp.display_name, rp.display_name) AS label,
+                  u.id AS upload_id
+                FROM advisor_investor_relationships rel
+                JOIN ria_profiles rp ON rp.id = rel.ria_profile_id
+                LEFT JOIN marketplace_public_profiles mp
+                  ON mp.user_id = rp.user_id
+                  AND mp.profile_type = 'ria'
+                LEFT JOIN ria_pick_uploads u
+                  ON u.ria_profile_id = rel.ria_profile_id
+                  AND u.status = 'active'
+                WHERE rel.investor_user_id = $1
+                  AND rel.status = 'approved'
+                ORDER BY COALESCE(mp.display_name, rp.display_name) ASC
+                """,
+                investor_user_id,
+            )
+            return [
+                {
+                    "id": f"ria:{row['ria_profile_id']}",
+                    "label": row["label"] or "Linked RIA picks",
+                    "kind": "ria",
+                    "state": "ready" if row["upload_id"] else "pending",
+                    "is_default": False,
+                    "ria_user_id": row["ria_user_id"],
+                    "ria_profile_id": str(row["ria_profile_id"]),
+                }
+                for row in rows
+            ]
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def get_pick_rows_for_source(
+        self,
+        investor_user_id: str,
+        source_id: str,
+    ) -> list[dict[str, Any]]:
+        normalized_source = str(source_id or "").strip()
+        if not normalized_source.startswith("ria:"):
+            return []
+        ria_profile_id = normalized_source.split(":", 1)[1]
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            relationship = await conn.fetchrow(
+                """
+                SELECT 1
+                FROM advisor_investor_relationships
+                WHERE investor_user_id = $1
+                  AND ria_profile_id = $2::uuid
+                  AND status = 'approved'
+                """,
+                investor_user_id,
+                ria_profile_id,
+            )
+            if relationship is None:
+                return []
+            rows = await conn.fetch(
+                """
+                SELECT
+                  r.ticker,
+                  r.company_name,
+                  r.sector,
+                  r.tier,
+                  r.tier_rank,
+                  r.conviction_weight,
+                  r.recommendation_bias,
+                  r.investment_thesis,
+                  r.fcf_billions
+                FROM ria_pick_uploads u
+                JOIN ria_pick_upload_rows r ON r.upload_id = u.id
+                WHERE u.ria_profile_id = $1::uuid
+                  AND u.status = 'active'
+                ORDER BY r.sort_order ASC
+                """,
+                ria_profile_id,
             )
             return [dict(row) for row in rows]
         except asyncpg.exceptions.UndefinedTableError as exc:
@@ -1915,12 +2578,6 @@ class RIAIAMService:
                         "Selected scope is not allowed for this template", status_code=400
                     )
 
-                mode, resolved_duration_hours = self._resolve_duration_hours(
-                    template,
-                    duration_mode=duration_mode,
-                    duration_hours=duration_hours,
-                )
-
                 if firm_id:
                     membership = await conn.fetchrow(
                         """
@@ -1935,138 +2592,25 @@ class RIAIAMService:
                     )
                     if membership is None:
                         raise RIAIAMPolicyError("Firm membership is not active", status_code=403)
-
-                request_id = uuid.uuid4().hex
-                now_ms = self._now_ms()
-                expires_at_ms = now_ms + (resolved_duration_hours * 60 * 60 * 1000)
-                agent_id = f"ria:{ria['id']}"
-
-                metadata = {
-                    "requester_actor_type": requester,
-                    "subject_actor_type": subject,
-                    "requester_entity_id": str(ria["id"]),
-                    "firm_id": firm_id,
-                    "scope_template_id": template.template_id,
-                    "duration_mode": mode,
-                    "duration_hours": resolved_duration_hours,
-                    "reason": (reason or "").strip() or None,
-                    "request_origin": (request_origin or "").strip() or "direct_ria_request",
-                    "invite_id": invite_id,
-                    "invite_token": invite_token,
-                }
-
-                await conn.execute(
-                    """
-                    INSERT INTO consent_audit (
-                      token_id,
-                      user_id,
-                      agent_id,
-                      scope,
-                      action,
-                      issued_at,
-                      expires_at,
-                      request_id,
-                      scope_description,
-                      metadata
-                    )
-                    VALUES (
-                      $1,
-                      $2,
-                      $3,
-                      $4,
-                      'REQUESTED',
-                      $5,
-                      $6,
-                      $7,
-                      $8,
-                      $9::jsonb
-                    )
-                    """,
-                    f"req_{request_id}",
-                    subject_user_id,
-                    agent_id,
-                    chosen_scope,
-                    now_ms,
-                    expires_at_ms,
-                    request_id,
-                    template.template_name,
-                    json.dumps(metadata),
+                created = await self._create_ria_consent_request_record(
+                    conn,
+                    ria=ria,
+                    subject_user_id=subject_user_id,
+                    template=template,
+                    chosen_scope=chosen_scope,
+                    firm_id=firm_id,
+                    reason=reason,
+                    invite_id=invite_id,
+                    invite_token=invite_token,
+                    request_origin=request_origin or "direct_ria_request",
+                    bundle_id=None,
+                    bundle_label=None,
+                    bundle_scope_count=1,
                 )
-
-                relationship = await conn.fetchrow(
-                    """
-                    SELECT id
-                    FROM advisor_investor_relationships
-                    WHERE investor_user_id = $1
-                      AND ria_profile_id = $2
-                      AND (
-                        (firm_id IS NULL AND $3::uuid IS NULL)
-                        OR firm_id = $3::uuid
-                      )
-                    LIMIT 1
-                    """,
-                    subject_user_id,
-                    ria["id"],
-                    firm_id,
-                )
-
-                if relationship is None:
-                    await conn.execute(
-                        """
-                        INSERT INTO advisor_investor_relationships (
-                          investor_user_id,
-                          ria_profile_id,
-                          firm_id,
-                          status,
-                          last_request_id,
-                          granted_scope,
-                          created_at,
-                          updated_at
-                        )
-                        VALUES (
-                          $1,
-                          $2,
-                          $3::uuid,
-                          'request_pending',
-                          $4,
-                          $5,
-                          NOW(),
-                          NOW()
-                        )
-                        """,
-                        subject_user_id,
-                        ria["id"],
-                        firm_id,
-                        request_id,
-                        chosen_scope,
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        UPDATE advisor_investor_relationships
-                        SET
-                          status = 'request_pending',
-                          last_request_id = $2,
-                          granted_scope = $3,
-                          updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        relationship["id"],
-                        request_id,
-                        chosen_scope,
-                    )
-
-                return {
-                    "request_id": request_id,
-                    "subject_user_id": subject_user_id,
-                    "scope": chosen_scope,
-                    "duration_hours": resolved_duration_hours,
-                    "duration_mode": mode,
-                    "expires_at": expires_at_ms,
-                    "scope_template_id": template.template_id,
-                    "requester_entity_id": str(ria["id"]),
-                    "status": "REQUESTED",
-                }
+                if duration_mode or duration_hours:
+                    created["requested_duration_mode"] = (duration_mode or "").strip() or "preset"
+                    created["requested_duration_hours"] = duration_hours
+                return created
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -2100,32 +2644,45 @@ class RIAIAMService:
                 investor_user_id,
                 ria["id"],
             )
-            if relationship is None or relationship["status"] != "approved":
+            if relationship is None:
                 raise RIAIAMPolicyError(
                     "No approved relationship for investor workspace", status_code=403
                 )
 
             agent_id = f"ria:{ria['id']}"
-            consent_row = await conn.fetchrow(
+            consent_rows = await conn.fetch(
                 """
-                SELECT action, expires_at, issued_at
+                SELECT scope, action, expires_at, issued_at
                 FROM consent_audit
                 WHERE user_id = $1
                   AND agent_id = $2
-                  AND scope = $3
                   AND action IN ('CONSENT_GRANTED', 'REVOKED', 'CONSENT_DENIED', 'CANCELLED', 'TIMEOUT')
                 ORDER BY issued_at DESC
-                LIMIT 1
                 """,
                 investor_user_id,
                 agent_id,
-                relationship["granted_scope"],
             )
-            if consent_row is None or consent_row["action"] != "CONSENT_GRANTED":
-                raise RIAIAMPolicyError("Consent is not active for this workspace", status_code=403)
+            latest_by_scope: dict[str, dict[str, Any]] = {}
+            for row in consent_rows:
+                scope = str(row["scope"] or "").strip()
+                if not scope or scope in latest_by_scope:
+                    continue
+                latest_by_scope[scope] = dict(row)
+
             now_ms = self._now_ms()
-            if consent_row["expires_at"] and int(consent_row["expires_at"]) <= now_ms:
-                raise RIAIAMPolicyError("Consent has expired", status_code=403)
+            granted_scopes = [
+                {
+                    "scope": scope,
+                    "label": get_scope_description(scope),
+                    "expires_at": payload.get("expires_at"),
+                    "issued_at": payload.get("issued_at"),
+                }
+                for scope, payload in latest_by_scope.items()
+                if payload.get("action") == "CONSENT_GRANTED"
+                and (payload.get("expires_at") is None or int(payload["expires_at"]) > now_ms)
+            ]
+            if not granted_scopes:
+                raise RIAIAMPolicyError("Consent is not active for this workspace", status_code=403)
 
             metadata = await conn.fetchrow(
                 """
@@ -2140,6 +2697,7 @@ class RIAIAMService:
                 """,
                 investor_user_id,
             )
+            granted_scope_keys = {str(item["scope"]) for item in granted_scopes}
             if metadata is None:
                 return {
                     "investor_user_id": investor_user_id,
@@ -2150,22 +2708,49 @@ class RIAIAMService:
                     "investor_display_name": relationship["investor_display_name"],
                     "investor_headline": relationship["investor_headline"],
                     "relationship_status": relationship["status"],
-                    "scope": relationship["granted_scope"],
-                    "consent_expires_at": consent_row["expires_at"],
+                    "scope": granted_scopes[0]["scope"],
+                    "granted_scopes": granted_scopes,
+                    "consent_expires_at": max(
+                        (item["expires_at"] for item in granted_scopes if item.get("expires_at")),
+                        default=None,
+                    ),
                 }
+
+            available_domains = list(metadata["available_domains"] or [])
+            domain_summaries = dict(metadata["domain_summaries"] or {})
+            if "world_model.read" not in granted_scope_keys:
+                financial_only = any(
+                    scope.startswith("attr.financial.") for scope in granted_scope_keys
+                )
+                if financial_only:
+                    available_domains = [
+                        domain for domain in available_domains if domain == "financial"
+                    ]
+                    domain_summaries = (
+                        {"financial": domain_summaries.get("financial", {})}
+                        if "financial" in domain_summaries
+                        else {}
+                    )
+                else:
+                    available_domains = []
+                    domain_summaries = {}
 
             return {
                 "investor_user_id": investor_user_id,
                 "investor_display_name": relationship["investor_display_name"],
                 "investor_headline": relationship["investor_headline"],
                 "workspace_ready": True,
-                "available_domains": list(metadata["available_domains"] or []),
-                "domain_summaries": dict(metadata["domain_summaries"] or {}),
+                "available_domains": available_domains,
+                "domain_summaries": domain_summaries,
                 "total_attributes": int(metadata["total_attributes"] or 0),
                 "updated_at": metadata["updated_at"],
                 "relationship_status": relationship["status"],
-                "scope": relationship["granted_scope"],
-                "consent_expires_at": consent_row["expires_at"],
+                "scope": granted_scopes[0]["scope"],
+                "granted_scopes": granted_scopes,
+                "consent_expires_at": max(
+                    (item["expires_at"] for item in granted_scopes if item.get("expires_at")),
+                    default=None,
+                ),
             }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
@@ -2251,53 +2836,65 @@ class RIAIAMService:
                 if relationship is None:
                     return
 
-                if action == "CONSENT_GRANTED":
-                    await conn.execute(
-                        """
-                        UPDATE advisor_investor_relationships
-                        SET
-                          status = 'approved',
-                          consent_granted_at = NOW(),
-                          revoked_at = NULL,
-                          updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        relationship["id"],
-                    )
+                all_rows = await conn.fetch(
+                    """
+                    SELECT scope, action, expires_at, issued_at
+                    FROM consent_audit
+                    WHERE user_id = $1
+                      AND agent_id = $2
+                    ORDER BY issued_at DESC
+                    """,
+                    user_id,
+                    row["agent_id"],
+                )
+                latest_by_scope: dict[str, asyncpg.Record] = {}
+                for audit_row in all_rows:
+                    scope_key = str(audit_row["scope"] or "").strip()
+                    if not scope_key or scope_key in latest_by_scope:
+                        continue
+                    latest_by_scope[scope_key] = audit_row
+
+                now_ms = self._now_ms()
+                has_active_grant = any(
+                    str(audit_row["action"] or "") == "CONSENT_GRANTED"
+                    and (audit_row["expires_at"] is None or int(audit_row["expires_at"]) > now_ms)
+                    for audit_row in latest_by_scope.values()
+                )
+                has_pending_request = any(
+                    str(audit_row["action"] or "") == "REQUESTED"
+                    for audit_row in latest_by_scope.values()
+                )
+
+                next_status = "discovered"
+                if has_active_grant:
+                    next_status = "approved"
+                elif has_pending_request:
+                    next_status = "request_pending"
                 elif action == "REVOKED":
-                    await conn.execute(
-                        """
-                        UPDATE advisor_investor_relationships
-                        SET
-                          status = 'revoked',
-                          revoked_at = NOW(),
-                          updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        relationship["id"],
-                    )
+                    next_status = "revoked"
                 elif action == "TIMEOUT":
-                    await conn.execute(
-                        """
-                        UPDATE advisor_investor_relationships
-                        SET
-                          status = 'expired',
-                          updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        relationship["id"],
-                    )
-                else:
-                    await conn.execute(
-                        """
-                        UPDATE advisor_investor_relationships
-                        SET
-                          status = 'discovered',
-                          updated_at = NOW()
-                        WHERE id = $1
-                        """,
-                        relationship["id"],
-                    )
+                    next_status = "expired"
+
+                await conn.execute(
+                    """
+                    UPDATE advisor_investor_relationships
+                    SET
+                      status = $2,
+                      consent_granted_at = CASE
+                        WHEN $2 = 'approved' THEN NOW()
+                        ELSE consent_granted_at
+                      END,
+                      revoked_at = CASE
+                        WHEN $2 = 'approved' THEN NULL
+                        WHEN $2 = 'revoked' THEN NOW()
+                        ELSE revoked_at
+                      END,
+                      updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    relationship["id"],
+                    next_status,
+                )
         except asyncpg.exceptions.UndefinedTableError:
             # Non-blocking path: consent lifecycle should not fail for investor flows.
             return

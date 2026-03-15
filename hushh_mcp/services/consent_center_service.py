@@ -141,6 +141,55 @@ class ConsentCenterService:
             "metadata": metadata or None,
         }
 
+    @staticmethod
+    def _issued_at_ms(value: Any) -> int:
+        if isinstance(value, (int, float)):
+            return int(value)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _group_by_requestor(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        groups: dict[str, dict[str, Any]] = {}
+
+        for entry in entries:
+            counterpart_type = str(entry.get("counterpart_type") or "developer")
+            counterpart_id = entry.get("counterpart_id")
+            counterpart_label = str(entry.get("counterpart_label") or counterpart_id or "Requester")
+            key = f"{counterpart_type}:{counterpart_id or counterpart_label}"
+            group = groups.setdefault(
+                key,
+                {
+                    "id": key,
+                    "counterpart_type": counterpart_type,
+                    "counterpart_id": counterpart_id,
+                    "counterpart_label": counterpart_label,
+                    "latest_request_at": entry.get("issued_at"),
+                    "status": entry.get("status"),
+                    "request_count": 0,
+                    "scopes": [],
+                    "entries": [],
+                },
+            )
+            group["request_count"] += 1
+            group["entries"].append(entry)
+            if self._issued_at_ms(entry.get("issued_at")) >= self._issued_at_ms(
+                group.get("latest_request_at")
+            ):
+                group["latest_request_at"] = entry.get("issued_at")
+                group["status"] = entry.get("status")
+            scope_label = entry.get("scope_description") or entry.get("scope")
+            if scope_label and scope_label not in group["scopes"]:
+                group["scopes"].append(scope_label)
+
+        grouped = list(groups.values())
+        grouped.sort(
+            key=lambda item: self._issued_at_ms(item.get("latest_request_at")),
+            reverse=True,
+        )
+        return grouped
+
     def _normalize_outgoing(self, item: dict[str, Any]) -> dict[str, Any]:
         metadata = self._metadata(item.get("metadata"))
         status = self._map_action_to_status(item.get("action"))
@@ -221,12 +270,18 @@ class ConsentCenterService:
         pending = await self._consent_db.get_pending_requests(user_id)
         active = await self._consent_db.get_active_tokens(user_id)
         history_result = await self._consent_db.get_audit_log(user_id, page=1, limit=100)
+        self_activity_summary = await self._consent_db.get_internal_activity_summary(user_id)
         incoming = [self._normalize_pending(item) for item in pending]
         active_entries = [self._normalize_active(item) for item in active]
         history_entries = [
             self._normalize_history(item) for item in history_result.get("items", [])
         ]
         developer_requests = [item for item in incoming if item["counterpart_type"] == "developer"]
+        investor_pending_groups = self._group_by_requestor(
+            [item for item in incoming if item["counterpart_type"] in {"ria", "developer"}]
+        )
+        investor_active_groups = self._group_by_requestor(active_entries)
+        investor_history_groups = self._group_by_requestor(history_entries)
 
         ria_onboarding: dict[str, Any] | None = None
         outgoing_entries: list[dict[str, Any]] = []
@@ -283,4 +338,10 @@ class ConsentCenterService:
             "history": history_entries,
             "invites": invite_entries,
             "developer_requests": developer_requests,
+            "requestor_groups": {
+                "pending": investor_pending_groups,
+                "active": investor_active_groups,
+                "previous": investor_history_groups,
+            },
+            "self_activity_summary": self_activity_summary,
         }

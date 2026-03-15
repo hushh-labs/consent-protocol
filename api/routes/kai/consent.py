@@ -80,15 +80,15 @@ async def grant_consent(
             tokens[scope_str] = token.token
             last_token_issued = token
 
-            # Log to consent_audit using service layer
-            await service.insert_event(
+            # Internal Kai grants should not appear in the investor-facing consent ledger.
+            await service.insert_internal_event(
                 user_id=request.user_id,
                 agent_id="agent_kai",
                 scope=scope_str,
-                action="CONSENT_GRANTED",  # Use standard action name
-                token_id=token.token[:32],  # Store truncated token ID
+                action="CONSENT_GRANTED",
+                token_id=token.token,
                 expires_at=token.expires_at,
-                issued_at=token.issued_at,
+                scope_description=scope_str,
             )
 
         except Exception as e:
