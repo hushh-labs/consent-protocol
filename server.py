@@ -36,6 +36,18 @@ def _is_production() -> bool:
     return _environment() == "production"
 
 
+REQUIRED_RUNTIME_TABLES = (
+    "vault_keys",
+    "vault_key_wrappers",
+    "consent_audit",
+    "user_push_tokens",
+    "internal_access_events",
+    "runtime_persona_state",
+    "ria_pick_uploads",
+    "ria_pick_upload_rows",
+)
+
+
 def _is_app_review_mode_enabled() -> bool:
     return _env_truthy("APP_REVIEW_MODE") or _env_truthy("HUSHH_APP_REVIEW_MODE")
 
@@ -239,6 +251,35 @@ async def startup_regulated_runtime_guards():
 
     if _env_truthy("DEVELOPER_API_ENABLED", "false"):
         logger.warning("security.developer_api_enabled_in_production")
+
+
+@app.on_event("startup")
+async def startup_required_schema_guard():
+    """Fail fast when the runtime database is missing core contract tables."""
+    from db.connection import get_pool
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY($1::text[])
+            """,
+            list(REQUIRED_RUNTIME_TABLES),
+        )
+
+    existing = {row["table_name"] for row in rows}
+    missing = [table for table in REQUIRED_RUNTIME_TABLES if table not in existing]
+    if missing:
+        logger.critical("startup.required_schema_guard_failed missing=%s", missing)
+        raise RuntimeError(
+            "Required runtime tables are missing: "
+            + ", ".join(missing)
+            + ". Run `python db/migrate.py --consent`, `python db/migrate.py --iam`, "
+            + "or `python db/migrate.py --init` against the active database before starting the server."
+        )
 
 
 @app.on_event("startup")
