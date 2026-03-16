@@ -41,6 +41,7 @@ IAM_MIGRATION_FILES = (
     "020_ria_iam_foundation.sql",
     "021_runtime_persona_state.sql",
     "022_ria_invites.sql",
+    "027_relationship_disconnect_status.sql",
 )
 
 
@@ -162,7 +163,90 @@ async def create_consent_audit(pool: asyncpg.Pool):
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 'REQUESTED'"
     )
+    await pool.execute("""
+        CREATE OR REPLACE FUNCTION consent_audit_notify()
+        RETURNS TRIGGER AS $$
+        DECLARE payload TEXT;
+        BEGIN
+          payload := json_build_object(
+            'user_id', NEW.user_id,
+            'request_id', COALESCE(NEW.request_id, ''),
+            'action', NEW.action,
+            'scope', COALESCE(NEW.scope, ''),
+            'agent_id', COALESCE(NEW.agent_id, ''),
+            'scope_description', COALESCE(NEW.scope_description, ''),
+            'issued_at', NEW.issued_at,
+            'bundle_id', COALESCE(NEW.metadata->>'bundle_id', ''),
+            'bundle_label', COALESCE(NEW.metadata->>'bundle_label', ''),
+            'bundle_scope_count', COALESCE(NEW.metadata->>'bundle_scope_count', '1')
+          )::TEXT;
+          PERFORM pg_notify('consent_audit_new', payload);
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    """)
+    await pool.execute("DROP TRIGGER IF EXISTS consent_audit_after_insert ON consent_audit")
+    await pool.execute("""
+        CREATE TRIGGER consent_audit_after_insert
+        AFTER INSERT ON consent_audit
+        FOR EACH ROW EXECUTE FUNCTION consent_audit_notify()
+    """)
     print("✅ consent_audit ready!")
+
+
+async def create_user_push_tokens(pool: asyncpg.Pool):
+    """Create user_push_tokens table (push token registry)."""
+    print("📲 Creating user_push_tokens table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS user_push_tokens (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            token TEXT NOT NULL,
+            platform TEXT NOT NULL CHECK (platform IN ('web', 'ios', 'android')),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (user_id, platform)
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_user_push_tokens_user_id ON user_push_tokens(user_id)"
+    )
+    print("✅ user_push_tokens ready!")
+
+
+async def create_internal_access_events(pool: asyncpg.Pool):
+    """Create internal_access_events table (self/internal activity ledger)."""
+    print("🧾 Creating internal_access_events table...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS internal_access_events (
+            id SERIAL PRIMARY KEY,
+            token_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            action TEXT NOT NULL,
+            issued_at BIGINT NOT NULL,
+            expires_at BIGINT,
+            revoked_at BIGINT,
+            metadata JSONB,
+            token_type VARCHAR(20) DEFAULT 'internal',
+            request_id VARCHAR(32),
+            scope_description TEXT
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_id ON internal_access_events(user_id)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_action ON internal_access_events(user_id, action)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_access_events_issued_at ON internal_access_events(issued_at DESC)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_access_events_user_scope_agent ON internal_access_events(user_id, agent_id, scope, issued_at DESC)"
+    )
+    print("✅ internal_access_events ready!")
 
 
 async def create_world_model_data(pool: asyncpg.Pool):
@@ -522,6 +606,8 @@ TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
     "vault_key_wrappers": create_vault_key_wrappers,
     "consent_audit": create_consent_audit,
+    "user_push_tokens": create_user_push_tokens,
+    "internal_access_events": create_internal_access_events,
     "world_model_data": create_world_model_data,
     "world_model_index_v2": create_world_model_index_v2,
     "domain_registry": create_domain_registry,
@@ -548,6 +634,8 @@ async def run_full_migration(pool: asyncpg.Pool):
         "vault_key_wrappers",
         "vault_keys",
         "consent_audit",
+        "user_push_tokens",
+        "internal_access_events",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",
@@ -560,33 +648,39 @@ async def run_full_migration(pool: asyncpg.Pool):
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
     # Create in dependency order
-    print("\n[1/11] Creating vault_keys (vault headers + recovery wrapper)...")
+    print("\n[1/13] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
     print("[2/11] Creating vault_key_wrappers (enrolled unlock methods)...")
     await create_vault_key_wrappers(pool)
 
-    print("[3/11] Creating consent_audit (consent tracking)...")
+    print("[3/13] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[4/11] Creating world_model_data (encrypted user data blob)...")
+    print("[4/13] Creating user_push_tokens (push token registry)...")
+    await create_user_push_tokens(pool)
+
+    print("[5/13] Creating internal_access_events (self/internal ledger)...")
+    await create_internal_access_events(pool)
+
+    print("[6/13] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[5/11] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[7/13] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[6/11] Creating domain_registry (dynamic domain registry)...")
+    print("[8/13] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[7/11] Creating tickers (symbol master)...")
+    print("[9/13] Creating tickers (symbol master)...")
     await create_tickers(pool)
-    print("[8/11] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
+    print("[10/13] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
     await create_ticker_facts_snapshot(pool)
-    print("[9/11] Creating ticker_enrichment_runs (run audit)...")
+    print("[11/13] Creating ticker_enrichment_runs (run audit)...")
     await create_ticker_enrichment_runs(pool)
-    print("[10/11] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[12/13] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
-    print("[11/11] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    print("[13/13] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
 
     print("\n✅ Full migration complete!")
@@ -596,6 +690,8 @@ async def run_consent_migration(pool: asyncpg.Pool):
     """Create all consent-related tables."""
     print("Running consent protocol migration...")
     await create_consent_audit(pool)
+    await create_user_push_tokens(pool)
+    await create_internal_access_events(pool)
     print("Consent protocol tables ready!")
 
 
@@ -624,33 +720,39 @@ async def run_init_migration(pool: asyncpg.Pool):
     print("Initializing database tables (non-destructive)...")
 
     # Create in dependency order
-    print("\n[1/11] Creating vault_keys (vault headers + recovery wrapper)...")
+    print("\n[1/13] Creating vault_keys (vault headers + recovery wrapper)...")
     await create_vault_keys(pool)
 
     print("[2/11] Creating vault_key_wrappers (enrolled unlock methods)...")
     await create_vault_key_wrappers(pool)
 
-    print("[3/11] Creating consent_audit (consent tracking)...")
+    print("[3/13] Creating consent_audit (consent tracking)...")
     await create_consent_audit(pool)
 
-    print("[4/11] Creating world_model_data (encrypted user data blob)...")
+    print("[4/13] Creating user_push_tokens (push token registry)...")
+    await create_user_push_tokens(pool)
+
+    print("[5/13] Creating internal_access_events (self/internal ledger)...")
+    await create_internal_access_events(pool)
+
+    print("[6/13] Creating world_model_data (encrypted user data blob)...")
     await create_world_model_data(pool)
 
-    print("[5/11] Creating world_model_index_v2 (queryable metadata index)...")
+    print("[7/13] Creating world_model_index_v2 (queryable metadata index)...")
     await create_world_model_index_v2(pool)
 
-    print("[6/11] Creating domain_registry (dynamic domain registry)...")
+    print("[8/13] Creating domain_registry (dynamic domain registry)...")
     await create_domain_registry(pool)
 
-    print("[7/11] Creating tickers (symbol master)...")
+    print("[9/13] Creating tickers (symbol master)...")
     await create_tickers(pool)
-    print("[8/11] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
+    print("[10/13] Creating ticker_facts_snapshot (SEC fundamentals snapshot)...")
     await create_ticker_facts_snapshot(pool)
-    print("[9/11] Creating ticker_enrichment_runs (run audit)...")
+    print("[11/13] Creating ticker_enrichment_runs (run audit)...")
     await create_ticker_enrichment_runs(pool)
-    print("[10/11] Creating consent_exports (MCP zero-knowledge export)...")
+    print("[12/13] Creating consent_exports (MCP zero-knowledge export)...")
     await create_consent_exports(pool)
-    print("[11/11] Creating kai_market_cache_entries (Kai market L2 cache)...")
+    print("[13/13] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
 
     print("\nAll tables initialized successfully!")
@@ -680,6 +782,8 @@ async def show_status(pool: asyncpg.Pool):
         "vault_keys",
         "vault_key_wrappers",
         "consent_audit",
+        "user_push_tokens",
+        "internal_access_events",
         "world_model_data",
         "world_model_index_v2",
         "domain_registry",

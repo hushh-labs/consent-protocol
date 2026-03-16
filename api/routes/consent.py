@@ -67,6 +67,11 @@ class GenericConsentRequestCreate(BaseModel):
     reason: str | None = None
 
 
+class RelationshipDisconnectRequest(BaseModel):
+    investor_user_id: str | None = None
+    ria_profile_id: str | None = None
+
+
 @router.get("/pending")
 async def get_pending_consents(
     userId: str,
@@ -362,6 +367,21 @@ async def create_generic_consent_request(
             duration_hours=payload.duration_hours,
             firm_id=payload.firm_id,
             reason=payload.reason,
+        )
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/relationships/disconnect")
+async def disconnect_relationship(
+    payload: RelationshipDisconnectRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    try:
+        return await RIAIAMService().disconnect_relationship(
+            firebase_uid,
+            investor_user_id=payload.investor_user_id,
+            ria_profile_id=payload.ria_profile_id,
         )
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

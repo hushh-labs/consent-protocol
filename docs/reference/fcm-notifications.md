@@ -87,7 +87,7 @@ Consent requests reach the user only when the following chain is in place:
 
 2. **Listener** – The consent-protocol backend starts a background task that **LISTEN**s to `consent_audit_new` on an asyncpg connection to the same DB. When NOTIFY is received, it (a) optionally pushes the event into a per-user queue for non-production SSE debugging, and (b) calls the FCM path to send push to the user’s registered tokens. If the DB pool is unavailable at startup (e.g. missing `DB_*` env), the listener does not start and no NOTIFY is ever handled; check logs for `Consent listener: DB pool not available` and (in development only) verify `GET /debug/consent-listener` shows `listener_active: true` after startup.
 
-3. **Queue → SSE (non-production only)** – The in-app SSE generator creates a queue per user when the first SSE connection for that user is opened. In production, consent SSE is disabled by default (`CONSENT_SSE_ENABLED=false`) and `/api/consent/events/{user_id}/poll/{request_id}` is hard-disabled.
+3. **Queue → SSE fallback** – The in-app SSE generator creates a queue per user when the first SSE connection for that user is opened. Local development and UAT are expected to keep `CONSENT_SSE_ENABLED=true` so web fallback delivery can be validated when FCM is blocked or misconfigured. Production stays FCM-first by default with `CONSENT_SSE_ENABLED=false`, and `/api/consent/events/{user_id}/poll/{request_id}` remains hard-disabled there.
 
 4. **UI** – The frontend (ConsentSSEProvider, ConsentNotificationProvider) subscribes to SSE and shows toasts / refreshes the pending list when it receives a consent event.
 
