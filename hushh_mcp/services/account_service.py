@@ -1,30 +1,16 @@
 # hushh_mcp/services/account_service.py
-"""
-Account Service
-===============
-
-Service layer for account management operations.
-
-Key Responsibilities:
-- Account Deletion (Orchestrating cleanup across all services)
-- Data Export (Aggregating data from all services)
-- Account Status
-
-Architecture:
-- Coordinates between VaultKeysService, WorldModelService, UserInvestorProfileService, etc.
-- Ensures atomic-like cleanup (best effort)
-
-IMPORTANT: This is a SYSTEM-LEVEL operation that bypasses consent validation
-since it's deleting the entire user account including their vault.
-"""
+"""Account deletion orchestration for full-account and persona-scoped cleanup."""
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
-from db.db_client import get_db
-from hushh_mcp.services.world_model_service import WorldModelService
+from sqlalchemy import text
+
+from db.db_client import get_db, get_db_connection
 
 logger = logging.getLogger(__name__)
+
+DeleteAccountTarget = Literal["investor", "ria", "both"]
 
 
 class AccountService:
@@ -42,7 +28,6 @@ class AccountService:
 
     def __init__(self):
         self._supabase = None
-        self._world_model_service = None
 
     @property
     def supabase(self):
@@ -51,117 +36,430 @@ class AccountService:
             self._supabase = get_db()
         return self._supabase
 
-    @property
-    def world_model_service(self) -> WorldModelService:
-        """Get world model service (singleton)."""
-        if self._world_model_service is None:
-            from hushh_mcp.services.world_model_service import WorldModelService
+    def _load_actor_profile(self, user_id: str) -> dict[str, Any] | None:
+        try:
+            with get_db_connection() as conn:
+                row = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT personas, last_active_persona, investor_marketplace_opt_in
+                            FROM actor_profiles
+                            WHERE user_id = :user_id
+                            """
+                        ),
+                        {"user_id": user_id},
+                    )
+                    .mappings()
+                    .first()
+                )
+                if row is None:
+                    return None
+                return {
+                    "personas": list(row["personas"] or []),
+                    "last_active_persona": str(row["last_active_persona"] or "investor"),
+                    "investor_marketplace_opt_in": bool(row["investor_marketplace_opt_in"]),
+                }
+        except Exception as exc:
+            logger.warning("actor_profiles lookup failed for %s: %s", user_id, exc)
+            return None
 
-            self._world_model_service = WorldModelService()
-        return self._world_model_service
+    @staticmethod
+    def _normalized_target(target: str | None) -> DeleteAccountTarget:
+        if target in {"investor", "ria"}:
+            return target
+        return "both"
 
-    async def delete_account(self, user_id: str) -> Dict[str, Any]:
-        """
-        Delete all user data across the system.
+    async def delete_account(
+        self,
+        user_id: str,
+        target: DeleteAccountTarget = "both",
+    ) -> Dict[str, Any]:
+        """Delete either the whole account or one persona."""
+        requested_target = self._normalized_target(target)
+        actor_profile = self._load_actor_profile(user_id)
+        personas = (
+            [persona for persona in actor_profile["personas"] if persona in {"investor", "ria"}]
+            if actor_profile
+            else ["investor"]
+        )
 
-        This is a SYSTEM-LEVEL operation that deletes ALL user data including:
-        1. World Model Data (Encrypted blob + Index)
-        2. Encrypted Domain Attributes
-        3. Vault Keys (The cryptographic erase - makes remaining data unrecoverable)
-        4. FCM Push Tokens (if exists)
+        if requested_target != "both" and requested_target not in personas:
+            return {
+                "success": False,
+                "error": f"{requested_target.upper()} persona not found for this account.",
+                "requested_target": requested_target,
+                "deleted_target": None,
+                "account_deleted": False,
+                "remaining_personas": personas,
+            }
 
-        DEPRECATED TABLES REMOVED:
-        - user_investor_profiles (identity confirmation via external services)
-        - chat_conversations / chat_messages (chat functionality removed)
-        - kai_sessions (session tracking removed)
+        if requested_target == "both":
+            return await self._delete_full_account(user_id, requested_target=requested_target)
 
-        Args:
-            user_id: The user ID to delete
+        remaining_personas = [persona for persona in personas if persona != requested_target]
+        if not remaining_personas:
+            return await self._delete_full_account(user_id, requested_target=requested_target)
 
-        Returns:
-            Dict with status of deletion steps
-        """
-        logger.info(f"🚨 STARTING ACCOUNT DELETION for {user_id}")
+        if requested_target == "ria":
+            return await self._delete_ria_persona(
+                user_id=user_id,
+                remaining_personas=remaining_personas,
+                investor_marketplace_opt_in=bool(
+                    actor_profile["investor_marketplace_opt_in"] if actor_profile else False
+                ),
+                requested_target=requested_target,
+            )
 
+        return await self._delete_investor_persona(
+            user_id=user_id,
+            remaining_personas=remaining_personas,
+            requested_target=requested_target,
+        )
+
+    async def _delete_full_account(
+        self,
+        user_id: str,
+        *,
+        requested_target: DeleteAccountTarget,
+    ) -> Dict[str, Any]:
+        logger.warning("🚨 FULL ACCOUNT DELETION requested for %s", user_id)
         results = {
             "world_model_data": False,
             "world_model_index": False,
-            "domain_attributes": False,
-            "identity": True,  # Table removed - nothing to clean up
-            "chat_messages": True,  # Tables removed - nothing to clean up
-            "chat_conversations": True,  # Tables removed - nothing to clean up
-            "kai_sessions": True,  # Table removed - nothing to clean up
+            "plaid_items": False,
+            "plaid_refresh_runs": False,
+            "plaid_link_sessions": False,
+            "plaid_profile_cache": False,
+            "consent_audit": False,
+            "internal_access_events": False,
+            "push_tokens": False,
+            "invite_links": False,
             "vault_keys": False,
-            "push_tokens": False,  # May not exist - handled gracefully
         }
 
         try:
-            # 1. Delete world_model_data (encrypted blob)
-            try:
-                self.supabase.table("world_model_data").delete().eq("user_id", user_id).execute()
-                results["world_model_data"] = True
-                logger.info(f"✓ Deleted world_model_data for {user_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ world_model_data delete skipped or failed: {e}")
-
-            # 2. Delete world_model_index_v2 (index/metadata)
-            try:
-                self.supabase.table("world_model_index_v2").delete().eq(
-                    "user_id", user_id
-                ).execute()
+            with get_db_connection() as conn:
+                params = {"user_id": user_id}
+                conn.execute(
+                    text("DELETE FROM kai_plaid_refresh_runs WHERE user_id = :user_id"), params
+                )
+                results["plaid_refresh_runs"] = True
+                conn.execute(
+                    text("DELETE FROM kai_plaid_link_sessions WHERE user_id = :user_id"), params
+                )
+                results["plaid_link_sessions"] = True
+                conn.execute(text("DELETE FROM kai_plaid_items WHERE user_id = :user_id"), params)
+                results["plaid_items"] = True
+                conn.execute(
+                    text("DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"),
+                    params,
+                )
+                results["plaid_profile_cache"] = True
+                conn.execute(
+                    text("DELETE FROM world_model_index_v2 WHERE user_id = :user_id"), params
+                )
                 results["world_model_index"] = True
-                logger.info(f"✓ Deleted world_model_index_v2 for {user_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ world_model_index_v2 delete skipped or failed: {e}")
-
-            # 3. world_model_attributes table removed – nothing to clean up
-            results["domain_attributes"] = True
-            logger.info(f"ℹ️ world_model_attributes table removed – skip for {user_id}")
-
-            # 4. DELETE IDENTITY - REMOVED (no longer in use)
-            # The user_investor_profiles table has been deprecated and removed.
-            # Identity confirmation is now handled via external services.
-            results["identity"] = True  # Mark as complete (nothing to clean up)
-
-            # 5. CHAT & SESSION TABLES REMOVED - nothing to delete
-            logger.info("ℹ️ Chat/Session tables already removed from database")
-
-            # 6. Revoke all consent tokens (mark as revoked in audit log)
-            try:
-                self.supabase.table("consent_audit").update(
-                    {
-                        "revoked_at": "EXTRACT(EPOCH FROM NOW())::BIGINT",
-                        "metadata": '{"revoked_reason": "account_deletion"}',
-                    }
-                ).eq("user_id", user_id).eq("revoked_at", None).execute()
-                results["tokens_revoked"] = True
-                logger.info(f"✓ Revoked consent tokens for {user_id}")
-            except Exception as e:
-                logger.warning(f"⚠️ consent_audit update skipped or failed: {e}")
-
-            # 7. Delete vault keys (CRITICAL: Makes any remaining data unrecoverable)
-            try:
-                self.supabase.table("vault_keys").delete().eq("user_id", user_id).execute()
-                results["vault_keys"] = True
-                logger.info(f"✓ Deleted vault_keys for {user_id}")
-            except Exception as e:
-                logger.error(f"❌ vault_keys deletion failed: {e}")
-
-            # 8. Delete FCM push tokens (if table exists - gracefully handle if not)
-            try:
-                self.supabase.table("user_push_tokens").delete().eq("user_id", user_id).execute()
+                conn.execute(text("DELETE FROM world_model_data WHERE user_id = :user_id"), params)
+                results["world_model_data"] = True
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM ria_client_invites
+                        WHERE target_investor_user_id = :user_id
+                           OR accepted_by_user_id = :user_id
+                        """
+                    ),
+                    params,
+                )
+                results["invite_links"] = True
+                conn.execute(text("DELETE FROM consent_audit WHERE user_id = :user_id"), params)
+                results["consent_audit"] = True
+                conn.execute(
+                    text("DELETE FROM internal_access_events WHERE user_id = :user_id"),
+                    params,
+                )
+                results["internal_access_events"] = True
+                conn.execute(text("DELETE FROM user_push_tokens WHERE user_id = :user_id"), params)
                 results["push_tokens"] = True
-                logger.info(f"✓ Deleted user_push_tokens for {user_id}")
-            except Exception as e:
-                # This is expected if table doesn't exist - FCM not implemented yet
-                logger.info(f"ℹ️ FCM push tokens cleanup skipped (table may not exist): {e}")
+                conn.execute(text("DELETE FROM vault_keys WHERE user_id = :user_id"), params)
+                results["vault_keys"] = True
 
-            logger.info(f"✅ ACCOUNT DELETED for {user_id}. Results: {results}")
-            return {"success": True, "details": results}
+            logger.info("✅ FULL ACCOUNT DELETION completed for %s", user_id)
+            return {
+                "success": True,
+                "requested_target": requested_target,
+                "deleted_target": "both",
+                "account_deleted": True,
+                "remaining_personas": [],
+                "details": results,
+            }
+        except Exception as exc:
+            logger.exception("❌ Full account deletion failed for %s", user_id)
+            return {
+                "success": False,
+                "error": str(exc),
+                "requested_target": requested_target,
+                "deleted_target": None,
+                "account_deleted": False,
+                "remaining_personas": [],
+                "details": results,
+            }
 
-        except Exception as e:
-            logger.error(f"❌ Account deletion failed for {user_id}: {e}")
-            return {"success": False, "error": str(e), "details": results}
+    async def _delete_ria_persona(
+        self,
+        *,
+        user_id: str,
+        remaining_personas: list[str],
+        investor_marketplace_opt_in: bool,
+        requested_target: DeleteAccountTarget,
+    ) -> Dict[str, Any]:
+        logger.warning("🚨 RIA persona deletion requested for %s", user_id)
+        results = {
+            "ria_profile": False,
+            "actor_profile": False,
+            "runtime_persona_state": False,
+            "marketplace_profile": False,
+        }
+
+        try:
+            with get_db_connection() as conn:
+                params = {"user_id": user_id}
+                conn.execute(text("DELETE FROM ria_profiles WHERE user_id = :user_id"), params)
+                results["ria_profile"] = True
+                conn.execute(
+                    text(
+                        """
+                        UPDATE actor_profiles
+                        SET personas = :personas,
+                            last_active_persona = :last_active_persona,
+                            updated_at = NOW()
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    {
+                        "user_id": user_id,
+                        "personas": remaining_personas,
+                        "last_active_persona": remaining_personas[0],
+                    },
+                )
+                results["actor_profile"] = True
+                conn.execute(
+                    text(
+                        """
+                        UPDATE runtime_persona_state
+                        SET last_active_persona = :last_active_persona,
+                            updated_at = NOW()
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    {"user_id": user_id, "last_active_persona": remaining_personas[0]},
+                )
+                results["runtime_persona_state"] = True
+
+                if investor_marketplace_opt_in:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO marketplace_public_profiles (
+                              user_id,
+                              profile_type,
+                              display_name,
+                              is_discoverable,
+                              verification_badge,
+                              strategy_summary,
+                              updated_at
+                            )
+                            VALUES (
+                              :user_id,
+                              'investor',
+                              :display_name,
+                              TRUE,
+                              NULL,
+                              NULL,
+                              NOW()
+                            )
+                            ON CONFLICT (user_id) DO UPDATE
+                            SET profile_type = 'investor',
+                                display_name = EXCLUDED.display_name,
+                                is_discoverable = TRUE,
+                                verification_badge = NULL,
+                                strategy_summary = NULL,
+                                updated_at = NOW()
+                            """
+                        ),
+                        {"user_id": user_id, "display_name": f"Investor {user_id[:8]}"},
+                    )
+                else:
+                    conn.execute(
+                        text("DELETE FROM marketplace_public_profiles WHERE user_id = :user_id"),
+                        params,
+                    )
+                results["marketplace_profile"] = True
+
+            return {
+                "success": True,
+                "requested_target": requested_target,
+                "deleted_target": "ria",
+                "account_deleted": False,
+                "remaining_personas": remaining_personas,
+                "details": results,
+            }
+        except Exception as exc:
+            logger.exception("❌ RIA persona deletion failed for %s", user_id)
+            return {
+                "success": False,
+                "error": str(exc),
+                "requested_target": requested_target,
+                "deleted_target": None,
+                "account_deleted": False,
+                "remaining_personas": remaining_personas,
+                "details": results,
+            }
+
+    async def _delete_investor_persona(
+        self,
+        *,
+        user_id: str,
+        remaining_personas: list[str],
+        requested_target: DeleteAccountTarget,
+    ) -> Dict[str, Any]:
+        logger.warning("🚨 Investor persona deletion requested for %s", user_id)
+        results = {
+            "world_model_data": False,
+            "world_model_index": False,
+            "plaid_items": False,
+            "plaid_refresh_runs": False,
+            "plaid_link_sessions": False,
+            "plaid_profile_cache": False,
+            "investor_relationships": False,
+            "investor_invites": False,
+            "investor_marketplace_profile": False,
+            "consent_audit": False,
+            "internal_access_events": False,
+            "actor_profile": False,
+            "runtime_persona_state": False,
+        }
+
+        try:
+            with get_db_connection() as conn:
+                params = {"user_id": user_id}
+                conn.execute(
+                    text("DELETE FROM kai_plaid_refresh_runs WHERE user_id = :user_id"), params
+                )
+                results["plaid_refresh_runs"] = True
+                conn.execute(
+                    text("DELETE FROM kai_plaid_link_sessions WHERE user_id = :user_id"), params
+                )
+                results["plaid_link_sessions"] = True
+                conn.execute(text("DELETE FROM kai_plaid_items WHERE user_id = :user_id"), params)
+                results["plaid_items"] = True
+                conn.execute(
+                    text("DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"),
+                    params,
+                )
+                results["plaid_profile_cache"] = True
+                conn.execute(
+                    text("DELETE FROM world_model_index_v2 WHERE user_id = :user_id"), params
+                )
+                results["world_model_index"] = True
+                conn.execute(text("DELETE FROM world_model_data WHERE user_id = :user_id"), params)
+                results["world_model_data"] = True
+                conn.execute(
+                    text(
+                        "DELETE FROM advisor_investor_relationships WHERE investor_user_id = :user_id"
+                    ),
+                    params,
+                )
+                results["investor_relationships"] = True
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM ria_client_invites
+                        WHERE target_investor_user_id = :user_id
+                           OR accepted_by_user_id = :user_id
+                        """
+                    ),
+                    params,
+                )
+                results["investor_invites"] = True
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM marketplace_public_profiles
+                        WHERE user_id = :user_id
+                          AND profile_type = 'investor'
+                        """
+                    ),
+                    params,
+                )
+                results["investor_marketplace_profile"] = True
+                conn.execute(
+                    text(
+                        """
+                        DELETE FROM consent_audit
+                        WHERE user_id = :user_id
+                          AND COALESCE(scope, '') NOT LIKE 'attr.ria.%'
+                        """
+                    ),
+                    params,
+                )
+                results["consent_audit"] = True
+                conn.execute(
+                    text("DELETE FROM internal_access_events WHERE user_id = :user_id"),
+                    params,
+                )
+                results["internal_access_events"] = True
+                conn.execute(
+                    text(
+                        """
+                        UPDATE actor_profiles
+                        SET personas = :personas,
+                            last_active_persona = :last_active_persona,
+                            investor_marketplace_opt_in = FALSE,
+                            updated_at = NOW()
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    {
+                        "user_id": user_id,
+                        "personas": remaining_personas,
+                        "last_active_persona": remaining_personas[0],
+                    },
+                )
+                results["actor_profile"] = True
+                conn.execute(
+                    text(
+                        """
+                        UPDATE runtime_persona_state
+                        SET last_active_persona = :last_active_persona,
+                            updated_at = NOW()
+                        WHERE user_id = :user_id
+                        """
+                    ),
+                    {"user_id": user_id, "last_active_persona": remaining_personas[0]},
+                )
+                results["runtime_persona_state"] = True
+
+            return {
+                "success": True,
+                "requested_target": requested_target,
+                "deleted_target": "investor",
+                "account_deleted": False,
+                "remaining_personas": remaining_personas,
+                "details": results,
+            }
+        except Exception as exc:
+            logger.exception("❌ Investor persona deletion failed for %s", user_id)
+            return {
+                "success": False,
+                "error": str(exc),
+                "requested_target": requested_target,
+                "deleted_target": None,
+                "account_deleted": False,
+                "remaining_personas": remaining_personas,
+                "details": results,
+            }
 
     async def export_data(self, user_id: str) -> Dict[str, Any]:
         """

@@ -27,7 +27,10 @@ class ConsentCenterService:
     def _counterpart(agent_id: str | None, metadata: dict[str, Any]) -> tuple[str, str | None]:
         normalized_agent = str(agent_id or "").strip()
         if metadata.get("requester_actor_type") == "ria" or normalized_agent.startswith("ria:"):
-            return "ria", metadata.get("requester_entity_id")
+            counterpart_id = metadata.get("requester_entity_id")
+            if not counterpart_id and normalized_agent.startswith("ria:"):
+                counterpart_id = normalized_agent.split(":", 1)[1] or None
+            return "ria", counterpart_id
         if normalized_agent in {"self", ""}:
             return "self", None
         return "developer", normalized_agent or None

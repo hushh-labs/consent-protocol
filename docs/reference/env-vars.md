@@ -102,6 +102,18 @@ Optional local-only vars used by migration/reset utilities:
 - `KAI_TEST_USER_ID`
 - `KAI_TEST_PASSPHRASE`
 
+Notes:
+
+- These test-user vars are loaded by backend scripts and local tooling at process start.
+- Changing them requires restarting the backend or rerunning the script; they are not hot-reloaded into an already running process.
+
+RIA onboarding bypass:
+
+- `RIA_DEV_BYPASS_ENABLED`
+  - enables the Dev Bypass action for any non-production environment
+  - has no effect in `production`
+  - no UID/email allowlist is required when this flag is enabled
+
 ## Kai Brokerage Boundary
 
 Plaid variables above enable read-only brokerage connectivity only:
@@ -131,6 +143,10 @@ Workspace mailbox. The service account source is:
 - visible From address: `SUPPORT_EMAIL_FROM` (default matches delegated user)
 - live inbox: `SUPPORT_EMAIL_TO`
 - optional non-production test inbox: `SUPPORT_EMAIL_TEST_TO`
+
+RIA invite emails reuse this same Gmail authorization path and delegated sender.
+The recipient becomes the investor invite target, but the Workspace delegation
+requirements stay the same.
 
 Recommended local testing:
 

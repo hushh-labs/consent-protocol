@@ -12,13 +12,17 @@ from typing import Any, Literal
 
 import asyncpg
 
-from api.utils.firebase_admin import ensure_firebase_admin
 from db.connection import get_database_ssl, get_database_url
 from hushh_mcp.consent.scope_helpers import get_scope_description
+from hushh_mcp.services.kai_invite_email_service import get_kai_invite_email_service
 from hushh_mcp.services.ria_verification import (
     FinraVerificationAdapter,
     VerificationGateway,
     VerificationResult,
+)
+from hushh_mcp.services.support_email_service import (
+    SupportEmailNotConfiguredError,
+    SupportEmailSendError,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,13 +86,6 @@ class RIAIAMService:
         raw = str(os.getenv(name, fallback)).strip().lower()
         return raw in {"1", "true", "yes", "on"}
 
-    @staticmethod
-    def _csv_env_values(name: str) -> set[str]:
-        raw = str(os.getenv(name, "")).strip()
-        if not raw:
-            return set()
-        return {item.strip() for item in raw.split(",") if item.strip()}
-
     def _runtime_environment(self) -> str:
         for name in ("APP_ENV", "ENVIRONMENT", "HUSHH_ENV", "ENV"):
             value = str(os.getenv(name, "")).strip().lower()
@@ -101,36 +98,9 @@ class RIAIAMService:
             return False
         return self._runtime_environment() not in {"prod", "production"}
 
-    def _lookup_user_email(self, user_id: str) -> str | None:
-        configured, _ = ensure_firebase_admin()
-        if not configured:
-            return None
-        try:
-            from firebase_admin import auth as firebase_auth
-
-            user_record = firebase_auth.get_user(user_id)
-            email = str(user_record.email or "").strip().lower()
-            return email or None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "ria.dev_bypass_lookup_failed user_id=%s error=%s", user_id, type(exc).__name__
-            )
-            return None
-
     def _is_dev_bypass_allowed(self, user_id: str) -> bool:
-        if not self._is_ria_dev_bypass_enabled():
-            return False
-        if user_id in self._csv_env_values("RIA_DEV_ALLOWLIST_UIDS"):
-            return True
-        allowlisted_emails = {
-            email.strip().lower()
-            for email in self._csv_env_values("RIA_DEV_ALLOWLIST_EMAILS")
-            if email.strip()
-        }
-        if not allowlisted_emails:
-            return False
-        email = self._lookup_user_email(user_id)
-        return bool(email and email in allowlisted_emails)
+        _ = user_id
+        return self._is_ria_dev_bypass_enabled()
 
     @staticmethod
     def _normalize_persona(value: str) -> PersonaType:
@@ -594,6 +564,28 @@ class RIAIAMService:
         return {}
 
     @staticmethod
+    def _merge_metadata(base: Any, patch: dict[str, Any]) -> dict[str, Any]:
+        metadata = RIAIAMService._parse_metadata(base)
+        metadata.update(patch)
+        return metadata
+
+    @staticmethod
+    def _parse_string_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return []
+
+    @staticmethod
     def _next_action_for_relationship_status(status: str) -> str:
         normalized = (status or "").strip().lower()
         if normalized == "approved":
@@ -648,6 +640,43 @@ class RIAIAMService:
             else "profile_domain",
             "summary_only": normalized_scope != "world_model.read",
         }
+
+    @classmethod
+    def _build_available_scope_metadata(
+        cls,
+        *,
+        available_domains: list[str],
+        total_attributes: int,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        normalized_domains = sorted(
+            {
+                str(domain or "").strip()
+                for domain in list(available_domains or [])
+                if str(domain or "").strip()
+            }
+        )
+
+        if total_attributes > 0 or normalized_domains:
+            items.append(
+                {
+                    **cls._scope_metadata("world_model.read"),
+                    "available": True,
+                    "domain_key": None,
+                }
+            )
+
+        for domain_key in normalized_domains:
+            scope = f"attr.{domain_key}.*"
+            items.append(
+                {
+                    **cls._scope_metadata(scope),
+                    "available": True,
+                    "domain_key": domain_key,
+                }
+            )
+
+        return items
 
     async def list_requestable_scope_templates(self, user_id: str) -> list[dict[str, Any]]:
         conn = await self._conn()
@@ -1572,10 +1601,15 @@ class RIAIAMService:
                 payload["acquisition_source"] = payload.get("acquisition_source") or (
                     "marketplace" if payload.get("investor_display_name") else "manual"
                 )
+                payload["relationship_status"] = payload.get("status")
                 payload["next_action"] = self._next_action_for_relationship_status(
                     str(payload.get("status") or "")
                 )
                 payload["is_invite_only"] = False
+                payload["disconnect_allowed"] = bool(payload.get("investor_user_id"))
+                payload["is_self_relationship"] = (
+                    str(payload.get("investor_user_id") or "") == user_id
+                )
                 items.append(payload)
 
             for row in invite_rows:
@@ -1607,10 +1641,350 @@ class RIAIAMService:
                         "next_action": "await_acceptance",
                         "scope_template_id": payload.get("scope_template_id"),
                         "is_invite_only": True,
+                        "relationship_status": "invited",
+                        "disconnect_allowed": False,
+                        "is_self_relationship": str(payload.get("target_investor_user_id") or "")
+                        == user_id,
                     }
                 )
 
             return items
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+    async def get_ria_client_detail(
+        self,
+        user_id: str,
+        investor_user_id: str,
+    ) -> dict[str, Any]:
+        conn = await self._conn()
+        try:
+            await self._ensure_iam_schema_ready(conn)
+            ria = await self._get_ria_profile_by_user(conn, user_id)
+            relationship = await conn.fetchrow(
+                """
+                SELECT
+                  rel.id,
+                  rel.investor_user_id,
+                  rel.status,
+                  rel.granted_scope,
+                  rel.last_request_id,
+                  rel.consent_granted_at,
+                  rel.revoked_at,
+                  rel.created_at,
+                  rel.updated_at,
+                  mp.display_name AS investor_display_name,
+                  mp.headline AS investor_headline
+                FROM advisor_investor_relationships rel
+                LEFT JOIN marketplace_public_profiles mp
+                  ON mp.user_id = rel.investor_user_id
+                  AND mp.profile_type = 'investor'
+                WHERE rel.investor_user_id = $1
+                  AND rel.ria_profile_id = $2
+                ORDER BY rel.updated_at DESC
+                LIMIT 1
+                """,
+                investor_user_id,
+                ria["id"],
+            )
+            if relationship is None:
+                raise RIAIAMPolicyError("Relationship not found", status_code=404)
+
+            agent_id = f"ria:{ria['id']}"
+            consent_rows = await conn.fetch(
+                """
+                SELECT request_id, scope, action, expires_at, issued_at, metadata
+                FROM consent_audit
+                WHERE user_id = $1
+                  AND agent_id = $2
+                  AND action IN ('REQUESTED', 'CONSENT_GRANTED', 'CONSENT_DENIED', 'CANCELLED', 'REVOKED', 'TIMEOUT')
+                ORDER BY issued_at DESC
+                """,
+                investor_user_id,
+                agent_id,
+            )
+            latest_by_scope: dict[str, dict[str, Any]] = {}
+            latest_by_request: dict[str, dict[str, Any]] = {}
+            for row in consent_rows:
+                payload = dict(row)
+                payload["metadata"] = self._parse_metadata(payload.get("metadata"))
+                scope_key = str(payload.get("scope") or "").strip()
+                request_key = str(payload.get("request_id") or "").strip()
+                if scope_key and scope_key not in latest_by_scope:
+                    latest_by_scope[scope_key] = payload
+                if request_key and request_key not in latest_by_request:
+                    latest_by_request[request_key] = payload
+
+            now_ms = self._now_ms()
+            granted_scopes = [
+                {
+                    "scope": scope,
+                    "label": get_scope_description(scope),
+                    "expires_at": payload.get("expires_at"),
+                    "issued_at": payload.get("issued_at"),
+                }
+                for scope, payload in latest_by_scope.items()
+                if payload.get("action") == "CONSENT_GRANTED"
+                and (payload.get("expires_at") is None or int(payload["expires_at"]) > now_ms)
+            ]
+
+            request_history = sorted(
+                [
+                    {
+                        "request_id": payload.get("request_id"),
+                        "scope": payload.get("scope"),
+                        "action": payload.get("action"),
+                        "issued_at": payload.get("issued_at"),
+                        "expires_at": payload.get("expires_at"),
+                        "bundle_id": payload.get("metadata", {}).get("bundle_id"),
+                        "bundle_label": payload.get("metadata", {}).get("bundle_label"),
+                        "scope_metadata": self._scope_metadata(str(payload.get("scope") or "")),
+                    }
+                    for payload in latest_by_request.values()
+                ],
+                key=lambda item: int(item.get("issued_at") or 0),
+                reverse=True,
+            )
+
+            invite_rows = await conn.fetch(
+                """
+                SELECT
+                  id,
+                  invite_token,
+                  status,
+                  delivery_channel,
+                  scope_template_id,
+                  target_display_name,
+                  target_email,
+                  expires_at,
+                  created_at,
+                  accepted_at
+                FROM ria_client_invites
+                WHERE ria_profile_id = $1
+                  AND (
+                    accepted_by_user_id = $2
+                    OR (
+                      target_investor_user_id IS NOT NULL
+                      AND target_investor_user_id = $2
+                    )
+                  )
+                ORDER BY created_at DESC
+                LIMIT 5
+                """,
+                ria["id"],
+                investor_user_id,
+            )
+
+            metadata_row = await conn.fetchrow(
+                """
+                SELECT
+                  available_domains,
+                  domain_summaries,
+                  total_attributes,
+                  updated_at
+                FROM world_model_index_v2
+                WHERE user_id = $1
+                """,
+                investor_user_id,
+            )
+
+            available_domains = (
+                self._parse_string_list(metadata_row["available_domains"]) if metadata_row else []
+            )
+            raw_domain_summaries = (
+                self._parse_metadata(metadata_row["domain_summaries"]) if metadata_row else {}
+            )
+            total_attributes = int(metadata_row["total_attributes"] or 0) if metadata_row else 0
+            updated_at = metadata_row["updated_at"] if metadata_row else None
+            available_scope_metadata = self._build_available_scope_metadata(
+                available_domains=available_domains,
+                total_attributes=total_attributes,
+            )
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            raise IAMSchemaNotReadyError() from exc
+        finally:
+            await conn.close()
+
+        try:
+            requestable_scope_templates = await self.list_requestable_scope_templates(user_id)
+        except RIAIAMPolicyError:
+            requestable_scope_templates = []
+
+        consent_expires_at = max(
+            (item["expires_at"] for item in granted_scopes if item.get("expires_at")),
+            default=None,
+        )
+        relationship_status = str(relationship["status"] or "")
+        reveal_workspace_metadata = bool(granted_scopes) and relationship_status == "approved"
+
+        return {
+            "investor_user_id": investor_user_id,
+            "investor_display_name": relationship["investor_display_name"],
+            "investor_headline": relationship["investor_headline"],
+            "relationship_status": relationship_status,
+            "granted_scope": relationship["granted_scope"],
+            "last_request_id": relationship["last_request_id"],
+            "consent_granted_at": relationship["consent_granted_at"],
+            "consent_expires_at": consent_expires_at,
+            "revoked_at": relationship["revoked_at"],
+            "created_at": relationship["created_at"],
+            "updated_at": relationship["updated_at"],
+            "disconnect_allowed": True,
+            "is_self_relationship": investor_user_id == user_id,
+            "next_action": self._next_action_for_relationship_status(
+                str(relationship["status"] or "")
+            ),
+            "granted_scopes": granted_scopes,
+            "request_history": request_history[:8],
+            "invite_history": [
+                {
+                    "invite_id": str(item["id"]),
+                    "invite_token": item["invite_token"],
+                    "status": item["status"],
+                    "delivery_channel": item["delivery_channel"],
+                    "scope_template_id": item["scope_template_id"],
+                    "target_display_name": item["target_display_name"],
+                    "target_email": item["target_email"],
+                    "expires_at": item["expires_at"],
+                    "created_at": item["created_at"],
+                    "accepted_at": item["accepted_at"],
+                }
+                for item in invite_rows
+            ],
+            "requestable_scope_templates": requestable_scope_templates,
+            "available_scope_metadata": available_scope_metadata,
+            "available_domains": available_domains,
+            # Relationship detail only exposes metadata-level availability before consent.
+            "domain_summaries": raw_domain_summaries if reveal_workspace_metadata else {},
+            "total_attributes": total_attributes,
+            "workspace_ready": bool(granted_scopes) and total_attributes > 0,
+            "world_model_updated_at": updated_at,
+        }
+
+    async def disconnect_relationship(
+        self,
+        auth_user_id: str,
+        *,
+        investor_user_id: str | None = None,
+        ria_profile_id: str | None = None,
+    ) -> dict[str, Any]:
+        resolved_investor_user_id = str(investor_user_id or "").strip() or None
+        resolved_ria_profile_id = str(ria_profile_id or "").strip() or None
+        initiated_by = "investor"
+
+        conn = await self._conn()
+        try:
+            async with conn.transaction():
+                await self._ensure_iam_schema_ready(conn)
+
+                if resolved_investor_user_id:
+                    ria = await self._get_ria_profile_by_user(conn, auth_user_id)
+                    resolved_ria_profile_id = str(ria["id"])
+                    initiated_by = "ria"
+                elif resolved_ria_profile_id:
+                    resolved_investor_user_id = auth_user_id
+                    initiated_by = "investor"
+                else:
+                    raise RIAIAMPolicyError(
+                        "Relationship disconnect requires an investor or RIA identifier",
+                        status_code=400,
+                    )
+
+                relationship = await conn.fetchrow(
+                    """
+                    SELECT id, investor_user_id, ria_profile_id, status, last_request_id
+                    FROM advisor_investor_relationships
+                    WHERE investor_user_id = $1
+                      AND ria_profile_id = $2::uuid
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                    resolved_investor_user_id,
+                    resolved_ria_profile_id,
+                )
+                if relationship is None:
+                    raise RIAIAMPolicyError("Relationship not found", status_code=404)
+
+                agent_id = f"ria:{resolved_ria_profile_id}"
+                consent_rows = await conn.fetch(
+                    """
+                    SELECT scope, action, expires_at, issued_at
+                    FROM consent_audit
+                    WHERE user_id = $1
+                      AND agent_id = $2
+                      AND action IN ('CONSENT_GRANTED', 'REVOKED')
+                    ORDER BY issued_at DESC
+                    """,
+                    resolved_investor_user_id,
+                    agent_id,
+                )
+                latest_by_scope: dict[str, asyncpg.Record] = {}
+                for row in consent_rows:
+                    scope_key = str(row["scope"] or "").strip()
+                    if not scope_key or scope_key in latest_by_scope:
+                        continue
+                    latest_by_scope[scope_key] = row
+
+                active_scopes = [
+                    scope
+                    for scope, row in latest_by_scope.items()
+                    if row["action"] == "CONSENT_GRANTED"
+                    and (row["expires_at"] is None or int(row["expires_at"]) > self._now_ms())
+                ]
+
+                issued_at = self._now_ms()
+                for scope in active_scopes:
+                    await conn.execute(
+                        """
+                        INSERT INTO consent_audit (
+                          token_id,
+                          user_id,
+                          agent_id,
+                          scope,
+                          action,
+                          request_id,
+                          scope_description,
+                          issued_at,
+                          metadata
+                        )
+                        VALUES ($1, $2, $3, $4, 'REVOKED', $5, $6, $7, $8::jsonb)
+                        """,
+                        f"evt_disconnect_{issued_at}_{scope}",
+                        resolved_investor_user_id,
+                        agent_id,
+                        scope,
+                        relationship["last_request_id"],
+                        get_scope_description(scope),
+                        issued_at,
+                        json.dumps(
+                            {
+                                "disconnect_origin": initiated_by,
+                                "relationship_disconnect": True,
+                            }
+                        ),
+                    )
+
+                await conn.execute(
+                    """
+                    UPDATE advisor_investor_relationships
+                    SET
+                      status = 'disconnected',
+                      revoked_at = NOW(),
+                      updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    relationship["id"],
+                )
+
+                return {
+                    "investor_user_id": resolved_investor_user_id,
+                    "ria_profile_id": resolved_ria_profile_id,
+                    "relationship_status": "disconnected",
+                    "revoked_scopes": active_scopes,
+                    "initiated_by": initiated_by,
+                }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -1739,6 +2113,7 @@ class RIAIAMService:
                   i.duration_mode,
                   i.duration_hours,
                   i.reason,
+                  i.metadata,
                   i.accepted_by_user_id,
                   i.accepted_request_id,
                   i.expires_at,
@@ -1751,7 +2126,18 @@ class RIAIAMService:
                 """,
                 user_id,
             )
-            return [dict(row) for row in rows]
+            items: list[dict[str, Any]] = []
+            for row in rows:
+                payload = dict(row)
+                metadata = self._parse_metadata(payload.get("metadata"))
+                delivery = self._parse_metadata(metadata.get("invite_email_delivery"))
+                payload.pop("metadata", None)
+                if delivery:
+                    payload["delivery_status"] = delivery.get("status")
+                    payload["delivery_message"] = delivery.get("error") or delivery.get("recipient")
+                    payload["delivery_message_id"] = delivery.get("message_id")
+                items.append(payload)
+            return items
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -2074,6 +2460,8 @@ class RIAIAMService:
             raise RIAIAMPolicyError("At least one invite target is required", status_code=400)
 
         conn = await self._conn()
+        created_items: list[dict[str, Any]] = []
+        pending_email_deliveries: list[dict[str, Any]] = []
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
@@ -2118,7 +2506,32 @@ class RIAIAMService:
                     if membership is None:
                         raise RIAIAMPolicyError("Firm membership is not active", status_code=403)
 
-                created_items: list[dict[str, Any]] = []
+                firm_row = await conn.fetchrow(
+                    """
+                    SELECT f.legal_name
+                    FROM ria_firm_memberships m
+                    JOIN ria_firms f ON f.id = m.firm_id
+                    WHERE m.ria_profile_id = $1
+                      AND m.membership_status = 'active'
+                      AND ($2::uuid IS NULL OR m.firm_id = $2::uuid)
+                    ORDER BY
+                      CASE WHEN $2::uuid IS NOT NULL AND m.firm_id = $2::uuid THEN 0 ELSE 1 END,
+                      m.is_primary DESC,
+                      f.legal_name ASC
+                    LIMIT 1
+                    """,
+                    ria["id"],
+                    firm_id,
+                )
+                advisor_name = (
+                    str(ria.get("display_name") or ria.get("legal_name") or "").strip()
+                    or "Your advisor"
+                )
+                firm_name = (
+                    str(firm_row["legal_name"]).strip()
+                    if firm_row and firm_row.get("legal_name")
+                    else None
+                )
                 expires_at = datetime.now(tz=timezone.utc) + timedelta(
                     hours=resolved_duration_hours
                 )
@@ -2213,26 +2626,125 @@ class RIAIAMService:
                     if invite_row is None:
                         raise RuntimeError("Failed to create invite")
 
-                    created_items.append(
-                        {
-                            "invite_id": str(invite_row["id"]),
-                            "invite_token": invite_row["invite_token"],
-                            "invite_path": f"/kai/onboarding?invite={invite_row['invite_token']}",
-                            "status": invite_row["status"],
-                            "expires_at": invite_row["expires_at"],
-                            "scope_template_id": template.template_id,
-                            "duration_mode": mode,
-                            "duration_hours": resolved_duration_hours,
-                            "source": source,
-                            "delivery_channel": delivery_channel,
-                            "target_display_name": display_name,
-                            "target_email": email,
-                            "target_phone": phone,
-                            "target_investor_user_id": investor_user_id,
+                    created_item = {
+                        "invite_id": str(invite_row["id"]),
+                        "invite_token": invite_row["invite_token"],
+                        "invite_path": f"/kai/onboarding?invite={invite_row['invite_token']}",
+                        "status": invite_row["status"],
+                        "expires_at": invite_row["expires_at"],
+                        "scope_template_id": template.template_id,
+                        "duration_mode": mode,
+                        "duration_hours": resolved_duration_hours,
+                        "source": source,
+                        "delivery_channel": delivery_channel,
+                        "target_display_name": display_name,
+                        "target_email": email,
+                        "target_phone": phone,
+                        "target_investor_user_id": investor_user_id,
+                    }
+                    created_items.append(created_item)
+
+                    if delivery_channel == "email":
+                        if email:
+                            pending_email_deliveries.append(
+                                {
+                                    "invite_id": str(invite_row["id"]),
+                                    "invite_token": invite_row["invite_token"],
+                                    "invite_path": created_item["invite_path"],
+                                    "target_email": email,
+                                    "target_display_name": display_name,
+                                    "advisor_name": advisor_name,
+                                    "firm_name": firm_name,
+                                    "expires_at": invite_row["expires_at"],
+                                    "reason": (reason or "").strip() or None,
+                                    "created_item": created_item,
+                                }
+                            )
+                            created_item["delivery_status"] = "pending"
+                        else:
+                            created_item["delivery_status"] = "skipped"
+                            created_item["delivery_message"] = (
+                                "Email delivery requires a target email address."
+                            )
+
+            if pending_email_deliveries:
+                invite_email_service = get_kai_invite_email_service()
+                for delivery in pending_email_deliveries:
+                    delivery_patch: dict[str, Any]
+                    try:
+                        result = invite_email_service.send_ria_invite(
+                            target_email=str(delivery["target_email"]),
+                            target_display_name=delivery.get("target_display_name"),
+                            advisor_name=str(delivery["advisor_name"]),
+                            firm_name=delivery.get("firm_name"),
+                            invite_token=str(delivery["invite_token"]),
+                            invite_path=str(delivery["invite_path"]),
+                            expires_at=delivery.get("expires_at"),
+                            reason=delivery.get("reason"),
+                        )
+                        delivery["created_item"]["delivery_status"] = "sent"
+                        delivery["created_item"]["delivery_message"] = (
+                            f"Email sent to {result.recipient}."
+                        )
+                        delivery["created_item"]["delivery_message_id"] = result.message_id
+                        delivery_patch = {
+                            "invite_email_delivery": {
+                                "status": "sent",
+                                "message_id": result.message_id,
+                                "recipient": result.recipient,
+                                "intended_recipient": result.intended_recipient,
+                                "delivery_mode": result.delivery_mode,
+                                "from_email": result.from_email,
+                                "delivered_at": datetime.now(tz=timezone.utc)
+                                .isoformat()
+                                .replace("+00:00", "Z"),
+                            }
                         }
+                    except (SupportEmailNotConfiguredError, SupportEmailSendError) as exc:
+                        logger.warning(
+                            "ria.invite_email.failed invite_id=%s reason=%s",
+                            delivery["invite_id"],
+                            str(exc),
+                        )
+                        delivery["created_item"]["delivery_status"] = "failed"
+                        delivery["created_item"]["delivery_message"] = str(exc)
+                        delivery_patch = {
+                            "invite_email_delivery": {
+                                "status": "failed",
+                                "error": str(exc),
+                                "attempted_at": datetime.now(tz=timezone.utc)
+                                .isoformat()
+                                .replace("+00:00", "Z"),
+                            }
+                        }
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception(
+                            "ria.invite_email.unexpected_failure invite_id=%s",
+                            delivery["invite_id"],
+                        )
+                        delivery["created_item"]["delivery_status"] = "failed"
+                        delivery["created_item"]["delivery_message"] = str(exc)
+                        delivery_patch = {
+                            "invite_email_delivery": {
+                                "status": "failed",
+                                "error": str(exc),
+                                "attempted_at": datetime.now(tz=timezone.utc)
+                                .isoformat()
+                                .replace("+00:00", "Z"),
+                            }
+                        }
+
+                    await conn.execute(
+                        """
+                        UPDATE ria_client_invites
+                        SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+                        WHERE id = $1::uuid
+                        """,
+                        delivery["invite_id"],
+                        json.dumps(delivery_patch),
                     )
 
-                return {"items": created_items}
+            return {"items": created_items}
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
         finally:
@@ -2716,8 +3228,8 @@ class RIAIAMService:
                     ),
                 }
 
-            available_domains = list(metadata["available_domains"] or [])
-            domain_summaries = dict(metadata["domain_summaries"] or {})
+            available_domains = self._parse_string_list(metadata["available_domains"])
+            domain_summaries = self._parse_metadata(metadata["domain_summaries"])
             if "world_model.read" not in granted_scope_keys:
                 financial_only = any(
                     scope.startswith("attr.financial.") for scope in granted_scope_keys

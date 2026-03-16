@@ -119,7 +119,17 @@ CREATE TABLE IF NOT EXISTS advisor_investor_relationships (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT advisor_investor_relationships_status_check
-    CHECK (status IN ('discovered', 'request_pending', 'approved', 'revoked', 'expired', 'blocked'))
+    CHECK (
+      status IN (
+        'discovered',
+        'request_pending',
+        'approved',
+        'revoked',
+        'expired',
+        'blocked',
+        'disconnected'
+      )
+    )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_advisor_investor_relationships_no_firm

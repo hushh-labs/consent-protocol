@@ -79,6 +79,33 @@ class RIAMarketplaceDiscoverabilityRequest(BaseModel):
     strategy_summary: str | None = None
 
 
+class RIAClientDetailResponse(BaseModel):
+    investor_user_id: str
+    investor_display_name: str | None = None
+    investor_headline: str | None = None
+    relationship_status: str
+    granted_scope: str | None = None
+    last_request_id: str | None = None
+    consent_granted_at: str | None = None
+    consent_expires_at: int | str | None = None
+    revoked_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    disconnect_allowed: bool = True
+    is_self_relationship: bool = False
+    next_action: str | None = None
+    granted_scopes: list[dict] = Field(default_factory=list)
+    request_history: list[dict] = Field(default_factory=list)
+    invite_history: list[dict] = Field(default_factory=list)
+    requestable_scope_templates: list[dict] = Field(default_factory=list)
+    available_scope_metadata: list[dict] = Field(default_factory=list)
+    available_domains: list[str] = Field(default_factory=list)
+    domain_summaries: dict = Field(default_factory=dict)
+    total_attributes: int = 0
+    workspace_ready: bool = False
+    world_model_updated_at: str | None = None
+
+
 def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
     return JSONResponse(
         status_code=503,
@@ -165,6 +192,20 @@ async def ria_clients(firebase_uid: str = Depends(require_firebase_auth)):
         return {"items": await service.list_ria_clients(firebase_uid)}
     except IAMSchemaNotReadyError as exc:
         return _iam_schema_not_ready_response(str(exc))
+
+
+@router.get("/clients/{investor_user_id}", response_model=RIAClientDetailResponse)
+async def ria_client_detail(
+    investor_user_id: str,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.get_ria_client_detail(firebase_uid, investor_user_id)
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get("/requests")
