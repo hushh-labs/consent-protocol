@@ -25,8 +25,8 @@ DEVELOPER_API_ENABLED = (
     False if ENVIRONMENT == "production" else _env_truthy("DEVELOPER_API_ENABLED", "true")
 )
 
-# Developer API key used by the stdio launcher and local MCP hosts.
-HUSHH_DEVELOPER_API_KEY = str(os.environ.get("HUSHH_DEVELOPER_API_KEY", "")).strip()
+# Developer token used by the stdio launcher and local MCP hosts.
+HUSHH_DEVELOPER_TOKEN = str(os.environ.get("HUSHH_DEVELOPER_TOKEN", "")).strip()
 
 # How long to wait for user to approve consent (in seconds)
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))

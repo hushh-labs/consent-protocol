@@ -39,14 +39,14 @@ test: ## Run tests (pytest)
 	TESTING=true \
 	SECRET_KEY="test_secret_key_for_ci_only_32chars_min" \
 	VAULT_ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000" \
-	HUSHH_DEVELOPER_API_KEY="test_hushh_developer_api_key_for_ci" \
+	HUSHH_DEVELOPER_TOKEN="test_hushh_developer_token_for_ci" \
 	PYTHONPATH=. pytest tests/ -v --tb=short
 
 test-ci: ## Run the curated blocking backend CI manifest
 	TESTING=true \
 	SECRET_KEY="test_secret_key_for_ci_only_32chars_min" \
 	VAULT_ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000" \
-	HUSHH_DEVELOPER_API_KEY="test_hushh_developer_api_key_for_ci" \
+	HUSHH_DEVELOPER_TOKEN="test_hushh_developer_token_for_ci" \
 	bash scripts/run-test-ci.sh
 
 security: ## Run security scan (bandit, Medium+ severity)

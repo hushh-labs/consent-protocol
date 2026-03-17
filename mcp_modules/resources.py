@@ -121,6 +121,7 @@ async def read_resource(uri: str) -> str:
             "scopes_are_dynamic": True,
             "supported_scopes": "world_model.read, world_model.write, attr.{domain}.*, and attr.{domain}.{subintent}.* when metadata exposes subintents. No fixed list.",
             "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/v1/user-scopes/{user_id} (developer-auth) and validates against world_model_index_v2 + domain_registry metadata.",
+            "developer_auth": "Append ?token=<developer-token> to remote MCP URLs and /api/v1 requests. Stdio hosts should set HUSHH_DEVELOPER_TOKEN.",
             "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
             "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). Delivery is FCM-first in production; consent SSE/polling is disabled for this flow.",
         }
@@ -130,7 +131,7 @@ async def read_resource(uri: str) -> str:
         developer_api_info = {
             "version": "v1",
             "base_path": "/api/v1",
-            "auth": "Authorization: Bearer <developer-api-key>",
+            "auth": "Query param only: ?token=<developer-token>",
             "self_serve_portal": "/developers",
             "portal_api": {
                 "access": "/api/developer/access",
@@ -138,6 +139,7 @@ async def read_resource(uri: str) -> str:
                 "profile": "/api/developer/access/profile",
                 "rotate_key": "/api/developer/access/rotate-key",
             },
+            "stdio_env": "HUSHH_DEVELOPER_TOKEN",
             "dynamic_scopes": True,
             "supported_endpoints": [
                 {"method": "GET", "path": "/api/v1"},

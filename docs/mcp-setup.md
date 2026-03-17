@@ -47,16 +47,13 @@ Notes:
 
 ### Option A2: Hosted Remote MCP (UAT beta)
 
-For hosts that support direct remote MCP over HTTP, point them at the UAT endpoint and send the self-serve developer API key as a bearer token:
+For hosts that support direct remote MCP over HTTP, point them at the UAT endpoint and append the self-serve developer token to the URL:
 
 ```json
 {
   "mcpServers": {
     "hushh-consent-remote": {
-      "url": "https://api.uat.kai.hushh.ai/mcp",
-      "headers": {
-        "Authorization": "Bearer <developer-api-key>"
-      }
+      "url": "https://api.uat.kai.hushh.ai/mcp?token=<developer-token>"
     }
   }
 }
@@ -192,7 +189,7 @@ Agents can read `hushh://info/connector` for a machine-readable summary of the r
 
 Scopes are **dynamic** -- they are derived from the world model registry (`world_model_index_v2.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
 
-1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}` with the self-serve developer API key.
+1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}?token=...` with the self-serve developer token.
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
 3. **Wait for approval** -- If the response status is `pending`, return control to the caller and wait for user action in the Hushh app. Re-check later using `check_consent_status(user_id, scope)`.
 4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_scoped_data`.
@@ -218,16 +215,16 @@ The publishable developer API surface is versioned under `/api/v1`:
 | Method | Path | Auth | Purpose |
 | ------ | ---- | ---- | ------- |
 | `GET` | `/api/v1/list-scopes` | Developer API enabled | Generic dynamic scope catalog |
-| `GET` | `/api/v1/tool-catalog` | Optional developer API key | App-filtered tool groups and recommended flow |
-| `GET` | `/api/v1/user-scopes/{user_id}` | `Authorization: Bearer <developer-api-key>` | Per-user discovered scopes and domains |
-| `GET` | `/api/v1/consent-status` | `Authorization: Bearer <developer-api-key>` | Check app-scoped consent status by scope or request id |
-| `POST` | `/api/v1/request-consent` | `Authorization: Bearer <developer-api-key>` | Create or reuse consent for one discovered scope |
+| `GET` | `/api/v1/tool-catalog` | Optional `?token=...` | App-filtered tool groups and recommended flow |
+| `GET` | `/api/v1/user-scopes/{user_id}` | `?token=<developer-token>` | Per-user discovered scopes and domains |
+| `GET` | `/api/v1/consent-status` | `?token=<developer-token>` | Check app-scoped consent status by scope or request id |
+| `POST` | `/api/v1/request-consent` | `?token=<developer-token>` | Create or reuse consent for one discovered scope |
 
 Scale rules:
 
 - Always discover scopes per user instead of hardcoding domain keys.
 - Prefer `get_scoped_data` for all new integrations.
-- App identity comes from the self-serve developer workspace and registry-backed API key.
+- App identity comes from the self-serve developer workspace and registry-backed developer token.
 
 ## Production Mode
 
@@ -248,7 +245,7 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | `FRONTEND_URL`                 | `http://localhost:3000`  | Optional frontend URL for user-facing consent links   |
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
 | `DEVELOPER_API_ENABLED`        | `true` (dev), `false` (prod) | Controls `/api/v1/*` developer API availability |
-| `HUSHH_DEVELOPER_API_KEY`     | _(none)_                 | Self-serve developer API key for stdio MCP and `/api/user/lookup` |
+| `HUSHH_DEVELOPER_TOKEN`       | _(none)_                 | Self-serve developer token for stdio MCP and `/api/user/lookup` |
 | `CONSENT_TIMEOUT_SECONDS`      | `120`                    | Max wait time for user to approve consent             |
 
 ## Demo Script

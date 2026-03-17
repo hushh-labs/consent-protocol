@@ -6,7 +6,7 @@ Session token and user management endpoints.
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 
 from api.developer_auth import authenticate_developer_principal
 from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
@@ -227,6 +227,7 @@ async def get_active_consents(
 @router.get("/user/lookup")
 async def lookup_user_by_email(
     email: str,
+    token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
     """
@@ -256,6 +257,7 @@ async def lookup_user_by_email(
         firebase_admin.initialize_app(cred)
 
     authenticate_developer_principal(
+        token=token,
         authorization=authorization,
     )
 
