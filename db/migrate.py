@@ -676,11 +676,66 @@ async def create_developer_registry(pool: asyncpg.Pool):
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_developer_apps_owner_firebase_uid ON developer_apps(owner_firebase_uid) WHERE owner_firebase_uid IS NOT NULL"
     )
     await pool.execute("""
-        CREATE TABLE IF NOT EXISTS developer_api_keys (
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_api_keys'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_tokens'
+            ) THEN
+                EXECUTE 'ALTER TABLE developer_api_keys RENAME TO developer_tokens';
+            END IF;
+        END
+        $$;
+    """)
+    await pool.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_tokens'
+                  AND column_name = 'key_prefix'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_tokens'
+                  AND column_name = 'token_prefix'
+            ) THEN
+                EXECUTE 'ALTER TABLE developer_tokens RENAME COLUMN key_prefix TO token_prefix';
+            END IF;
+        END
+        $$;
+    """)
+    await pool.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_tokens'
+                  AND column_name = 'key_hash'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'developer_tokens'
+                  AND column_name = 'token_hash'
+            ) THEN
+                EXECUTE 'ALTER TABLE developer_tokens RENAME COLUMN key_hash TO token_hash';
+            END IF;
+        END
+        $$;
+    """)
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS developer_tokens (
             id BIGSERIAL PRIMARY KEY,
             app_id TEXT NOT NULL REFERENCES developer_apps(app_id) ON DELETE CASCADE,
-            key_prefix TEXT NOT NULL UNIQUE,
-            key_hash TEXT NOT NULL UNIQUE,
+            token_prefix TEXT NOT NULL UNIQUE,
+            token_hash TEXT NOT NULL UNIQUE,
             label TEXT,
             created_by TEXT,
             revoked_by TEXT,
@@ -692,10 +747,10 @@ async def create_developer_registry(pool: asyncpg.Pool):
         )
     """)
     await pool.execute(
-        "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_app_id ON developer_api_keys(app_id)"
+        "CREATE INDEX IF NOT EXISTS idx_developer_tokens_app_id ON developer_tokens(app_id)"
     )
     await pool.execute(
-        "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_revoked_at ON developer_api_keys(revoked_at)"
+        "CREATE INDEX IF NOT EXISTS idx_developer_tokens_revoked_at ON developer_tokens(revoked_at)"
     )
     print("✅ developer registry ready!")
 
@@ -743,6 +798,7 @@ async def run_full_migration(pool: asyncpg.Pool):
         "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
+        "developer_tokens",
         "developer_api_keys",
         "developer_apps",
         "developer_applications",
@@ -902,6 +958,7 @@ async def show_status(pool: asyncpg.Pool):
         "kai_market_cache_entries",
         "developer_applications",
         "developer_apps",
+        "developer_tokens",
         "developer_api_keys",
         "runtime_persona_state",
     ]:

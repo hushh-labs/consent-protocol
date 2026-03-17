@@ -24,7 +24,7 @@ from mcp_modules.config import (
     PRODUCTION_MODE,
     resolve_scope_api,
 )
-from mcp_modules.developer_context import get_developer_request_headers
+from mcp_modules.developer_context import get_developer_request_query
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -37,17 +37,16 @@ async def resolve_email_to_uid(user_id: str) -> tuple[Optional[str], str | None,
     if not user_id or "@" not in user_id:
         return user_id, None, None
 
-    headers = get_developer_request_headers()
-    if not headers:
-        logger.warning("Email-to-UID lookup skipped: developer API key not configured")
+    token_query = get_developer_request_query()
+    if not token_query:
+        logger.warning("Email-to-UID lookup skipped: developer token not configured")
         return user_id, None, None
 
     try:
         async with httpx.AsyncClient() as client:
             lookup_response = await client.get(
                 f"{FASTAPI_URL}/api/user/lookup",
-                params={"email": user_id},
-                headers=headers,
+                params={"email": user_id, **token_query},
                 timeout=5.0,
             )
 
@@ -133,16 +132,16 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             )
         ]
 
-    headers = get_developer_request_headers()
-    if not headers:
-        logger.error("request_consent aborted: developer API key missing")
+    token_query = get_developer_request_query()
+    if not token_query:
+        logger.error("request_consent aborted: developer token missing")
         return [
             TextContent(
                 type="text",
                 text=json.dumps(
                     {
                         "status": "error",
-                        "error": "Developer API key is not configured",
+                        "error": "Developer token is not configured",
                     }
                 ),
             )
@@ -169,7 +168,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
         async with httpx.AsyncClient() as client:
             create_response = await client.post(
                 f"{FASTAPI_URL}/api/v1/request-consent",
-                headers=headers,
+                params=token_query,
                 json={
                     "user_id": user_id,
                     "scope": scope_dot,
@@ -354,16 +353,16 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     logger.info("Checking consent status user=%s scope=%s", user_id, scope_str)
 
     try:
-        headers = get_developer_request_headers()
-        if not headers:
+        token_query = get_developer_request_query()
+        if not token_query:
             return [
                 TextContent(
                     type="text",
                     text=json.dumps(
                         {
                             "status": "error",
-                            "error": "Developer API key is not configured",
-                            "hint": "Set HUSHH_DEVELOPER_API_KEY for stdio or authenticate the remote MCP request.",
+                            "error": "Developer token is not configured",
+                            "hint": "Set HUSHH_DEVELOPER_TOKEN for stdio or append ?token=<developer-token> to the remote MCP URL.",
                         }
                     ),
                 )
@@ -376,8 +375,8 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
                     "user_id": user_id,
                     **({"scope": scope_str} if scope_str else {}),
                     **({"request_id": request_id} if request_id else {}),
+                    **token_query,
                 },
-                headers=headers,
                 timeout=10.0,
             )
             status_response.raise_for_status()

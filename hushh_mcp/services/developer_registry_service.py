@@ -128,7 +128,7 @@ class DeveloperPrincipal:
     support_url: str | None = None
     policy_url: str | None = None
     contact_email: str | None = None
-    api_key_id: int | None = None
+    token_id: int | None = None
     auth_source: str = "registry"
     is_internal_fallback: bool = False
 
@@ -193,16 +193,16 @@ class DeveloperRegistryService:
     @staticmethod
     def _pepper() -> str:
         return (
-            str(os.getenv("DEVELOPER_API_KEY_PEPPER", "")).strip()
+            str(os.getenv("DEVELOPER_TOKEN_PEPPER", "")).strip()
             or str(os.getenv("SECRET_KEY", "")).strip()
-            or "hushh-developer-key-pepper"
+            or "hushh-developer-token-pepper"
         )
 
     @classmethod
-    def _hash_api_key(cls, raw_key: str) -> str:
+    def _hash_token(cls, raw_token: str) -> str:
         digest = hmac.new(
             cls._pepper().encode("utf-8"),
-            raw_key.encode("utf-8"),
+            raw_token.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         return digest
@@ -288,7 +288,7 @@ class DeveloperRegistryService:
             support_url=cls._sanitize_optional_text(row.get("support_url")),
             policy_url=cls._sanitize_optional_text(row.get("policy_url")),
             contact_email=cls._sanitize_optional_text(row.get("contact_email")),
-            api_key_id=row.get("api_key_id"),
+            token_id=row.get("token_id"),
             auth_source=str(row.get("auth_source") or "registry"),
             is_internal_fallback=bool(row.get("is_internal_fallback")),
         )
@@ -356,11 +356,131 @@ class DeveloperRegistryService:
             "CREATE INDEX IF NOT EXISTS idx_developer_apps_status ON developer_apps(status)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_developer_apps_owner_firebase_uid ON developer_apps(owner_firebase_uid) WHERE owner_firebase_uid IS NOT NULL",
             """
-            CREATE TABLE IF NOT EXISTS developer_api_keys (
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_api_keys'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                ) THEN
+                    EXECUTE 'ALTER TABLE developer_api_keys RENAME TO developer_tokens';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND column_name = 'key_prefix'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND column_name = 'token_prefix'
+                ) THEN
+                    EXECUTE 'ALTER TABLE developer_tokens RENAME COLUMN key_prefix TO token_prefix';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND column_name = 'key_hash'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND column_name = 'token_hash'
+                ) THEN
+                    EXECUTE 'ALTER TABLE developer_tokens RENAME COLUMN key_hash TO token_hash';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND constraint_name = 'developer_api_keys_app_id_fkey'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'developer_tokens'
+                      AND constraint_name = 'developer_tokens_app_id_fkey'
+                ) THEN
+                    EXECUTE 'ALTER TABLE developer_tokens RENAME CONSTRAINT developer_api_keys_app_id_fkey TO developer_tokens_app_id_fkey';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_class
+                    WHERE relkind = 'i'
+                      AND relname = 'idx_developer_api_keys_app_id'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_class
+                    WHERE relkind = 'i'
+                      AND relname = 'idx_developer_tokens_app_id'
+                ) THEN
+                    EXECUTE 'ALTER INDEX idx_developer_api_keys_app_id RENAME TO idx_developer_tokens_app_id';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM pg_class
+                    WHERE relkind = 'i'
+                      AND relname = 'idx_developer_api_keys_revoked_at'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_class
+                    WHERE relkind = 'i'
+                      AND relname = 'idx_developer_tokens_revoked_at'
+                ) THEN
+                    EXECUTE 'ALTER INDEX idx_developer_api_keys_revoked_at RENAME TO idx_developer_tokens_revoked_at';
+                END IF;
+            END
+            $$;
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS developer_tokens (
                 id BIGSERIAL PRIMARY KEY,
                 app_id TEXT NOT NULL REFERENCES developer_apps(app_id) ON DELETE CASCADE,
-                key_prefix TEXT NOT NULL UNIQUE,
-                key_hash TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL UNIQUE,
+                token_hash TEXT NOT NULL UNIQUE,
                 label TEXT,
                 created_by TEXT,
                 revoked_by TEXT,
@@ -371,8 +491,8 @@ class DeveloperRegistryService:
                 last_used_user_agent TEXT
             )
             """,
-            "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_app_id ON developer_api_keys(app_id)",
-            "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_revoked_at ON developer_api_keys(revoked_at)",
+            "CREATE INDEX IF NOT EXISTS idx_developer_tokens_app_id ON developer_tokens(app_id)",
+            "CREATE INDEX IF NOT EXISTS idx_developer_tokens_revoked_at ON developer_tokens(revoked_at)",
         ]
         for statement in statements:
             self._db.execute_raw(statement)
@@ -405,13 +525,13 @@ class DeveloperRegistryService:
         )
         return result.data[0] if result.data else None
 
-    def get_active_api_key(self, *, app_id: str) -> dict[str, Any] | None:
+    def get_active_token(self, *, app_id: str) -> dict[str, Any] | None:
         self.ensure_tables()
         result = self._db.execute_raw(
             """
-            SELECT id, app_id, key_prefix, label, created_at, revoked_at, last_used_at,
+            SELECT id, app_id, token_prefix, label, created_at, revoked_at, last_used_at,
                    last_used_ip, last_used_user_agent
-            FROM developer_api_keys
+            FROM developer_tokens
             WHERE app_id = :app_id
               AND revoked_at IS NULL
             ORDER BY created_at DESC
@@ -421,13 +541,13 @@ class DeveloperRegistryService:
         )
         return result.data[0] if result.data else None
 
-    def list_api_keys(self, *, app_id: str) -> list[dict[str, Any]]:
+    def list_tokens(self, *, app_id: str) -> list[dict[str, Any]]:
         self.ensure_tables()
         result = self._db.execute_raw(
             """
-            SELECT id, app_id, key_prefix, label, created_by, created_at, revoked_by, revoked_at,
+            SELECT id, app_id, token_prefix, label, created_by, created_at, revoked_by, revoked_at,
                    last_used_at, last_used_ip, last_used_user_agent
-            FROM developer_api_keys
+            FROM developer_tokens
             WHERE app_id = :app_id
             ORDER BY created_at DESC
             """,
@@ -435,7 +555,7 @@ class DeveloperRegistryService:
         )
         return result.data
 
-    def create_api_key(
+    def create_token(
         self,
         *,
         app_id: str,
@@ -444,70 +564,70 @@ class DeveloperRegistryService:
     ) -> dict[str, Any]:
         self.ensure_tables()
         now_ms = self._now_ms()
-        key_identifier = secrets.token_hex(4)
-        key_secret = secrets.token_urlsafe(24)
-        raw_key = f"hdk_{key_identifier}_{key_secret}"
-        key_prefix = f"hdk_{key_identifier}"
-        key_hash = self._hash_api_key(raw_key)
+        token_identifier = secrets.token_hex(4)
+        token_secret = secrets.token_urlsafe(24)
+        raw_token = f"hdk_{token_identifier}_{token_secret}"
+        token_prefix = f"hdk_{token_identifier}"
+        token_hash = self._hash_token(raw_token)
 
         result = self._db.execute_raw(
             """
-            INSERT INTO developer_api_keys (
+            INSERT INTO developer_tokens (
                 app_id,
-                key_prefix,
-                key_hash,
+                token_prefix,
+                token_hash,
                 label,
                 created_by,
                 created_at
             )
             VALUES (
                 :app_id,
-                :key_prefix,
-                :key_hash,
+                :token_prefix,
+                :token_hash,
                 :label,
                 :created_by,
                 :created_at
             )
-            RETURNING id, app_id, key_prefix, label, created_at, revoked_at, last_used_at
+            RETURNING id, app_id, token_prefix, label, created_at, revoked_at, last_used_at
             """,
             {
                 "app_id": app_id,
-                "key_prefix": key_prefix,
-                "key_hash": key_hash,
+                "token_prefix": token_prefix,
+                "token_hash": token_hash,
                 "label": self._sanitize_optional_text(label),
                 "created_by": self._sanitize_optional_text(created_by),
                 "created_at": now_ms,
             },
         )
         created = result.data[0]
-        created["raw_key"] = raw_key
+        created["raw_token"] = raw_token
         return created
 
-    def revoke_api_key(self, *, key_id: int, revoked_by: str) -> dict[str, Any] | None:
+    def revoke_token(self, *, token_id: int, revoked_by: str) -> dict[str, Any] | None:
         self.ensure_tables()
         now_ms = self._now_ms()
         result = self._db.execute_raw(
             """
-            UPDATE developer_api_keys
+            UPDATE developer_tokens
             SET revoked_at = :revoked_at,
                 revoked_by = :revoked_by
-            WHERE id = :key_id
+            WHERE id = :token_id
               AND revoked_at IS NULL
-            RETURNING id, app_id, key_prefix, label, created_at, revoked_at, last_used_at
+            RETURNING id, app_id, token_prefix, label, created_at, revoked_at, last_used_at
             """,
             {
-                "key_id": key_id,
+                "token_id": token_id,
                 "revoked_at": now_ms,
                 "revoked_by": self._sanitize_optional_text(revoked_by),
             },
         )
         return result.data[0] if result.data else None
 
-    def revoke_active_api_keys(self, *, app_id: str, revoked_by: str) -> None:
+    def revoke_active_tokens(self, *, app_id: str, revoked_by: str) -> None:
         self.ensure_tables()
         self._db.execute_raw(
             """
-            UPDATE developer_api_keys
+            UPDATE developer_tokens
             SET revoked_at = :revoked_at,
                 revoked_by = :revoked_by
             WHERE app_id = :app_id
@@ -645,24 +765,24 @@ class DeveloperRegistryService:
             if synced:
                 app = synced
 
-        active_key = self.get_active_api_key(app_id=str(app["app_id"]))
-        issued_key = False
-        raw_api_key: str | None = None
-        if active_key is None:
-            active_key = self.create_api_key(
+        active_token = self.get_active_token(app_id=str(app["app_id"]))
+        issued_token = False
+        raw_token: str | None = None
+        if active_token is None:
+            active_token = self.create_token(
                 app_id=str(app["app_id"]),
                 created_by=owner_firebase_uid,
                 label="primary",
             )
-            raw_api_key = str(active_key.get("raw_key") or "")
-            issued_key = True
+            raw_token = str(active_token.get("raw_token") or "")
+            issued_token = True
 
         return {
             "app": app,
-            "active_key": active_key,
-            "raw_api_key": raw_api_key,
+            "active_token": active_token,
+            "raw_token": raw_token,
             "created_app": created_app,
-            "issued_key": issued_key,
+            "issued_token": issued_token,
         }
 
     def update_self_serve_profile(
@@ -714,23 +834,23 @@ class DeveloperRegistryService:
         )
         return result.data[0] if result.data else None
 
-    def rotate_self_serve_api_key(self, *, owner_firebase_uid: str) -> dict[str, Any] | None:
+    def rotate_self_serve_token(self, *, owner_firebase_uid: str) -> dict[str, Any] | None:
         self.ensure_tables()
         app = self.get_app_by_owner_uid(owner_firebase_uid)
         if not app:
             return None
 
         app_id = str(app["app_id"])
-        self.revoke_active_api_keys(app_id=app_id, revoked_by=owner_firebase_uid)
-        active_key = self.create_api_key(
+        self.revoke_active_tokens(app_id=app_id, revoked_by=owner_firebase_uid)
+        active_token = self.create_token(
             app_id=app_id,
             created_by=owner_firebase_uid,
             label="primary",
         )
         return {
             "app": self.get_app(app_id) or app,
-            "active_key": active_key,
-            "raw_api_key": str(active_key.get("raw_key") or ""),
+            "active_token": active_token,
+            "raw_token": str(active_token.get("raw_token") or ""),
         }
 
     def authenticate_token(
@@ -745,7 +865,7 @@ class DeveloperRegistryService:
             return None
 
         self.ensure_tables()
-        key_hash = self._hash_api_key(token)
+        token_hash = self._hash_token(token)
         result = self._db.execute_raw(
             """
             SELECT apps.app_id,
@@ -755,32 +875,32 @@ class DeveloperRegistryService:
                    apps.support_url,
                    apps.policy_url,
                    apps.contact_email,
-                   keys.id AS api_key_id
-            FROM developer_api_keys AS keys
+                   tokens.id AS token_id
+            FROM developer_tokens AS tokens
             INNER JOIN developer_apps AS apps
-                ON apps.app_id = keys.app_id
-            WHERE keys.key_hash = :key_hash
-              AND keys.revoked_at IS NULL
+                ON apps.app_id = tokens.app_id
+            WHERE tokens.token_hash = :token_hash
+              AND tokens.revoked_at IS NULL
               AND apps.status = 'active'
             LIMIT 1
             """,
-            {"key_hash": key_hash},
+            {"token_hash": token_hash},
         )
         if not result.data:
             return None
 
         principal = self._principal_from_row(result.data[0])
-        if principal.api_key_id is not None:
+        if principal.token_id is not None:
             self._db.execute_raw(
                 """
-                UPDATE developer_api_keys
+                UPDATE developer_tokens
                 SET last_used_at = :last_used_at,
                     last_used_ip = :last_used_ip,
                     last_used_user_agent = :last_used_user_agent
-                WHERE id = :key_id
+                WHERE id = :token_id
                 """,
                 {
-                    "key_id": principal.api_key_id,
+                    "token_id": principal.token_id,
                     "last_used_at": self._now_ms(),
                     "last_used_ip": self._sanitize_optional_text(ip_address),
                     "last_used_user_agent": self._sanitize_optional_text(user_agent),

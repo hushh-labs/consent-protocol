@@ -39,4 +39,4 @@ EXPOSE 8080
 
 # Run FastAPI with uvicorn
 # Cloud Run sets PORT env var, default to 8080
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log"]

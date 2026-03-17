@@ -113,10 +113,10 @@ class DeveloperConsentStatusResponse(BaseModel):
     message: str
 
 
-class DeveloperPortalApiKeyResponse(BaseModel):
+class DeveloperPortalTokenResponse(BaseModel):
     id: int
     app_id: str
-    key_prefix: str
+    token_prefix: str
     label: str | None = None
     created_at: int
     revoked_at: int | None = None
@@ -144,12 +144,12 @@ class DeveloperPortalAccessResponse(BaseModel):
     owner_display_name: str | None = None
     owner_provider_ids: list[str] = Field(default_factory=list)
     app: DeveloperPortalAppResponse | None = None
-    active_key: DeveloperPortalApiKeyResponse | None = None
-    raw_api_key: str | None = None
-    developer_api_key_env_var: str = "HUSHH_DEVELOPER_API_KEY"
+    active_token: DeveloperPortalTokenResponse | None = None
+    raw_token: str | None = None
+    developer_token_env_var: str = "HUSHH_DEVELOPER_TOKEN"  # noqa: S105
     notes: list[str] = Field(
         default_factory=lambda: [
-            "Use the developer API key in Authorization: Bearer <developer-api-key> for /api/v1 and remote MCP.",
+            "Use ?token=<developer-token> for /api/v1 and append ?token=<developer-token> to remote MCP URLs.",
             "User consent is still approved inside Kai one scope at a time.",
             "Dynamic scopes must be discovered per user before requesting consent.",
         ]
@@ -216,9 +216,11 @@ def _is_supported_scope(scope: str) -> bool:
 def _resolve_principal(
     *,
     request: Request,
+    token: str | None,
     authorization: str | None,
 ) -> DeveloperPrincipal:
     return authenticate_developer_principal(
+        token=token,
         authorization=authorization,
         request=request,
     )
@@ -275,17 +277,17 @@ def _developer_root_payload() -> dict[str, object]:
     }
 
 
-def _serialize_api_key(api_key: dict | None) -> DeveloperPortalApiKeyResponse | None:
-    if not api_key:
+def _serialize_token(token: dict | None) -> DeveloperPortalTokenResponse | None:
+    if not token:
         return None
-    return DeveloperPortalApiKeyResponse(
-        id=int(api_key["id"]),
-        app_id=str(api_key["app_id"]),
-        key_prefix=str(api_key["key_prefix"]),
-        label=str(api_key["label"]) if api_key.get("label") else None,
-        created_at=int(api_key["created_at"]),
-        revoked_at=int(api_key["revoked_at"]) if api_key.get("revoked_at") else None,
-        last_used_at=int(api_key["last_used_at"]) if api_key.get("last_used_at") else None,
+    return DeveloperPortalTokenResponse(
+        id=int(token["id"]),
+        app_id=str(token["app_id"]),
+        token_prefix=str(token["token_prefix"]),
+        label=str(token["label"]) if token.get("label") else None,
+        created_at=int(token["created_at"]),
+        revoked_at=int(token["revoked_at"]) if token.get("revoked_at") else None,
+        last_used_at=int(token["last_used_at"]) if token.get("last_used_at") else None,
     )
 
 
@@ -315,8 +317,8 @@ def _portal_access_response(
     owner_display_name: str | None,
     owner_provider_ids: list[str] | tuple[str, ...] | None,
     app: dict | None,
-    active_key: dict | None,
-    raw_api_key: str | None = None,
+    active_token: dict | None,
+    raw_token: str | None = None,
 ) -> DeveloperPortalAccessResponse:
     provider_ids = [str(item).strip() for item in (owner_provider_ids or []) if str(item).strip()]
     return DeveloperPortalAccessResponse(
@@ -326,8 +328,8 @@ def _portal_access_response(
         owner_display_name=owner_display_name,
         owner_provider_ids=provider_ids,
         app=_serialize_app(app),
-        active_key=_serialize_api_key(active_key),
-        raw_api_key=raw_api_key,
+        active_token=_serialize_token(active_token),
+        raw_token=raw_token,
     )
 
 
@@ -383,12 +385,14 @@ async def developer_api_root():
 @developer_api_router.get("/tool-catalog", response_model=DeveloperToolCatalogResponse)
 async def get_tool_catalog(
     request: Request,
+    token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
     if not developer_api_enabled():
         raise developer_api_disabled_error()
 
     principal = try_authenticate_developer_principal(
+        token=token,
         authorization=authorization,
         request=request,
     )
@@ -404,10 +408,12 @@ async def get_tool_catalog(
 async def get_user_scopes(
     user_id: str,
     request: Request,
+    token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
     principal = _resolve_principal(
         request=request,
+        token=token,
         authorization=authorization,
     )
 
@@ -427,10 +433,12 @@ async def get_consent_status(
     user_id: str = Query(..., alias="user_id"),
     scope: str | None = Query(default=None),
     request_id: str | None = Query(default=None),
+    token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
     principal = _resolve_principal(
         request=request,
+        token=token,
         authorization=authorization,
     )
     normalized_scope = normalize_scope(scope) if scope else None
@@ -497,10 +505,12 @@ async def get_consent_status(
 async def request_consent(
     payload: ConsentRequest,
     request: Request,
+    token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
 ):
     principal = _resolve_principal(
         request=request,
+        token=token,
         authorization=authorization,
     )
 
@@ -626,7 +636,7 @@ async def get_developer_access(
     registry = DeveloperRegistryService()
     owner_profile = _resolve_firebase_owner_profile(firebase_uid)
     app = registry.get_app_by_owner_uid(firebase_uid)
-    active_key = registry.get_active_api_key(app_id=str(app["app_id"])) if app else None
+    active_token = registry.get_active_token(app_id=str(app["app_id"])) if app else None
     return _portal_access_response(
         firebase_uid=firebase_uid,
         owner_email=owner_profile["owner_email"] if isinstance(owner_profile, dict) else None,
@@ -637,7 +647,7 @@ async def get_developer_access(
         if isinstance(owner_profile, dict)
         else [],
         app=app,
-        active_key=active_key,
+        active_token=active_token,
     )
 
 
@@ -666,8 +676,8 @@ async def enable_developer_access(
         if isinstance(owner_profile, dict)
         else [],
         app=ensured.get("app"),
-        active_key=ensured.get("active_key"),
-        raw_api_key=str(ensured.get("raw_api_key") or "").strip() or None,
+        active_token=ensured.get("active_token"),
+        raw_token=str(ensured.get("raw_token") or "").strip() or None,
     )
 
 
@@ -697,7 +707,7 @@ async def update_developer_access_profile(
         )
 
     owner_profile = _resolve_firebase_owner_profile(firebase_uid)
-    active_key = registry.get_active_api_key(app_id=str(updated_app["app_id"]))
+    active_token = registry.get_active_token(app_id=str(updated_app["app_id"]))
     return _portal_access_response(
         firebase_uid=firebase_uid,
         owner_email=str(owner_profile.get("owner_email") or "").strip() or None,
@@ -706,25 +716,25 @@ async def update_developer_access_profile(
         if isinstance(owner_profile, dict)
         else [],
         app=updated_app,
-        active_key=active_key,
+        active_token=active_token,
     )
 
 
 @portal_router.post("/access/rotate-key", response_model=DeveloperPortalAccessResponse)
-async def rotate_developer_access_key(
+async def rotate_developer_access_token(
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     if not developer_api_enabled():
         raise developer_api_disabled_error()
 
     registry = DeveloperRegistryService()
-    rotated = registry.rotate_self_serve_api_key(owner_firebase_uid=firebase_uid)
+    rotated = registry.rotate_self_serve_token(owner_firebase_uid=firebase_uid)
     if rotated is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
                 "error_code": "DEVELOPER_ACCESS_NOT_ENABLED",
-                "message": "Enable developer access before rotating an API key.",
+                "message": "Enable developer access before rotating a token.",
             },
         )
 
@@ -737,8 +747,8 @@ async def rotate_developer_access_key(
         if isinstance(owner_profile, dict)
         else [],
         app=rotated.get("app"),
-        active_key=rotated.get("active_key"),
-        raw_api_key=str(rotated.get("raw_api_key") or "").strip() or None,
+        active_token=rotated.get("active_token"),
+        raw_token=str(rotated.get("raw_token") or "").strip() or None,
     )
 
 

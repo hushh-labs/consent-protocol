@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import parse_qs
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
@@ -28,10 +29,12 @@ def _client_ip(scope: dict[str, Any]) -> str | None:
     return None
 
 
-def _parse_api_key(scope: dict[str, Any]) -> str:
-    authorization = _header_value(scope, b"authorization") or ""
-    if authorization.lower().startswith("bearer "):
-        return authorization[7:].strip()
+def _parse_query_token(scope: dict[str, Any]) -> str:
+    query_string = scope.get("query_string", b"")
+    if isinstance(query_string, bytes):
+        parsed = parse_qs(query_string.decode("utf-8"), keep_blank_values=False)
+        values = parsed.get("token") or []
+        return str(values[0]).strip() if values else ""
     return ""
 
 
@@ -65,20 +68,32 @@ class AuthenticatedRemoteMCPApp:
             await _send_json(send, exc.status_code, exc.detail)
             return
 
-        raw_api_key = _parse_api_key(scope)
-        if not raw_api_key:
+        raw_token = _parse_query_token(scope)
+        has_legacy_header = bool(_header_value(scope, b"authorization"))
+        if not raw_token and has_legacy_header:
+            await _send_json(
+                send,
+                400,
+                {
+                    "error_code": "DEVELOPER_TOKEN_QUERY_REQUIRED",
+                    "message": "Use /mcp?token=<developer-token> instead of Authorization header.",
+                },
+            )
+            return
+
+        if not raw_token:
             await _send_json(
                 send,
                 401,
                 {
                     "error_code": "DEVELOPER_TOKEN_REQUIRED",
-                    "message": "Developer API key is required for remote MCP.",
+                    "message": "Developer token is required for remote MCP. Use /mcp?token=<developer-token>.",
                 },
             )
             return
 
         principal = self._registry.authenticate_token(
-            raw_api_key,
+            raw_token,
             ip_address=_client_ip(scope),
             user_agent=_header_value(scope, b"user-agent"),
         )
@@ -88,12 +103,12 @@ class AuthenticatedRemoteMCPApp:
                 403,
                 {
                     "error_code": "DEVELOPER_TOKEN_INVALID",
-                    "message": "Developer API key is invalid or revoked.",
+                    "message": "Developer token is invalid or revoked.",
                 },
             )
             return
 
-        context_tokens = set_current_developer_principal(principal, api_key=raw_api_key)
+        context_tokens = set_current_developer_principal(principal, token=raw_token)
         try:
             await self._inner(scope, receive, send)
         finally:
