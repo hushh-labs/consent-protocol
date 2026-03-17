@@ -601,6 +601,105 @@ async def create_kai_market_cache_entries(pool: asyncpg.Pool):
     print("✅ kai_market_cache_entries ready!")
 
 
+async def create_developer_registry(pool: asyncpg.Pool):
+    """Create public developer registry tables for UAT/public MCP beta."""
+    print("🧩 Creating developer registry tables...")
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS developer_applications (
+            id BIGSERIAL PRIMARY KEY,
+            slug TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            contact_name TEXT,
+            contact_email TEXT NOT NULL,
+            support_url TEXT,
+            policy_url TEXT,
+            website_url TEXT,
+            use_case TEXT,
+            requested_tool_groups JSONB NOT NULL DEFAULT '["core_consent"]'::jsonb,
+            requested_agent_id TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            notes TEXT,
+            reviewed_at BIGINT,
+            reviewed_by TEXT,
+            rejection_reason TEXT,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            CONSTRAINT developer_applications_status_check
+                CHECK (status IN ('pending', 'approved', 'rejected'))
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_developer_applications_status ON developer_applications(status)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_developer_applications_created_at ON developer_applications(created_at DESC)"
+    )
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS developer_apps (
+            app_id TEXT PRIMARY KEY,
+            application_id BIGINT REFERENCES developer_applications(id) ON DELETE SET NULL,
+            agent_id TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            contact_email TEXT NOT NULL,
+            support_url TEXT,
+            policy_url TEXT,
+            website_url TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            allowed_tool_groups JSONB NOT NULL DEFAULT '["core_consent"]'::jsonb,
+            approved_at BIGINT,
+            approved_by TEXT,
+            notes TEXT,
+            created_at BIGINT NOT NULL,
+            updated_at BIGINT NOT NULL,
+            owner_firebase_uid TEXT,
+            owner_email TEXT,
+            owner_display_name TEXT,
+            owner_provider_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            CONSTRAINT developer_apps_status_check
+                CHECK (status IN ('active', 'suspended', 'revoked'))
+        )
+    """)
+    await pool.execute(
+        "ALTER TABLE developer_apps ADD COLUMN IF NOT EXISTS owner_firebase_uid TEXT"
+    )
+    await pool.execute("ALTER TABLE developer_apps ADD COLUMN IF NOT EXISTS owner_email TEXT")
+    await pool.execute(
+        "ALTER TABLE developer_apps ADD COLUMN IF NOT EXISTS owner_display_name TEXT"
+    )
+    await pool.execute(
+        "ALTER TABLE developer_apps ADD COLUMN IF NOT EXISTS owner_provider_ids JSONB NOT NULL DEFAULT '[]'::jsonb"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_developer_apps_status ON developer_apps(status)"
+    )
+    await pool.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_developer_apps_owner_firebase_uid ON developer_apps(owner_firebase_uid) WHERE owner_firebase_uid IS NOT NULL"
+    )
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS developer_api_keys (
+            id BIGSERIAL PRIMARY KEY,
+            app_id TEXT NOT NULL REFERENCES developer_apps(app_id) ON DELETE CASCADE,
+            key_prefix TEXT NOT NULL UNIQUE,
+            key_hash TEXT NOT NULL UNIQUE,
+            label TEXT,
+            created_by TEXT,
+            revoked_by TEXT,
+            created_at BIGINT NOT NULL,
+            revoked_at BIGINT,
+            last_used_at BIGINT,
+            last_used_ip TEXT,
+            last_used_user_agent TEXT
+        )
+    """)
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_app_id ON developer_api_keys(app_id)"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS idx_developer_api_keys_revoked_at ON developer_api_keys(revoked_at)"
+    )
+    print("✅ developer registry ready!")
+
+
 # Table registry for modular access
 TABLE_CREATORS = {
     "vault_keys": create_vault_keys,
@@ -616,6 +715,7 @@ TABLE_CREATORS = {
     "ticker_enrichment_runs": create_ticker_enrichment_runs,
     "consent_exports": create_consent_exports,
     "kai_market_cache_entries": create_kai_market_cache_entries,
+    "developer_registry": create_developer_registry,
 }
 
 
@@ -643,6 +743,9 @@ async def run_full_migration(pool: asyncpg.Pool):
         "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
+        "developer_api_keys",
+        "developer_apps",
+        "developer_applications",
         "tickers",
     ]:
         await pool.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
@@ -682,6 +785,8 @@ async def run_full_migration(pool: asyncpg.Pool):
     await create_consent_exports(pool)
     print("[13/13] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
+    print("[14/14] Creating developer registry (public MCP beta auth)...")
+    await create_developer_registry(pool)
 
     print("\n✅ Full migration complete!")
 
@@ -692,6 +797,7 @@ async def run_consent_migration(pool: asyncpg.Pool):
     await create_consent_audit(pool)
     await create_user_push_tokens(pool)
     await create_internal_access_events(pool)
+    await create_developer_registry(pool)
     print("Consent protocol tables ready!")
 
 
@@ -754,6 +860,8 @@ async def run_init_migration(pool: asyncpg.Pool):
     await create_consent_exports(pool)
     print("[13/13] Creating kai_market_cache_entries (Kai market L2 cache)...")
     await create_kai_market_cache_entries(pool)
+    print("[14/14] Creating developer registry (public MCP beta auth)...")
+    await create_developer_registry(pool)
 
     print("\nAll tables initialized successfully!")
 
@@ -792,6 +900,9 @@ async def show_status(pool: asyncpg.Pool):
         "ticker_enrichment_runs",
         "consent_exports",
         "kai_market_cache_entries",
+        "developer_applications",
+        "developer_apps",
+        "developer_api_keys",
         "runtime_persona_state",
     ]:
         if table in all_tables:

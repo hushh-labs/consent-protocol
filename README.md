@@ -52,6 +52,15 @@ If your frontend/backend live in one monorepo and this repository is vendored as
 
 See: [docs/monorepo-integration.md](docs/monorepo-integration.md)
 
+## MCP Distribution
+
+The preferred public install surface for the Hushh Consent MCP server is the npm launcher package `@hushh/mcp`, which bootstraps the existing Python stdio server and keeps the protocol logic in this repo. Repo-local direct Python setup remains supported as a fallback for contributors and unpublished-package testing.
+
+See:
+
+- [docs/mcp-setup.md](docs/mcp-setup.md)
+- [`../packages/hushh-mcp/README.md`](../packages/hushh-mcp/README.md)
+
 ---
 
 ## Architecture

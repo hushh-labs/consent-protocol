@@ -57,11 +57,6 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
     if scope.startswith("custom."):
         return ConsentScope.CUSTOM_TEMPORARY
 
-    # API format (e.g. attr_food, world_model_read) - resolve via normalize then re-check
-    dot_scope = _api_format_to_dot(scope)
-    if dot_scope != scope:
-        return resolve_scope_to_enum(dot_scope)
-
     # Default to custom temporary
     return ConsentScope.CUSTOM_TEMPORARY
 
@@ -169,47 +164,11 @@ def is_write_scope(scope: str) -> bool:
     return False
 
 
-# API format (underscore) -> dot notation for backend/MCP consistency
-_API_FORMAT_TO_DOT = {
-    "world_model_read": "world_model.read",
-    "world_model_write": "world_model.write",
-    "vault_owner": "vault.owner",
-}
-
-# Pattern for dynamic API-format attr scopes:
-# - attr_{domain}
-# - attr_{domain}__{subintent}__{nested}
-# Double underscore is used as path separator.
-_DYNAMIC_API_ATTR_RE = __import__("re").compile(r"^attr_([a-z][a-z0-9_]*(?:__[a-z][a-z0-9_]*)*)$")
-
-
-def _api_format_to_dot(scope: str) -> str:
-    """Convert API format (e.g. attr_food) to dot notation (attr.food.*).
-
-    Supports both the static lookup table and dynamic attr_{domain} patterns.
-    """
-    static = _API_FORMAT_TO_DOT.get(scope)
-    if static:
-        return static
-    m = _DYNAMIC_API_ATTR_RE.match(scope)
-    if m:
-        parts = [part for part in m.group(1).split("__") if part]
-        if not parts:
-            return scope
-        domain = parts[0]
-        if len(parts) == 1:
-            return f"attr.{domain}.*"
-        subpath = ".".join(parts[1:])
-        return f"attr.{domain}.{subpath}.*"
-    return scope
-
-
 def normalize_scope(scope: str) -> str:
     """
     Normalize scope string to canonical dot notation.
 
-    Converts API format (e.g. attr_food) to dot notation (attr.food.*).
-    Only world-model scopes are supported; legacy vault.* formats are not converted.
+    Accepts canonical dot notation only.
 
     Args:
         scope: The scope string to normalize
@@ -223,5 +182,4 @@ def normalize_scope(scope: str) -> str:
     if generator.is_dynamic_scope(scope) or scope in ("world_model.read", "world_model.write"):
         return scope
 
-    # API format -> dot notation
-    return _api_format_to_dot(scope)
+    return scope

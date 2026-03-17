@@ -1,32 +1,59 @@
 # Developer API
 
-> **Status**: Active  
-> **Audience**: External developers, MCP hosts, and internal integrations publishing against Hushh dynamic scopes
+> **Status:** UAT public beta  
+> **Audience:** External developers, MCP hosts, and internal teams building against Kai consent flows
 
 ---
 
 ## Overview
 
-The Hushh developer integration surface is versioned under `/api/v1` and is designed around dynamic scope discovery.
-
-The key rule is simple:
+The Hushh developer contract is versioned under `/api/v1` and built around one scalable rule:
 
 1. Discover the user's scopes at runtime.
 2. Request consent for one discovered scope.
-3. Wait for user approval.
-4. Use the approved token with `get_scoped_data` in MCP or with the consent export APIs.
+3. Wait for the user's approval in Kai.
+4. Read only the approved slice with `get_scoped_data`.
 
-Do not hardcode domain keys into developer integrations.
+Do not hardcode domain keys. Dynamic scopes are derived from the indexed world model and domain registry.
 
 ---
 
-## Endpoints
+## Self-Serve Developer Access
+
+Developer access is self-serve from `/developers` in the app:
+
+- Sign in with the same Google or Apple auth flow used in Kai.
+- Enable developer access once per Kai account.
+- Receive one active developer API key, revealed only when first issued or rotated.
+- Update the app identity users see during consent review.
+
+Portal endpoints:
 
 | Method | Path | Auth | Purpose |
 | ------ | ---- | ---- | ------- |
-| `GET` | `/api/v1/list-scopes` | Developer API enabled | Generic scope catalog and canonical patterns |
-| `GET` | `/api/v1/user-scopes/{user_id}` | `X-MCP-Developer-Token` | Per-user discovered domains and scopes |
-| `POST` | `/api/v1/request-consent` | `developer_token` body field or `X-MCP-Developer-Token` | Create or reuse consent for one discovered scope |
+| `GET` | `/api/developer/access` | Firebase bearer token | Read the current developer workspace state |
+| `POST` | `/api/developer/access/enable` | Firebase bearer token | Create the self-serve app and first active API key |
+| `PATCH` | `/api/developer/access/profile` | Firebase bearer token | Update display name, website, support, and policy links |
+| `POST` | `/api/developer/access/rotate-key` | Firebase bearer token | Revoke the current key and issue a replacement |
+
+The developer API key is then used as:
+
+```http
+Authorization: Bearer <developer-api-key>
+```
+
+---
+
+## Public Endpoints
+
+| Method | Path | Auth | Purpose |
+| ------ | ---- | ---- | ------- |
+| `GET` | `/api/v1` | Developer API enabled | Root summary for the versioned contract |
+| `GET` | `/api/v1/list-scopes` | Developer API enabled | Canonical dynamic scope grammar |
+| `GET` | `/api/v1/tool-catalog` | Optional developer API key | Current public-beta tool visibility |
+| `GET` | `/api/v1/user-scopes/{user_id}` | `Authorization: Bearer <developer-api-key>` | Per-user discovered domains and scopes |
+| `GET` | `/api/v1/consent-status` | `Authorization: Bearer <developer-api-key>` | App-scoped consent status by scope or request id |
+| `POST` | `/api/v1/request-consent` | `Authorization: Bearer <developer-api-key>` | Create or reuse consent for one discovered scope |
 
 ---
 
@@ -40,13 +67,13 @@ Requestable developer scopes:
 - `attr.{domain}.{subintent}.*`
 - `attr.{domain}.{path}`
 
-Scope availability is derived from:
+Availability is derived from:
 
 - `world_model_index_v2.available_domains`
 - `world_model_index_v2.domain_summaries`
 - `domain_registry`
 
-This means two users can legitimately expose different scope catalogs.
+Two users can legitimately expose different scope catalogs.
 
 ---
 
@@ -56,30 +83,36 @@ This means two users can legitimately expose different scope catalogs.
 
 ```http
 GET /api/v1/user-scopes/{user_id}
-X-MCP-Developer-Token: <token>
+Authorization: Bearer <developer-api-key>
 ```
 
 ### 2. Request consent
 
 ```http
 POST /api/v1/request-consent
+Authorization: Bearer <developer-api-key>
 Content-Type: application/json
 
 {
   "user_id": "user_123",
-  "developer_token": "<token>",
-  "agent_id": "partner-app",
-  "scope": "attr.{domain}.*",
+  "scope": "attr.financial.*",
   "expiry_hours": 24,
   "reason": "Explain why the app needs this scope"
 }
 ```
 
-### 3. Wait for approval
+### 3. Poll status
 
-The user approves in the Hushh app. Delivery is FCM-first in production.
+```http
+GET /api/v1/consent-status?user_id=user_123&scope=attr.financial.*
+Authorization: Bearer <developer-api-key>
+```
 
-### 4. Consume scoped data
+### 4. Wait for approval in Kai
+
+The user approves in the Kai app. Approval is separate from developer auth and remains app-scoped plus scope-scoped.
+
+### 5. Consume scoped data
 
 For MCP integrations, prefer `get_scoped_data`.
 
@@ -87,14 +120,14 @@ For MCP integrations, prefer `get_scoped_data`.
 
 ## Developer MCP Surface
 
-For agent hosts and MCP clients, the supported machine-consumable flow is:
+The public beta machine flow is:
 
 1. `discover_user_domains(user_id)`
 2. `request_consent(user_id, discovered_scope)`
 3. `check_consent_status(user_id, discovered_scope)`
 4. `get_scoped_data(user_id, consent_token)`
 
-Machine-readable references are published as:
+Machine-readable references:
 
 - `hushh://info/connector`
 - `hushh://info/developer-api`
@@ -103,13 +136,7 @@ Machine-readable references are published as:
 
 ## Scale Guidance
 
-- Discover scopes per user and cache briefly, but treat them as mutable runtime state.
-- Use a stable `agent_id` per developer app or MCP deployment.
+- Discover scopes per user and treat them as mutable runtime state.
+- The app identity shown to users comes from the self-serve developer workspace, not a caller-supplied agent id.
 - Prefer one generic scoped data path over named domain-specific getters.
-- Keep request volume bounded after denials; the platform may apply cooldown behavior to repeated re-requests.
-
----
-
-## Compatibility Policy
-
-Legacy named MCP getters such as `get_food_preferences` and `get_professional_profile` remain compatibility surfaces only. New integrations should use `get_scoped_data` plus discovered scopes.
+- Keep request volume bounded after denials; cooldown behavior may apply to repeated re-requests.

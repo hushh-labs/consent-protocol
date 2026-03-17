@@ -10,7 +10,7 @@ All request and response schemas are centralized here for:
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # AGENT CHAT MODELS
@@ -60,15 +60,9 @@ class ValidateTokenRequest(BaseModel):
 class ConsentRequest(BaseModel):
     """Request consent from a user for data access."""
 
+    model_config = ConfigDict(extra="forbid")
+
     user_id: str = Field(description="Hushh user identifier receiving the consent request.")
-    developer_token: Optional[str] = Field(
-        default=None,
-        description="Developer API token. May also be supplied via the X-MCP-Developer-Token header.",
-    )
-    agent_id: Optional[str] = Field(
-        default=None,
-        description="Stable developer app or MCP identity used to partition consent state.",
-    )
     scope: str = Field(
         description=(
             "One requested scope string such as world_model.read, attr.{domain}.*, "

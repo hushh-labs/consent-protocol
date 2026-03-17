@@ -129,6 +129,10 @@ app.add_middleware(
 
 configure_opentelemetry(app)
 
+from mcp_remote import remote_mcp_app, shutdown_remote_mcp, startup_remote_mcp  # noqa: E402
+
+app.mount("/mcp", remote_mcp_app)
+
 
 # ============================================================================
 # REGISTER ROUTERS
@@ -280,6 +284,18 @@ async def startup_required_schema_guard():
             + ". Run `python db/migrate.py --consent`, `python db/migrate.py --iam`, "
             + "or `python db/migrate.py --init` against the active database before starting the server."
         )
+
+
+@app.on_event("startup")
+async def startup_remote_mcp_transport():
+    """Start the hosted remote MCP session manager."""
+    await startup_remote_mcp()
+
+
+@app.on_event("shutdown")
+async def shutdown_remote_mcp_transport():
+    """Stop the hosted remote MCP session manager."""
+    await shutdown_remote_mcp()
 
 
 @app.on_event("startup")

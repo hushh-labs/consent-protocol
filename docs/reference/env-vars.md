@@ -44,8 +44,9 @@ What is in `.env` / GCP Secret Manager must match exactly what the code reads --
 | `REVIEWER_UID` | `api/routes/health.py` | If app review | Firebase UID used for custom token minting. |
 | `CONSENT_SSE_ENABLED` | `api/routes/sse.py` | No | Defaults off in production. |
 | `DEVELOPER_API_ENABLED` | `api/routes/developer.py`, `server.py` | No | Enables `/api/v1/*`; defaults false in production unless explicitly enabled. |
+| `REMOTE_MCP_ENABLED` | `api/developer_auth.py`, `mcp_remote.py` | No | Enables hosted remote MCP transport at `/mcp`. |
 | `SYNC_REMOTE_ENABLED` | `api/routes/sync.py` | No | Defaults false; sync endpoints return 501 when disabled. |
-| `MCP_DEVELOPER_TOKEN` | `api/routes/session.py` | Recommended | Service auth token for `/api/user/lookup`. |
+| `HUSHH_DEVELOPER_API_KEY` | `api/routes/session.py`, `mcp_server.py` | Recommended for local stdio hosts | Self-serve developer API key used by stdio MCP and service-auth `/api/user/lookup`. |
 | `ROOT_PATH` | `server.py` | No | FastAPI root path for reverse proxy. |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Cloud Run env | No | Set `True` for Vertex AI in production. |
 | `PLAID_ENV` / `PLAID_ENVIRONMENT` | `hushh_mcp/services/plaid_portfolio_service.py` | No | Plaid environment. Defaults to `sandbox`. |
@@ -67,11 +68,10 @@ These are read by `mcp_server.py` (separate from the main FastAPI server):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONSENT_API_URL` | `http://localhost:8000` | FastAPI backend URL. |
+| `CONSENT_API_URL` | `http://127.0.0.1:8000` | FastAPI backend URL. Defaults to loopback + `PORT` when unset. |
 | `FRONTEND_URL` | `http://localhost:3000` | Frontend URL for user-facing links. |
 | `PRODUCTION_MODE` | `true` | Require real user approval via Hushh app. |
-| `MCP_DEVELOPER_TOKEN` | `mcp_dev_claude_desktop` | Developer token registered in FastAPI. |
-| `MCP_AGENT_ID` | `hushh-mcp` | Stable developer app / MCP identity for `/api/v1/request-consent`. |
+| `HUSHH_DEVELOPER_API_KEY` | _(none)_ | Self-serve developer API key for stdio MCP. |
 | `CONSENT_TIMEOUT_SECONDS` | `120` | Max wait for user consent approval. |
 
 ---
