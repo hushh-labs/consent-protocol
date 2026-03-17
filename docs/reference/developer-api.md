@@ -24,7 +24,7 @@ Developer access is self-serve from `/developers` in the app:
 
 - Sign in with the same Google or Apple auth flow used in Kai.
 - Enable developer access once per Kai account.
-- Receive one active developer API key, revealed only when first issued or rotated.
+- Receive one active developer token, revealed only when first issued or rotated.
 - Update the app identity users see during consent review.
 
 Portal endpoints:
@@ -32,14 +32,14 @@ Portal endpoints:
 | Method | Path | Auth | Purpose |
 | ------ | ---- | ---- | ------- |
 | `GET` | `/api/developer/access` | Firebase bearer token | Read the current developer workspace state |
-| `POST` | `/api/developer/access/enable` | Firebase bearer token | Create the self-serve app and first active API key |
+| `POST` | `/api/developer/access/enable` | Firebase bearer token | Create the self-serve app and first active token |
 | `PATCH` | `/api/developer/access/profile` | Firebase bearer token | Update display name, website, support, and policy links |
-| `POST` | `/api/developer/access/rotate-key` | Firebase bearer token | Revoke the current key and issue a replacement |
+| `POST` | `/api/developer/access/rotate-key` | Firebase bearer token | Revoke the current token and issue a replacement |
 
-The developer API key is then used as:
+The developer token is then used as:
 
 ```http
-Authorization: Bearer <developer-api-key>
+GET /api/v1/user-scopes/{user_id}?token=<developer-token>
 ```
 
 ---
@@ -50,10 +50,10 @@ Authorization: Bearer <developer-api-key>
 | ------ | ---- | ---- | ------- |
 | `GET` | `/api/v1` | Developer API enabled | Root summary for the versioned contract |
 | `GET` | `/api/v1/list-scopes` | Developer API enabled | Canonical dynamic scope grammar |
-| `GET` | `/api/v1/tool-catalog` | Optional developer API key | Current public-beta tool visibility |
-| `GET` | `/api/v1/user-scopes/{user_id}` | `Authorization: Bearer <developer-api-key>` | Per-user discovered domains and scopes |
-| `GET` | `/api/v1/consent-status` | `Authorization: Bearer <developer-api-key>` | App-scoped consent status by scope or request id |
-| `POST` | `/api/v1/request-consent` | `Authorization: Bearer <developer-api-key>` | Create or reuse consent for one discovered scope |
+| `GET` | `/api/v1/tool-catalog` | Optional `?token=...` | Current public-beta tool visibility |
+| `GET` | `/api/v1/user-scopes/{user_id}` | `?token=<developer-token>` | Per-user discovered domains and scopes |
+| `GET` | `/api/v1/consent-status` | `?token=<developer-token>` | App-scoped consent status by scope or request id |
+| `POST` | `/api/v1/request-consent` | `?token=<developer-token>` | Create or reuse consent for one discovered scope |
 
 ---
 
@@ -83,14 +83,14 @@ Two users can legitimately expose different scope catalogs.
 
 ```http
 GET /api/v1/user-scopes/{user_id}
-Authorization: Bearer <developer-api-key>
+?token=<developer-token>
 ```
 
 ### 2. Request consent
 
 ```http
 POST /api/v1/request-consent
-Authorization: Bearer <developer-api-key>
+?token=<developer-token>
 Content-Type: application/json
 
 {
@@ -105,7 +105,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/consent-status?user_id=user_123&scope=attr.financial.*
-Authorization: Bearer <developer-api-key>
+?token=<developer-token>
 ```
 
 ### 4. Wait for approval in Kai

@@ -69,21 +69,38 @@ def _resolve_bearer_token(authorization: str | None = None) -> str:
     return ""
 
 
+def _resolve_query_token(token: str | None = None) -> str:
+    return str(token or "").strip()
+
+
+def _developer_token_query_required_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "error_code": "DEVELOPER_TOKEN_QUERY_REQUIRED",
+            "message": "Use ?token=<developer-token> instead of Authorization header for developer access.",
+        },
+    )
+
+
 def authenticate_developer_principal(
     *,
+    token: str | None = None,
     authorization: str | None = None,
     request: Request | None = None,
 ) -> DeveloperPrincipal:
     if not developer_api_enabled():
         raise developer_api_disabled_error()
 
-    raw_token = _resolve_bearer_token(authorization)
+    raw_token = _resolve_query_token(token)
     if not raw_token:
+        if _resolve_bearer_token(authorization):
+            raise _developer_token_query_required_error()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "error_code": "DEVELOPER_TOKEN_REQUIRED",
-                "message": "Developer API key is required.",
+                "message": "Developer token is required. Pass ?token=<developer-token>.",
             },
         )
 
@@ -99,7 +116,7 @@ def authenticate_developer_principal(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error_code": "DEVELOPER_TOKEN_INVALID",
-                "message": "Developer API key is invalid or revoked.",
+                "message": "Developer token is invalid or revoked.",
             },
         )
     return principal
@@ -107,14 +124,17 @@ def authenticate_developer_principal(
 
 def try_authenticate_developer_principal(
     *,
+    token: str | None = None,
     authorization: str | None = None,
     request: Request | None = None,
 ) -> DeveloperPrincipal | None:
     if not developer_api_enabled():
         return None
 
-    raw_token = _resolve_bearer_token(authorization)
+    raw_token = _resolve_query_token(token)
     if not raw_token:
+        if _resolve_bearer_token(authorization):
+            raise _developer_token_query_required_error()
         return None
 
     client_ip = request.client.host if request and request.client else None

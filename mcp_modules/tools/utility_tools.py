@@ -19,7 +19,7 @@ from hushh_mcp.constants import AGENT_PORTS
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
 from mcp_modules.config import FASTAPI_URL
-from mcp_modules.developer_context import get_developer_request_headers
+from mcp_modules.developer_context import get_developer_request_query
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -221,8 +221,11 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = get_developer_request_headers()
-            r = await client.get(f"{FASTAPI_URL}/api/v1/user-scopes/{uid}", headers=headers)
+            token_query = get_developer_request_query()
+            r = await client.get(
+                f"{FASTAPI_URL}/api/v1/user-scopes/{uid}",
+                params=token_query or None,
+            )
             if r.status_code == 404:
                 return [
                     TextContent(
@@ -238,15 +241,15 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
                         ),
                     )
                 ]
-            if r.status_code == 401 and not headers:
+            if r.status_code == 401 and not token_query:
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps(
                             {
-                                "error": "developer_api_key_missing",
-                                "message": "Developer API key is required for discover_user_domains",
-                                "hint": "Set HUSHH_DEVELOPER_API_KEY in the MCP environment or authenticate the remote MCP request.",
+                                "error": "developer_token_missing",
+                                "message": "Developer token is required for discover_user_domains",
+                                "hint": "Set HUSHH_DEVELOPER_TOKEN in the MCP environment or append ?token=<developer-token> to the remote MCP URL.",
                             }
                         ),
                     )

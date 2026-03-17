@@ -70,6 +70,21 @@ def test_user_scopes_requires_developer_key(monkeypatch):
     assert detail["error_code"] == "DEVELOPER_TOKEN_REQUIRED"
 
 
+def test_user_scopes_rejects_authorization_header(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("DEVELOPER_API_ENABLED", "true")
+
+    client = TestClient(_build_app())
+    response = client.get(
+        "/api/v1/user-scopes/user_123",
+        headers={"Authorization": "Bearer hdk_demo"},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "DEVELOPER_TOKEN_QUERY_REQUIRED"
+
+
 def test_user_scopes_returns_discovered_domains(monkeypatch):
     class _FakeScopeGenerator:
         async def get_available_scopes(self, user_id: str) -> list[str]:
@@ -95,8 +110,7 @@ def test_user_scopes_returns_discovered_domains(monkeypatch):
 
     client = TestClient(_build_app())
     response = client.get(
-        "/api/v1/user-scopes/user_123",
-        headers={"Authorization": "Bearer hdk_demo"},
+        "/api/v1/user-scopes/user_123?token=hdk_demo",
     )
 
     assert response.status_code == 200
@@ -120,6 +134,21 @@ def test_tool_catalog_filters_to_public_beta_defaults(monkeypatch):
     assert payload["approval_required"] is False
     assert "discover_user_domains" in tool_names
     assert "list_ria_profiles" not in tool_names
+
+
+def test_tool_catalog_rejects_authorization_header(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("DEVELOPER_API_ENABLED", "true")
+
+    client = TestClient(_build_app())
+    response = client.get(
+        "/api/v1/tool-catalog",
+        headers={"Authorization": "Bearer hdk_demo"},
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "DEVELOPER_TOKEN_QUERY_REQUIRED"
 
 
 def test_request_consent_creates_pending_request(monkeypatch):
@@ -175,8 +204,7 @@ def test_request_consent_creates_pending_request(monkeypatch):
 
     client = TestClient(_build_app())
     response = client.post(
-        "/api/v1/request-consent",
-        headers={"Authorization": "Bearer hdk_demo"},
+        "/api/v1/request-consent?token=hdk_demo",
         json={
             "user_id": "user_123",
             "scope": "attr.financial.*",
@@ -204,8 +232,7 @@ def test_request_consent_rejects_legacy_body_fields(monkeypatch):
 
     client = TestClient(_build_app())
     response = client.post(
-        "/api/v1/request-consent",
-        headers={"Authorization": "Bearer hdk_demo"},
+        "/api/v1/request-consent?token=hdk_demo",
         json={
             "user_id": "user_123",
             "scope": "attr.financial.*",
@@ -241,8 +268,7 @@ def test_request_consent_rejects_legacy_scope_alias(monkeypatch):
 
     client = TestClient(_build_app())
     response = client.post(
-        "/api/v1/request-consent",
-        headers={"Authorization": "Bearer hdk_demo"},
+        "/api/v1/request-consent?token=hdk_demo",
         json={
             "user_id": "user_123",
             "scope": "attr_financial",
@@ -291,7 +317,7 @@ def test_enable_access_is_idempotent(monkeypatch):
 
     def _ensure(self, **kwargs):
         calls["count"] += 1
-        raw_key = "hdk_demo_secret" if calls["count"] == 1 else None
+        raw_token = "hdk_demo_secret" if calls["count"] == 1 else None
         return {
             "app": {
                 "app_id": "app_demo_123",
@@ -306,18 +332,18 @@ def test_enable_access_is_idempotent(monkeypatch):
                 "created_at": 1,
                 "updated_at": 2,
             },
-            "active_key": {
+            "active_token": {
                 "id": 101,
                 "app_id": "app_demo_123",
-                "key_prefix": "hdk_demo",
+                "token_prefix": "hdk_demo",
                 "label": "primary",
                 "created_at": 2,
                 "revoked_at": None,
                 "last_used_at": None,
             },
-            "raw_api_key": raw_key,
+            "raw_token": raw_token,
             "created_app": calls["count"] == 1,
-            "issued_key": calls["count"] == 1,
+            "issued_token": calls["count"] == 1,
         }
 
     monkeypatch.setenv("ENVIRONMENT", "development")
@@ -345,9 +371,9 @@ def test_enable_access_is_idempotent(monkeypatch):
     )
 
     assert first.status_code == 200
-    assert first.json()["raw_api_key"] == "hdk_demo_secret"
+    assert first.json()["raw_token"] == "hdk_demo_secret"  # noqa: S105
     assert second.status_code == 200
-    assert second.json()["raw_api_key"] is None
+    assert second.json()["raw_token"] is None
     assert calls["count"] == 2
 
 
@@ -373,11 +399,11 @@ def test_update_access_profile_updates_visible_identity(monkeypatch):
     )
     monkeypatch.setattr(
         developer.DeveloperRegistryService,
-        "get_active_api_key",
+        "get_active_token",
         lambda self, app_id: {
             "id": 101,
             "app_id": app_id,
-            "key_prefix": "hdk_demo",
+            "token_prefix": "hdk_demo",
             "label": "primary",
             "created_at": 2,
             "revoked_at": None,
@@ -411,15 +437,15 @@ def test_update_access_profile_updates_visible_identity(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["app"]["display_name"] == "External Agent"
-    assert payload["active_key"]["key_prefix"] == "hdk_demo"
+    assert payload["active_token"]["token_prefix"] == "hdk_demo"  # noqa: S105
 
 
-def test_rotate_access_key_returns_new_raw_key(monkeypatch):
+def test_rotate_access_token_returns_new_raw_token(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("DEVELOPER_API_ENABLED", "true")
     monkeypatch.setattr(
         developer.DeveloperRegistryService,
-        "rotate_self_serve_api_key",
+        "rotate_self_serve_token",
         lambda self, owner_firebase_uid: {
             "app": {
                 "app_id": "app_demo_123",
@@ -434,16 +460,16 @@ def test_rotate_access_key_returns_new_raw_key(monkeypatch):
                 "created_at": 1,
                 "updated_at": 4,
             },
-            "active_key": {
+            "active_token": {
                 "id": 202,
                 "app_id": "app_demo_123",
-                "key_prefix": "hdk_rotated",
+                "token_prefix": "hdk_rotated",
                 "label": "primary",
                 "created_at": 4,
                 "revoked_at": None,
                 "last_used_at": None,
             },
-            "raw_api_key": "hdk_rotated_secret",
+            "raw_token": "hdk_rotated_secret",
         },
     )
     monkeypatch.setattr(
@@ -466,5 +492,5 @@ def test_rotate_access_key_returns_new_raw_key(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["raw_api_key"] == "hdk_rotated_secret"
-    assert payload["active_key"]["key_prefix"] == "hdk_rotated"
+    assert payload["raw_token"] == "hdk_rotated_secret"  # noqa: S105
+    assert payload["active_token"]["token_prefix"] == "hdk_rotated"  # noqa: S105
