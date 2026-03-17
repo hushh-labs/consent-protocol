@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Optional
+from typing import Optional, TypedDict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -163,6 +163,12 @@ class DeveloperPortalProfileUpdateRequest(BaseModel):
     support_url: str | None = Field(default=None, max_length=512)
     policy_url: str | None = Field(default=None, max_length=512)
     website_url: str | None = Field(default=None, max_length=512)
+
+
+class OwnerProfile(TypedDict):
+    owner_email: str | None
+    owner_display_name: str | None
+    owner_provider_ids: list[str]
 
 
 def _scope_catalog() -> list[DeveloperScopeDescriptor]:
@@ -333,7 +339,7 @@ def _portal_access_response(
     )
 
 
-def _resolve_firebase_owner_profile(firebase_uid: str) -> dict[str, object]:
+def _resolve_firebase_owner_profile(firebase_uid: str) -> OwnerProfile:
     owner_email: str | None = None
     owner_display_name: str | None = None
     owner_provider_ids: list[str] = []
