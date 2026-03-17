@@ -1,5 +1,5 @@
 {
-  "_comment": "Run 'python setup_mcp.py' to generate this config automatically with correct paths",
+  "_comment": "Repo-local Python fallback example. Public install should prefer 'npx -y @hushh/mcp' once the npm package is published. Run 'python setup_mcp.py' to generate local Python config automatically.",
   "_instructions": "Or replace <PATH_TO_CONSENT_PROTOCOL> with your actual directory path",
   "mcpServers": {
     "hushh-consent": {

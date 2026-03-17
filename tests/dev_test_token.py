@@ -3,7 +3,7 @@
 Development-only token generator for testing without Firebase.
 
 WARNING: This should NEVER be used in production deployments.
-This file generates test VAULT_OWNER tokens using MCP_DEVELOPER_TOKEN from .env
+This file generates test VAULT_OWNER tokens using HUSHH_DEVELOPER_API_KEY from .env
 
 Usage:
     from tests.dev_test_token import generate_dev_vault_owner_token
@@ -36,7 +36,7 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
     """
     Generate a test VAULT_OWNER token for development/testing.
 
-    Uses MCP_DEVELOPER_TOKEN from .env environment variable.
+    Uses HUSHH_DEVELOPER_API_KEY from .env environment variable.
 
     Args:
         user_id: The user ID to assign to the token
@@ -48,18 +48,20 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
             - expires_at: Unix timestamp of expiration
 
     Raises:
-        HTTPException if MCP_DEVELOPER_TOKEN is not configured
+        HTTPException if HUSHH_DEVELOPER_API_KEY is not configured
     """
     # Check for developer token in environment
-    mcp_developer_token = os.getenv("MCP_DEVELOPER_TOKEN")
+    mcp_developer_token = os.getenv("HUSHH_DEVELOPER_API_KEY")
     if not mcp_developer_token:
         logger.error(
-            "MCP_DEVELOPER_TOKEN not found in environment. "
-            "Add to .env file: MCP_DEVELOPER_TOKEN=your-dev-token"
+            "HUSHH_DEVELOPER_API_KEY not found in environment. "
+            "Add to .env file: HUSHH_DEVELOPER_API_KEY=your-dev-token"
         )
         raise HTTPException(
             status_code=500,
-            detail=("MCP_DEVELOPER_TOKEN not configured. Set it in .env for development testing."),
+            detail=(
+                "HUSHH_DEVELOPER_API_KEY not configured. Set it in .env for development testing."
+            ),
         )
 
     # Import here to avoid circular import issues
@@ -68,7 +70,7 @@ def generate_dev_vault_owner_token(user_id: str) -> dict:
 
     logger.info(f"Generating dev VAULT_OWNER token for user: {user_id}")
 
-    # Issue token with MCP_DEVELOPER_TOKEN as agent_id, full vault.owner scope
+    # Issue token with HUSHH_DEVELOPER_API_KEY as agent_id, full vault.owner scope
     token_obj = issue_token(
         user_id=user_id,
         agent_id=mcp_developer_token,
@@ -96,11 +98,11 @@ def generate_dev_agent_token(user_id: str, scope: str) -> dict:
     Returns:
         dict with token and metadata
     """
-    mcp_developer_token = os.getenv("MCP_DEVELOPER_TOKEN")
+    mcp_developer_token = os.getenv("HUSHH_DEVELOPER_API_KEY")
     if not mcp_developer_token:
         raise HTTPException(
             status_code=500,
-            detail="MCP_DEVELOPER_TOKEN not configured",
+            detail="HUSHH_DEVELOPER_API_KEY not configured",
         )
 
     from hushh_mcp.consent.token import issue_token

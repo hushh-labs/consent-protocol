@@ -19,9 +19,9 @@ def test_scope_matches_world_model_read_superset():
     assert scope_matches("world_model.read", "attr.financial.profile.*")
 
 
-def test_normalize_scope_legacy_dynamic_format():
-    assert normalize_scope("attr_financial") == "attr.financial.*"
-    assert normalize_scope("attr_financial__profile") == "attr.financial.profile.*"
+def test_normalize_scope_rejects_legacy_dynamic_format():
+    assert normalize_scope("attr_financial") == "attr_financial"
+    assert normalize_scope("attr_financial__profile") == "attr_financial__profile"
 
 
 def test_resolve_scope_to_enum_dynamic_scope():

@@ -18,7 +18,8 @@ from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import AGENT_PORTS
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
-from mcp_modules.config import FASTAPI_URL, MCP_DEVELOPER_TOKEN
+from mcp_modules.config import FASTAPI_URL
+from mcp_modules.developer_context import get_developer_request_headers
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -220,9 +221,7 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = {}
-            if MCP_DEVELOPER_TOKEN:
-                headers["X-MCP-Developer-Token"] = MCP_DEVELOPER_TOKEN
+            headers = get_developer_request_headers()
             r = await client.get(f"{FASTAPI_URL}/api/v1/user-scopes/{uid}", headers=headers)
             if r.status_code == 404:
                 return [
@@ -239,15 +238,15 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
                         ),
                     )
                 ]
-            if r.status_code == 401 and not MCP_DEVELOPER_TOKEN:
+            if r.status_code == 401 and not headers:
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps(
                             {
-                                "error": "developer_token_missing",
-                                "message": "MCP_DEVELOPER_TOKEN is required for discover_user_domains",
-                                "hint": "Set MCP_DEVELOPER_TOKEN in MCP environment to call /api/v1/user-scopes/{user_id}.",
+                                "error": "developer_api_key_missing",
+                                "message": "Developer API key is required for discover_user_domains",
+                                "hint": "Set HUSHH_DEVELOPER_API_KEY in the MCP environment or authenticate the remote MCP request.",
                             }
                         ),
                     )

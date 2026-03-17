@@ -34,14 +34,15 @@ from mcp_modules import resources as mcp_resources
 
 # Import modular components
 from mcp_modules.config import SERVER_INFO
+from mcp_modules.developer_context import (
+    get_current_visible_tool_names,
+    is_tool_allowed,
+)
 from mcp_modules.tools import (
     get_tool_definitions,
     handle_check_consent_status,
     handle_delegate,
     handle_discover_user_domains,
-    handle_get_financial,
-    handle_get_food,
-    handle_get_professional,
     handle_get_ria_client_access_summary,
     handle_get_ria_profile,
     handle_get_ria_verification_status,
@@ -72,6 +73,21 @@ logger = logging.getLogger("hushh-mcp-server")
 
 server = Server("hushh-consent")
 
+HANDLERS = {
+    "request_consent": handle_request_consent,
+    "validate_token": handle_validate_token,
+    "get_scoped_data": handle_get_scoped_data,
+    "delegate_to_agent": handle_delegate,
+    "list_scopes": handle_list_scopes,
+    "discover_user_domains": handle_discover_user_domains,
+    "check_consent_status": handle_check_consent_status,
+    "list_ria_profiles": handle_list_ria_profiles,
+    "get_ria_profile": handle_get_ria_profile,
+    "list_marketplace_investors": handle_list_marketplace_investors,
+    "get_ria_verification_status": handle_get_ria_verification_status,
+    "get_ria_client_access_summary": handle_get_ria_client_access_summary,
+}
+
 
 # ============================================================================
 # TOOL DEFINITIONS
@@ -81,7 +97,8 @@ server = Server("hushh-consent")
 @server.list_tools()
 async def list_tools():
     """Expose Hushh consent tools to MCP hosts."""
-    return get_tool_definitions()
+    allowed_tool_names = set(get_current_visible_tool_names())
+    return get_tool_definitions(allowed_tool_names=allowed_tool_names)
 
 
 # ============================================================================
@@ -100,32 +117,29 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     logger.info(f"🔧 Tool called: {name}")
     logger.info(f"   Arguments: {json.dumps(arguments, default=str)}")
 
-    handlers = {
-        "request_consent": handle_request_consent,
-        "validate_token": handle_validate_token,
-        "get_financial_profile": handle_get_financial,
-        "get_food_preferences": handle_get_food,
-        "get_professional_profile": handle_get_professional,
-        "get_scoped_data": handle_get_scoped_data,
-        "delegate_to_agent": handle_delegate,
-        "list_scopes": handle_list_scopes,
-        "discover_user_domains": handle_discover_user_domains,
-        "check_consent_status": handle_check_consent_status,
-        "list_ria_profiles": handle_list_ria_profiles,
-        "get_ria_profile": handle_get_ria_profile,
-        "list_marketplace_investors": handle_list_marketplace_investors,
-        "get_ria_verification_status": handle_get_ria_verification_status,
-        "get_ria_client_access_summary": handle_get_ria_client_access_summary,
-    }
-
-    handler = handlers.get(name)
+    handler = HANDLERS.get(name)
     if not handler:
         logger.warning(f"❌ Unknown tool requested: {name}")
         return [
             TextContent(
                 type="text",
                 text=json.dumps(
-                    {"error": f"Unknown tool: {name}", "available_tools": list(handlers.keys())}
+                    {"error": f"Unknown tool: {name}", "available_tools": list(HANDLERS.keys())}
+                ),
+            )
+        ]
+
+    if not is_tool_allowed(name):
+        logger.warning("❌ Tool not entitled for current app: %s", name)
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "Tool not available for this developer app",
+                        "tool": name,
+                        "available_tools": list(get_current_visible_tool_names()),
+                    }
                 ),
             )
         ]

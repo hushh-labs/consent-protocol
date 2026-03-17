@@ -89,7 +89,7 @@ Hushh Approach  ✅  if (validateToken(VAULT_OWNER)) { allow(); }
 
 - Automated test suites must use fixture-issued tokens from `consent-protocol/tests/conftest.py`.
 - `consent-protocol/tests/dev_test_token.py` is for manual/debug workflows only.
-- CI must not depend on `.env` token helpers or `MCP_DEVELOPER_TOKEN` for consent-route coverage.
+- CI must not depend on `.env` token helpers or `HUSHH_DEVELOPER_API_KEY` for consent-route coverage.
 
 ### Streaming Contract Policy
 
