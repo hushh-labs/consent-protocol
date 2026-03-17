@@ -151,6 +151,10 @@ async def _enrich_notify_payload(data: Dict[str, Any]) -> Dict[str, Any]:
             "scope_description": data.get("scope_description")
             or row.get("scope_description")
             or "",
+            "agent_label": data.get("agent_label")
+            or metadata.get("developer_app_display_name")
+            or data.get("agent_id")
+            or "",
             "bundle_id": data.get("bundle_id") or metadata.get("bundle_id") or "",
             "bundle_label": data.get("bundle_label") or metadata.get("bundle_label") or "",
             "bundle_scope_count": data.get("bundle_scope_count")
@@ -190,6 +194,7 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
         action = data.get("action", "REQUESTED")
         scope = data.get("scope", "")
         agent_id = data.get("agent_id", "")
+        agent_label = data.get("agent_label", "") or agent_id
         scope_description = data.get("scope_description", "")
         bundle_id = data.get("bundle_id", "")
         bundle_label = data.get("bundle_label", "")
@@ -206,6 +211,7 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
                     "user_id": user_id,
                     "scope": scope,
                     "agent_id": agent_id,
+                    "agent_label": agent_label,
                     "scope_description": scope_description,
                     "bundle_id": bundle_id,
                     "bundle_label": bundle_label,
@@ -215,7 +221,7 @@ async def _send_fcm_for_user(user_id: str, data: Dict[str, Any]):
                 token=token,
                 notification=messaging.Notification(
                     title="Consent request" if action == "REQUESTED" else "Consent updated",
-                    body=f"{agent_id or 'An agent'} is requesting access to your {scope_description or scope or 'data'}."
+                    body=f"{agent_label or 'An agent'} is requesting access to your {scope_description or scope or 'data'}."
                     if action == "REQUESTED"
                     else f"Request {request_id}: {action}",
                 )

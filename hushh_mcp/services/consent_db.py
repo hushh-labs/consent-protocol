@@ -207,6 +207,7 @@ class ConsentDBService:
                         {
                             "id": row.get("request_id"),
                             "developer": row.get("agent_id"),
+                            "agent_id": row.get("agent_id"),
                             "scope": row.get("scope"),
                             "scopeDescription": row.get("scope_description"),
                             "requestedAt": row.get("issued_at"),
@@ -247,6 +248,7 @@ class ConsentDBService:
                 return {
                     "request_id": row.get("request_id"),
                     "developer": row.get("agent_id"),
+                    "agent_id": row.get("agent_id"),
                     "scope": row.get("scope"),
                     "scope_description": row.get("scope_description"),
                     "poll_timeout_at": row.get("poll_timeout_at"),
@@ -333,6 +335,7 @@ class ConsentDBService:
                             "time_remaining_ms": (expires_at - now_ms) if expires_at else 0,
                             "request_id": row.get("request_id"),
                             "token_id": token_id,
+                            "metadata": self._parse_metadata(row.get("metadata")) or None,
                         }
                     )
 
@@ -440,7 +443,11 @@ class ConsentDBService:
         return False
 
     async def was_recently_denied(
-        self, user_id: str, scope: str, cooldown_seconds: int = 60
+        self,
+        user_id: str,
+        scope: str,
+        cooldown_seconds: int = 60,
+        agent_id: Optional[str] = None,
     ) -> bool:
         """
         Check if consent was recently denied for user+scope.
@@ -460,10 +467,11 @@ class ConsentDBService:
             .eq("scope", scope)
             .eq("action", "CONSENT_DENIED")
             .gt("issued_at", cutoff_ms)
-            .order("issued_at", desc=True)
-            .limit(1)
-            .execute()
         )
+        if agent_id:
+            response = response.eq("agent_id", agent_id)
+
+        response = response.order("issued_at", desc=True).limit(1).execute()
 
         return len(response.data) > 0 if response.data else False
 
@@ -1002,6 +1010,36 @@ class ConsentDBService:
             if not self._is_external_audit_row(row):
                 return None
             return row
+        return None
+
+    async def get_request_status(self, user_id: str, request_id: str) -> Optional[Dict]:
+        """Return the latest external consent event for one request_id."""
+        supabase = self._get_supabase()
+
+        response = (
+            supabase.table("consent_audit")
+            .select(
+                "id,token_id,request_id,action,scope,agent_id,issued_at,scope_description,metadata,expires_at,poll_timeout_at"
+            )
+            .eq("user_id", user_id)
+            .eq("request_id", request_id)
+            .order("issued_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        if response.data and len(response.data) > 0:
+            row = response.data[0]
+            if not self._is_external_audit_row(row):
+                return None
+            metadata = self._parse_metadata(row.get("metadata"))
+            return {
+                **row,
+                "metadata": metadata,
+                "bundle_id": metadata.get("bundle_id"),
+                "bundle_label": metadata.get("bundle_label"),
+                "bundle_scope_count": metadata.get("bundle_scope_count"),
+            }
         return None
 
     # =========================================================================

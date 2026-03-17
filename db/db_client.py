@@ -542,13 +542,17 @@ class DatabaseClient:
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(text(sql), params or {})
+                should_commit = conn.in_transaction()
 
                 # Check if this is a SELECT-like query that returns rows
                 if result.returns_rows:
                     rows = [dict(row._mapping) for row in result]
+                    if should_commit:
+                        conn.commit()
                     return QueryResult(data=rows, count=len(rows))
                 else:
-                    conn.commit()
+                    if should_commit:
+                        conn.commit()
                     return QueryResult(data=[], count=result.rowcount)
         except DatabaseExecutionError:
             raise

@@ -8,20 +8,72 @@ For repo-wide coding-agent setup guidance, including `shadcn` and `plaid` MCP ex
 
 ## Prerequisites
 
-- Python 3.13+
+- Node.js 18.18+ for the npm wrapper
+- Python 3.13+ for the underlying MCP runtime
 - Claude Desktop app installed (or another MCP host such as Cursor)
-- Hushh consent-protocol dependencies installed
+- Hushh runtime configuration available through environment variables or a `consent-protocol`-style `.env` file
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Option A: npm Wrapper (preferred public install surface)
+
+Use the npm launcher when preparing external developer docs, Product Hunt assets, or machine-local MCP host config that should match the launch story:
+
+```bash
+export HUSHH_MCP_ENV_FILE=/absolute/path/to/consent-protocol/.env
+npx -y @hushh/mcp@beta --help
+```
+
+That command validates that the launcher can find Python and bootstrap the packaged runtime. The first full run installs the bundled Python dependencies into a local cache directory.
+
+Manual host configuration:
+
+```json
+{
+  "mcpServers": {
+    "hushh-consent": {
+      "command": "npx",
+      "args": ["-y", "@hushh/mcp@beta"]
+    }
+  }
+}
+```
+
+Notes:
+
+1. `HUSHH_MCP_ENV_FILE` is the simplest way to reuse an existing `consent-protocol/.env`.
+2. You can also export the required env vars directly instead of using an env file.
+3. If `@hushh/mcp` has not been published yet, treat that as a launch blocker for the public developer lane and use the repo-local fallback below until publish is complete.
+
+### Option A2: Hosted Remote MCP (UAT beta)
+
+For hosts that support direct remote MCP over HTTP, point them at the UAT endpoint and send the self-serve developer API key as a bearer token:
+
+```json
+{
+  "mcpServers": {
+    "hushh-consent-remote": {
+      "url": "https://api.uat.kai.hushh.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer <developer-api-key>"
+      }
+    }
+  }
+}
+```
+
+### Option B: Repo-Local Python Fallback
+
+Use this path when working inside the repo or before the npm package is published.
+
+#### 1. Install Dependencies
 
 ```bash
 cd consent-protocol
 pip install -r requirements.txt
 ```
 
-### 2. Test the MCP Server
+#### 2. Test the MCP Server
 
 ```bash
 python mcp_server.py
@@ -37,13 +89,13 @@ You should see output on stderr:
 
 Press `Ctrl+C` to stop.
 
-### 3. Configure Claude Desktop
+#### 3. Configure Claude Desktop
 
-You have two options: **automatic** (recommended) or **manual**.
+You have two repo-local options: **automatic** or **manual**.
 
-#### Option A: Automatic Setup (recommended)
+##### Automatic Setup
 
-Run the setup script to auto-generate and install the Claude Desktop config:
+Run the setup script to auto-generate and install the local Python config:
 
 ```bash
 python setup_mcp.py
@@ -56,7 +108,7 @@ The script will:
 3. Prompt you to install it directly into the Claude Desktop config location
 4. Merge the `hushh-consent` server entry into any existing config
 
-#### Option B: Manual Configuration
+##### Manual Configuration
 
 **Config file location:**
 
@@ -110,27 +162,18 @@ Create or edit the file (replace paths with your actual directory locations):
 2. **Reopen** Claude Desktop
 3. Look for the **tool icon** in the input area -- this indicates connected MCP servers
 
-## Available Tools (15 tools)
+## Available Tools
 
-Once connected, the MCP host has access to these 15 tools:
+The public UAT developer contract exposes a single scalable tool group: `core_consent`.
 
 | Tool                       | Description                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------- |
 | `request_consent`          | Request user consent for a discovered scope (for example `world_model.read` or `attr.{domain}.*`) |
 | `validate_token`           | Validate a consent token's signature, expiration, and scope before use          |
 | `get_scoped_data`          | Recommended generic data-access tool for any approved dynamic scope             |
-| `get_financial_profile`    | Get financial profile data (requires `attr.financial.*` or `world_model.read`)  |
-| `get_food_preferences`     | Compatibility-only named getter for older food/dining integrations              |
-| `get_professional_profile` | Compatibility-only named getter for older professional integrations             |
-| `delegate_to_agent`        | Create a TrustLink for agent-to-agent (A2A) delegation                          |
-| `list_scopes`              | List dynamic consent scope categories from backend metadata                      |
-| `discover_user_domains`    | Discover which domains a user has and the scope strings to request              |
-| `check_consent_status`     | Check current status of a pending consent request                               |
-| `list_ria_profiles`        | List discoverable marketplace RIA profiles                                      |
-| `get_ria_profile`          | Get one discoverable RIA profile by id                                          |
-| `list_marketplace_investors` | List discoverable opt-in investor profiles                                   |
-| `get_ria_verification_status` | Read RIA verification status with VAULT_OWNER authority                      |
-| `get_ria_client_access_summary` | Read RIA relationship/access summary with VAULT_OWNER authority           |
+| `list_scopes`              | List dynamic consent scope categories from backend metadata                     |
+| `discover_user_domains`    | Discover which domains a user has and the scope strings to request             |
+| `check_consent_status`     | Check current status of a pending consent request                              |
 
 ## MCP Resources (4 resources)
 
@@ -149,10 +192,10 @@ Agents can read `hushh://info/connector` for a machine-readable summary of the r
 
 Scopes are **dynamic** -- they are derived from the world model registry (`world_model_index_v2.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
 
-1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}` with `X-MCP-Developer-Token`.
+1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}` with the self-serve developer API key.
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
 3. **Wait for approval** -- If the response status is `pending`, return control to the caller and wait for user action in the Hushh app. Re-check later using `check_consent_status(user_id, scope)`.
-4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_scoped_data`. Only use named getters when maintaining older compatibility integrations.
+4. **Use data** -- Pass the returned consent token (`HCT:...`) to `get_scoped_data`.
 
 ### Scope model
 
@@ -166,7 +209,7 @@ Scopes are resolved dynamically from user metadata + domain registry. There is n
 
 ## Zero-Knowledge Export
 
-Data returned by `get_scoped_data` and compatibility `get_*` tools is fetched from an encrypted vault export. The backend encrypts with an export key (`K_export`), and the MCP server decrypts using AES-GCM on the client side. The server never stores plaintext user data at rest.
+Data returned by `get_scoped_data` is fetched from an encrypted vault export. The backend encrypts with an export key (`K_export`), and the MCP server decrypts using AES-GCM on the client side. The server never stores plaintext user data at rest.
 
 ## Developer API
 
@@ -175,14 +218,16 @@ The publishable developer API surface is versioned under `/api/v1`:
 | Method | Path | Auth | Purpose |
 | ------ | ---- | ---- | ------- |
 | `GET` | `/api/v1/list-scopes` | Developer API enabled | Generic dynamic scope catalog |
-| `GET` | `/api/v1/user-scopes/{user_id}` | `X-MCP-Developer-Token` | Per-user discovered scopes and domains |
-| `POST` | `/api/v1/request-consent` | `developer_token` body field or `X-MCP-Developer-Token` | Create or reuse consent for one discovered scope |
+| `GET` | `/api/v1/tool-catalog` | Optional developer API key | App-filtered tool groups and recommended flow |
+| `GET` | `/api/v1/user-scopes/{user_id}` | `Authorization: Bearer <developer-api-key>` | Per-user discovered scopes and domains |
+| `GET` | `/api/v1/consent-status` | `Authorization: Bearer <developer-api-key>` | Check app-scoped consent status by scope or request id |
+| `POST` | `/api/v1/request-consent` | `Authorization: Bearer <developer-api-key>` | Create or reuse consent for one discovered scope |
 
 Scale rules:
 
 - Always discover scopes per user instead of hardcoding domain keys.
 - Prefer `get_scoped_data` for all new integrations.
-- Set a distinct `MCP_AGENT_ID` per integrating app or MCP deployment so consent state partitions cleanly.
+- App identity comes from the self-serve developer workspace and registry-backed API key.
 
 ## Production Mode
 
@@ -200,11 +245,10 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | Variable                       | Default                  | Description                                          |
 | ------------------------------ | ------------------------ | ---------------------------------------------------- |
 | `CONSENT_API_URL`              | `http://localhost:8000`  | FastAPI backend URL for consent API calls             |
-| `FRONTEND_URL`                 | `http://localhost:3000`  | Frontend URL for user-facing links                    |
+| `FRONTEND_URL`                 | `http://localhost:3000`  | Optional frontend URL for user-facing consent links   |
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
 | `DEVELOPER_API_ENABLED`        | `true` (dev), `false` (prod) | Controls `/api/v1/*` developer API availability |
-| `MCP_DEVELOPER_TOKEN`          | _(none)_                 | Developer token for service-auth `/api/user/lookup`   |
-| `MCP_AGENT_ID`                | `hushh-mcp`             | Logical app / MCP identity sent to `/api/v1/request-consent` |
+| `HUSHH_DEVELOPER_API_KEY`     | _(none)_                 | Self-serve developer API key for stdio MCP and `/api/user/lookup` |
 | `CONSENT_TIMEOUT_SECONDS`      | `120`                    | Max wait time for user to approve consent             |
 
 ## Demo Script
@@ -215,7 +259,7 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 You: "What Hushh tools do you have access to?"
 ```
 
-The agent should list all 15 tools and 4 resources.
+The agent should list the 6 public consent tools and 4 self-documenting resources.
 
 ### Step 2: Discover User Domains
 
@@ -266,7 +310,7 @@ You: "Use a token granted for one discovered branch against a different branch"
 | Server not found               | Check `PYTHONPATH` in config points to `consent-protocol` directory      |
 | Import errors                  | Run `pip install -r requirements.txt`                                    |
 | Claude doesn't see tools       | Fully restart Claude Desktop (check system tray / menu bar)              |
-| Tools count mismatch           | Ensure you have the latest `mcp_server.py`; there should be 15 tools    |
+| Tools count mismatch           | Ensure you have the latest `mcp_server.py`; the public contract exposes 6 consent tools |
 | Consent request never appears  | User must have the Hushh app installed; FCM push notifications deliver consent requests |
 | Consent times out              | Default timeout is 120s; check `CONSENT_TIMEOUT_SECONDS` env var        |
 | Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the world model, not a fixed list |

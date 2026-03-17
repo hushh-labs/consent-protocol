@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import create_engine, text
 
-from db.db_client import DatabaseExecutionError, TableQuery
+from db.db_client import DatabaseClient, DatabaseExecutionError, TableQuery
 
 
 @pytest.fixture
@@ -86,3 +86,41 @@ def test_upsert_supports_composite_conflict_columns(sqlite_engine):
     assert row.iv == "iv-v2"
     assert row.created_at == 1000
     assert row.updated_at == 2000
+
+
+def test_execute_raw_commits_insert_returning_statements(sqlite_engine):
+    with sqlite_engine.connect() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE developer_apps (
+                    app_id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.commit()
+
+    db = DatabaseClient(engine=sqlite_engine)
+    result = db.execute_raw(
+        """
+        INSERT INTO developer_apps (app_id, display_name)
+        VALUES (:app_id, :display_name)
+        RETURNING app_id, display_name
+        """,
+        {"app_id": "app_demo_123", "display_name": "Demo App"},
+    )
+
+    assert result.count == 1
+    assert result.data[0]["app_id"] == "app_demo_123"
+
+    with sqlite_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT app_id, display_name FROM developer_apps WHERE app_id = :app_id"),
+            {"app_id": "app_demo_123"},
+        ).fetchone()
+
+    assert row is not None
+    assert row.app_id == "app_demo_123"
+    assert row.display_name == "Demo App"

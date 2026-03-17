@@ -6,14 +6,14 @@ MCP Tool definitions (JSON schemas for Claude/Cursor).
 from mcp.types import Tool
 
 
-def get_tool_definitions() -> list[Tool]:
+def get_tool_definitions(allowed_tool_names: set[str] | None = None) -> list[Tool]:
     """
     Return all Hushh consent tools for MCP hosts.
 
     Compliance: MCP tools/list specification
     Privacy: Tools enforce consent before any data access
     """
-    return [
+    definitions = [
         # Tool 1: Request Consent
         Tool(
             name="request_consent",
@@ -105,84 +105,7 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id", "consent_token"],
             },
         ),
-        # Tool 4: Get Financial Profile
-        Tool(
-            name="get_financial_profile",
-            description=(
-                "💰 Compatibility-only wrapper for financial profile access. "
-                "New integrations should prefer get_scoped_data with a discovered scope "
-                "or world_model.read."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "The user's unique identifier or Email Address",
-                    },
-                    "consent_token": {
-                        "type": "string",
-                        "description": "Valid consent token with attr.financial.* or world_model.read scope",
-                    },
-                },
-                "required": ["user_id", "consent_token"],
-            },
-        ),
-        # Tool 5: Get Food Preferences
-        Tool(
-            name="get_food_preferences",
-            description=(
-                "🍽️ Compatibility-only wrapper for legacy food/dining access. "
-                "New integrations should prefer get_scoped_data with a discovered scope "
-                "instead of relying on named domain getters."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "The user's unique identifier or Email Address",
-                    },
-                    "consent_token": {
-                        "type": "string",
-                        "description": (
-                            "Compatibility token for this legacy wrapper. "
-                            "Current runtime expects a token that authorizes the exported data, "
-                            "typically world_model.read. New integrations should use get_scoped_data."
-                        ),
-                    },
-                },
-                "required": ["user_id", "consent_token"],
-            },
-        ),
-        # Tool 6: Get Professional Profile
-        Tool(
-            name="get_professional_profile",
-            description=(
-                "💼 Compatibility-only wrapper for legacy professional-profile access. "
-                "New integrations should prefer get_scoped_data with a discovered scope "
-                "instead of relying on named domain getters."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "The user's unique identifier or Email Address",
-                    },
-                    "consent_token": {
-                        "type": "string",
-                        "description": (
-                            "Compatibility token for this legacy wrapper. "
-                            "Current runtime expects a token that authorizes the exported data, "
-                            "typically world_model.read. New integrations should use get_scoped_data."
-                        ),
-                    },
-                },
-                "required": ["user_id", "consent_token"],
-            },
-        ),
-        # Tool 7: Delegate to Agent (TrustLink)
+        # Tool 4: Delegate to Agent (TrustLink)
         Tool(
             name="delegate_to_agent",
             description=(
@@ -215,7 +138,7 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["from_agent", "to_agent", "scope", "user_id"],
             },
         ),
-        # Tool 8: List Available Scopes
+        # Tool 5: List Available Scopes
         Tool(
             name="list_scopes",
             description=(
@@ -224,7 +147,7 @@ def get_tool_definitions() -> list[Tool]:
             ),
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
-        # Tool 9: Discover user's domains and scopes (per-user discovery)
+        # Tool 6: Discover user's domains and scopes (per-user discovery)
         Tool(
             name="discover_user_domains",
             description=(
@@ -243,7 +166,7 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["user_id"],
             },
         ),
-        # Tool 10: Check Consent Status (Production Flow)
+        # Tool 7: Check Consent Status (Production Flow)
         Tool(
             name="check_consent_status",
             description=(
@@ -259,7 +182,14 @@ def get_tool_definitions() -> list[Tool]:
                         "type": "string",
                         "description": "The user's unique identifier or Email Address",
                     },
-                    "scope": {"type": "string", "description": "The scope that was requested"},
+                    "scope": {
+                        "type": "string",
+                        "description": "The scope that was requested. Preferred when checking app+scope status.",
+                    },
+                    "request_id": {
+                        "type": "string",
+                        "description": "Optional request_id returned by request_consent for more precise polling.",
+                    },
                 },
                 "required": ["user_id", "scope"],
             },
@@ -337,3 +267,6 @@ def get_tool_definitions() -> list[Tool]:
             },
         ),
     ]
+    if allowed_tool_names is None:
+        return definitions
+    return [tool for tool in definitions if tool.name in allowed_tool_names]

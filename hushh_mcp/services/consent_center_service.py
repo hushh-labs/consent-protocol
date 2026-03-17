@@ -36,6 +36,17 @@ class ConsentCenterService:
         return "developer", normalized_agent or None
 
     @staticmethod
+    def _developer_label(agent_id: str | None, metadata: dict[str, Any]) -> str:
+        app_label = str(metadata.get("developer_app_display_name") or "").strip()
+        if app_label:
+            return app_label
+        if metadata.get("requester_actor_type") == "ria":
+            ria_label = str(metadata.get("requester_entity_id") or "").strip()
+            if ria_label:
+                return ria_label
+        return str(agent_id or "").strip()
+
+    @staticmethod
     def _map_action_to_status(action: str | None) -> str:
         normalized = str(action or "").strip().upper()
         mapping = {
@@ -73,7 +84,8 @@ class ConsentCenterService:
 
     def _normalize_pending(self, item: dict[str, Any]) -> dict[str, Any]:
         agent_id = str(item.get("developer") or "")
-        counterpart_type, counterpart_id = self._counterpart(agent_id, {})
+        metadata = self._metadata(item.get("metadata"))
+        counterpart_type, counterpart_id = self._counterpart(agent_id, metadata)
         status = "pending"
         return {
             "id": str(item.get("id") or ""),
@@ -84,19 +96,23 @@ class ConsentCenterService:
             "scope_description": item.get("scopeDescription"),
             "counterpart_type": counterpart_type,
             "counterpart_id": counterpart_id,
-            "counterpart_label": agent_id,
+            "counterpart_label": self._developer_label(agent_id, metadata),
             "request_id": item.get("id"),
             "invite_id": None,
             "relationship_status": None,
             "allowed_next_action": self._map_next_action(status, "incoming_request"),
             "issued_at": item.get("requestedAt"),
             "expires_at": item.get("pollTimeoutAt"),
-            "metadata": {"expiry_hours": item.get("expiryHours")},
+            "metadata": {
+                **metadata,
+                "expiry_hours": item.get("expiryHours"),
+            },
         }
 
     def _normalize_active(self, item: dict[str, Any]) -> dict[str, Any]:
         agent_id = str(item.get("developer") or item.get("agent_id") or "")
-        counterpart_type, counterpart_id = self._counterpart(agent_id, {})
+        metadata = self._metadata(item.get("metadata"))
+        counterpart_type, counterpart_id = self._counterpart(agent_id, metadata)
         status = "active"
         return {
             "id": str(item.get("token_id") or item.get("id") or ""),
@@ -107,14 +123,14 @@ class ConsentCenterService:
             "scope_description": None,
             "counterpart_type": counterpart_type,
             "counterpart_id": counterpart_id,
-            "counterpart_label": agent_id,
+            "counterpart_label": self._developer_label(agent_id, metadata),
             "request_id": item.get("request_id"),
             "invite_id": None,
             "relationship_status": self._map_action_to_status(item.get("action")),
             "allowed_next_action": self._map_next_action(status, "active_grant"),
             "issued_at": item.get("issued_at"),
             "expires_at": item.get("expires_at"),
-            "metadata": None,
+            "metadata": metadata or None,
         }
 
     def _normalize_history(self, item: dict[str, Any]) -> dict[str, Any]:
@@ -122,7 +138,7 @@ class ConsentCenterService:
         agent_id = str(item.get("agent_id") or "")
         counterpart_type, counterpart_id = self._counterpart(agent_id, metadata)
         status = self._map_action_to_status(item.get("action"))
-        counterpart_label = agent_id
+        counterpart_label = self._developer_label(agent_id, metadata)
         if metadata.get("requester_actor_type") == "ria":
             counterpart_label = str(metadata.get("requester_entity_id") or agent_id)
         return {

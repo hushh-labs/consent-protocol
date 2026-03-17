@@ -21,11 +21,10 @@ from mcp_modules.config import (
     DEVELOPER_API_ENABLED,
     FASTAPI_URL,
     FRONTEND_URL,
-    MCP_AGENT_ID,
-    MCP_DEVELOPER_TOKEN,
     PRODUCTION_MODE,
     resolve_scope_api,
 )
+from mcp_modules.developer_context import get_developer_request_headers
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -38,8 +37,9 @@ async def resolve_email_to_uid(user_id: str) -> tuple[Optional[str], str | None,
     if not user_id or "@" not in user_id:
         return user_id, None, None
 
-    if not MCP_DEVELOPER_TOKEN:
-        logger.warning("Email-to-UID lookup skipped: MCP_DEVELOPER_TOKEN not configured")
+    headers = get_developer_request_headers()
+    if not headers:
+        logger.warning("Email-to-UID lookup skipped: developer API key not configured")
         return user_id, None, None
 
     try:
@@ -47,7 +47,7 @@ async def resolve_email_to_uid(user_id: str) -> tuple[Optional[str], str | None,
             lookup_response = await client.get(
                 f"{FASTAPI_URL}/api/user/lookup",
                 params={"email": user_id},
-                headers={"X-MCP-Developer-Token": MCP_DEVELOPER_TOKEN},
+                headers=headers,
                 timeout=5.0,
             )
 
@@ -133,15 +133,16 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
             )
         ]
 
-    if not MCP_DEVELOPER_TOKEN:
-        logger.error("request_consent aborted: MCP_DEVELOPER_TOKEN missing")
+    headers = get_developer_request_headers()
+    if not headers:
+        logger.error("request_consent aborted: developer API key missing")
         return [
             TextContent(
                 type="text",
                 text=json.dumps(
                     {
                         "status": "error",
-                        "error": "MCP developer token is not configured",
+                        "error": "Developer API key is not configured",
                     }
                 ),
             )
@@ -168,9 +169,8 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
         async with httpx.AsyncClient() as client:
             create_response = await client.post(
                 f"{FASTAPI_URL}/api/v1/request-consent",
+                headers=headers,
                 json={
-                    "developer_token": MCP_DEVELOPER_TOKEN,
-                    "agent_id": MCP_AGENT_ID,
                     "user_id": user_id,
                     "scope": scope_dot,
                     "expiry_hours": 24,
@@ -318,6 +318,7 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     """
     user_id = args.get("user_id")
     scope_str = args.get("scope")
+    request_id = args.get("request_id")
 
     if not DEVELOPER_API_ENABLED:
         return [
@@ -353,48 +354,36 @@ async def handle_check_consent_status(args: dict) -> list[TextContent]:
     logger.info("Checking consent status user=%s scope=%s", user_id, scope_str)
 
     try:
-        # Note: These endpoints require VAULT_OWNER auth. If unavailable, we return
-        # a pending/not_found response instead of polling consent events.
+        headers = get_developer_request_headers()
+        if not headers:
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "error",
+                            "error": "Developer API key is not configured",
+                            "hint": "Set HUSHH_DEVELOPER_API_KEY for stdio or authenticate the remote MCP request.",
+                        }
+                    ),
+                )
+            ]
+
         async with httpx.AsyncClient() as client:
-            active_response = await client.get(
-                f"{FASTAPI_URL}/api/consent/active",
-                params={"userId": user_id},
+            status_response = await client.get(
+                f"{FASTAPI_URL}/api/v1/consent-status",
+                params={
+                    "user_id": user_id,
+                    **({"scope": scope_str} if scope_str else {}),
+                    **({"request_id": request_id} if request_id else {}),
+                },
+                headers=headers,
                 timeout=10.0,
             )
+            status_response.raise_for_status()
+            data = status_response.json()
 
-            if active_response.status_code == 200:
-                active_list = active_response.json().get("active", [])
-                active_token = next((t for t in active_list if t.get("scope") == scope_str), None)
-                if active_token:
-                    return [
-                        TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "status": "granted",
-                                    "consent_token": active_token.get("token_id"),
-                                    "user_id": user_id,
-                                    "scope": scope_str,
-                                    "expires_at": active_token.get("expiresAt"),
-                                    "message": "Consent is active.",
-                                }
-                            ),
-                        )
-                    ]
-
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "status": "pending_or_unavailable",
-                        "user_id": user_id,
-                        "scope": scope_str,
-                        "message": "Consent not yet active or status endpoint unavailable without user session.",
-                    }
-                ),
-            )
-        ]
+        return [TextContent(type="text", text=json.dumps(data))]
 
     except httpx.ConnectError:
         return [
