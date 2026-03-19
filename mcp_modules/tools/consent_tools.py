@@ -20,7 +20,6 @@ from mcp.types import TextContent
 from mcp_modules.config import (
     DEVELOPER_API_ENABLED,
     FASTAPI_URL,
-    FRONTEND_URL,
     PRODUCTION_MODE,
     resolve_scope_api,
 )
@@ -82,7 +81,6 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
     user_id, user_email, user_display_name = await resolve_email_to_uid(user_id)
 
     if user_id is None:
-        frontend_url = FRONTEND_URL
         return [
             TextContent(
                 type="text",
@@ -91,7 +89,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                         "status": "user_not_found",
                         "email": original_identifier,
                         "message": f"No Hushh account found for {original_identifier}",
-                        "signup_url": f"{frontend_url}/login",
+                        "next_step": "Ask the user to sign in to the Hushh app before requesting consent.",
                     }
                 ),
             )
@@ -275,7 +273,7 @@ async def handle_request_consent(args: dict) -> list[TextContent]:
                             "scope": data.get("scope", scope_dot),
                             "request_id": request_id,
                             "message": "Consent request submitted. User approval is pending in Hushh app.",
-                            "dashboard_url": f"{FRONTEND_URL}/consents?tab=pending",
+                            "approval_surface": data.get("approval_surface", "/consents"),
                             "next_step": "Call check_consent_status later, or wait for user confirmation.",
                         }
                     ),
