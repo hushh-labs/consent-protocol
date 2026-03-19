@@ -15,7 +15,7 @@ def _env_truthy(name: str, fallback: str = "false") -> bool:
 _DEFAULT_PORT = str(os.environ.get("PORT", "8000")).strip() or "8000"
 FASTAPI_URL = os.environ.get("CONSENT_API_URL", f"http://127.0.0.1:{_DEFAULT_PORT}")
 
-# Frontend URL (for user-facing links - MUST match your deployment)
+# Optional frontend URL used only for internal/backend-generated app links.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # Production mode: requires user approval via dashboard
