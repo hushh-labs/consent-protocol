@@ -33,7 +33,11 @@ Manual host configuration:
   "mcpServers": {
     "hushh-consent": {
       "command": "npx",
-      "args": ["-y", "@hushh/mcp@beta"]
+      "args": ["-y", "@hushh/mcp@beta"],
+      "env": {
+        "CONSENT_API_URL": "https://<consent-api-origin>",
+        "HUSHH_DEVELOPER_TOKEN": "<developer-token>"
+      }
     }
   }
 }
@@ -47,17 +51,19 @@ Notes:
 
 ### Option A2: Hosted Remote MCP (UAT beta)
 
-For hosts that support direct remote MCP over HTTP, point them at the UAT endpoint and append the self-serve developer token to the URL:
+For hosts that support direct remote MCP over HTTP, point them at the backend MCP endpoint and append the self-serve developer token to the URL:
 
 ```json
 {
   "mcpServers": {
     "hushh-consent-remote": {
-      "url": "https://api.uat.kai.hushh.ai/mcp?token=<developer-token>"
+      "url": "https://<consent-api-origin>/mcp?token=<developer-token>"
     }
   }
 }
 ```
+
+For public developer setup, do not add `FRONTEND_URL` to the MCP host config. The backend already owns the app/approval surface for its environment.
 
 ### Option B: Repo-Local Python Fallback
 
@@ -242,7 +248,7 @@ Set `PRODUCTION_MODE=false` only for local development without a real user devic
 | Variable                       | Default                  | Description                                          |
 | ------------------------------ | ------------------------ | ---------------------------------------------------- |
 | `CONSENT_API_URL`              | `http://localhost:8000`  | FastAPI backend URL for consent API calls             |
-| `FRONTEND_URL`                 | `http://localhost:3000`  | Optional frontend URL for user-facing consent links   |
+| `CONSENT_API_URL`              | `http://localhost:8000`  | Backend origin for `/api/v1` calls and stdio MCP      |
 | `PRODUCTION_MODE`              | `true`                   | Require real user approval via Hushh app              |
 | `DEVELOPER_API_ENABLED`        | `true` (dev), `false` (prod) | Controls `/api/v1/*` developer API availability |
 | `HUSHH_DEVELOPER_TOKEN`       | _(none)_                 | Self-serve developer token for stdio MCP and `/api/user/lookup` |

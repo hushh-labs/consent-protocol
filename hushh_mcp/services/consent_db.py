@@ -419,28 +419,65 @@ class ConsentDBService:
         self, user_id: str, scope: str, agent_id: Optional[str] = None
     ) -> bool:
         """Check if there's an active token for user+scope (+agent_id when provided)."""
-        supabase = self._get_supabase()
         now_ms = int(datetime.now().timestamp() * 1000)
-
-        query = (
-            supabase.table("consent_audit")
-            .select("action,expires_at")
-            .eq("user_id", user_id)
-            .eq("scope", scope)
-            .in_("action", ["CONSENT_GRANTED", "REVOKED"])
+        normalized_scope = str(scope or "").strip()
+        normalized_agent_id = agent_id or None
+        is_internal_lookup = self._is_internal_event(
+            agent_id=normalized_agent_id,
+            action="CONSENT_GRANTED",
+            scope=normalized_scope,
         )
-        if agent_id:
-            query = query.eq("agent_id", agent_id)
 
-        response = query.order("issued_at", desc=True).limit(1).execute()
+        rows: List[Dict[str, Any]]
 
-        if response.data and len(response.data) > 0:
-            row = response.data[0]
-            if row.get("action") == "CONSENT_GRANTED":
-                expires_at = row.get("expires_at")
-                return expires_at is None or expires_at > now_ms
+        if is_internal_lookup:
+            try:
+                supabase = self._get_supabase()
+                query = (
+                    supabase.table("internal_access_events")
+                    .select("action,expires_at,issued_at")
+                    .eq("user_id", user_id)
+                    .eq("scope", normalized_scope)
+                    .in_("action", ["CONSENT_GRANTED", "REVOKED"])
+                )
+                if normalized_agent_id:
+                    query = query.eq("agent_id", normalized_agent_id)
+                rows = query.order("issued_at", desc=True).limit(1).execute().data or []
+            except DatabaseExecutionError as exc:
+                if not self._is_missing_internal_access_events_error(exc):
+                    raise
+                logger.warning(
+                    "internal_access_events_missing fallback=consent_audit action=is_token_active"
+                )
+                rows = await self._get_legacy_internal_rows(
+                    user_id,
+                    agent_id=normalized_agent_id,
+                    scope=normalized_scope,
+                    actions=["CONSENT_GRANTED", "REVOKED"],
+                    limit=1,
+                )
+        else:
+            supabase = self._get_supabase()
+            query = (
+                supabase.table("consent_audit")
+                .select("action,expires_at,issued_at")
+                .eq("user_id", user_id)
+                .eq("scope", normalized_scope)
+                .in_("action", ["CONSENT_GRANTED", "REVOKED"])
+            )
+            if normalized_agent_id:
+                query = query.eq("agent_id", normalized_agent_id)
+            rows = query.order("issued_at", desc=True).limit(1).execute().data or []
 
-        return False
+        if not rows:
+            return False
+
+        row = rows[0]
+        if row.get("action") != "CONSENT_GRANTED":
+            return False
+
+        expires_at = row.get("expires_at")
+        return expires_at is None or expires_at > now_ms
 
     async def was_recently_denied(
         self,

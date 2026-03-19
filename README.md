@@ -21,6 +21,16 @@ The Consent Protocol is the single source of truth for the Hushh backend. It pow
 
 ## Quick Start
 
+If you are working inside the `hushh-research` monorepo, use the repo-root bootstrap and runtime profiles instead of manually assembling backend env files:
+
+```bash
+cd ..
+make bootstrap
+make backend PROFILE=local-uatdb
+```
+
+Standalone subtree/backend-only setup:
+
 ```bash
 # Clone
 git clone https://github.com/hushh-labs/consent-protocol.git
