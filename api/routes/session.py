@@ -4,11 +4,11 @@ Session token and user management endpoints.
 """
 
 import logging
+import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException
 
-from api.developer_auth import authenticate_developer_principal
 from api.models import LogoutRequest, SessionTokenRequest, SessionTokenResponse
 from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.services.consent_db import ConsentDBService
@@ -194,19 +194,9 @@ async def get_active_consents(
         # Group by developer/app
         grouped = {}
         for token in active_tokens:
-            metadata = token.get("metadata") if isinstance(token.get("metadata"), dict) else {}
-            app = (
-                metadata.get("developer_app_display_name")
-                or token.get("developer")
-                or "Unknown App"
-            )
+            app = token.get("developer", "Unknown App")
             if app not in grouped:
-                grouped[app] = {
-                    "appName": app.replace("developer:", ""),
-                    "appId": metadata.get("developer_app_id"),
-                    "agentId": token.get("agent_id"),
-                    "scopes": [],
-                }
+                grouped[app] = {"appName": app.replace("developer:", ""), "scopes": []}
             grouped[app]["scopes"].append(
                 {
                     "scope": token.get("scope"),
@@ -227,8 +217,7 @@ async def get_active_consents(
 @router.get("/user/lookup")
 async def lookup_user_by_email(
     email: str,
-    token: Optional[str] = Query(None),
-    authorization: Optional[str] = Header(None),
+    x_mcp_developer_token: Optional[str] = Header(None, alias="X-MCP-Developer-Token"),
 ):
     """
     Look up a user by email and return their Firebase UID.
@@ -256,10 +245,14 @@ async def lookup_user_by_email(
         cred = credentials.ApplicationDefault()
         firebase_admin.initialize_app(cred)
 
-    authenticate_developer_principal(
-        token=token,
-        authorization=authorization,
+    required_token = (
+        str(os.getenv("HUSHH_DEVELOPER_TOKEN", "")).strip()
+        or str(os.getenv("MCP_DEVELOPER_TOKEN", "")).strip()
     )
+    if not required_token:
+        raise HTTPException(status_code=503, detail="Lookup endpoint not configured")
+    if not x_mcp_developer_token or x_mcp_developer_token != required_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     logger.info("user_lookup.requested")
 
