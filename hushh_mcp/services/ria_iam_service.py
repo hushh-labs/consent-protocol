@@ -34,6 +34,7 @@ _ALLOWED_PERSONAS: set[str] = {"investor", "ria"}
 _ALLOWED_ACTOR_TYPES: set[str] = {"investor", "ria"}
 _DURATION_PRESETS_HOURS: set[int] = {24, 24 * 7, 24 * 30, 24 * 90}
 _MAX_DURATION_HOURS = 24 * 365
+_ALLOWED_PROFESSIONAL_CAPABILITIES: tuple[str, ...] = ("advisory", "brokerage")
 _IAM_REQUIRED_TABLES: tuple[str, ...] = (
     "actor_profiles",
     "ria_profiles",
@@ -232,6 +233,151 @@ class RIAIAMService:
         if "investor" in safe_personas:
             return "investor"
         return safe_personas[0]  # type: ignore[return-value]
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        normalized = (value or "").strip()
+        return normalized or None
+
+    @staticmethod
+    def _normalize_legacy_verification_status(status: str | None) -> str:
+        normalized = (status or "").strip().lower()
+        if normalized == "finra_verified":
+            return "verified"
+        if normalized in {"draft", "submitted", "verified", "active", "rejected", "bypassed"}:
+            return normalized
+        return "draft"
+
+    @staticmethod
+    def _is_verified_ria_status(status: str | None) -> bool:
+        return RIAIAMService._normalize_legacy_verification_status(status) in {
+            "verified",
+            "active",
+            "bypassed",
+        }
+
+    @staticmethod
+    def _prepare_professional_onboarding_inputs(
+        *,
+        display_name: str,
+        requested_capabilities: list[str] | tuple[str, ...],
+        individual_legal_name: str | None,
+        individual_crd: str | None,
+        advisory_firm_legal_name: str | None,
+        advisory_firm_iapd_number: str | None,
+        broker_firm_legal_name: str | None,
+        broker_firm_crd: str | None,
+        bio: str | None,
+        strategy: str | None,
+        disclosures_url: str | None,
+        require_regulatory_identity: bool,
+    ) -> dict[str, Any]:
+        normalized_display_name = (display_name or "").strip()
+        if not normalized_display_name:
+            raise RIAIAMPolicyError("display_name is required", status_code=400)
+
+        normalized_capabilities: list[str] = []
+        for capability in requested_capabilities or []:
+            candidate = str(capability or "").strip().lower()
+            if not candidate:
+                continue
+            if candidate not in _ALLOWED_PROFESSIONAL_CAPABILITIES:
+                raise RIAIAMPolicyError(
+                    "requested_capabilities contains unsupported capability",
+                    status_code=400,
+                )
+            if candidate not in normalized_capabilities:
+                normalized_capabilities.append(candidate)
+
+        if not normalized_capabilities:
+            raise RIAIAMPolicyError(
+                "requested_capabilities must include at least one capability",
+                status_code=400,
+            )
+
+        normalized_individual_legal_name = RIAIAMService._normalize_optional_text(
+            individual_legal_name
+        )
+        normalized_individual_crd = RIAIAMService._normalize_optional_text(individual_crd)
+        normalized_advisory_firm_legal_name = RIAIAMService._normalize_optional_text(
+            advisory_firm_legal_name
+        )
+        normalized_advisory_firm_iapd_number = RIAIAMService._normalize_optional_text(
+            advisory_firm_iapd_number
+        )
+        normalized_broker_firm_legal_name = RIAIAMService._normalize_optional_text(
+            broker_firm_legal_name
+        )
+        normalized_broker_firm_crd = RIAIAMService._normalize_optional_text(broker_firm_crd)
+
+        if require_regulatory_identity:
+            if not normalized_individual_legal_name:
+                raise RIAIAMPolicyError(
+                    "individual_legal_name is required for regulatory verification",
+                    status_code=400,
+                )
+            if not normalized_individual_crd:
+                raise RIAIAMPolicyError(
+                    "individual_crd is required for regulatory verification",
+                    status_code=400,
+                )
+
+        if "advisory" in normalized_capabilities:
+            if not normalized_advisory_firm_legal_name:
+                raise RIAIAMPolicyError(
+                    "advisory_firm_legal_name is required when advisory capability is requested",
+                    status_code=400,
+                )
+            if not normalized_advisory_firm_iapd_number:
+                raise RIAIAMPolicyError(
+                    "advisory_firm_iapd_number is required when advisory capability is requested",
+                    status_code=400,
+                )
+
+        if "brokerage" in normalized_capabilities:
+            if not normalized_broker_firm_legal_name:
+                raise RIAIAMPolicyError(
+                    "broker_firm_legal_name is required when brokerage capability is requested",
+                    status_code=400,
+                )
+            if not normalized_broker_firm_crd:
+                raise RIAIAMPolicyError(
+                    "broker_firm_crd is required when brokerage capability is requested",
+                    status_code=400,
+                )
+
+        return {
+            "display_name": normalized_display_name,
+            "requested_capabilities": normalized_capabilities,
+            "individual_legal_name": normalized_individual_legal_name,
+            "individual_crd": normalized_individual_crd,
+            "advisory_firm_legal_name": normalized_advisory_firm_legal_name,
+            "advisory_firm_iapd_number": normalized_advisory_firm_iapd_number,
+            "broker_firm_legal_name": normalized_broker_firm_legal_name,
+            "broker_firm_crd": normalized_broker_firm_crd,
+            "bio": RIAIAMService._normalize_optional_text(bio),
+            "strategy": RIAIAMService._normalize_optional_text(strategy),
+            "disclosures_url": RIAIAMService._normalize_optional_text(disclosures_url),
+            "require_regulatory_identity": bool(require_regulatory_identity),
+        }
+
+    @staticmethod
+    def _advisory_status_from_row(row: Any) -> str:
+        if isinstance(row, dict):
+            status = row.get("verification_status")
+        else:
+            try:
+                status = row["verification_status"]
+            except (KeyError, TypeError):
+                status = None
+        return RIAIAMService._normalize_legacy_verification_status(
+            str(status) if status is not None else None
+        )
+
+    @staticmethod
+    def _brokerage_status_from_row(row: Any) -> str:
+        _ = row
+        return "draft"
 
     async def _runtime_persona_table_ready(self, conn: asyncpg.Connection) -> bool:
         return await self._table_exists(conn, _RUNTIME_PERSONA_STATE_TABLE)

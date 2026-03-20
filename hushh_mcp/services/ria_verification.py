@@ -311,3 +311,52 @@ class RegulatoryVerificationGateway:
             broker_firm_legal_name=broker_firm_legal_name,
             broker_firm_crd=broker_firm_crd,
         )
+
+
+class FinraVerificationAdapter:
+    """
+    Backward-compatible adapter for legacy FINRA verification call sites.
+
+    The new verification stack uses advisory verification naming backed by IAPD.
+    This adapter preserves the older `verify(legal_name, finra_crd, sec_iard)` shape
+    used by `RIAIAMService`.
+    """
+
+    def __init__(self) -> None:
+        self._advisory_provider = IapdVerificationAdapter()
+
+    async def verify(
+        self,
+        *,
+        legal_name: str,
+        finra_crd: str | None,
+        sec_iard: str | None,
+    ) -> VerificationResult:
+        return await self._advisory_provider.verify(
+            individual_legal_name=legal_name,
+            individual_crd=(finra_crd or "").strip(),
+            advisory_firm_legal_name=legal_name,
+            advisory_firm_iapd_number=(sec_iard or "").strip(),
+        )
+
+
+class VerificationGateway:
+    """
+    Backward-compatible gateway wrapper for legacy `verify(...)` call sites.
+    """
+
+    def __init__(self, provider: FinraVerificationAdapter | None = None) -> None:
+        self._provider = provider or FinraVerificationAdapter()
+
+    async def verify(
+        self,
+        *,
+        legal_name: str,
+        finra_crd: str | None,
+        sec_iard: str | None,
+    ) -> VerificationResult:
+        return await self._provider.verify(
+            legal_name=legal_name,
+            finra_crd=finra_crd,
+            sec_iard=sec_iard,
+        )
