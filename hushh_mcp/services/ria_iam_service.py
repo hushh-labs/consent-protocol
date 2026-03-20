@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import asyncpg
 
@@ -16,8 +17,7 @@ from db.connection import get_database_ssl, get_database_url
 from hushh_mcp.consent.scope_helpers import get_scope_description
 from hushh_mcp.services.kai_invite_email_service import get_kai_invite_email_service
 from hushh_mcp.services.ria_verification import (
-    FinraVerificationAdapter,
-    VerificationGateway,
+    RegulatoryVerificationGateway,
     VerificationResult,
 )
 from hushh_mcp.services.support_email_service import (
@@ -34,6 +34,8 @@ _ALLOWED_PERSONAS: set[str] = {"investor", "ria"}
 _ALLOWED_ACTOR_TYPES: set[str] = {"investor", "ria"}
 _DURATION_PRESETS_HOURS: set[int] = {24, 24 * 7, 24 * 30, 24 * 90}
 _MAX_DURATION_HOURS = 24 * 365
+_ADVISORY_ACTIVE_STATUSES: set[str] = {"verified", "active", "bypassed"}
+_BROKERAGE_ACTIVE_STATUSES: set[str] = {"verified", "active", "bypassed"}
 _IAM_REQUIRED_TABLES: tuple[str, ...] = (
     "actor_profiles",
     "ria_profiles",
@@ -79,7 +81,7 @@ class ScopeTemplate:
 
 class RIAIAMService:
     def __init__(self) -> None:
-        self._verification_gateway = VerificationGateway(FinraVerificationAdapter())
+        self._verification_gateway = RegulatoryVerificationGateway()
 
     @staticmethod
     def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -93,14 +95,36 @@ class RIAIAMService:
                 return value
         return ""
 
-    def _is_ria_dev_bypass_enabled(self) -> bool:
-        if not self._env_truthy("RIA_DEV_BYPASS_ENABLED"):
+    def _is_advisory_bypass_enabled(self) -> bool:
+        if not (
+            self._env_truthy("ADVISORY_VERIFICATION_BYPASS_ENABLED")
+            or self._env_truthy("RIA_DEV_BYPASS_ENABLED")
+        ):
             return False
         return self._runtime_environment() not in {"prod", "production"}
 
+    def _is_brokerage_bypass_enabled(self) -> bool:
+        if not self._env_truthy("BROKER_VERIFICATION_BYPASS_ENABLED"):
+            return False
+        return self._runtime_environment() not in {"prod", "production"}
+
+    def _is_capability_bypass_enabled(self, capability: str) -> bool:
+        normalized = str(capability or "").strip().lower()
+        if normalized == "advisory":
+            return self._is_advisory_bypass_enabled()
+        if normalized == "brokerage":
+            return self._is_brokerage_bypass_enabled()
+        return False
+
+    def _has_any_requested_bypass(self, requested_capabilities: list[str]) -> bool:
+        return any(
+            self._is_capability_bypass_enabled(capability)
+            for capability in list(requested_capabilities or [])
+        )
+
     def _is_dev_bypass_allowed(self, user_id: str) -> bool:
         _ = user_id
-        return self._is_ria_dev_bypass_enabled()
+        return self._is_advisory_bypass_enabled()
 
     @staticmethod
     def _normalize_persona(value: str) -> PersonaType:
@@ -119,6 +143,135 @@ class RIAIAMService:
     @staticmethod
     def _now_ms() -> int:
         return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        normalized = (value or "").strip()
+        return normalized or None
+
+    @staticmethod
+    def _normalize_disclosures_url(value: str | None) -> str | None:
+        normalized = (value or "").strip()
+        if not normalized:
+            return None
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise RIAIAMPolicyError("disclosures_url must be a valid http(s) URL", status_code=400)
+        return normalized
+
+    @staticmethod
+    def _is_verified_ria_status(status: str | None) -> bool:
+        normalized = str(status or "").strip().lower()
+        return normalized in _ADVISORY_ACTIVE_STATUSES
+
+    @staticmethod
+    def _advisory_status_from_row(row: asyncpg.Record | dict[str, Any] | None) -> str:
+        if row is None:
+            return "draft"
+        advisory_status = row["advisory_status"] if "advisory_status" in row else None
+        verification_status = row["verification_status"] if "verification_status" in row else None
+        candidate = str(advisory_status or verification_status or "draft").strip().lower()
+        return candidate or "draft"
+
+    @staticmethod
+    def _brokerage_status_from_row(row: asyncpg.Record | dict[str, Any] | None) -> str:
+        if row is None:
+            return "draft"
+        brokerage_status = row["brokerage_status"] if "brokerage_status" in row else None
+        candidate = str(brokerage_status or "draft").strip().lower()
+        return candidate or "draft"
+
+    @classmethod
+    def _prepare_professional_onboarding_inputs(
+        cls,
+        *,
+        display_name: str,
+        requested_capabilities: list[str] | None,
+        individual_legal_name: str | None,
+        individual_crd: str | None,
+        advisory_firm_legal_name: str | None,
+        advisory_firm_iapd_number: str | None,
+        broker_firm_legal_name: str | None,
+        broker_firm_crd: str | None,
+        bio: str | None,
+        strategy: str | None,
+        disclosures_url: str | None,
+        require_regulatory_identity: bool,
+    ) -> dict[str, Any]:
+        normalized_display_name = display_name.strip()
+        if not normalized_display_name:
+            raise RIAIAMPolicyError("display_name is required", status_code=400)
+
+        normalized_capabilities = [
+            capability
+            for capability in [
+                str(capability or "").strip().lower()
+                for capability in list(requested_capabilities or ["advisory"])
+            ]
+            if capability in {"advisory", "brokerage"}
+        ]
+        if requested_capabilities is not None and not normalized_capabilities:
+            raise RIAIAMPolicyError(
+                "At least one requested capability is required",
+                status_code=400,
+            )
+        normalized_capabilities = list(dict.fromkeys(normalized_capabilities))
+        if not normalized_capabilities:
+            normalized_capabilities = ["advisory"]
+
+        normalized = {
+            "display_name": normalized_display_name,
+            "requested_capabilities": normalized_capabilities,
+            "individual_legal_name": cls._normalize_optional_text(individual_legal_name),
+            "individual_crd": cls._normalize_optional_text(individual_crd),
+            "advisory_firm_legal_name": cls._normalize_optional_text(advisory_firm_legal_name),
+            "advisory_firm_iapd_number": cls._normalize_optional_text(advisory_firm_iapd_number),
+            "broker_firm_legal_name": cls._normalize_optional_text(broker_firm_legal_name),
+            "broker_firm_crd": cls._normalize_optional_text(broker_firm_crd),
+            "bio": cls._normalize_optional_text(bio),
+            "strategy": cls._normalize_optional_text(strategy),
+            "disclosures_url": cls._normalize_disclosures_url(disclosures_url),
+        }
+
+        if not require_regulatory_identity:
+            return normalized
+
+        if not normalized["individual_legal_name"]:
+            raise RIAIAMPolicyError(
+                "individual_legal_name is required for professional verification",
+                status_code=400,
+            )
+        if not normalized["individual_crd"]:
+            raise RIAIAMPolicyError(
+                "individual_crd is required for professional verification",
+                status_code=400,
+            )
+
+        if "advisory" in normalized_capabilities:
+            if not normalized["advisory_firm_legal_name"]:
+                raise RIAIAMPolicyError(
+                    "advisory_firm_legal_name is required for advisory verification",
+                    status_code=400,
+                )
+            if not normalized["advisory_firm_iapd_number"]:
+                raise RIAIAMPolicyError(
+                    "advisory_firm_iapd_number is required for advisory verification",
+                    status_code=400,
+                )
+
+        if "brokerage" in normalized_capabilities:
+            if not normalized["broker_firm_legal_name"]:
+                raise RIAIAMPolicyError(
+                    "broker_firm_legal_name is required for brokerage verification",
+                    status_code=400,
+                )
+            if not normalized["broker_firm_crd"]:
+                raise RIAIAMPolicyError(
+                    "broker_firm_crd is required for brokerage verification",
+                    status_code=400,
+                )
+
+        return normalized
 
     async def _conn(self) -> asyncpg.Connection:
         return await asyncpg.connect(get_database_url(), ssl=get_database_ssl())
@@ -327,6 +480,61 @@ class RIAIAMService:
         if row is None:
             raise RuntimeError("Failed to ensure actor profile row")
         return row
+
+    async def _grant_ria_persona(self, conn: asyncpg.Connection, user_id: str) -> None:
+        # The workspace surface is still routed as `ria`, so this remains the
+        # compatibility persona alias for trusted professional/advisory access.
+        await conn.execute(
+            """
+            INSERT INTO actor_profiles (
+                user_id,
+                personas,
+                last_active_persona,
+                investor_marketplace_opt_in
+            )
+            VALUES ($1, ARRAY['investor','ria']::text[], 'ria', FALSE)
+            ON CONFLICT (user_id) DO UPDATE
+            SET
+              personas = CASE
+                WHEN 'ria' = ANY(actor_profiles.personas) THEN actor_profiles.personas
+                ELSE array_append(actor_profiles.personas, 'ria')
+              END,
+              last_active_persona = 'ria',
+              updated_at = NOW()
+            """,
+            user_id,
+        )
+        await self._set_runtime_last_persona(conn, user_id, "ria")
+
+    async def _record_verification_event(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        ria_profile_id: Any,
+        capability: str,
+        provider: str,
+        result: VerificationResult,
+    ) -> None:
+        await conn.execute(
+            """
+            INSERT INTO ria_verification_events (
+              ria_profile_id,
+              capability,
+              provider,
+              outcome,
+              checked_at,
+              expires_at,
+              reference_metadata
+            )
+            VALUES ($1, $2, $3, $4, NOW(), $5, $6::jsonb)
+            """,
+            ria_profile_id,
+            capability,
+            provider,
+            result.outcome,
+            result.expires_at,
+            json.dumps(result.metadata),
+        )
 
     async def ensure_actor_profile(self, user_id: str) -> dict[str, Any]:
         conn = await self._conn()
@@ -683,7 +891,7 @@ class RIAIAMService:
         try:
             await self._ensure_iam_schema_ready(conn)
             ria = await self._get_ria_profile_by_user(conn, user_id)
-            if ria["verification_status"] not in {"finra_verified", "active"}:
+            if not self._is_verified_ria_status(ria["verification_status"]):
                 raise RIAIAMPolicyError(
                     "RIA verification incomplete; cannot request investor scopes",
                     status_code=403,
@@ -825,6 +1033,7 @@ class RIAIAMService:
                   investor_user_id,
                   ria_profile_id,
                   firm_id,
+                  acting_as,
                   status,
                   last_request_id,
                   granted_scope,
@@ -835,6 +1044,7 @@ class RIAIAMService:
                   $1,
                   $2,
                   $3::uuid,
+                  'advisory',
                   'request_pending',
                   $4,
                   $5,
@@ -853,6 +1063,7 @@ class RIAIAMService:
                 """
                 UPDATE advisor_investor_relationships
                 SET
+                  acting_as = 'advisory',
                   status = 'request_pending',
                   last_request_id = $2,
                   granted_scope = COALESCE(granted_scope, $3),
@@ -897,7 +1108,7 @@ class RIAIAMService:
                 await self._ensure_actor_profile_row(conn, subject_user_id)
 
                 ria = await self._get_ria_profile_by_user(conn, user_id)
-                if ria["verification_status"] not in {"finra_verified", "active"}:
+                if not self._is_verified_ria_status(ria["verification_status"]):
                     raise RIAIAMPolicyError(
                         "RIA verification incomplete; cannot create consent requests",
                         status_code=403,
@@ -983,44 +1194,41 @@ class RIAIAMService:
         user_id: str,
         *,
         display_name: str,
-        legal_name: str | None,
-        finra_crd: str | None,
-        sec_iard: str | None,
+        requested_capabilities: list[str] | None,
+        individual_legal_name: str | None,
+        individual_crd: str | None,
+        advisory_firm_legal_name: str | None,
+        advisory_firm_iapd_number: str | None,
+        broker_firm_legal_name: str | None,
+        broker_firm_crd: str | None,
         bio: str | None,
         strategy: str | None,
         disclosures_url: str | None,
-        primary_firm_name: str | None,
         primary_firm_role: str | None,
     ) -> dict[str, Any]:
-        if not display_name.strip():
-            raise RIAIAMPolicyError("display_name is required", status_code=400)
+        profile_inputs = self._prepare_professional_onboarding_inputs(
+            display_name=display_name,
+            requested_capabilities=requested_capabilities,
+            individual_legal_name=individual_legal_name,
+            individual_crd=individual_crd,
+            advisory_firm_legal_name=advisory_firm_legal_name,
+            advisory_firm_iapd_number=advisory_firm_iapd_number,
+            broker_firm_legal_name=broker_firm_legal_name,
+            broker_firm_crd=broker_firm_crd,
+            bio=bio,
+            strategy=strategy,
+            disclosures_url=disclosures_url,
+            require_regulatory_identity=True,
+        )
+        advisory_requested = "advisory" in list(profile_inputs["requested_capabilities"])
+        brokerage_requested = "brokerage" in list(profile_inputs["requested_capabilities"])
 
         conn = await self._conn()
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
                 await self._ensure_iam_schema_ready(conn)
-                await conn.execute(
-                    """
-                    INSERT INTO actor_profiles (
-                        user_id,
-                        personas,
-                        last_active_persona,
-                        investor_marketplace_opt_in
-                    )
-                    VALUES ($1, ARRAY['investor','ria']::text[], 'ria', FALSE)
-                    ON CONFLICT (user_id) DO UPDATE
-                    SET
-                      personas = CASE
-                        WHEN 'ria' = ANY(actor_profiles.personas) THEN actor_profiles.personas
-                        ELSE array_append(actor_profiles.personas, 'ria')
-                      END,
-                      last_active_persona = 'ria',
-                      updated_at = NOW()
-                    """,
-                    user_id,
-                )
-                await self._set_runtime_last_persona(conn, user_id, "ria")
+                await self._ensure_actor_profile_row(conn, user_id)
 
                 ria = await conn.fetchrow(
                     """
@@ -1030,8 +1238,19 @@ class RIAIAMService:
                       legal_name,
                       finra_crd,
                       sec_iard,
+                      requested_capabilities,
+                      advisory_status,
+                      brokerage_status,
                       verification_status,
                       verification_provider,
+                      advisory_provider,
+                      brokerage_provider,
+                      individual_legal_name,
+                      individual_crd,
+                      advisory_firm_legal_name,
+                      advisory_firm_iapd_number,
+                      broker_firm_legal_name,
+                      broker_firm_crd,
                       bio,
                       strategy,
                       disclosures_url
@@ -1042,11 +1261,22 @@ class RIAIAMService:
                       NULLIF($3, ''),
                       NULLIF($4, ''),
                       NULLIF($5, ''),
-                      'submitted',
-                      'finra',
-                      NULLIF($6, ''),
-                      NULLIF($7, ''),
-                      NULLIF($8, '')
+                      $6::text[],
+                      $7,
+                      $8,
+                      $7,
+                      CASE WHEN $7 = 'draft' THEN NULL ELSE 'iapd' END,
+                      CASE WHEN $7 = 'draft' THEN NULL ELSE 'iapd' END,
+                      CASE WHEN $8 = 'draft' THEN NULL ELSE 'broker' END,
+                      NULLIF($9, ''),
+                      NULLIF($10, ''),
+                      NULLIF($11, ''),
+                      NULLIF($12, ''),
+                      NULLIF($13, ''),
+                      NULLIF($14, ''),
+                      NULLIF($15, ''),
+                      NULLIF($16, ''),
+                      NULLIF($17, '')
                     )
                     ON CONFLICT (user_id) DO UPDATE
                     SET
@@ -1054,37 +1284,60 @@ class RIAIAMService:
                       legal_name = EXCLUDED.legal_name,
                       finra_crd = EXCLUDED.finra_crd,
                       sec_iard = EXCLUDED.sec_iard,
-                      verification_status = 'submitted',
-                      verification_provider = 'finra',
+                      requested_capabilities = EXCLUDED.requested_capabilities,
+                      advisory_status = EXCLUDED.advisory_status,
+                      brokerage_status = EXCLUDED.brokerage_status,
+                      verification_status = EXCLUDED.verification_status,
+                      verification_provider = EXCLUDED.verification_provider,
+                      advisory_provider = EXCLUDED.advisory_provider,
+                      brokerage_provider = EXCLUDED.brokerage_provider,
+                      individual_legal_name = EXCLUDED.individual_legal_name,
+                      individual_crd = EXCLUDED.individual_crd,
+                      advisory_firm_legal_name = EXCLUDED.advisory_firm_legal_name,
+                      advisory_firm_iapd_number = EXCLUDED.advisory_firm_iapd_number,
+                      broker_firm_legal_name = EXCLUDED.broker_firm_legal_name,
+                      broker_firm_crd = EXCLUDED.broker_firm_crd,
                       bio = EXCLUDED.bio,
                       strategy = EXCLUDED.strategy,
                       disclosures_url = EXCLUDED.disclosures_url,
                       updated_at = NOW()
-                    RETURNING id, user_id, display_name, legal_name, finra_crd, sec_iard, verification_status
+                    RETURNING id, user_id, display_name, legal_name, finra_crd, sec_iard, verification_status, advisory_status, brokerage_status
                     """,
                     user_id,
-                    display_name.strip(),
-                    (legal_name or "").strip(),
-                    (finra_crd or "").strip(),
-                    (sec_iard or "").strip(),
-                    (bio or "").strip(),
-                    (strategy or "").strip(),
-                    (disclosures_url or "").strip(),
+                    str(profile_inputs["display_name"]),
+                    profile_inputs["individual_legal_name"] or "",
+                    profile_inputs["individual_crd"] or "",
+                    profile_inputs["advisory_firm_iapd_number"] or "",
+                    list(profile_inputs["requested_capabilities"]),
+                    "submitted" if advisory_requested else "draft",
+                    "submitted" if brokerage_requested else "draft",
+                    profile_inputs["individual_legal_name"] or "",
+                    profile_inputs["individual_crd"] or "",
+                    profile_inputs["advisory_firm_legal_name"] or "",
+                    profile_inputs["advisory_firm_iapd_number"] or "",
+                    profile_inputs["broker_firm_legal_name"] or "",
+                    profile_inputs["broker_firm_crd"] or "",
+                    profile_inputs["bio"] or "",
+                    profile_inputs["strategy"] or "",
+                    profile_inputs["disclosures_url"] or "",
                 )
                 if ria is None:
                     raise RuntimeError("Failed to create RIA profile")
 
                 firm_id: str | None = None
-                if primary_firm_name and primary_firm_name.strip():
+                if advisory_requested and profile_inputs["advisory_firm_legal_name"]:
                     firm_row = await conn.fetchrow(
                         """
-                        INSERT INTO ria_firms (legal_name)
-                        VALUES ($1)
+                        INSERT INTO ria_firms (legal_name, sec_iard)
+                        VALUES ($1, NULLIF($2, ''))
                         ON CONFLICT (legal_name) DO UPDATE
-                        SET updated_at = NOW()
+                        SET
+                          sec_iard = COALESCE(EXCLUDED.sec_iard, ria_firms.sec_iard),
+                          updated_at = NOW()
                         RETURNING id
                         """,
-                        primary_firm_name.strip(),
+                        str(profile_inputs["advisory_firm_legal_name"]),
+                        profile_inputs["advisory_firm_iapd_number"] or "",
                     )
                     if firm_row:
                         firm_id = str(firm_row["id"])
@@ -1110,97 +1363,150 @@ class RIAIAMService:
                             (primary_firm_role or "").strip(),
                         )
 
-                verification_result: VerificationResult = await self._verification_gateway.verify(
-                    legal_name=(legal_name or "").strip() or display_name.strip(),
-                    finra_crd=(finra_crd or "").strip() or None,
-                    sec_iard=(sec_iard or "").strip() or None,
-                )
+                advisory_result: VerificationResult | None = None
+                advisory_status = "draft"
+                advisory_provider: str | None = None
+                advisory_expires_at: datetime | None = None
+                if advisory_requested:
+                    advisory_result = await self._verification_gateway.verify_advisory(
+                        individual_legal_name=str(profile_inputs["individual_legal_name"]),
+                        individual_crd=str(profile_inputs["individual_crd"]),
+                        advisory_firm_legal_name=str(profile_inputs["advisory_firm_legal_name"]),
+                        advisory_firm_iapd_number=str(profile_inputs["advisory_firm_iapd_number"]),
+                    )
+                    advisory_provider = str(advisory_result.metadata.get("provider") or "iapd")
+                    advisory_expires_at = advisory_result.expires_at
+                    advisory_status = "verified" if advisory_result.verified else "rejected"
+                    await self._record_verification_event(
+                        conn,
+                        ria_profile_id=ria["id"],
+                        capability="advisory",
+                        provider=advisory_provider,
+                        result=advisory_result,
+                    )
 
-                next_status = "submitted"
-                if verification_result.verified:
-                    next_status = "finra_verified"
-                elif verification_result.rejected:
-                    next_status = "rejected"
+                brokerage_result: VerificationResult | None = None
+                brokerage_status = "draft"
+                brokerage_provider: str | None = None
+                brokerage_expires_at: datetime | None = None
+                if brokerage_requested:
+                    brokerage_result = await self._verification_gateway.verify_brokerage(
+                        individual_legal_name=str(profile_inputs["individual_legal_name"]),
+                        individual_crd=str(profile_inputs["individual_crd"]),
+                        broker_firm_legal_name=str(profile_inputs["broker_firm_legal_name"]),
+                        broker_firm_crd=str(profile_inputs["broker_firm_crd"]),
+                    )
+                    brokerage_provider = str(brokerage_result.metadata.get("provider") or "broker")
+                    brokerage_expires_at = brokerage_result.expires_at
+                    if brokerage_result.verified:
+                        brokerage_status = "verified"
+                    elif brokerage_result.outcome == "evidence_only":
+                        brokerage_status = "submitted"
+                    else:
+                        brokerage_status = "rejected"
+                    await self._record_verification_event(
+                        conn,
+                        ria_profile_id=ria["id"],
+                        capability="brokerage",
+                        provider=brokerage_provider,
+                        result=brokerage_result,
+                    )
 
                 await conn.execute(
                     """
                     UPDATE ria_profiles
                     SET
+                      advisory_status = $2,
+                      brokerage_status = $3,
                       verification_status = $2,
-                      verification_provider = 'finra',
-                      verification_expires_at = $3,
+                      verification_provider = $4,
+                      advisory_provider = $4,
+                      brokerage_provider = $5,
+                      verification_expires_at = $6,
+                      advisory_verification_expires_at = $6,
+                      brokerage_verification_expires_at = $7,
                       updated_at = NOW()
                     WHERE id = $1
                     """,
                     ria["id"],
-                    next_status,
-                    verification_result.expires_at,
+                    advisory_status,
+                    brokerage_status,
+                    advisory_provider,
+                    brokerage_provider,
+                    advisory_expires_at,
+                    brokerage_expires_at,
                 )
 
-                await conn.execute(
-                    """
-                    INSERT INTO ria_verification_events (
-                      ria_profile_id,
-                      provider,
-                      outcome,
-                      checked_at,
-                      expires_at,
-                      reference_metadata
-                    )
-                    VALUES ($1, 'finra', $2, NOW(), $3, $4::jsonb)
-                    """,
-                    ria["id"],
-                    verification_result.outcome,
-                    verification_result.expires_at,
-                    json.dumps(verification_result.metadata),
-                )
+                if advisory_requested and self._is_verified_ria_status(advisory_status):
+                    await self._grant_ria_persona(conn, user_id)
 
-                await conn.execute(
-                    """
-                    INSERT INTO marketplace_public_profiles (
-                      user_id,
-                      profile_type,
-                      display_name,
-                      headline,
-                      strategy_summary,
-                      verification_badge,
-                      is_discoverable,
-                      updated_at
+                if advisory_requested:
+                    await conn.execute(
+                        """
+                        INSERT INTO marketplace_public_profiles (
+                          user_id,
+                          profile_type,
+                          display_name,
+                          headline,
+                          strategy_summary,
+                          verification_badge,
+                          is_discoverable,
+                          updated_at
+                        )
+                        VALUES (
+                          $1,
+                          'ria',
+                          $2,
+                          COALESCE(NULLIF($3, ''), NULLIF($4, ''), 'Registered Investment Advisor'),
+                          NULLIF($4, ''),
+                          CASE WHEN $5 IN ('verified', 'active', 'bypassed') THEN 'verified' ELSE 'pending' END,
+                          $6,
+                          NOW()
+                        )
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET
+                          profile_type = 'ria',
+                          display_name = EXCLUDED.display_name,
+                          headline = EXCLUDED.headline,
+                          strategy_summary = EXCLUDED.strategy_summary,
+                          verification_badge = EXCLUDED.verification_badge,
+                          is_discoverable = EXCLUDED.is_discoverable,
+                          updated_at = NOW()
+                        """,
+                        user_id,
+                        str(profile_inputs["display_name"]),
+                        profile_inputs["bio"] or "",
+                        profile_inputs["strategy"] or "",
+                        advisory_status,
+                        self._is_verified_ria_status(advisory_status),
                     )
-                    VALUES (
-                      $1,
-                      'ria',
-                      $2,
-                      COALESCE(NULLIF($3, ''), NULLIF($4, ''), 'Registered Investment Advisor'),
-                      NULLIF($4, ''),
-                      CASE WHEN $5 IN ('finra_verified', 'active') THEN 'finra_verified' ELSE 'pending' END,
-                      TRUE,
-                      NOW()
-                    )
-                    ON CONFLICT (user_id) DO UPDATE
-                    SET
-                      profile_type = 'ria',
-                      display_name = EXCLUDED.display_name,
-                      headline = EXCLUDED.headline,
-                      strategy_summary = EXCLUDED.strategy_summary,
-                      verification_badge = EXCLUDED.verification_badge,
-                      is_discoverable = TRUE,
-                      updated_at = NOW()
-                    """,
-                    user_id,
-                    display_name.strip(),
-                    (bio or "").strip(),
-                    (strategy or "").strip(),
-                    next_status,
+
+                professional_access_granted = bool(
+                    self._is_verified_ria_status(advisory_status)
+                    or brokerage_status in _BROKERAGE_ACTIVE_STATUSES
                 )
 
                 return {
                     "ria_profile_id": str(ria["id"]),
                     "user_id": str(ria["user_id"]),
                     "display_name": str(ria["display_name"]),
-                    "verification_status": next_status,
-                    "verification_outcome": verification_result.outcome,
-                    "verification_message": verification_result.message,
+                    "verification_status": advisory_status,
+                    "advisory_status": advisory_status,
+                    "brokerage_status": brokerage_status,
+                    "requested_capabilities": list(profile_inputs["requested_capabilities"]),
+                    "verification_outcome": advisory_result.outcome
+                    if advisory_result
+                    else "not_requested",
+                    "verification_message": advisory_result.message
+                    if advisory_result
+                    else "Advisory verification not requested",
+                    "brokerage_outcome": brokerage_result.outcome
+                    if brokerage_result
+                    else "not_requested",
+                    "brokerage_message": brokerage_result.message
+                    if brokerage_result
+                    else "Broker capability not requested",
+                    "professional_access_granted": professional_access_granted,
                     "firm_id": firm_id,
                 }
         except asyncpg.exceptions.UndefinedTableError as exc:
@@ -1213,48 +1519,50 @@ class RIAIAMService:
         user_id: str,
         *,
         display_name: str,
-        legal_name: str | None,
-        finra_crd: str | None,
-        sec_iard: str | None,
+        requested_capabilities: list[str] | None,
+        individual_legal_name: str | None,
+        individual_crd: str | None,
+        advisory_firm_legal_name: str | None,
+        advisory_firm_iapd_number: str | None,
+        broker_firm_legal_name: str | None,
+        broker_firm_crd: str | None,
         bio: str | None,
         strategy: str | None,
         disclosures_url: str | None,
-        primary_firm_name: str | None,
         primary_firm_role: str | None,
     ) -> dict[str, Any]:
-        if not self._is_dev_bypass_allowed(user_id):
+        profile_inputs = self._prepare_professional_onboarding_inputs(
+            display_name=display_name,
+            requested_capabilities=requested_capabilities,
+            individual_legal_name=individual_legal_name,
+            individual_crd=individual_crd,
+            advisory_firm_legal_name=advisory_firm_legal_name,
+            advisory_firm_iapd_number=advisory_firm_iapd_number,
+            broker_firm_legal_name=broker_firm_legal_name,
+            broker_firm_crd=broker_firm_crd,
+            bio=bio,
+            strategy=strategy,
+            disclosures_url=disclosures_url,
+            require_regulatory_identity=False,
+        )
+        advisory_requested = "advisory" in list(profile_inputs["requested_capabilities"])
+        brokerage_requested = "brokerage" in list(profile_inputs["requested_capabilities"])
+        if not self._has_any_requested_bypass(list(profile_inputs["requested_capabilities"])):
             raise RIAIAMPolicyError(
-                "RIA dev activation is not allowed for this account", status_code=403
+                "Professional dev activation is not allowed for the requested capabilities",
+                status_code=403,
             )
-        if not display_name.strip():
-            raise RIAIAMPolicyError("display_name is required", status_code=400)
+        advisory_status = "bypassed" if advisory_requested else "draft"
+        brokerage_status = (
+            "bypassed" if brokerage_requested and self._is_brokerage_bypass_enabled() else "draft"
+        )
 
         conn = await self._conn()
         try:
             async with conn.transaction():
                 await self._ensure_vault_user_row(conn, user_id)
                 await self._ensure_iam_schema_ready(conn)
-                await conn.execute(
-                    """
-                    INSERT INTO actor_profiles (
-                        user_id,
-                        personas,
-                        last_active_persona,
-                        investor_marketplace_opt_in
-                    )
-                    VALUES ($1, ARRAY['investor','ria']::text[], 'ria', FALSE)
-                    ON CONFLICT (user_id) DO UPDATE
-                    SET
-                      personas = CASE
-                        WHEN 'ria' = ANY(actor_profiles.personas) THEN actor_profiles.personas
-                        ELSE array_append(actor_profiles.personas, 'ria')
-                      END,
-                      last_active_persona = 'ria',
-                      updated_at = NOW()
-                    """,
-                    user_id,
-                )
-                await self._set_runtime_last_persona(conn, user_id, "ria")
+                await self._ensure_actor_profile_row(conn, user_id)
 
                 ria = await conn.fetchrow(
                     """
@@ -1264,8 +1572,19 @@ class RIAIAMService:
                       legal_name,
                       finra_crd,
                       sec_iard,
+                      requested_capabilities,
+                      advisory_status,
+                      brokerage_status,
                       verification_status,
                       verification_provider,
+                      advisory_provider,
+                      brokerage_provider,
+                      individual_legal_name,
+                      individual_crd,
+                      advisory_firm_legal_name,
+                      advisory_firm_iapd_number,
+                      broker_firm_legal_name,
+                      broker_firm_crd,
                       bio,
                       strategy,
                       disclosures_url
@@ -1276,11 +1595,22 @@ class RIAIAMService:
                       NULLIF($3, ''),
                       NULLIF($4, ''),
                       NULLIF($5, ''),
-                      'active',
-                      'dev_allowlist',
-                      NULLIF($6, ''),
-                      NULLIF($7, ''),
-                      NULLIF($8, '')
+                      $6::text[],
+                      $7,
+                      $8,
+                      $7,
+                      CASE WHEN $7 = 'draft' THEN NULL ELSE 'dev_bypass' END,
+                      CASE WHEN $7 = 'draft' THEN NULL ELSE 'dev_bypass' END,
+                      CASE WHEN $8 = 'draft' THEN NULL ELSE 'dev_bypass' END,
+                      NULLIF($9, ''),
+                      NULLIF($10, ''),
+                      NULLIF($11, ''),
+                      NULLIF($12, ''),
+                      NULLIF($13, ''),
+                      NULLIF($14, ''),
+                      NULLIF($15, ''),
+                      NULLIF($16, ''),
+                      NULLIF($17, '')
                     )
                     ON CONFLICT (user_id) DO UPDATE
                     SET
@@ -1288,9 +1618,22 @@ class RIAIAMService:
                       legal_name = EXCLUDED.legal_name,
                       finra_crd = EXCLUDED.finra_crd,
                       sec_iard = EXCLUDED.sec_iard,
-                      verification_status = 'active',
-                      verification_provider = 'dev_allowlist',
+                      requested_capabilities = EXCLUDED.requested_capabilities,
+                      advisory_status = EXCLUDED.advisory_status,
+                      brokerage_status = EXCLUDED.brokerage_status,
+                      verification_status = EXCLUDED.verification_status,
+                      verification_provider = EXCLUDED.verification_provider,
+                      advisory_provider = EXCLUDED.advisory_provider,
+                      brokerage_provider = EXCLUDED.brokerage_provider,
                       verification_expires_at = NULL,
+                      advisory_verification_expires_at = NULL,
+                      brokerage_verification_expires_at = NULL,
+                      individual_legal_name = EXCLUDED.individual_legal_name,
+                      individual_crd = EXCLUDED.individual_crd,
+                      advisory_firm_legal_name = EXCLUDED.advisory_firm_legal_name,
+                      advisory_firm_iapd_number = EXCLUDED.advisory_firm_iapd_number,
+                      broker_firm_legal_name = EXCLUDED.broker_firm_legal_name,
+                      broker_firm_crd = EXCLUDED.broker_firm_crd,
                       bio = EXCLUDED.bio,
                       strategy = EXCLUDED.strategy,
                       disclosures_url = EXCLUDED.disclosures_url,
@@ -1298,28 +1641,40 @@ class RIAIAMService:
                     RETURNING id, user_id, display_name
                     """,
                     user_id,
-                    display_name.strip(),
-                    (legal_name or "").strip(),
-                    (finra_crd or "").strip(),
-                    (sec_iard or "").strip(),
-                    (bio or "").strip(),
-                    (strategy or "").strip(),
-                    (disclosures_url or "").strip(),
+                    str(profile_inputs["display_name"]),
+                    profile_inputs["individual_legal_name"] or "",
+                    profile_inputs["individual_crd"] or "",
+                    profile_inputs["advisory_firm_iapd_number"] or "",
+                    list(profile_inputs["requested_capabilities"]),
+                    advisory_status,
+                    brokerage_status,
+                    profile_inputs["individual_legal_name"] or "",
+                    profile_inputs["individual_crd"] or "",
+                    profile_inputs["advisory_firm_legal_name"] or "",
+                    profile_inputs["advisory_firm_iapd_number"] or "",
+                    profile_inputs["broker_firm_legal_name"] or "",
+                    profile_inputs["broker_firm_crd"] or "",
+                    profile_inputs["bio"] or "",
+                    profile_inputs["strategy"] or "",
+                    profile_inputs["disclosures_url"] or "",
                 )
                 if ria is None:
                     raise RuntimeError("Failed to create RIA profile")
 
                 firm_id: str | None = None
-                if primary_firm_name and primary_firm_name.strip():
+                if advisory_requested and profile_inputs["advisory_firm_legal_name"]:
                     firm_row = await conn.fetchrow(
                         """
-                        INSERT INTO ria_firms (legal_name)
-                        VALUES ($1)
+                        INSERT INTO ria_firms (legal_name, sec_iard)
+                        VALUES ($1, NULLIF($2, ''))
                         ON CONFLICT (legal_name) DO UPDATE
-                        SET updated_at = NOW()
+                        SET
+                          sec_iard = COALESCE(EXCLUDED.sec_iard, ria_firms.sec_iard),
+                          updated_at = NOW()
                         RETURNING id
                         """,
-                        primary_firm_name.strip(),
+                        str(profile_inputs["advisory_firm_legal_name"]),
+                        profile_inputs["advisory_firm_iapd_number"] or "",
                     )
                     if firm_row:
                         firm_id = str(firm_row["id"])
@@ -1345,67 +1700,100 @@ class RIAIAMService:
                             (primary_firm_role or "").strip(),
                         )
 
-                await conn.execute(
-                    """
-                    INSERT INTO ria_verification_events (
-                      ria_profile_id,
-                      provider,
-                      outcome,
-                      checked_at,
-                      expires_at,
-                      reference_metadata
+                if advisory_requested:
+                    await self._record_verification_event(
+                        conn,
+                        ria_profile_id=ria["id"],
+                        capability="advisory",
+                        provider="dev_bypass",
+                        result=VerificationResult(
+                            verified=True,
+                            rejected=False,
+                            outcome="bypassed",
+                            message="Advisory verification bypassed in a non-production environment",
+                            metadata={"source": "dev_bypass", "user_id": user_id},
+                        ),
                     )
-                    VALUES ($1, 'dev_allowlist', 'dev_allowlist', NOW(), NULL, $2::jsonb)
-                    """,
-                    ria["id"],
-                    json.dumps({"source": "dev_allowlist", "user_id": user_id}),
-                )
+                    await self._grant_ria_persona(conn, user_id)
 
-                await conn.execute(
-                    """
-                    INSERT INTO marketplace_public_profiles (
-                      user_id,
-                      profile_type,
-                      display_name,
-                      headline,
-                      strategy_summary,
-                      verification_badge,
-                      is_discoverable,
-                      updated_at
+                if brokerage_requested and brokerage_status == "bypassed":
+                    await self._record_verification_event(
+                        conn,
+                        ria_profile_id=ria["id"],
+                        capability="brokerage",
+                        provider="dev_bypass",
+                        result=VerificationResult(
+                            verified=True,
+                            rejected=False,
+                            outcome="bypassed",
+                            message="Brokerage verification bypassed in a non-production environment",
+                            metadata={"source": "dev_bypass", "user_id": user_id},
+                        ),
                     )
-                    VALUES (
-                      $1,
-                      'ria',
-                      $2,
-                      COALESCE(NULLIF($3, ''), NULLIF($4, ''), 'Registered Investment Advisor'),
-                      NULLIF($4, ''),
-                      'dev_allowlist',
-                      TRUE,
-                      NOW()
+
+                if advisory_requested:
+                    await conn.execute(
+                        """
+                        INSERT INTO marketplace_public_profiles (
+                          user_id,
+                          profile_type,
+                          display_name,
+                          headline,
+                          strategy_summary,
+                          verification_badge,
+                          is_discoverable,
+                          updated_at
+                        )
+                        VALUES (
+                          $1,
+                          'ria',
+                          $2,
+                          COALESCE(NULLIF($3, ''), NULLIF($4, ''), 'Registered Investment Advisor'),
+                          NULLIF($4, ''),
+                          CASE WHEN $5 IN ('verified', 'active', 'bypassed') THEN 'verified' ELSE 'pending' END,
+                          $6,
+                          NOW()
+                        )
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET
+                          profile_type = 'ria',
+                          display_name = EXCLUDED.display_name,
+                          headline = EXCLUDED.headline,
+                          strategy_summary = EXCLUDED.strategy_summary,
+                          verification_badge = EXCLUDED.verification_badge,
+                          is_discoverable = EXCLUDED.is_discoverable,
+                          updated_at = NOW()
+                        """,
+                        user_id,
+                        str(profile_inputs["display_name"]),
+                        profile_inputs["bio"] or "",
+                        profile_inputs["strategy"] or "",
+                        advisory_status,
+                        self._is_verified_ria_status(advisory_status),
                     )
-                    ON CONFLICT (user_id) DO UPDATE
-                    SET
-                      profile_type = 'ria',
-                      display_name = EXCLUDED.display_name,
-                      headline = EXCLUDED.headline,
-                      strategy_summary = EXCLUDED.strategy_summary,
-                      verification_badge = EXCLUDED.verification_badge,
-                      is_discoverable = TRUE,
-                      updated_at = NOW()
-                    """,
-                    user_id,
-                    display_name.strip(),
-                    (bio or "").strip(),
-                    (strategy or "").strip(),
+
+                professional_access_granted = bool(
+                    self._is_verified_ria_status(advisory_status)
+                    or brokerage_status in _BROKERAGE_ACTIVE_STATUSES
                 )
 
                 return {
                     "ria_profile_id": str(ria["id"]),
                     "user_id": str(ria["user_id"]),
                     "display_name": str(ria["display_name"]),
-                    "verification_status": "active",
-                    "verification_outcome": "dev_allowlist",
-                    "verification_message": "RIA activated for an allowlisted development account",
+                    "verification_status": advisory_status,
+                    "advisory_status": advisory_status,
+                    "brokerage_status": brokerage_status,
+                    "requested_capabilities": list(profile_inputs["requested_capabilities"]),
+                    "verification_outcome": "bypassed" if advisory_requested else "not_requested",
+                    "verification_message": "Advisory verification bypassed for a non-production account",
+                    "brokerage_outcome": "bypassed"
+                    if brokerage_status == "bypassed"
+                    else "not_requested",
+                    "brokerage_message": "Brokerage verification bypassed for a non-production account"
+                    if brokerage_status == "bypassed"
+                    else "Brokerage capability not requested",
+                    "professional_access_granted": professional_access_granted,
                     "firm_id": firm_id,
                 }
         except asyncpg.exceptions.UndefinedTableError as exc:
@@ -1425,6 +1813,19 @@ class RIAIAMService:
                   id,
                   user_id,
                   display_name,
+                  requested_capabilities,
+                  individual_legal_name,
+                  individual_crd,
+                  advisory_firm_legal_name,
+                  advisory_firm_iapd_number,
+                  broker_firm_legal_name,
+                  broker_firm_crd,
+                  advisory_status,
+                  brokerage_status,
+                  advisory_provider,
+                  brokerage_provider,
+                  advisory_verification_expires_at,
+                  brokerage_verification_expires_at,
                   legal_name,
                   finra_crd,
                   sec_iard,
@@ -1442,27 +1843,62 @@ class RIAIAMService:
                 return {
                     "exists": False,
                     "verification_status": "draft",
+                    "advisory_status": "draft",
+                    "brokerage_status": "draft",
+                    "requested_capabilities": ["advisory"],
                     "dev_ria_bypass_allowed": self._is_dev_bypass_allowed(user_id),
                 }
 
-            latest_event = await conn.fetchrow(
+            latest_advisory_event = await conn.fetchrow(
                 """
                 SELECT outcome, checked_at, expires_at, reference_metadata
                 FROM ria_verification_events
                 WHERE ria_profile_id = $1
+                  AND capability = 'advisory'
                 ORDER BY checked_at DESC
                 LIMIT 1
                 """,
                 ria["id"],
             )
-            event = dict(latest_event) if latest_event else None
-            if event and "reference_metadata" in event:
-                event["reference_metadata"] = self._parse_metadata(event["reference_metadata"])
+            latest_brokerage_event = await conn.fetchrow(
+                """
+                SELECT outcome, checked_at, expires_at, reference_metadata
+                FROM ria_verification_events
+                WHERE ria_profile_id = $1
+                  AND capability = 'brokerage'
+                ORDER BY checked_at DESC
+                LIMIT 1
+                """,
+                ria["id"],
+            )
+            advisory_event = dict(latest_advisory_event) if latest_advisory_event else None
+            brokerage_event = dict(latest_brokerage_event) if latest_brokerage_event else None
+            if advisory_event and "reference_metadata" in advisory_event:
+                advisory_event["reference_metadata"] = self._parse_metadata(
+                    advisory_event["reference_metadata"]
+                )
+            if brokerage_event and "reference_metadata" in brokerage_event:
+                brokerage_event["reference_metadata"] = self._parse_metadata(
+                    brokerage_event["reference_metadata"]
+                )
 
             return {
                 "exists": True,
                 "ria_profile_id": str(ria["id"]),
                 "display_name": ria["display_name"],
+                "requested_capabilities": list(ria["requested_capabilities"] or []),
+                "individual_legal_name": ria["individual_legal_name"],
+                "individual_crd": ria["individual_crd"],
+                "advisory_firm_legal_name": ria["advisory_firm_legal_name"],
+                "advisory_firm_iapd_number": ria["advisory_firm_iapd_number"],
+                "broker_firm_legal_name": ria["broker_firm_legal_name"],
+                "broker_firm_crd": ria["broker_firm_crd"],
+                "advisory_status": ria["advisory_status"],
+                "brokerage_status": ria["brokerage_status"],
+                "advisory_provider": ria["advisory_provider"],
+                "brokerage_provider": ria["brokerage_provider"],
+                "advisory_verification_expires_at": ria["advisory_verification_expires_at"],
+                "brokerage_verification_expires_at": ria["brokerage_verification_expires_at"],
                 "legal_name": ria["legal_name"],
                 "finra_crd": ria["finra_crd"],
                 "sec_iard": ria["sec_iard"],
@@ -1470,7 +1906,9 @@ class RIAIAMService:
                 "verification_provider": ria["verification_provider"],
                 "verification_expires_at": ria["verification_expires_at"],
                 "dev_ria_bypass_allowed": self._is_dev_bypass_allowed(user_id),
-                "latest_verification_event": event,
+                "latest_verification_event": advisory_event,
+                "latest_advisory_event": advisory_event,
+                "latest_brokerage_event": brokerage_event,
             }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
@@ -2469,7 +2907,7 @@ class RIAIAMService:
                 await self._ensure_actor_profile_row(conn, user_id, include_ria_persona=True)
 
                 ria = await self._get_ria_profile_by_user(conn, user_id)
-                if ria["verification_status"] not in {"finra_verified", "active"}:
+                if not self._is_verified_ria_status(ria["verification_status"]):
                     raise RIAIAMPolicyError(
                         "RIA verification incomplete; cannot send invites",
                         status_code=403,
@@ -2767,7 +3205,7 @@ class RIAIAMService:
 
                 ria = await conn.fetchrow(
                     """
-                    SELECT id, display_name, verification_status, strategy
+                    SELECT id, display_name, verification_status, advisory_status, strategy
                     FROM ria_profiles
                     WHERE user_id = $1
                     """,
@@ -2775,6 +3213,16 @@ class RIAIAMService:
                 )
                 if ria is None:
                     raise RIAIAMPolicyError("RIA profile not found", status_code=404)
+
+                advisory_status = self._advisory_status_from_row(ria)
+
+                if bool(enabled) and not self._is_verified_ria_status(advisory_status):
+                    raise RIAIAMPolicyError(
+                        "RIA verification incomplete; cannot enable marketplace discoverability",
+                        status_code=403,
+                    )
+
+                discoverable = bool(enabled) and self._is_verified_ria_status(advisory_status)
 
                 await conn.execute(
                     """
@@ -2814,14 +3262,14 @@ class RIAIAMService:
                     ria["display_name"],
                     (headline or "").strip(),
                     (strategy_summary or str(ria["strategy"] or "")).strip(),
-                    str(ria["verification_status"] or ""),
-                    bool(enabled),
+                    advisory_status,
+                    discoverable,
                 )
 
                 return {
                     "user_id": user_id,
-                    "is_discoverable": bool(enabled),
-                    "verification_status": str(ria["verification_status"] or ""),
+                    "is_discoverable": discoverable,
+                    "verification_status": advisory_status,
                 }
         except asyncpg.exceptions.UndefinedTableError as exc:
             raise IAMSchemaNotReadyError() from exc
@@ -3065,7 +3513,7 @@ class RIAIAMService:
                 await self._ensure_actor_profile_row(conn, subject_user_id)
 
                 ria = await self._get_ria_profile_by_user(conn, user_id)
-                if ria["verification_status"] not in {"finra_verified", "active"}:
+                if not self._is_verified_ria_status(ria["verification_status"]):
                     raise RIAIAMPolicyError(
                         "RIA verification incomplete; cannot create consent requests",
                         status_code=403,
@@ -3471,7 +3919,7 @@ class RIAIAMService:
                   )
                 GROUP BY rp.id, rp.user_id, mp.display_name, mp.headline, mp.strategy_summary, rp.verification_status
                 ORDER BY
-                  CASE WHEN rp.verification_status IN ('active', 'finra_verified') THEN 0 ELSE 1 END,
+                  CASE WHEN rp.verification_status IN ('active', 'verified', 'bypassed') THEN 0 ELSE 1 END,
                   mp.display_name ASC
                 LIMIT $4
                 """,
