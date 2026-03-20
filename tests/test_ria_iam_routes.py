@@ -112,7 +112,7 @@ def test_marketplace_rias_public_read(monkeypatch):
             {
                 "id": "ria_1",
                 "display_name": "RIA Alpha",
-                "verification_status": "finra_verified",
+                "verification_status": "verified",
             }
         ]
 
@@ -125,6 +125,53 @@ def test_marketplace_rias_public_read(monkeypatch):
     data = response.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["display_name"] == "RIA Alpha"
+
+
+def test_ria_onboarding_submit_maps_professional_capabilities(monkeypatch):
+    async def _mock_submit(self, user_id: str, **kwargs):  # noqa: ANN003
+        assert user_id == "user_test_123"
+        assert kwargs["requested_capabilities"] == ["advisory", "brokerage"]
+        assert kwargs["individual_legal_name"] == "Advisor Alpha"
+        assert kwargs["individual_crd"] == "12345"
+        assert kwargs["advisory_firm_legal_name"] == "Advisor Alpha LLC"
+        assert kwargs["advisory_firm_iapd_number"] == "801-12345"
+        assert kwargs["broker_firm_legal_name"] == "Broker Alpha LLC"
+        assert kwargs["broker_firm_crd"] == "56789"
+        return {
+            "ria_profile_id": "ria_profile_1",
+            "verification_status": "verified",
+            "advisory_status": "verified",
+            "brokerage_status": "submitted",
+            "requested_capabilities": ["advisory", "brokerage"],
+            "verification_outcome": "verified",
+            "verification_message": "Advisory verification successful",
+            "brokerage_outcome": "evidence_only",
+            "brokerage_message": "Broker capability is awaiting official verification configuration",
+            "professional_access_granted": True,
+        }
+
+    monkeypatch.setattr(RIAIAMService, "submit_ria_onboarding", _mock_submit)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/ria/onboarding/submit",
+        json={
+            "display_name": "Advisor Alpha",
+            "requested_capabilities": ["advisory", "brokerage"],
+            "individual_legal_name": "Advisor Alpha",
+            "individual_crd": "12345",
+            "advisory_firm_legal_name": "Advisor Alpha LLC",
+            "advisory_firm_iapd_number": "801-12345",
+            "broker_firm_legal_name": "Broker Alpha LLC",
+            "broker_firm_crd": "56789",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["advisory_status"] == "verified"
+    assert payload["brokerage_status"] == "submitted"
+    assert payload["requested_capabilities"] == ["advisory", "brokerage"]
 
 
 def test_marketplace_schema_not_ready_returns_503(monkeypatch):

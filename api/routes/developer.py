@@ -15,7 +15,6 @@ from api.developer_auth import (
     try_authenticate_developer_principal,
 )
 from api.middleware import require_firebase_auth
-from api.models.schemas import ConsentRequest
 from api.utils.firebase_admin import get_firebase_auth_app
 from hushh_mcp.consent.scope_helpers import get_scope_description, normalize_scope
 from hushh_mcp.services.consent_db import ConsentDBService
@@ -111,6 +110,15 @@ class DeveloperConsentStatusResponse(BaseModel):
     app_id: str | None = None
     app_display_name: str | None = None
     message: str
+
+
+class DeveloperConsentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str
+    scope: str
+    reason: str | None = None
+    expiry_hours: int = 24
 
 
 class DeveloperPortalTokenResponse(BaseModel):
@@ -509,7 +517,7 @@ async def get_consent_status(
 
 @developer_api_router.post("/request-consent")
 async def request_consent(
-    payload: ConsentRequest,
+    payload: DeveloperConsentRequest,
     request: Request,
     token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),

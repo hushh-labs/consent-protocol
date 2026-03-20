@@ -18,8 +18,7 @@ from hushh_mcp.consent.token import validate_token
 from hushh_mcp.constants import AGENT_PORTS
 from hushh_mcp.trust.link import create_trust_link, verify_trust_link
 from hushh_mcp.types import AgentID, UserID
-from mcp_modules.config import FASTAPI_URL
-from mcp_modules.developer_context import get_developer_request_query
+from mcp_modules.config import FASTAPI_URL, MCP_DEVELOPER_TOKEN
 
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -221,11 +220,10 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            token_query = get_developer_request_query()
-            r = await client.get(
-                f"{FASTAPI_URL}/api/v1/user-scopes/{uid}",
-                params=token_query or None,
-            )
+            headers = {}
+            if MCP_DEVELOPER_TOKEN:
+                headers["X-MCP-Developer-Token"] = MCP_DEVELOPER_TOKEN
+            r = await client.get(f"{FASTAPI_URL}/api/v1/user-scopes/{uid}", headers=headers)
             if r.status_code == 404:
                 return [
                     TextContent(
@@ -241,15 +239,15 @@ async def handle_discover_user_domains(args: dict) -> list[TextContent]:
                         ),
                     )
                 ]
-            if r.status_code == 401 and not token_query:
+            if r.status_code == 401 and not MCP_DEVELOPER_TOKEN:
                 return [
                     TextContent(
                         type="text",
                         text=json.dumps(
                             {
                                 "error": "developer_token_missing",
-                                "message": "Developer token is required for discover_user_domains",
-                                "hint": "Set HUSHH_DEVELOPER_TOKEN in the MCP environment or append ?token=<developer-token> to the remote MCP URL.",
+                                "message": "MCP_DEVELOPER_TOKEN is required for discover_user_domains",
+                                "hint": "Set MCP_DEVELOPER_TOKEN in MCP environment to call /api/v1/user-scopes/{user_id}.",
                             }
                         ),
                     )
