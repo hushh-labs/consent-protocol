@@ -29,6 +29,11 @@ class AccountService:
     def __init__(self):
         self._supabase = None
         self._table_exists_cache: dict[str, bool] = {}
+        self._delete_by_user_queries = {
+            "kai_plaid_user_profile_cache": text(
+                "DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"
+            ),
+        }
 
     @property
     def supabase(self):
@@ -95,7 +100,10 @@ class AccountService:
         if not self._table_exists(conn, table_name):
             logger.info("Skipping cleanup for missing table: %s", table_name)
             return
-        conn.execute(text(f"DELETE FROM {table_name} WHERE user_id = :user_id"), params)
+        query = self._delete_by_user_queries.get(table_name)
+        if query is None:
+            raise ValueError(f"Unsafe or unsupported cleanup table requested: {table_name}")
+        conn.execute(query, params)
 
     async def delete_account(
         self,
