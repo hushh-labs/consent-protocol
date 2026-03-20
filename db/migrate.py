@@ -42,6 +42,7 @@ IAM_MIGRATION_FILES = (
     "021_runtime_persona_state.sql",
     "022_ria_invites.sql",
     "027_relationship_disconnect_status.sql",
+    "028_professional_regulatory_capabilities.sql",
 )
 
 

@@ -10,7 +10,7 @@ All request and response schemas are centralized here for:
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 # ============================================================================
 # AGENT CHAT MODELS
@@ -60,21 +60,11 @@ class ValidateTokenRequest(BaseModel):
 class ConsentRequest(BaseModel):
     """Request consent from a user for data access."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    user_id: str = Field(description="Hushh user identifier receiving the consent request.")
-    scope: str = Field(
-        description=(
-            "One requested scope string such as world_model.read, attr.{domain}.*, "
-            "attr.{domain}.{subintent}.*, or attr.{domain}.{path}. "
-            "Dynamic attr scopes must be discovered for the user before request."
-        )
-    )
-    expiry_hours: int = Field(default=24, description="Requested consent lifetime in hours.")
-    reason: Optional[str] = Field(
-        default=None,
-        description="Human-readable reason attached to the consent request.",
-    )
+    user_id: str
+    developer_token: str  # Developer's API key
+    scope: str  # e.g. "attr.food.*", "world_model.read"
+    reason: Optional[str] = None
+    expiry_hours: int = 24  # How long consent lasts
 
 
 class ConsentResponse(BaseModel):

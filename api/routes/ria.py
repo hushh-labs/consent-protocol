@@ -19,6 +19,13 @@ router = APIRouter(prefix="/api/ria", tags=["RIA"])
 
 class RIAOnboardingSubmitRequest(BaseModel):
     display_name: str = Field(..., min_length=1)
+    requested_capabilities: list[str] = Field(default_factory=lambda: ["advisory"])
+    individual_legal_name: str | None = None
+    individual_crd: str | None = None
+    advisory_firm_legal_name: str | None = None
+    advisory_firm_iapd_number: str | None = None
+    broker_firm_legal_name: str | None = None
+    broker_firm_crd: str | None = None
     legal_name: str | None = None
     finra_crd: str | None = None
     sec_iard: str | None = None
@@ -127,13 +134,16 @@ async def submit_onboarding(
         return await service.submit_ria_onboarding(
             firebase_uid,
             display_name=payload.display_name,
-            legal_name=payload.legal_name,
-            finra_crd=payload.finra_crd,
-            sec_iard=payload.sec_iard,
+            requested_capabilities=payload.requested_capabilities,
+            individual_legal_name=payload.individual_legal_name or payload.legal_name,
+            individual_crd=payload.individual_crd or payload.finra_crd,
+            advisory_firm_legal_name=payload.advisory_firm_legal_name or payload.primary_firm_name,
+            advisory_firm_iapd_number=payload.advisory_firm_iapd_number or payload.sec_iard,
+            broker_firm_legal_name=payload.broker_firm_legal_name,
+            broker_firm_crd=payload.broker_firm_crd,
             bio=payload.bio,
             strategy=payload.strategy,
             disclosures_url=payload.disclosures_url,
-            primary_firm_name=payload.primary_firm_name,
             primary_firm_role=payload.primary_firm_role,
         )
     except IAMSchemaNotReadyError as exc:
@@ -152,13 +162,16 @@ async def dev_activate_onboarding(
         return await service.activate_ria_dev_onboarding(
             firebase_uid,
             display_name=payload.display_name,
-            legal_name=payload.legal_name,
-            finra_crd=payload.finra_crd,
-            sec_iard=payload.sec_iard,
+            requested_capabilities=payload.requested_capabilities,
+            individual_legal_name=payload.individual_legal_name or payload.legal_name,
+            individual_crd=payload.individual_crd or payload.finra_crd,
+            advisory_firm_legal_name=payload.advisory_firm_legal_name or payload.primary_firm_name,
+            advisory_firm_iapd_number=payload.advisory_firm_iapd_number or payload.sec_iard,
+            broker_firm_legal_name=payload.broker_firm_legal_name,
+            broker_firm_crd=payload.broker_firm_crd,
             bio=payload.bio,
             strategy=payload.strategy,
             disclosures_url=payload.disclosures_url,
-            primary_firm_name=payload.primary_firm_name,
             primary_firm_role=payload.primary_firm_role,
         )
     except IAMSchemaNotReadyError as exc:

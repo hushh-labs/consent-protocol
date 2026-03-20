@@ -107,12 +107,28 @@ Notes:
 - These test-user vars are loaded by backend scripts and local tooling at process start.
 - Changing them requires restarting the backend or rerunning the script; they are not hot-reloaded into an already running process.
 
-RIA onboarding bypass:
+Professional verification bypass:
 
-- `RIA_DEV_BYPASS_ENABLED`
-  - enables the Dev Bypass action for any non-production environment
+- `ADVISORY_VERIFICATION_BYPASS_ENABLED`
+  - enables non-production advisory bypass for the professional onboarding flow
   - has no effect in `production`
-  - no UID/email allowlist is required when this flag is enabled
+- `BROKER_VERIFICATION_BYPASS_ENABLED`
+  - enables non-production broker-capability bypass
+  - has no effect in `production`
+- `RIA_DEV_BYPASS_ENABLED`
+  - legacy compatibility alias for advisory bypass only
+  - prefer `ADVISORY_VERIFICATION_BYPASS_ENABLED` in new configs
+
+Professional verification providers:
+
+- `IAPD_VERIFY_BASE_URL`
+- `IAPD_VERIFY_API_KEY`
+- `IAPD_VERIFY_TIMEOUT_SECONDS`
+- `BROKER_CAPABILITY_ENABLED`
+- `BROKER_VERIFY_BASE_URL`
+- `BROKER_VERIFY_API_KEY`
+- `BROKER_VERIFY_TIMEOUT_SECONDS`
+- `BROKER_PUBLIC_FALLBACK_ENABLED`
 
 ## Kai Brokerage Boundary
 
