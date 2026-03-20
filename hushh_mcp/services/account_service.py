@@ -28,6 +28,7 @@ class AccountService:
 
     def __init__(self):
         self._supabase = None
+        self._table_exists_cache: dict[str, bool] = {}
 
     @property
     def supabase(self):
@@ -69,6 +70,32 @@ class AccountService:
         if target in {"investor", "ria"}:
             return target
         return "both"
+
+    def _table_exists(self, conn, table_name: str) -> bool:
+        cached = self._table_exists_cache.get(table_name)
+        if cached is not None:
+            return cached
+
+        exists = bool(
+            conn.execute(
+                text("SELECT to_regclass(:regclass_name) IS NOT NULL"),
+                {"regclass_name": f"public.{table_name}"},
+            ).scalar()
+        )
+        self._table_exists_cache[table_name] = exists
+        return exists
+
+    def _delete_user_rows_if_table_exists(
+        self,
+        conn,
+        *,
+        table_name: str,
+        params: dict[str, Any],
+    ) -> None:
+        if not self._table_exists(conn, table_name):
+            logger.info("Skipping cleanup for missing table: %s", table_name)
+            return
+        conn.execute(text(f"DELETE FROM {table_name} WHERE user_id = :user_id"), params)
 
     async def delete_account(
         self,
@@ -151,9 +178,10 @@ class AccountService:
                 results["plaid_link_sessions"] = True
                 conn.execute(text("DELETE FROM kai_plaid_items WHERE user_id = :user_id"), params)
                 results["plaid_items"] = True
-                conn.execute(
-                    text("DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"),
-                    params,
+                self._delete_user_rows_if_table_exists(
+                    conn,
+                    table_name="kai_plaid_user_profile_cache",
+                    params=params,
                 )
                 results["plaid_profile_cache"] = True
                 conn.execute(
@@ -354,9 +382,10 @@ class AccountService:
                 results["plaid_link_sessions"] = True
                 conn.execute(text("DELETE FROM kai_plaid_items WHERE user_id = :user_id"), params)
                 results["plaid_items"] = True
-                conn.execute(
-                    text("DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"),
-                    params,
+                self._delete_user_rows_if_table_exists(
+                    conn,
+                    table_name="kai_plaid_user_profile_cache",
+                    params=params,
                 )
                 results["plaid_profile_cache"] = True
                 conn.execute(
