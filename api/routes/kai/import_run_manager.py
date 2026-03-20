@@ -182,7 +182,7 @@ class KaiPortfolioImportRunManager:
                     event_name="aborted",
                     payload={
                         "code": "IMPORT_RUN_CANCELED",
-                        "message": "Import canceled by user.",
+                        "message": "Import was interrupted before completion.",
                         "run_id": run.run_id,
                     },
                 )
