@@ -246,6 +246,12 @@ async def startup_ticker_cache():
 @app.on_event("startup")
 async def startup_regulated_runtime_guards():
     """Emit explicit startup security warnings for risky production flags."""
+    from hushh_mcp.services.ria_verification import (
+        validate_regulated_runtime_configuration,
+    )
+
+    validate_regulated_runtime_configuration()
+
     if not _is_production():
         return
 
