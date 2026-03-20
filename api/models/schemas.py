@@ -63,6 +63,7 @@ class ConsentRequest(BaseModel):
     user_id: str
     developer_token: str  # Developer's API key
     scope: str  # e.g. "attr.food.*", "world_model.read"
+    reason: Optional[str] = None
     expiry_hours: int = 24  # How long consent lasts
 
 
