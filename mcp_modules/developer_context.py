@@ -21,7 +21,10 @@ _current_developer_token: ContextVar[str | None] = ContextVar(
 
 
 def _configured_token() -> str:
-    return str(os.getenv("HUSHH_DEVELOPER_TOKEN", "")).strip()
+    hushh_token = str(os.getenv("HUSHH_DEVELOPER_TOKEN", "")).strip()
+    if hushh_token:
+        return hushh_token
+    return str(os.getenv("MCP_DEVELOPER_TOKEN", "")).strip()
 
 
 def set_current_developer_principal(
