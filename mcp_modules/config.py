@@ -11,6 +11,14 @@ def _env_truthy(name: str, fallback: str = "false") -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _read_developer_token() -> str:
+    """Resolve the developer token with backwards-compatible env fallback."""
+    hushh_token = str(os.environ.get("HUSHH_DEVELOPER_TOKEN", "")).strip()
+    if hushh_token:
+        return hushh_token
+    return str(os.environ.get("MCP_DEVELOPER_TOKEN", "")).strip()
+
+
 # FastAPI backend URL (for consent API calls)
 _DEFAULT_PORT = str(os.environ.get("PORT", "8000")).strip() or "8000"
 FASTAPI_URL = os.environ.get("CONSENT_API_URL", f"http://127.0.0.1:{_DEFAULT_PORT}")
@@ -26,7 +34,9 @@ DEVELOPER_API_ENABLED = (
 )
 
 # Developer token used by the stdio launcher and local MCP hosts.
-HUSHH_DEVELOPER_TOKEN = str(os.environ.get("HUSHH_DEVELOPER_TOKEN", "")).strip()
+# `MCP_DEVELOPER_TOKEN` is kept as a compatibility alias for older imports/envs.
+HUSHH_DEVELOPER_TOKEN = _read_developer_token()
+MCP_DEVELOPER_TOKEN = HUSHH_DEVELOPER_TOKEN
 
 # How long to wait for user to approve consent (in seconds)
 CONSENT_TIMEOUT_SECONDS = int(os.environ.get("CONSENT_TIMEOUT_SECONDS", "120"))

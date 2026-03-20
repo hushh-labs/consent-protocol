@@ -31,12 +31,6 @@ async def list_resources() -> list[Resource]:
             description="What the Hushh connector does, tool list, recommended flow, and supported scopes",
             mimeType="application/json",
         ),
-        Resource(
-            uri="hushh://info/developer-api",
-            name="Developer API Contract",
-            description="Versioned /api/v1 contract for dynamic scope discovery and consent requests",
-            mimeType="application/json",
-        ),
     ]
 
 
@@ -107,61 +101,59 @@ async def read_resource(uri: str) -> str:
                     "when_to_use": "After request_consent when status is pending",
                 },
                 {
-                    "name": "get_scoped_data",
-                    "purpose": "Read the approved scoped export",
-                    "when_to_use": "After consent is granted and you have a valid consent token",
+                    "name": "get_food_preferences",
+                    "purpose": "Get food/dining preferences",
+                    "when_to_use": "After consent for attr.food.* or world_model.read",
+                },
+                {
+                    "name": "get_professional_profile",
+                    "purpose": "Get professional profile",
+                    "when_to_use": "After consent for attr.professional.* or world_model.read",
+                },
+                {
+                    "name": "delegate_to_agent",
+                    "purpose": "Create TrustLink for agent delegation",
+                    "when_to_use": "When one agent needs to delegate access to another",
+                },
+                {
+                    "name": "list_ria_profiles",
+                    "purpose": "List discoverable RIA marketplace profiles (read-only)",
+                    "when_to_use": "When building advisor discovery experiences",
+                },
+                {
+                    "name": "get_ria_profile",
+                    "purpose": "Get discoverable RIA profile details by id (read-only)",
+                    "when_to_use": "After advisor selection from marketplace search",
+                },
+                {
+                    "name": "list_marketplace_investors",
+                    "purpose": "List discoverable opt-in investor profiles (read-only)",
+                    "when_to_use": "When building RIA client discovery experiences",
+                },
+                {
+                    "name": "get_ria_verification_status",
+                    "purpose": "Get RIA verification status for a user (read-only)",
+                    "when_to_use": "With same-user VAULT_OWNER token during advisor control-plane checks",
+                },
+                {
+                    "name": "get_ria_client_access_summary",
+                    "purpose": "Get RIA relationship/access summary (read-only)",
+                    "when_to_use": "With same-user VAULT_OWNER token before advisor workspace actions",
                 },
             ],
             "recommended_flow": [
                 "1. discover_user_domains(user_id) to get domains and scope strings for this user",
-                "2. request_consent(user_id, scope) for each scope needed (e.g. world_model.read or attr.financial.*)",
+                "2. request_consent(user_id, scope) for each scope needed (e.g. world_model.read or attr.food.*)",
                 "3. If status is pending, return control to caller; user approves in app and caller can re-check status later",
-                "4. Use the returned consent_token with get_scoped_data",
+                "4. Use the returned consent_token with get_* tools or world-model data APIs",
             ],
             "scopes_are_dynamic": True,
             "supported_scopes": "world_model.read, world_model.write, attr.{domain}.*, and attr.{domain}.{subintent}.* when metadata exposes subintents. No fixed list.",
             "discover_scopes": "Call discover_user_domains(user_id) first to get this user's domains and scope strings. Backend uses GET /api/v1/user-scopes/{user_id} (developer-auth) and validates against world_model_index_v2 + domain_registry metadata.",
-            "developer_auth": "Append ?token=<developer-token> to remote MCP URLs and /api/v1 requests. Stdio hosts should set HUSHH_DEVELOPER_TOKEN.",
-            "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000). The backend already owns the app approval surface for its environment.",
+            "server_backend": "Backend: FastAPI consent API. Set CONSENT_API_URL if not using default (e.g. http://localhost:8000).",
             "consent_ui_required": "When request_consent returns 'pending', the user must approve in the Hushh app (consents/dashboard). Delivery is FCM-first in production; consent SSE/polling is disabled for this flow.",
         }
         return json.dumps(connector_info, indent=2)
-
-    elif uri_str == "hushh://info/developer-api":
-        developer_api_info = {
-            "version": "v1",
-            "base_path": "/api/v1",
-            "auth": "Query param only: ?token=<developer-token>",
-            "self_serve_portal": "/developers",
-            "portal_api": {
-                "access": "/api/developer/access",
-                "enable": "/api/developer/access/enable",
-                "profile": "/api/developer/access/profile",
-                "rotate_key": "/api/developer/access/rotate-key",
-            },
-            "stdio_env": "HUSHH_DEVELOPER_TOKEN",
-            "dynamic_scopes": True,
-            "supported_endpoints": [
-                {"method": "GET", "path": "/api/v1"},
-                {"method": "GET", "path": "/api/v1/list-scopes"},
-                {"method": "GET", "path": "/api/v1/tool-catalog"},
-                {"method": "GET", "path": "/api/v1/user-scopes/{user_id}"},
-                {"method": "GET", "path": "/api/v1/consent-status"},
-                {"method": "POST", "path": "/api/v1/request-consent"},
-            ],
-            "recommended_flow": [
-                "discover_user_domains",
-                "request_consent",
-                "check_consent_status",
-                "get_scoped_data",
-            ],
-            "notes": [
-                "Discover scopes per user at runtime; do not hardcode domain keys.",
-                "Use get_scoped_data for all consented reads.",
-                "The app identity shown to users comes from the signed-in developer's self-serve app profile.",
-            ],
-        }
-        return json.dumps(developer_api_info, indent=2)
 
     else:
         logger.warning(f"❌ Unknown resource URI: {uri_str}")
