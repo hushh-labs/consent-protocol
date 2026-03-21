@@ -571,21 +571,11 @@ async def _build_optimization_context(
                 market_ctx = await fetch_market_data(ticker, user_id, consent_token)
         except RealtimeDataUnavailable as market_error:
             logger.warning(
-                "Optimize Portfolio: quote unavailable for %s (%s); using degraded position context",
+                "Optimize Portfolio: quote unavailable for %s (%s); failing closed",
                 ticker,
                 market_error.detail,
             )
-            market_ctx = {
-                "provider": "unavailable",
-                "source": "quote_unavailable",
-                "fetched_at": None,
-                "ttl_seconds": None,
-                "is_stale": True,
-                "price": None,
-                "change_pct": None,
-                "degraded": True,
-                "fallback_reason": market_error.detail,
-            }
+            raise
         ren_ctx = await ren_task
 
         quote = market_ctx.get("quote", {}) if isinstance(market_ctx, dict) else {}

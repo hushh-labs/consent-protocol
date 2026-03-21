@@ -25,7 +25,7 @@ from hushh_mcp.services.developer_registry_service import (
     normalize_tool_groups,
     visible_tool_names_for_groups,
 )
-from hushh_mcp.services.world_model_service import get_world_model_service
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 

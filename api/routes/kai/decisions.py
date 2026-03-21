@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
-from hushh_mcp.services.world_model_service import get_world_model_service
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 

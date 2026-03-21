@@ -33,7 +33,7 @@ from hushh_mcp.services.chat_db_service import (
     MessageRole,
     get_chat_db_service,
 )
-from hushh_mcp.services.world_model_service import (
+from hushh_mcp.services.personal_knowledge_model_service import (
     UserWorldModelMetadata,
     get_world_model_service,
 )
