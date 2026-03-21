@@ -39,9 +39,9 @@ from hushh_mcp.operons.kai.llm import (
     synthesize_debate_recommendation_card,
 )
 from hushh_mcp.services.consent_db import ConsentDBService
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 from hushh_mcp.services.renaissance_service import get_renaissance_service
 from hushh_mcp.services.symbol_master_service import get_symbol_master_service
-from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 

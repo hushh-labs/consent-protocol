@@ -30,7 +30,7 @@ Usage:
     from hushh_mcp.services.vault_db import VaultDBService
 
     # PREFERRED - use WorldModelService blob API
-    from hushh_mcp.services.world_model_service import get_world_model_service
+    from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
     service = get_world_model_service()
     await service.store_domain_data(user_id, domain, encrypted_blob, summary)

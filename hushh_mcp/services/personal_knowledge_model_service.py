@@ -1,4 +1,4 @@
-# consent-protocol/hushh_mcp/services/world_model_service.py
+# consent-protocol/hushh_mcp/services/personal_knowledge_model_service.py
 """
 Personal Knowledge Model service with BYOK encryption and bounded cutover helpers.
 
@@ -16,7 +16,7 @@ Legacy read adapters remain only for cutover:
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional
 
@@ -390,7 +390,7 @@ class PersonalKnowledgeModelService:
 
         source_agent = cls._clean_text(
             source.get("source_agent"),
-            default="world_model_structure_agent",
+            default="pkm_structure_agent",
         )
         contract_version = cls._to_non_negative_int(source.get("contract_version")) or 1
 
@@ -443,7 +443,7 @@ class PersonalKnowledgeModelService:
         decision = self._normalize_structure_decision(domain, structure_decision)
         source_agent = self._clean_text(
             source.get("source_agent"),
-            default=decision.get("source_agent", "world_model_structure_agent"),
+            default=decision.get("source_agent", "pkm_structure_agent"),
         )
 
         normalized_paths: dict[str, PathDescriptor] = {}
@@ -510,8 +510,8 @@ class PersonalKnowledgeModelService:
                 else {}
             )
 
-        last_structured_at = datetime.utcnow()
-        last_content_at = datetime.utcnow()
+        last_structured_at = datetime.now(UTC)
+        last_content_at = datetime.now(UTC)
 
         scope_registry = self._build_scope_registry_entries(
             user_id=user_id,
@@ -911,8 +911,8 @@ class PersonalKnowledgeModelService:
                 if index.last_active_at
                 else None,
                 "total_attributes": total_attributes,
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
 
             self.supabase.table("pkm_index").upsert(data, on_conflict="user_id").execute()
@@ -1363,7 +1363,7 @@ class PersonalKnowledgeModelService:
                 total_attributes=total,
                 model_completeness=completeness,
                 suggested_domains=suggested,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(UTC),
             )
         except Exception as e:
             logger.error(f"Error getting user metadata: {e}")
@@ -1385,7 +1385,7 @@ class PersonalKnowledgeModelService:
                 "embedding_type": embedding_type.value,
                 "embedding_vector": embedding_vector,
                 "model_name": model_name,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
 
             self.supabase.table("world_model_embeddings").upsert(
@@ -1558,7 +1558,7 @@ class PersonalKnowledgeModelService:
                     **(structure_decision or {}),
                     "source_agent": source_agent
                     or (structure_decision or {}).get("source_agent")
-                    or "world_model_structure_agent",
+                    or "pkm_structure_agent",
                 },
             )
             normalized_manifest = self._normalize_manifest_payload(
@@ -1583,7 +1583,7 @@ class PersonalKnowledgeModelService:
                     normalized_manifest.structure_decision["action"] = "match_existing_domain"
 
             resolved_data_version = int(current_version) + 1
-            resolved_updated_at = datetime.utcnow().isoformat()
+            resolved_updated_at = datetime.now(UTC).isoformat()
             existing_segment_ids = {
                 self._clean_text(row.get("segment_id"), default="root") or "root"
                 for row in existing_blob_rows
@@ -2083,8 +2083,8 @@ class PersonalKnowledgeModelService:
             self.supabase.table("pkm_index").upsert(
                 {
                     "user_id": user_id,
-                    "last_active_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "last_active_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(UTC).isoformat(),
                 },
                 on_conflict="user_id",
             ).execute()

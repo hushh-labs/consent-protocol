@@ -80,7 +80,7 @@ class AttributeLearner:
     @property
     def world_model(self):
         if self._world_model is None:
-            from hushh_mcp.services.world_model_service import get_world_model_service
+            from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
             self._world_model = get_world_model_service()
         return self._world_model

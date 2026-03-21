@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.domain_contracts import canonical_top_level_domain, domain_registry_payload
-from hushh_mcp.services.world_model_service import get_world_model_service
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
