@@ -1405,8 +1405,10 @@ def _market_refresh_interval_seconds() -> int:
 
 
 async def _refresh_public_market_modules_once() -> None:
+    refresh_summary: list[str] = []
+
     try:
-        await _get_or_refresh_public_module(
+        _, stale, age_seconds, tier, cache_hit = await _get_or_refresh_public_module(
             key="macro:us",
             fresh_ttl_seconds=QUOTES_FRESH_TTL_SECONDS,
             stale_ttl_seconds=QUOTES_STALE_TTL_SECONDS,
@@ -1414,11 +1416,14 @@ async def _refresh_public_market_modules_once() -> None:
             warm_source="startup",
             serve_stale_while_revalidate=False,
         )
+        refresh_summary.append(
+            f"macro:tier={tier},hit={str(cache_hit).lower()},stale={str(stale).lower()},age={age_seconds}s"
+        )
     except Exception as exc:
         logger.warning("[Kai Market] background macro refresh failed: %s", exc)
 
     try:
-        await _get_or_refresh_public_module(
+        _, stale, age_seconds, tier, cache_hit = await _get_or_refresh_public_module(
             key="movers:us",
             fresh_ttl_seconds=MOVERS_FRESH_TTL_SECONDS,
             stale_ttl_seconds=MOVERS_STALE_TTL_SECONDS,
@@ -1426,17 +1431,23 @@ async def _refresh_public_market_modules_once() -> None:
             warm_source="startup",
             serve_stale_while_revalidate=False,
         )
+        refresh_summary.append(
+            f"movers:tier={tier},hit={str(cache_hit).lower()},stale={str(stale).lower()},age={age_seconds}s"
+        )
     except Exception as exc:
         logger.warning("[Kai Market] background movers refresh failed: %s", exc)
 
     try:
-        await _get_or_refresh_public_module(
+        _, stale, age_seconds, tier, cache_hit = await _get_or_refresh_public_module(
             key="sectors:us",
             fresh_ttl_seconds=SECTORS_FRESH_TTL_SECONDS,
             stale_ttl_seconds=SECTORS_STALE_TTL_SECONDS,
             fetcher=lambda: _fetch_sector_rotation_from_fmp(),
             warm_source="startup",
             serve_stale_while_revalidate=False,
+        )
+        refresh_summary.append(
+            f"sectors:tier={tier},hit={str(cache_hit).lower()},stale={str(stale).lower()},age={age_seconds}s"
         )
     except Exception as exc:
         logger.warning("[Kai Market] background sectors refresh failed: %s", exc)
@@ -1445,6 +1456,9 @@ async def _refresh_public_market_modules_once() -> None:
             await get_market_cache_store_service().delete_expired(max_rows=250)
         except Exception as exc:
             logger.debug("[Kai Market] L2 cleanup skipped: %s", exc)
+
+    if refresh_summary:
+        logger.info("[Kai Market] warm refresh %s", " | ".join(refresh_summary))
 
 
 async def _run_refresh_with_advisory_lock() -> None:
