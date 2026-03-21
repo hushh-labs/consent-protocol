@@ -96,6 +96,8 @@ class FundamentalAgent(HushhAgent):
             fetch_sec_filings,
         )
 
+        sec_filings = None
+        sec_unavailable_reason: str | None = None
         try:
             sec_filings = await fetch_sec_filings(
                 ticker=ticker, user_id=user_id, consent_token=consent_token
@@ -115,6 +117,27 @@ class FundamentalAgent(HushhAgent):
                 e.detail,
             )
             raise
+        except ValueError as e:
+            sec_unavailable_reason = str(e)
+            logger.warning(
+                "[Fundamental] SEC filing data unavailable for %s; using market-structure fallback: %s",
+                ticker,
+                sec_unavailable_reason,
+            )
+            try:
+                market_data = await fetch_market_data(
+                    ticker=ticker, user_id=user_id, consent_token=consent_token
+                )
+            except RealtimeDataUnavailable as market_error:
+                logger.warning(
+                    "[Fundamental] Market snapshot also unavailable for %s fallback: %s",
+                    ticker,
+                    market_error.detail,
+                )
+                market_data = {
+                    "source": "Market data fallback unavailable",
+                    "fallback_reason": market_error.detail,
+                }
 
         # Step 2: Gemini Deep Analysis (HYBRID v2)
         from hushh_mcp.operons.kai.calculators import calculate_quant_metrics
@@ -124,10 +147,10 @@ class FundamentalAgent(HushhAgent):
             is_gemini_ready,
         )
 
-        quant_metrics = calculate_quant_metrics(sec_filings)
+        quant_metrics = calculate_quant_metrics(sec_filings) if sec_filings else {}
 
         gemini_analysis = None
-        if self.processing_mode == "hybrid":
+        if self.processing_mode == "hybrid" and sec_filings:
             # Retry logic (Max 2 attempts)
             if not is_gemini_ready():
                 logger.warning(
@@ -158,12 +181,19 @@ class FundamentalAgent(HushhAgent):
         # Step 3: Traditional Analysis (Fallback or baseline metrics)
         from hushh_mcp.operons.kai.analysis import analyze_fundamentals
 
-        analysis = analyze_fundamentals(
-            ticker=ticker,
-            user_id=user_id,
-            sec_filings=sec_filings,
-            consent_token=consent_token,
-        )
+        if sec_filings:
+            analysis = analyze_fundamentals(
+                ticker=ticker,
+                user_id=user_id,
+                sec_filings=sec_filings,
+                consent_token=consent_token,
+            )
+        else:
+            analysis = self._build_market_only_analysis(
+                ticker=ticker,
+                market_data=market_data,
+                sec_unavailable_reason=sec_unavailable_reason,
+            )
 
         # Step 4: Merge results (Prefer Deep Gemini Report)
         if gemini_analysis and "error" not in gemini_analysis:
@@ -191,18 +221,62 @@ class FundamentalAgent(HushhAgent):
             summary=analysis["summary"],
             key_metrics=analysis["key_metrics"],
             quant_metrics=quant_metrics,
-            business_moat="N/A (Deterministic Mode)",
-            financial_resilience="N/A (Deterministic Mode)",
-            growth_efficiency="N/A (Deterministic Mode)",
-            bull_case="N/A",
-            bear_case="N/A",
+            business_moat=analysis.get("business_moat", "N/A (Deterministic Mode)"),
+            financial_resilience=analysis.get("financial_resilience", "N/A (Deterministic Mode)"),
+            growth_efficiency=analysis.get("growth_efficiency", "N/A (Deterministic Mode)"),
+            bull_case=analysis.get("bull_case", "N/A"),
+            bear_case=analysis.get("bear_case", "N/A"),
             confidence=analysis["confidence"],
             recommendation=analysis["recommendation"],
-            sources=self._format_sources(sec_filings),
+            sources=analysis.get("sources", self._format_sources(sec_filings)),
         )
 
-    def _format_sources(self, sec_filings: Dict[str, Any]) -> List[str]:
+    def _build_market_only_analysis(
+        self,
+        ticker: str,
+        market_data: Dict[str, Any],
+        sec_unavailable_reason: str | None = None,
+    ) -> Dict[str, Any]:
+        """Fallback for symbols that do not have usable SEC operating-company filings."""
+        price = market_data.get("price") or 0
+        change_percent = market_data.get("change_percent") or market_data.get("change_pct") or 0
+        market_cap = market_data.get("market_cap") or 0
+        pe_ratio = market_data.get("pe_ratio") or 0
+        source = market_data.get("source") or market_data.get("provider") or "Market data fallback"
+        reason = sec_unavailable_reason or "SEC filing data unavailable for this symbol."
+
+        return {
+            "summary": (
+                f"{ticker} is being evaluated with Kai's market-structure fallback because "
+                f"operating-company SEC filings were not available. {reason}"
+            ),
+            "key_metrics": {
+                "price": price,
+                "change_percent": change_percent,
+                "market_cap": market_cap,
+                "pe_ratio": pe_ratio,
+                "fallback_reason": reason,
+            },
+            "confidence": 0.35,
+            "recommendation": "hold",
+            "business_moat": "Not assessed from SEC filings for this security type.",
+            "financial_resilience": "Unavailable because SEC operating-company data is not present.",
+            "growth_efficiency": "Unavailable because SEC operating-company data is not present.",
+            "bull_case": (
+                f"{ticker} still has live market data and can participate in portfolio construction "
+                "even when filing-based analysis is limited."
+            ),
+            "bear_case": (
+                f"{ticker} lacks the filing depth Kai expects for a full fundamental equity review, "
+                "so conviction remains limited."
+            ),
+            "sources": [source, "PKM financial holdings context"],
+        }
+
+    def _format_sources(self, sec_filings: Dict[str, Any] | None) -> List[str]:
         """Format SEC filing sources for display."""
+        if not sec_filings:
+            return ["Market data fallback", "PKM financial holdings context"]
         ticker = sec_filings.get("ticker", "N/A")
         filing_date = sec_filings.get("filing_date", "N/A")
 

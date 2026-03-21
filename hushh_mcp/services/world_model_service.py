@@ -1,30 +1,16 @@
 # consent-protocol/hushh_mcp/services/world_model_service.py
 """
-World Model Service - Unified user data model with BYOK encryption.
+Personal Knowledge Model service with BYOK encryption and bounded cutover helpers.
 
-This service manages the two-table world model architecture:
+Canonical storage:
+1. pkm_index
+2. pkm_blobs
+3. pkm_manifests + pkm_manifest_paths + pkm_scope_registry
+4. pkm_events + pkm_migration_state
 
-1. world_model_index_v2 (ONE row per user)
-   - Queryable, non-encrypted metadata
-   - Used for MCP scope generation and UI display
-   - Structure: { domain_summaries: {...}, available_domains: [...], ... }
-
-2. world_model_data (ONE row per user) - NEW
-   - Single encrypted JSONB blob containing ALL user data
-   - Client-side encryption (BYOK) - backend cannot decrypt
-   - Structure: { ciphertext, iv, tag }
-   - Decrypted structure: { financial: {...}, food: {...}, health: {...} }
-
-DEPRECATED TABLES (DO NOT USE):
-- world_model_attributes (replaced by world_model_data)
-- vault_portfolios (merged into world_model_data.financial)
-- vault_food (merged into world_model_data.food)
-- vault_professional (merged into world_model_data.professional)
-
-DEPRECATED METHODS (use blob + index only):
-- store_attribute, store_attribute_obj, get_attribute, get_domain_attributes,
-  get_all_attributes, delete_attribute (all use world_model_attributes).
-  New code must use store_domain_data, get_encrypted_data, get_domain_data.
+Legacy read adapters remain only for cutover:
+- world_model_data
+- world_model_index_v2
 """
 
 import json
@@ -37,7 +23,6 @@ from typing import Any, Optional
 from db.db_client import get_db
 from hushh_mcp.services.domain_contracts import (
     FINANCIAL_DOMAIN_CONTRACT_VERSION,
-    FINANCIAL_INTENT_MAP,
     RETIRED_DOMAIN_REGISTRY_KEYS,
     canonical_top_level_domain,
     is_allowed_top_level_domain,
@@ -79,8 +64,8 @@ class DomainSummary:
 
 
 @dataclass
-class WorldModelIndexV2:
-    """Dynamic world model index with JSONB flexibility."""
+class PersonalKnowledgeModelIndex:
+    """Discovery-only PKM index for fast metadata reads."""
 
     user_id: str
     domain_summaries: dict = field(default_factory=dict)
@@ -122,12 +107,58 @@ class EncryptedAttribute:
     data_type: str = "string"
 
 
-class WorldModelService:
+@dataclass
+class PathDescriptor:
+    """Private PKM manifest descriptor for a consentable JSON path."""
+
+    json_path: str
+    parent_path: Optional[str] = None
+    path_type: str = "leaf"
+    exposure_eligibility: bool = True
+    consent_label: Optional[str] = None
+    sensitivity_label: Optional[str] = None
+    segment_id: str = "root"
+    scope_handle: Optional[str] = None
+    source_agent: Optional[str] = None
+
+
+@dataclass
+class ScopeRegistryEntry:
+    """Public PKM scope registry entry with opaque handle routing."""
+
+    scope_handle: str
+    scope_label: str
+    segment_ids: list[str] = field(default_factory=list)
+    sensitivity_tier: str = "confidential"
+    scope_kind: str = "subtree"
+    exposure_enabled: bool = True
+    summary_projection: dict = field(default_factory=dict)
+
+
+@dataclass
+class DomainManifest:
+    """Private per-user manifest for first-party PKM structure and scope expansion."""
+
+    user_id: str
+    domain: str
+    manifest_version: int = 1
+    structure_decision: dict = field(default_factory=dict)
+    summary_projection: dict = field(default_factory=dict)
+    top_level_scope_paths: list[str] = field(default_factory=list)
+    externalizable_paths: list[str] = field(default_factory=list)
+    segment_ids: list[str] = field(default_factory=list)
+    paths: list[PathDescriptor] = field(default_factory=list)
+    scope_registry: list[ScopeRegistryEntry] = field(default_factory=list)
+    last_structured_at: Optional[datetime] = None
+    last_content_at: Optional[datetime] = None
+
+
+class PersonalKnowledgeModelService:
     """
-    Service for managing the unified world model with dynamic domains.
+    Service for managing the Personal Knowledge Model with dynamic domains.
 
     Follows BYOK principles - all sensitive attributes are encrypted
-    with the user's vault key before storage.
+        with the user's vault key before storage.
     """
 
     def __init__(self):
@@ -139,6 +170,10 @@ class WorldModelService:
 
     _SUMMARY_BLOCKLIST = {"holdings", "total_value", "vault_key", "password"}
     _RETIRED_DOMAIN_KEYS = {str(key).strip().lower() for key in RETIRED_DOMAIN_REGISTRY_KEYS}
+    _ALLOWED_DISCOVERY_LITERAL_KEYS = {
+        "domain_contract_version",
+        "storage_mode",
+    }
 
     @property
     def supabase(self):
@@ -147,17 +182,22 @@ class WorldModelService:
         return self._supabase
 
     @staticmethod
-    def _clean_text(value: Optional[str], *, default: str = "") -> str:
+    def _clean_text(
+        value: Optional[str],
+        *,
+        default: str = "",
+        allow_none: bool = False,
+    ) -> Optional[str]:
         if not isinstance(value, str):
-            return default
+            return None if allow_none else default
         cleaned = value.strip()
         if cleaned.lower() in {"", "null", "undefined", "none"}:
-            return default
+            return None if allow_none else default
         return cleaned
 
     @staticmethod
     def _clean_base64ish(value: Optional[str], *, default: str = "") -> str:
-        cleaned = WorldModelService._clean_text(value, default=default)
+        cleaned = PersonalKnowledgeModelService._clean_text(value, default=default) or default
         if not cleaned:
             return default
         return "".join(cleaned.split())
@@ -240,6 +280,388 @@ class WorldModelService:
                 return None
         return None
 
+    @staticmethod
+    def _safe_json_value(value: object, fallback: object) -> object:
+        try:
+            json.dumps(value)
+            return value
+        except Exception:
+            return fallback
+
+    @classmethod
+    def _normalize_manifest_path(cls, path: str | None) -> str:
+        if not isinstance(path, str):
+            return ""
+        raw = path.strip().lower()
+        if not raw:
+            return ""
+
+        segments: list[str] = []
+        for part in raw.split("."):
+            normalized_part = "".join(
+                ch if (ch.isalnum() or ch == "_") else "_" for ch in part.strip()
+            ).strip("_")
+            if normalized_part:
+                segments.append(normalized_part)
+        return ".".join(segments)
+
+    @classmethod
+    def _normalize_path_list(cls, values: object) -> list[str]:
+        if not isinstance(values, list):
+            return []
+        seen: set[str] = set()
+        normalized_values: list[str] = []
+        for value in values:
+            normalized = cls._normalize_manifest_path(str(value))
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                normalized_values.append(normalized)
+        return normalized_values
+
+    @classmethod
+    def _normalize_path_descriptor(
+        cls,
+        payload: dict | None,
+        *,
+        source_agent: str,
+    ) -> Optional[PathDescriptor]:
+        raw_payload = payload if isinstance(payload, dict) else {}
+        json_path = cls._normalize_manifest_path(
+            raw_payload.get("json_path") or raw_payload.get("path")
+        )
+        if not json_path:
+            return None
+
+        parent_path = cls._normalize_manifest_path(raw_payload.get("parent_path"))
+        path_type = cls._clean_text(str(raw_payload.get("path_type") or "leaf"), default="leaf")
+        if path_type not in {"object", "array", "leaf"}:
+            path_type = "leaf"
+        consent_label = cls._clean_text(raw_payload.get("consent_label"))
+        sensitivity_label = cls._clean_text(raw_payload.get("sensitivity_label"))
+        segment_id = cls._clean_text(raw_payload.get("segment_id"), default="root") or "root"
+        scope_handle = cls._clean_text(raw_payload.get("scope_handle"), allow_none=True)
+        descriptor_source_agent = cls._clean_text(
+            raw_payload.get("source_agent"),
+            default=source_agent,
+        )
+
+        return PathDescriptor(
+            json_path=json_path,
+            parent_path=parent_path or None,
+            path_type=path_type,
+            exposure_eligibility=bool(raw_payload.get("exposure_eligibility", True)),
+            consent_label=consent_label or None,
+            sensitivity_label=sensitivity_label or None,
+            segment_id=segment_id,
+            scope_handle=scope_handle or None,
+            source_agent=descriptor_source_agent or None,
+        )
+
+    @classmethod
+    def _normalize_structure_decision(cls, domain: str, payload: dict | None) -> dict:
+        source = payload if isinstance(payload, dict) else {}
+        action = cls._clean_text(source.get("action"), default="match_existing_domain")
+        if action not in {"match_existing_domain", "create_domain", "extend_domain"}:
+            action = "match_existing_domain"
+
+        target_domain = cls._canonicalize_static_domain(
+            source.get("target_domain"),
+            fallback=domain,
+        )
+        json_paths = cls._normalize_path_list(source.get("json_paths"))
+        top_level_scope_paths = cls._normalize_path_list(source.get("top_level_scope_paths"))
+        externalizable_paths = cls._normalize_path_list(source.get("externalizable_paths"))
+        summary_projection = (
+            source.get("summary_projection")
+            if isinstance(source.get("summary_projection"), dict)
+            else {}
+        )
+        sensitivity_labels = (
+            source.get("sensitivity_labels")
+            if isinstance(source.get("sensitivity_labels"), dict)
+            else {}
+        )
+        confidence = source.get("confidence")
+        try:
+            confidence_value = float(confidence) if confidence is not None else 1.0
+        except Exception:
+            confidence_value = 1.0
+        confidence_value = max(0.0, min(1.0, confidence_value))
+
+        source_agent = cls._clean_text(
+            source.get("source_agent"),
+            default="world_model_structure_agent",
+        )
+        contract_version = cls._to_non_negative_int(source.get("contract_version")) or 1
+
+        if not top_level_scope_paths:
+            top_level_scope_paths = sorted(
+                {
+                    path.split(".", 1)[0]
+                    for path in json_paths
+                    if isinstance(path, str) and path.strip()
+                }
+            )
+        if not externalizable_paths:
+            externalizable_paths = list(json_paths)
+
+        normalized_sensitivity_labels: dict[str, str] = {}
+        for raw_path, raw_label in sensitivity_labels.items():
+            normalized_path = cls._normalize_manifest_path(str(raw_path))
+            normalized_label = cls._clean_text(str(raw_label))
+            if normalized_path and normalized_label:
+                normalized_sensitivity_labels[normalized_path] = normalized_label
+
+        return {
+            "action": action,
+            "target_domain": target_domain,
+            "json_paths": json_paths,
+            "top_level_scope_paths": top_level_scope_paths,
+            "externalizable_paths": externalizable_paths,
+            "summary_projection": cls._safe_json_value(summary_projection, {}),
+            "sensitivity_labels": normalized_sensitivity_labels,
+            "confidence": confidence_value,
+            "source_agent": source_agent,
+            "contract_version": contract_version,
+        }
+
+    @classmethod
+    def _canonicalize_static_domain(cls, domain: object, *, fallback: str = "") -> str:
+        raw_domain = cls._clean_text(str(domain or ""), default=fallback).lower()
+        if not raw_domain:
+            return fallback
+        return canonical_top_level_domain(raw_domain)
+
+    def _normalize_manifest_payload(
+        self,
+        user_id: str,
+        domain: str,
+        payload: dict | None,
+        structure_decision: dict | None,
+    ) -> DomainManifest:
+        source = payload if isinstance(payload, dict) else {}
+        decision = self._normalize_structure_decision(domain, structure_decision)
+        source_agent = self._clean_text(
+            source.get("source_agent"),
+            default=decision.get("source_agent", "world_model_structure_agent"),
+        )
+
+        normalized_paths: dict[str, PathDescriptor] = {}
+        for raw_descriptor in source.get("paths") or []:
+            descriptor = self._normalize_path_descriptor(raw_descriptor, source_agent=source_agent)
+            if descriptor is not None:
+                normalized_paths[descriptor.json_path] = descriptor
+
+        if not normalized_paths:
+            for path in decision.get("json_paths", []):
+                segment_id = path.split(".", 1)[0] if "." in path else "root"
+                descriptor = PathDescriptor(
+                    json_path=path,
+                    parent_path=path.rsplit(".", 1)[0] if "." in path else None,
+                    path_type="leaf",
+                    exposure_eligibility=path in set(decision.get("externalizable_paths", [])),
+                    consent_label=path.replace(".", " ").replace("_", " ").title(),
+                    sensitivity_label=decision.get("sensitivity_labels", {}).get(path),
+                    segment_id=segment_id,
+                    source_agent=source_agent,
+                )
+                normalized_paths[descriptor.json_path] = descriptor
+
+        top_level_scope_paths = self._normalize_path_list(
+            source.get("top_level_scope_paths") or decision.get("top_level_scope_paths")
+        )
+        if not top_level_scope_paths:
+            top_level_scope_paths = sorted(
+                {
+                    descriptor.json_path.split(".", 1)[0]
+                    for descriptor in normalized_paths.values()
+                    if descriptor.json_path
+                }
+            )
+
+        externalizable_paths = self._normalize_path_list(
+            source.get("externalizable_paths") or decision.get("externalizable_paths")
+        )
+        if not externalizable_paths:
+            externalizable_paths = sorted(
+                descriptor.json_path
+                for descriptor in normalized_paths.values()
+                if descriptor.exposure_eligibility
+            )
+
+        segment_ids = sorted(
+            {
+                descriptor.segment_id or "root"
+                for descriptor in normalized_paths.values()
+                if descriptor.segment_id or normalized_paths
+            }
+        ) or ["root"]
+
+        manifest_version = self._to_non_negative_int(source.get("manifest_version")) or 1
+        summary_projection = (
+            source.get("summary_projection")
+            if isinstance(source.get("summary_projection"), dict)
+            else {}
+        )
+        if not summary_projection:
+            summary_projection = (
+                decision.get("summary_projection")
+                if isinstance(decision.get("summary_projection"), dict)
+                else {}
+            )
+
+        last_structured_at = datetime.utcnow()
+        last_content_at = datetime.utcnow()
+
+        scope_registry = self._build_scope_registry_entries(
+            user_id=user_id,
+            domain=domain,
+            manifest_version=manifest_version,
+            top_level_scope_paths=top_level_scope_paths,
+            paths=list(normalized_paths.values()),
+        )
+
+        return DomainManifest(
+            user_id=user_id,
+            domain=domain,
+            manifest_version=manifest_version,
+            structure_decision=decision,
+            summary_projection=summary_projection,
+            top_level_scope_paths=top_level_scope_paths,
+            externalizable_paths=externalizable_paths,
+            segment_ids=segment_ids,
+            paths=list(
+                sorted(normalized_paths.values(), key=lambda descriptor: descriptor.json_path)
+            ),
+            scope_registry=scope_registry,
+            last_structured_at=last_structured_at,
+            last_content_at=last_content_at,
+        )
+
+    @classmethod
+    def _scope_handle_for_path(cls, user_id: str, domain: str, path: str) -> str:
+        import hashlib
+
+        digest = hashlib.sha256(f"{user_id}:{domain}:{path}".encode("utf-8")).hexdigest()
+        return f"s_{digest[:12]}"
+
+    def _build_scope_registry_entries(
+        self,
+        *,
+        user_id: str,
+        domain: str,
+        manifest_version: int,
+        top_level_scope_paths: list[str],
+        paths: list[PathDescriptor],
+    ) -> list[ScopeRegistryEntry]:
+        entries: list[ScopeRegistryEntry] = []
+        path_map = {
+            descriptor.json_path: descriptor
+            for descriptor in paths
+            if descriptor.exposure_eligibility and descriptor.json_path
+        }
+
+        for scope_path in top_level_scope_paths:
+            normalized_path = self._normalize_manifest_path(scope_path)
+            if not normalized_path:
+                continue
+            matching = [
+                descriptor
+                for descriptor in path_map.values()
+                if descriptor.json_path == normalized_path
+                or descriptor.json_path.startswith(f"{normalized_path}.")
+            ]
+            if not matching:
+                continue
+            segment_ids = sorted({descriptor.segment_id or "root" for descriptor in matching}) or [
+                "root"
+            ]
+            sensitivity_tier = "confidential"
+            if any(
+                (descriptor.sensitivity_label or "").lower() == "restricted"
+                for descriptor in matching
+            ):
+                sensitivity_tier = "restricted"
+            handle = self._scope_handle_for_path(user_id, domain, normalized_path)
+            for descriptor in matching:
+                descriptor.scope_handle = handle
+            entries.append(
+                ScopeRegistryEntry(
+                    scope_handle=handle,
+                    scope_label=normalized_path.replace(".", " ").replace("_", " ").title(),
+                    segment_ids=segment_ids,
+                    sensitivity_tier=sensitivity_tier,
+                    scope_kind="subtree",
+                    exposure_enabled=True,
+                    summary_projection={
+                        "top_level_scope_path": normalized_path,
+                        "manifest_version": manifest_version,
+                    },
+                )
+            )
+
+        return entries
+
+    @staticmethod
+    def _serialize_manifest(manifest: DomainManifest) -> dict[str, object]:
+        return {
+            "user_id": manifest.user_id,
+            "domain": manifest.domain,
+            "manifest_version": manifest.manifest_version,
+            "structure_decision": json.dumps(manifest.structure_decision or {}),
+            "summary_projection": json.dumps(manifest.summary_projection or {}),
+            "top_level_scope_paths": manifest.top_level_scope_paths,
+            "externalizable_paths": manifest.externalizable_paths,
+            "segment_ids": manifest.segment_ids,
+            "path_count": len(manifest.paths),
+            "externalizable_path_count": len(
+                [path for path in manifest.paths if path.exposure_eligibility]
+            ),
+            "last_structured_at": manifest.last_structured_at.isoformat()
+            if manifest.last_structured_at
+            else None,
+            "last_content_at": manifest.last_content_at.isoformat()
+            if manifest.last_content_at
+            else None,
+        }
+
+    @staticmethod
+    def _serialize_manifest_path(
+        manifest: DomainManifest,
+        path: PathDescriptor,
+    ) -> dict[str, object]:
+        return {
+            "user_id": manifest.user_id,
+            "domain": manifest.domain,
+            "json_path": path.json_path,
+            "parent_path": path.parent_path,
+            "path_type": path.path_type,
+            "segment_id": path.segment_id or "root",
+            "scope_handle": path.scope_handle,
+            "exposure_eligibility": path.exposure_eligibility,
+            "consent_label": path.consent_label,
+            "sensitivity_label": path.sensitivity_label,
+            "source_agent": path.source_agent,
+        }
+
+    @staticmethod
+    def _serialize_scope_registry_entry(
+        manifest: DomainManifest,
+        entry: ScopeRegistryEntry,
+    ) -> dict[str, object]:
+        return {
+            "user_id": manifest.user_id,
+            "domain": manifest.domain,
+            "scope_handle": entry.scope_handle,
+            "scope_label": entry.scope_label,
+            "segment_ids": entry.segment_ids,
+            "sensitivity_tier": entry.sensitivity_tier,
+            "scope_kind": entry.scope_kind,
+            "exposure_enabled": entry.exposure_enabled,
+            "summary_projection": json.dumps(entry.summary_projection or {}),
+            "manifest_version": manifest.manifest_version,
+        }
+
     def _normalized_summary_count(self, summary: dict | None) -> int:
         if not isinstance(summary, dict):
             return 0
@@ -255,45 +677,75 @@ class WorldModelService:
         return 0
 
     def _normalize_domain_summary(self, domain: str, summary: dict | None) -> dict:
-        """Normalize/sanitize summary payload to a canonical counter contract."""
+        """Normalize summary payload into a minimal discovery-only contract."""
         source = summary if isinstance(summary, dict) else {}
         sanitized: dict[str, object] = {}
 
-        for key, value in source.items():
-            normalized_key = str(key).lower()
-            if normalized_key == "total_value":
-                # Preserve non-sensitive aggregate for dashboard hero without leaking full holdings.
-                # Keep under a dedicated summary key; legacy `total_value` stays stripped.
-                parsed_total = None
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    parsed_total = float(value)
-                elif isinstance(value, str):
-                    text = value.strip().replace(",", "")
-                    if text:
-                        try:
-                            parsed_total = float(text)
-                        except Exception:
-                            parsed_total = None
-                if parsed_total is not None:
-                    sanitized["portfolio_total_value"] = parsed_total
-                continue
-            if normalized_key in self._SUMMARY_BLOCKLIST:
-                continue
-            sanitized[key] = value
-
-        canonical_count = self._normalized_summary_count(sanitized)
-        # Canonical counter contract:
-        # - attribute_count is authoritative for all domains.
-        # - item_count mirrors the same count for compatibility.
-        # - holdings_count mirrors for financial/portfolio-like summaries.
+        canonical_count = self._normalized_summary_count(source)
         sanitized["attribute_count"] = canonical_count
         sanitized["item_count"] = canonical_count
         if domain == "financial" or "holdings_count" in source:
             sanitized["holdings_count"] = canonical_count
-        if domain == "financial":
-            # Finance-root contract metadata for Kai.
             sanitized["domain_contract_version"] = FINANCIAL_DOMAIN_CONTRACT_VERSION
-            sanitized["intent_map"] = list(FINANCIAL_INTENT_MAP)
+
+        for key, value in source.items():
+            normalized_key = str(key).strip().lower()
+            if normalized_key in self._SUMMARY_BLOCKLIST:
+                continue
+            if normalized_key in {"attribute_count", "item_count", "holdings_count"}:
+                continue
+            if normalized_key in {"risk_profile", "risk_bucket", "risk_score"}:
+                continue
+            if normalized_key.startswith("analysis_") or normalized_key.endswith("_decision"):
+                continue
+            if normalized_key in {
+                "recent_decisions",
+                "analysis_recent_decisions",
+                "analysis_decisions",
+                "decisions",
+                "intent_map",
+                "sub_intents",
+                "subintents",
+                "available_subintents",
+                "available_sub_intents",
+                "tickers_analyzed",
+                "last_analysis_ticker",
+                "last_brokerage",
+                "profile_risk_profile",
+                "portfolio_total_value",
+                "total_value",
+            }:
+                continue
+
+            if normalized_key in {
+                "path_count",
+                "externalizable_path_count",
+                "manifest_version",
+                "top_level_scope_count",
+            }:
+                parsed = self._to_non_negative_int(value)
+                if parsed is not None:
+                    sanitized[normalized_key] = parsed
+                continue
+
+            if normalized_key in {"last_structured_at", "last_content_at", "updated_at"}:
+                cleaned = self._clean_text(str(value))
+                if cleaned:
+                    sanitized[normalized_key] = cleaned
+                continue
+
+            if normalized_key in self._ALLOWED_DISCOVERY_LITERAL_KEYS:
+                cleaned = self._clean_text(str(value))
+                if cleaned:
+                    sanitized[normalized_key] = cleaned
+                continue
+
+            if isinstance(value, bool) and (
+                normalized_key.startswith("has_")
+                or normalized_key.endswith("_enabled")
+                or normalized_key.endswith("_available")
+            ):
+                sanitized[normalized_key] = value
 
         return sanitized
 
@@ -392,23 +844,18 @@ class WorldModelService:
             self._scope_generator = get_scope_generator()
         return self._scope_generator
 
-    # ==================== INDEX V2 OPERATIONS ====================
+    # ==================== PKM INDEX OPERATIONS ====================
 
-    async def get_index_v2(self, user_id: str) -> Optional[WorldModelIndexV2]:
-        """Get user's world model index (v2 with JSONB)."""
+    async def get_index_v2(self, user_id: str) -> Optional[PersonalKnowledgeModelIndex]:
+        """Get the user's PKM discovery index."""
         try:
-            result = (
-                self.supabase.table("world_model_index_v2")
-                .select("*")
-                .eq("user_id", user_id)
-                .execute()
-            )
+            result = self.supabase.table("pkm_index").select("*").eq("user_id", user_id).execute()
 
             if not result.data:
                 return None
 
             row = result.data[0]
-            return WorldModelIndexV2(
+            return PersonalKnowledgeModelIndex(
                 user_id=row["user_id"],
                 domain_summaries=row.get("domain_summaries") or {},
                 available_domains=row.get("available_domains") or [],
@@ -416,14 +863,14 @@ class WorldModelService:
                 activity_score=row.get("activity_score"),
                 last_active_at=row.get("last_active_at"),
                 total_attributes=row.get("total_attributes", 0),
-                model_version=row.get("model_version", 2),
+                model_version=1,
             )
         except Exception as e:
-            logger.error(f"Error getting world model index v2: {e}")
+            logger.error(f"Error getting PKM index: {e}")
             return None
 
-    async def upsert_index_v2(self, index: WorldModelIndexV2) -> bool:
-        """Create or update user's world model index (v2)."""
+    async def upsert_index_v2(self, index: PersonalKnowledgeModelIndex) -> bool:
+        """Create or update the user's PKM discovery index."""
         try:
             # Defense-in-depth: sanitize every domain summary before persisting.
             # The primary sanitization lives in update_domain_summary(), but this
@@ -464,16 +911,14 @@ class WorldModelService:
                 if index.last_active_at
                 else None,
                 "total_attributes": total_attributes,
-                "model_version": index.model_version,
+                "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
             }
 
-            self.supabase.table("world_model_index_v2").upsert(
-                data, on_conflict="user_id"
-            ).execute()
+            self.supabase.table("pkm_index").upsert(data, on_conflict="user_id").execute()
             return True
         except Exception as e:
-            logger.error(f"Error upserting world model index v2: {e}")
+            logger.error(f"Error upserting PKM index: {e}")
             return False
 
     async def update_domain_summary(
@@ -482,12 +927,7 @@ class WorldModelService:
         domain: str,
         summary: dict,
     ) -> bool:
-        """Atomically merge a domain summary using the JSONB merge RPC.
-
-        Uses the merge_domain_summary Postgres function to atomically update
-        a single domain's summary without overwriting other domains' data.
-        Analogous to MongoDB's $set on nested paths.
-        """
+        """Merge a sanitized PKM discovery summary for one domain."""
         domain = self._canonicalize_domain_key(domain)
         if not domain:
             logger.error("update_domain_summary called with empty domain for user %s", user_id)
@@ -515,34 +955,9 @@ class WorldModelService:
                     domain,
                 )
 
-            # NOTE: get_db() may return a SQLAlchemy-backed client where rpc()
-            # does not expose .execute() semantics. In that case we fall back to
-            # read-modify-write to preserve correctness.
-            rpc_call = self.supabase.rpc(
-                "merge_domain_summary",
-                {
-                    "p_user_id": user_id,
-                    "p_domain": domain,
-                    "p_summary": json.dumps(sanitized),
-                },
-            )
-            if hasattr(rpc_call, "execute"):
-                result = rpc_call.execute()
-                if hasattr(result, "error") and result.error:
-                    logger.error(f"JSONB merge RPC error: {result.error}")
-                    return False
-
-                # Lightweight reconciliation keeps available_domains/domain_summaries coherent.
-                await self.reconcile_user_index_domains(user_id, register_missing_registry=False)
-                return True
-        except Exception as e:
-            logger.error(f"Error updating domain summary via RPC: {e}")
-
-        # Fallback to read-modify-write if RPC is unavailable/not deployed.
-        try:
             index = await self.get_index_v2(user_id)
             if index is None:
-                index = WorldModelIndexV2(user_id=user_id)
+                index = PersonalKnowledgeModelIndex(user_id=user_id)
 
             existing_summary = (
                 index.domain_summaries.get(domain)
@@ -564,8 +979,227 @@ class WorldModelService:
 
             return await self.upsert_index_v2(index)
         except Exception as fallback_err:
-            logger.error(f"Fallback update_domain_summary also failed: {fallback_err}")
+            logger.error(f"PKM update_domain_summary failed: {fallback_err}")
             return False
+
+    async def upsert_domain_manifest(
+        self,
+        manifest: DomainManifest,
+    ) -> bool:
+        """Persist manifest header + path descriptors for a user/domain pair."""
+        try:
+            manifest_row = self._serialize_manifest(manifest)
+            self.supabase.table("pkm_manifests").upsert(
+                manifest_row,
+                on_conflict="user_id,domain",
+            ).execute()
+
+            self.supabase.table("pkm_manifest_paths").delete().eq("user_id", manifest.user_id).eq(
+                "domain", manifest.domain
+            ).execute()
+            self.supabase.table("pkm_scope_registry").delete().eq("user_id", manifest.user_id).eq(
+                "domain", manifest.domain
+            ).execute()
+
+            if manifest.paths:
+                path_rows = [
+                    self._serialize_manifest_path(manifest, path) for path in manifest.paths
+                ]
+                self.supabase.table("pkm_manifest_paths").upsert(
+                    path_rows,
+                    on_conflict="user_id,domain,json_path",
+                ).execute()
+            if manifest.scope_registry:
+                scope_rows = [
+                    self._serialize_scope_registry_entry(manifest, entry)
+                    for entry in manifest.scope_registry
+                ]
+                self.supabase.table("pkm_scope_registry").upsert(
+                    scope_rows,
+                    on_conflict="user_id,domain,scope_handle",
+                ).execute()
+            return True
+        except Exception as e:
+            logger.error(
+                "Error upserting domain manifest for user=%s domain=%s: %s",
+                manifest.user_id,
+                manifest.domain,
+                e,
+            )
+            return False
+
+    async def get_domain_manifest(self, user_id: str, domain: str) -> Optional[dict]:
+        """Return manifest + path descriptors for a user/domain if available."""
+        try:
+            canonical_domain = self._canonicalize_domain_key(domain)
+            if not canonical_domain:
+                return None
+            manifest_result = (
+                self.supabase.table("pkm_manifests")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("domain", canonical_domain)
+                .limit(1)
+                .execute()
+            )
+            if not manifest_result.data:
+                return None
+
+            manifest_row = manifest_result.data[0]
+            path_rows = (
+                self.supabase.table("pkm_manifest_paths")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("domain", canonical_domain)
+                .order("json_path")
+                .execute()
+            )
+            scope_rows = (
+                self.supabase.table("pkm_scope_registry")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("domain", canonical_domain)
+                .order("scope_handle")
+                .execute()
+            )
+            manifest_row["paths"] = path_rows.data or []
+            manifest_row["scope_registry"] = scope_rows.data or []
+            return manifest_row
+        except Exception as e:
+            logger.error(
+                "Error getting domain manifest for user=%s domain=%s: %s",
+                user_id,
+                domain,
+                e,
+            )
+            return None
+
+    async def record_mutation_event(
+        self,
+        *,
+        user_id: str,
+        domain: str,
+        operation_type: str,
+        path_set: list[str] | None = None,
+        source_agent: str | None = None,
+        confidence: float | None = None,
+        prior_manifest_version: int | None = None,
+        new_manifest_version: int | None = None,
+        metadata: dict | None = None,
+    ) -> bool:
+        """Append a PKM mutation event for replay/debugging/audit."""
+        try:
+            canonical_domain = self._canonicalize_domain_key(domain)
+            self.supabase.table("pkm_events").insert(
+                {
+                    "user_id": user_id,
+                    "domain": canonical_domain or domain,
+                    "operation_type": operation_type,
+                    "path_set": json.dumps(path_set or []),
+                    "source_agent": source_agent,
+                    "confidence": confidence,
+                    "prior_manifest_version": prior_manifest_version,
+                    "new_manifest_version": new_manifest_version,
+                    "metadata": json.dumps(metadata or {}),
+                }
+            ).execute()
+            return True
+        except Exception as e:
+            logger.error(
+                "Error recording PKM mutation event user=%s domain=%s op=%s: %s",
+                user_id,
+                domain,
+                operation_type,
+                e,
+            )
+            return False
+
+    @staticmethod
+    def _extract_decision_records(summary: dict | None) -> list[dict]:
+        """Extract decision payloads from legacy summary maps before sanitization."""
+        if not isinstance(summary, dict):
+            return []
+
+        items: list[dict] = []
+        for key in (
+            "recent_decisions",
+            "analysis_recent_decisions",
+            "analysis_decisions",
+            "decisions",
+        ):
+            payload = summary.get(key)
+            if isinstance(payload, list):
+                items.extend([row for row in payload if isinstance(row, dict)])
+            elif isinstance(payload, dict):
+                nested = payload.get("decisions")
+                if isinstance(nested, list):
+                    items.extend([row for row in nested if isinstance(row, dict)])
+
+        for summary_key, summary_value in summary.items():
+            if not isinstance(summary_key, str) or not summary_key.endswith("_decision"):
+                continue
+            ticker = summary_key[: -len("_decision")].upper()
+            if not ticker:
+                continue
+            try:
+                confidence_value = float(summary.get(f"{ticker}_confidence") or 0.0)
+            except Exception:
+                confidence_value = 0.0
+            items.append(
+                {
+                    "id": 0,
+                    "ticker": ticker,
+                    "decision_type": str(summary_value or "HOLD"),
+                    "confidence": confidence_value,
+                    "created_at": str(summary.get(f"{ticker}_analyzed_at") or ""),
+                    "metadata": {"source": "summary_map"},
+                }
+            )
+        return items
+
+    async def get_recent_decision_records(
+        self,
+        user_id: str,
+        *,
+        domain: str = "financial",
+        limit: int = 50,
+    ) -> list[dict]:
+        """Read latest decision projections from mutation events."""
+        try:
+            rows = self.supabase.execute_raw(
+                """
+                SELECT metadata, created_at
+                FROM pkm_events
+                WHERE user_id = :user_id
+                  AND domain = :domain
+                  AND operation_type = 'decision_projection'
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """,
+                {"user_id": user_id, "domain": domain, "limit": max(1, limit)},
+            ).data
+            decisions: list[dict] = []
+            seen: set[str] = set()
+            for row in rows:
+                metadata = row.get("metadata") if isinstance(row, dict) else {}
+                payload = metadata if isinstance(metadata, dict) else {}
+                raw_decisions = payload.get("decisions")
+                if not isinstance(raw_decisions, list):
+                    continue
+                for decision in raw_decisions:
+                    if not isinstance(decision, dict):
+                        continue
+                    identity = json.dumps(decision, sort_keys=True, default=str)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    decisions.append(decision)
+                    if len(decisions) >= limit:
+                        return decisions
+            return decisions
+        except Exception as e:
+            logger.error("Error loading recent decision records for %s: %s", user_id, e)
+            return []
 
     # ==================== ATTRIBUTE OPERATIONS (DEPRECATED) ====================
     # These methods wrote to the now-removed world_model_attributes table.
@@ -642,7 +1276,7 @@ class WorldModelService:
                 result = self._run_rpc("get_user_world_model_metadata", {"p_user_id": user_id})
 
                 if result.data:
-                    data = result.data
+                    data = result.data[0] if isinstance(result.data, list) else result.data
                     domains = []
                     for d in data.get("domains") or []:
                         domains.append(
@@ -794,6 +1428,9 @@ class WorldModelService:
         domain: str,
         encrypted_blob: dict,
         summary: dict,
+        structure_decision: Optional[dict] = None,
+        manifest: Optional[dict] = None,
+        source_agent: Optional[str] = None,
         expected_data_version: Optional[int] = None,
         return_result: bool = False,
     ) -> bool | dict[str, Any]:
@@ -812,7 +1449,7 @@ class WorldModelService:
                     "iv": "base64...",
                     "tag": "base64..."
                 }
-            summary: Non-sensitive metadata for world_model_index_v2
+            summary: Non-sensitive metadata for PKM index
                 {
                     "has_portfolio": true,
                     "holdings_count": 4,
@@ -852,131 +1489,239 @@ class WorldModelService:
                     domain,
                 )
 
-            ciphertext = self._clean_base64ish(encrypted_blob["ciphertext"])
-            iv = self._clean_base64ish(encrypted_blob["iv"])
-            tag = self._clean_base64ish(encrypted_blob["tag"])
-            algorithm = self._clean_text(
-                encrypted_blob.get("algorithm", "aes-256-gcm"),
-                default="aes-256-gcm",
-            ).lower()
+            raw_segments = encrypted_blob.get("segments")
+            normalized_segments: dict[str, dict[str, str]] = {}
+            if isinstance(raw_segments, dict) and raw_segments:
+                for raw_segment_id, raw_segment_blob in raw_segments.items():
+                    if not isinstance(raw_segment_blob, dict):
+                        continue
+                    segment_id = self._clean_text(str(raw_segment_id), default="root") or "root"
+                    ciphertext = self._clean_base64ish(raw_segment_blob.get("ciphertext"))
+                    iv = self._clean_base64ish(raw_segment_blob.get("iv"))
+                    tag = self._clean_base64ish(raw_segment_blob.get("tag"))
+                    algorithm = self._clean_text(
+                        raw_segment_blob.get("algorithm", "aes-256-gcm"),
+                        default="aes-256-gcm",
+                    ).lower()
+                    if ciphertext and iv and tag:
+                        normalized_segments[segment_id] = {
+                            "ciphertext": ciphertext,
+                            "iv": iv,
+                            "tag": tag,
+                            "algorithm": algorithm,
+                        }
 
-            current_data: Optional[dict] = None
-            current_version = 0
-            if expected_data_version is not None:
-                current_data = await self.get_encrypted_data(user_id)
-                if current_data is not None:
-                    current_version = int(current_data.get("data_version", 0) or 0)
-                if current_version != expected_data_version:
-                    result["conflict"] = True
-                    result["data_version"] = current_version
-                    result["updated_at"] = current_data.get("updated_at") if current_data else None
-                    return result if return_result else False
-
-            blob_stored = False
-            resolved_data_version: Optional[int] = None
-            resolved_updated_at: Optional[str] = None
-            if self._supports_blob_upsert_rpc():
-                try:
-                    rpc_result = self._run_rpc(
-                        "upsert_world_model_data_blob",
-                        {
-                            "p_user_id": user_id,
-                            "p_ciphertext": ciphertext,
-                            "p_iv": iv,
-                            "p_tag": tag,
-                            "p_algorithm": algorithm,
-                        },
-                    )
-                    if hasattr(rpc_result, "error") and rpc_result.error:
-                        logger.warning(
-                            "upsert_world_model_data_blob RPC returned error for %s/%s: %s",
-                            user_id,
-                            domain,
-                            rpc_result.error,
-                        )
-                    else:
-                        self._blob_upsert_rpc_supported = True
-                        blob_stored = True
-                        rpc_payload = getattr(rpc_result, "data", None)
-                        raw_version: object | None = None
-                        if isinstance(rpc_payload, list) and rpc_payload:
-                            first = rpc_payload[0]
-                            if isinstance(first, dict):
-                                raw_version = first.get(
-                                    "upsert_world_model_data_blob",
-                                    first.get("data_version"),
-                                )
-                                if isinstance(first.get("updated_at"), str):
-                                    resolved_updated_at = first.get("updated_at")
-                            else:
-                                raw_version = first
-                        elif isinstance(rpc_payload, dict):
-                            raw_version = rpc_payload.get(
-                                "upsert_world_model_data_blob",
-                                rpc_payload.get("data_version"),
-                            )
-                            if isinstance(rpc_payload.get("updated_at"), str):
-                                resolved_updated_at = rpc_payload.get("updated_at")
-                        elif rpc_payload is not None:
-                            raw_version = rpc_payload
-
-                        parsed_version = self._to_non_negative_int(raw_version)
-                        if parsed_version is not None:
-                            resolved_data_version = parsed_version
-                except Exception as rpc_error:
-                    if self._is_missing_rpc_function_error(
-                        rpc_error, "upsert_world_model_data_blob"
-                    ):
-                        self._blob_upsert_rpc_supported = False
-                        logger.info(
-                            "upsert_world_model_data_blob RPC is not installed; disabling RPC path for process."
-                        )
-                    else:
-                        logger.info(
-                            "upsert_world_model_data_blob RPC unavailable for %s/%s, using fallback: %s",
-                            user_id,
-                            domain,
-                            rpc_error,
-                        )
-
-            if not blob_stored:
-                # Fallback: existing read-modify-write path for data_version increment.
-                if current_data is not None:
-                    current_version = current_data.get("data_version", 0) or 0
-                else:
-                    current_data = await self.get_encrypted_data(user_id)
-                    if current_data is not None:
-                        current_version = current_data.get("data_version", 0) or 0
-
-                resolved_data_version = int(current_version) + 1
-                resolved_updated_at = datetime.utcnow().isoformat()
-                data = {
-                    "user_id": user_id,
-                    "encrypted_data_ciphertext": ciphertext,
-                    "encrypted_data_iv": iv,
-                    "encrypted_data_tag": tag,
+            if not normalized_segments:
+                ciphertext = self._clean_base64ish(encrypted_blob["ciphertext"])
+                iv = self._clean_base64ish(encrypted_blob["iv"])
+                tag = self._clean_base64ish(encrypted_blob["tag"])
+                algorithm = self._clean_text(
+                    encrypted_blob.get("algorithm", "aes-256-gcm"),
+                    default="aes-256-gcm",
+                ).lower()
+                normalized_segments["root"] = {
+                    "ciphertext": ciphertext,
+                    "iv": iv,
+                    "tag": tag,
                     "algorithm": algorithm,
-                    "data_version": resolved_data_version,
-                    "updated_at": resolved_updated_at,
                 }
 
-                if current_data is None:
-                    data["created_at"] = datetime.utcnow().isoformat()
+            existing_domain_blob = (
+                self.supabase.table("pkm_blobs")
+                .select("segment_id,content_revision,updated_at")
+                .eq("user_id", user_id)
+                .eq("domain", domain)
+                .execute()
+            )
+            existing_blob_rows = existing_domain_blob.data or []
+            existing_domain_row = existing_blob_rows[0] if existing_blob_rows else None
+            legacy_blob = await self.get_encrypted_data(user_id)
+            current_version = 0
+            current_updated_at: Optional[str] = None
+            if existing_domain_row:
+                current_version = int(existing_domain_row.get("content_revision", 0) or 0)
+                current_updated_at = existing_domain_row.get("updated_at")
+            elif legacy_blob is not None:
+                current_version = int(legacy_blob.get("data_version", 0) or 0)
+                current_updated_at = legacy_blob.get("updated_at")
 
-                self.supabase.table("world_model_data").upsert(
-                    data, on_conflict="user_id"
-                ).execute()
+            if expected_data_version is not None and current_version != expected_data_version:
+                result["conflict"] = True
+                result["data_version"] = current_version
+                result["updated_at"] = current_updated_at
+                return result if return_result else False
 
-            # 3. Update world_model_index_v2
-            summary_ok = await self.update_domain_summary(user_id, domain, summary)
+            prior_manifest = await self.get_domain_manifest(user_id, domain)
+            normalized_decision = self._normalize_structure_decision(
+                domain,
+                {
+                    **(structure_decision or {}),
+                    "source_agent": source_agent
+                    or (structure_decision or {}).get("source_agent")
+                    or "world_model_structure_agent",
+                },
+            )
+            normalized_manifest = self._normalize_manifest_payload(
+                user_id,
+                domain,
+                manifest,
+                normalized_decision,
+            )
+
+            prior_paths = {
+                self._normalize_manifest_path(path_row.get("json_path"))
+                for path_row in (prior_manifest or {}).get("paths", [])
+                if isinstance(path_row, dict)
+            }
+            next_paths = {path.json_path for path in normalized_manifest.paths}
+            if not isinstance(structure_decision, dict) or not structure_decision.get("action"):
+                if prior_manifest is None:
+                    normalized_manifest.structure_decision["action"] = "create_domain"
+                elif next_paths - prior_paths:
+                    normalized_manifest.structure_decision["action"] = "extend_domain"
+                else:
+                    normalized_manifest.structure_decision["action"] = "match_existing_domain"
+
+            resolved_data_version = int(current_version) + 1
+            resolved_updated_at = datetime.utcnow().isoformat()
+            existing_segment_ids = {
+                self._clean_text(row.get("segment_id"), default="root") or "root"
+                for row in existing_blob_rows
+            }
+            next_segment_ids = set(normalized_segments.keys())
+
+            for segment_id in sorted(existing_segment_ids - next_segment_ids):
+                self.supabase.table("pkm_blobs").delete().eq("user_id", user_id).eq(
+                    "domain", domain
+                ).eq("segment_id", segment_id).execute()
+
+            segment_rows = []
+            for segment_id, segment_blob in normalized_segments.items():
+                ciphertext = segment_blob["ciphertext"]
+                iv = segment_blob["iv"]
+                tag = segment_blob["tag"]
+                algorithm = segment_blob["algorithm"]
+                segment_rows.append(
+                    {
+                        "user_id": user_id,
+                        "domain": domain,
+                        "segment_id": segment_id,
+                        "ciphertext": ciphertext,
+                        "iv": iv,
+                        "tag": tag,
+                        "algorithm": algorithm,
+                        "content_revision": resolved_data_version,
+                        "manifest_revision": normalized_manifest.manifest_version,
+                        "size_bytes": len(ciphertext),
+                        "created_at": resolved_updated_at,
+                        "updated_at": resolved_updated_at,
+                    }
+                )
+            self.supabase.table("pkm_blobs").upsert(
+                segment_rows,
+                on_conflict="user_id,domain,segment_id",
+            ).execute()
+
+            manifest_ok = await self.upsert_domain_manifest(normalized_manifest)
+            if not manifest_ok:
+                return result if return_result else False
+
+            discovery_summary_input = {
+                **(summary if isinstance(summary, dict) else {}),
+                **(
+                    normalized_manifest.summary_projection
+                    if isinstance(normalized_manifest.summary_projection, dict)
+                    else {}
+                ),
+                "storage_mode": "per_domain_blob",
+                "manifest_version": normalized_manifest.manifest_version,
+                "path_count": len(normalized_manifest.paths),
+                "externalizable_path_count": len(
+                    [path for path in normalized_manifest.paths if path.exposure_eligibility]
+                ),
+                "top_level_scope_count": len(normalized_manifest.top_level_scope_paths),
+                "last_structured_at": normalized_manifest.last_structured_at.isoformat()
+                if normalized_manifest.last_structured_at
+                else None,
+                "last_content_at": normalized_manifest.last_content_at.isoformat()
+                if normalized_manifest.last_content_at
+                else None,
+            }
+
+            # 3. Update PKM discovery index
+            summary_ok = await self.update_domain_summary(user_id, domain, discovery_summary_input)
             if not summary_ok:
                 return result if return_result else False
 
-            if resolved_data_version is None:
-                post_write = await self.get_encrypted_data(user_id)
-                if post_write is not None:
-                    resolved_data_version = int(post_write.get("data_version", 0) or 0)
-                    resolved_updated_at = post_write.get("updated_at")
+            prior_manifest_version = (
+                self._to_non_negative_int((prior_manifest or {}).get("manifest_version"))
+                if isinstance(prior_manifest, dict)
+                else None
+            )
+            path_set = sorted(next_paths)
+            action = normalized_manifest.structure_decision.get("action", "match_existing_domain")
+            action_map = {
+                "create_domain": "structure_create",
+                "extend_domain": "structure_extend",
+                "match_existing_domain": "structure_match",
+            }
+            await self.record_mutation_event(
+                user_id=user_id,
+                domain=domain,
+                operation_type=action_map.get(action, "structure_match"),
+                path_set=path_set,
+                source_agent=normalized_manifest.structure_decision.get("source_agent"),
+                confidence=normalized_manifest.structure_decision.get("confidence"),
+                prior_manifest_version=prior_manifest_version,
+                new_manifest_version=normalized_manifest.manifest_version,
+                metadata={
+                    "structure_decision": normalized_manifest.structure_decision,
+                    "top_level_scope_paths": normalized_manifest.top_level_scope_paths,
+                    "externalizable_paths": normalized_manifest.externalizable_paths,
+                },
+            )
+            await self.record_mutation_event(
+                user_id=user_id,
+                domain=domain,
+                operation_type="content_write",
+                path_set=path_set,
+                source_agent=normalized_manifest.structure_decision.get("source_agent"),
+                confidence=normalized_manifest.structure_decision.get("confidence"),
+                prior_manifest_version=prior_manifest_version,
+                new_manifest_version=normalized_manifest.manifest_version,
+                metadata={
+                    "storage_mode": "per_domain_blob",
+                    "data_version": resolved_data_version,
+                    "segment_ids": sorted(next_segment_ids),
+                },
+            )
+
+            decision_records = self._extract_decision_records(summary)
+            if decision_records:
+                await self.record_mutation_event(
+                    user_id=user_id,
+                    domain=domain,
+                    operation_type="decision_projection",
+                    path_set=["analysis.decisions"],
+                    source_agent=normalized_manifest.structure_decision.get("source_agent"),
+                    confidence=normalized_manifest.structure_decision.get("confidence"),
+                    prior_manifest_version=prior_manifest_version,
+                    new_manifest_version=normalized_manifest.manifest_version,
+                    metadata={"decisions": decision_records},
+                )
+
+            self.supabase.table("pkm_migration_state").upsert(
+                {
+                    "user_id": user_id,
+                    "status": "completed",
+                    "source_model": "world_model" if legacy_blob is not None else "pkm",
+                    "legacy_blob_present": legacy_blob is not None,
+                    "migrated_at": resolved_updated_at,
+                    "last_error": None,
+                    "updated_at": resolved_updated_at,
+                },
+                on_conflict="user_id",
+            ).execute()
 
             result["success"] = True
             result["data_version"] = resolved_data_version
@@ -1020,32 +1765,67 @@ class WorldModelService:
 
     async def get_domain_data(self, user_id: str, domain: str) -> Optional[dict]:
         """
-        Get user's encrypted data blob for a specific domain.
-
-        Note: The current architecture stores all domains in a single encrypted blob.
-        This method returns the full blob - the client must decrypt and extract
-        the specific domain data.
+        Get encrypted data for a specific domain.
 
         Args:
             user_id: User's ID
-            domain: Domain key (e.g., "financial") - used to verify domain exists
+            domain: Domain key (e.g., "financial")
 
         Returns:
-            dict with keys: ciphertext, iv, tag, algorithm
+            dict with keys: ciphertext, iv, tag, algorithm, storage_mode
             or None if no data exists for this domain
         """
         try:
             domain = self._canonicalize_domain_key(domain)
             if not domain:
                 return None
-            # First check if the domain exists in the index
+
+            domain_blob_result = (
+                self.supabase.table("pkm_blobs")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("domain", domain)
+                .order("segment_id")
+                .execute()
+            )
+            if domain_blob_result.data:
+                rows = domain_blob_result.data
+                root_row = next((row for row in rows if row.get("segment_id") == "root"), rows[0])
+                segments = {
+                    str(row.get("segment_id") or "root"): {
+                        "ciphertext": row["ciphertext"],
+                        "iv": row["iv"],
+                        "tag": row["tag"],
+                        "algorithm": row.get("algorithm", "aes-256-gcm"),
+                    }
+                    for row in rows
+                }
+                return {
+                    "ciphertext": root_row["ciphertext"],
+                    "iv": root_row["iv"],
+                    "tag": root_row["tag"],
+                    "algorithm": root_row.get("algorithm", "aes-256-gcm"),
+                    "data_version": root_row.get("content_revision", 1),
+                    "manifest_revision": root_row.get("manifest_revision", 1),
+                    "updated_at": root_row.get("updated_at"),
+                    "storage_mode": "domain",
+                    "segments": segments,
+                    "segment_ids": sorted(segments.keys()),
+                }
+
+            # Legacy fallback: domain exists only in the monolithic blob.
             index = await self.get_index_v2(user_id)
             if index is None or domain not in index.available_domains:
                 logger.info(f"Domain {domain} not found in user's available domains")
                 return None
 
-            # Return the encrypted blob (client will decrypt and extract domain)
-            return await self.get_encrypted_data(user_id)
+            legacy_blob = await self.get_encrypted_data(user_id)
+            if legacy_blob is None:
+                return None
+            return {
+                **legacy_blob,
+                "storage_mode": "legacy_full_blob",
+            }
         except Exception as e:
             logger.error(f"Error getting domain data: {e}")
             return None
@@ -1059,9 +1839,15 @@ class WorldModelService:
         try:
             # Delete encrypted data
             self.supabase.table("world_model_data").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_blobs").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_manifest_paths").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_scope_registry").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_manifests").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_events").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_migration_state").delete().eq("user_id", user_id).execute()
 
             # Delete index
-            self.supabase.table("world_model_index_v2").delete().eq("user_id", user_id).execute()
+            self.supabase.table("pkm_index").delete().eq("user_id", user_id).execute()
 
             return True
         except Exception as e:
@@ -1092,6 +1878,21 @@ class WorldModelService:
             if not domain:
                 logger.warning("Empty domain requested for delete_domain_data user=%s", user_id)
                 return True
+            self.supabase.table("pkm_blobs").delete().eq("user_id", user_id).eq(
+                "domain", domain
+            ).execute()
+            self.supabase.table("pkm_manifest_paths").delete().eq("user_id", user_id).eq(
+                "domain", domain
+            ).execute()
+            self.supabase.table("pkm_scope_registry").delete().eq("user_id", user_id).eq(
+                "domain", domain
+            ).execute()
+            self.supabase.table("pkm_manifests").delete().eq("user_id", user_id).eq(
+                "domain", domain
+            ).execute()
+            self.supabase.table("pkm_events").delete().eq("user_id", user_id).eq(
+                "domain", domain
+            ).execute()
             # Get current index
             index = await self.get_index_v2(user_id)
             if index is None:
@@ -1199,6 +2000,44 @@ class WorldModelService:
             )
             available_domains.add("financial")
 
+            try:
+                manifest_rows = (
+                    self.supabase.table("pkm_manifests")
+                    .select("*")
+                    .eq("user_id", user_id)
+                    .execute()
+                    .data
+                    or []
+                )
+                for manifest_row in manifest_rows:
+                    manifest_domain = self._canonicalize_domain_key(manifest_row.get("domain"))
+                    if not manifest_domain:
+                        continue
+                    available_domains.add(manifest_domain)
+                    existing_summary = (
+                        normalized_summaries.get(manifest_domain)
+                        if isinstance(normalized_summaries.get(manifest_domain), dict)
+                        else {}
+                    )
+                    normalized_summaries[manifest_domain] = self._normalize_domain_summary(
+                        manifest_domain,
+                        {
+                            **existing_summary,
+                            "storage_mode": "per_domain_blob",
+                            "manifest_version": manifest_row.get("manifest_version"),
+                            "path_count": manifest_row.get("path_count"),
+                            "externalizable_path_count": manifest_row.get(
+                                "externalizable_path_count"
+                            ),
+                            "last_structured_at": manifest_row.get("last_structured_at"),
+                            "last_content_at": manifest_row.get("last_content_at"),
+                        },
+                    )
+            except Exception as manifest_error:
+                logger.warning(
+                    "Manifest reconciliation lookup failed for %s: %s", user_id, manifest_error
+                )
+
             if register_missing_registry:
                 for domain in sorted(available_domains):
                     try:
@@ -1216,7 +2055,7 @@ class WorldModelService:
             index.total_attributes = self._recalculate_total_attributes(normalized_summaries)
             return await self.upsert_index_v2(index)
         except Exception as e:
-            logger.error("Error reconciling world model index for %s: %s", user_id, e)
+            logger.error("Error reconciling PKM index for %s: %s", user_id, e)
             return False
 
     # ==================== LEGACY COMPATIBILITY ====================
@@ -1228,10 +2067,10 @@ class WorldModelService:
 
     async def upsert_index(self, index):
         """Legacy: Upsert world model index."""
-        if isinstance(index, WorldModelIndexV2):
+        if isinstance(index, PersonalKnowledgeModelIndex):
             return await self.upsert_index_v2(index)
         # Convert old format to new
-        new_index = WorldModelIndexV2(
+        new_index = PersonalKnowledgeModelIndex(
             user_id=index.user_id,
             activity_score=getattr(index, "activity_score", None),
             last_active_at=getattr(index, "last_active_at", None),
@@ -1241,8 +2080,7 @@ class WorldModelService:
     async def update_activity(self, user_id: str) -> bool:
         """Update user's last active timestamp."""
         try:
-            # Update v2 index
-            self.supabase.table("world_model_index_v2").upsert(
+            self.supabase.table("pkm_index").upsert(
                 {
                     "user_id": user_id,
                     "last_active_at": datetime.utcnow().isoformat(),
@@ -1256,13 +2094,23 @@ class WorldModelService:
             return False
 
 
+# Compatibility aliases during PKM cutover.
+WorldModelIndexV2 = PersonalKnowledgeModelIndex
+WorldModelService = PersonalKnowledgeModelService
+
+
 # Singleton instance
-_world_model_service: Optional[WorldModelService] = None
+_world_model_service: Optional[PersonalKnowledgeModelService] = None
 
 
-def get_world_model_service() -> WorldModelService:
-    """Get singleton WorldModelService instance."""
+def get_world_model_service() -> PersonalKnowledgeModelService:
+    """Legacy accessor for the canonical PKM service singleton."""
     global _world_model_service
     if _world_model_service is None:
-        _world_model_service = WorldModelService()
+        _world_model_service = PersonalKnowledgeModelService()
     return _world_model_service
+
+
+def get_pkm_service() -> PersonalKnowledgeModelService:
+    """Canonical accessor for the PKM service singleton."""
+    return get_world_model_service()

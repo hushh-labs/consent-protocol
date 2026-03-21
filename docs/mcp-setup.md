@@ -171,7 +171,7 @@ The public UAT developer contract exposes a single scalable tool group: `core_co
 
 | Tool                       | Description                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------- |
-| `request_consent`          | Request user consent for a discovered scope (for example `world_model.read` or `attr.{domain}.*`) |
+| `request_consent`          | Request user consent for a discovered scope (for example `pkm.read` or `attr.{domain}.*`) |
 | `validate_token`           | Validate a consent token's signature, expiration, and scope before use          |
 | `get_scoped_data`          | Recommended generic data-access tool for any approved dynamic scope             |
 | `list_scopes`              | List dynamic consent scope categories from backend metadata                     |
@@ -193,7 +193,7 @@ Agents can read `hushh://info/connector` for a machine-readable summary of the r
 
 ## Recommended Flow
 
-Scopes are **dynamic** -- they are derived from the world model registry (`world_model_index_v2.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
+Scopes are **dynamic** -- they are derived from the PKM registry (`pkm_index.available_domains`) and vary per user. There is no fixed list. Always discover domains first.
 
 1. **Discover domains** -- Call `discover_user_domains(user_id)` to get the user's available domains and corresponding scope strings. Under the hood this calls `/api/v1/user-scopes/{user_id}?token=...` with the self-serve developer token.
 2. **Request consent** -- Call `request_consent(user_id, scope)` for each scope you need. In production mode, this sends an FCM push notification to the user's Hushh app.
@@ -202,8 +202,8 @@ Scopes are **dynamic** -- they are derived from the world model registry (`world
 
 ### Scope model
 
-- `world_model.read` -- Full world model (all domains for the user)
-- `world_model.write` -- Write to world model
+- `pkm.read` -- Full PKM read access (all discovered domains for the user)
+- `pkm.write` -- Write to the PKM
 - `attr.{domain}.*` -- Domain-level scope where `{domain}` comes from runtime discovery
 - `attr.{domain}.{subintent}.*` -- Optional subintent scope when metadata/registry exposes subintents
 - `attr.{domain}.{path}` -- Specific nested path scope (narrow access)
@@ -316,7 +316,7 @@ You: "Use a token granted for one discovered branch against a different branch"
 | Tools count mismatch           | Ensure you have the latest `mcp_server.py`; the public contract exposes 6 consent tools |
 | Consent request never appears  | User must have the Hushh app installed; FCM push notifications deliver consent requests |
 | Consent times out              | Default timeout is 120s; check `CONSENT_TIMEOUT_SECONDS` env var        |
-| Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the world model, not a fixed list |
+| Scopes for a user              | Call `discover_user_domains(user_id)` first; scopes come from the PKM registry, not a fixed list |
 | Token errors                   | Ensure `.env` has `SECRET_KEY`; check token expiration (24h default)     |
 | Auto-setup fails               | Run `python setup_mcp.py` and copy the generated config manually        |
 
@@ -326,7 +326,7 @@ This MCP server enforces the HushhMCP protocol:
 
 - **Consent First**: No data access without a valid consent token
 - **Scoped Access**: Each data category requires separate consent; tokens are scope-isolated
-- **Dynamic Scopes**: Scope strings derived from the world model registry, not a hard-coded list
+- **Dynamic Scopes**: Scope strings derived from the PKM registry, not a hard-coded list
 - **Cryptographic Signatures**: Tokens signed with HMAC-SHA256
 - **Time-Limited**: Tokens expire after 24 hours by default
 - **Zero Knowledge**: Data is encrypted with an export key; MCP server decrypts client-side via AES-GCM

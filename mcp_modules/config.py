@@ -50,7 +50,7 @@ SERVER_INFO = {
     "version": "1.0.0",
     "protocol": "HushhMCP",
     "transport": "stdio",
-    "description": "Consent-first personal data access for AI agents; no data without explicit user approval. Scopes are dynamic (from world model/registry); use discover_user_domains to get per-user scope strings.",
+    "description": "Consent-first personal data access for AI agents; no data without explicit user approval. Scopes are dynamic from the Personal Knowledge Model registry; use discover_user_domains to get per-user scope strings.",
     "tools_count": 6,
     "tools": [
         {"name": "request_consent", "purpose": "Request user consent for a data scope"},

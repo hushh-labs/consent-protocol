@@ -142,7 +142,7 @@ GET  /kai/chat/conversations/{user_id}
 GET  /kai/chat/initial-state/{user_id}
 POST /kai/chat/analyze-loser
 
-# Kai Portfolio & World Model Data Retrieval
+# Kai Portfolio & PKM Data Retrieval
 POST /kai/portfolio/import
 GET  /kai/portfolio/summary/{user_id}
 GET  /api/consent/data                  # MCP: Get encrypted export
@@ -326,9 +326,9 @@ fun chat(call: PluginCall) {
 | | `chat.history.write` | Write/create chat messages |
 | **Embeddings** | `embedding.profile.read` | Read computed embedding profiles |
 | | `embedding.profile.compute` | Compute new embedding profiles |
-| **World Model** | `world_model.read` | Read world model attributes |
-| | `world_model.write` | Write world model attributes |
-| | `world_model.metadata` | Access world model metadata |
+| **PKM** | `pkm.read` | Read PKM attributes |
+| | `pkm.write` | Write PKM attributes |
+| | `pkm.metadata` | Access PKM metadata |
 | **Agent Kai** | `agent.kai.analyze` | Run Kai analysis pipelines |
 | | `agent.kai.debate` | Run Kai debate/reasoning |
 | | `agent.kai.infer` | Run Kai inference |
@@ -353,7 +353,7 @@ Examples:
 - `attr.{domain}.*`
 - `attr.financial.profile.*`
 
-Dynamic scopes are discovered at runtime from world model metadata and `domain_registry`.
+Dynamic scopes are discovered at runtime from PKM metadata and `domain_registry`.
 Use `GET /api/world-model/scopes/{user_id}` (or MCP `discover_user_domains`) instead of hardcoding domains.
 
 ### Scope Hierarchy
@@ -363,11 +363,11 @@ vault.owner (Master - satisfies ALL scopes)
     ├── portfolio.*
     ├── chat.history.*
     ├── embedding.profile.*
-    ├── world_model.*
+    ├── pkm.*
     ├── agent.kai.*
     ├── external.*
     └── Dynamic attribute scopes:
-        world_model.read
+        pkm.read
             └── attr.{domain}.*
                 └── attr.{domain}.{key}
 ```
@@ -540,7 +540,7 @@ CREATE INDEX idx_consent_audit_pending ON consent_audit(user_id) WHERE action = 
 
 ## See Also
 
-- [World Model](./world-model.md) -- Database architecture
+- [Personal Knowledge Model](./personal-knowledge-model.md) -- Database architecture
 - [Agent Development](./agent-development.md) -- Building new agents and operons
 - [Kai Agents](./kai-agents.md) -- Multi-agent financial analysis system
 - [Environment Variables](./env-vars.md) -- Backend configuration reference

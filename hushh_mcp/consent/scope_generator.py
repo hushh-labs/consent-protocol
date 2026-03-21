@@ -151,9 +151,9 @@ class DynamicScopeGenerator:
             }
         )
 
-    async def _get_user_scope_catalog(self, user_id: str) -> dict[str, set[str]]:
+    async def _get_legacy_scope_catalog(self, user_id: str) -> dict[str, dict[str, set[str]]]:
         result = (
-            self.supabase.table("world_model_index_v2")
+            self.supabase.table("pkm_index")
             .select("available_domains", "domain_summaries")
             .eq("user_id", user_id)
             .limit(1)
@@ -168,7 +168,9 @@ class DynamicScopeGenerator:
         if not isinstance(domain_summaries, dict):
             domain_summaries = {}
 
-        catalog: dict[str, set[str]] = {domain: set() for domain in available_domains}
+        catalog: dict[str, dict[str, set[str]]] = {
+            domain: {"paths": set(), "wildcards": set()} for domain in available_domains
+        }
 
         for domain in available_domains:
             summary = domain_summaries.get(domain)
@@ -186,7 +188,8 @@ class DynamicScopeGenerator:
                     for item in raw_value:
                         normalized = self._normalize_scope_path(str(item))
                         if normalized:
-                            catalog[domain].add(normalized)
+                            catalog[domain]["paths"].add(normalized)
+                            catalog[domain]["wildcards"].add(normalized)
 
         # Optional domain_registry enrichment. This supports installations where
         # subintent metadata is modeled in registry parent-child rows or fields.
@@ -219,7 +222,8 @@ class DynamicScopeGenerator:
                             inferred = domain_key
                         normalized_inferred = self._normalize_scope_path(inferred)
                         if normalized_inferred:
-                            catalog[parent_domain].add(normalized_inferred)
+                            catalog[parent_domain]["paths"].add(normalized_inferred)
+                            catalog[parent_domain]["wildcards"].add(normalized_inferred)
 
                     source_domain = domain_key if domain_key in catalog else parent_domain
                     if source_domain and source_domain in catalog:
@@ -235,11 +239,13 @@ class DynamicScopeGenerator:
                                 for item in value:
                                     normalized = self._normalize_scope_path(str(item))
                                     if normalized:
-                                        catalog[source_domain].add(normalized)
+                                        catalog[source_domain]["paths"].add(normalized)
+                                        catalog[source_domain]["wildcards"].add(normalized)
                             elif isinstance(value, str):
                                 normalized = self._normalize_scope_path(value)
                                 if normalized:
-                                    catalog[source_domain].add(normalized)
+                                    catalog[source_domain]["paths"].add(normalized)
+                                    catalog[source_domain]["wildcards"].add(normalized)
             except Exception as e:
                 logger.warning(
                     "scope_catalog.registry_lookup_failed user=%s error=%s",
@@ -248,6 +254,57 @@ class DynamicScopeGenerator:
                 )
 
         return catalog
+
+    async def _get_user_scope_catalog(self, user_id: str) -> dict[str, dict[str, set[str]]]:
+        manifest_rows = (
+            self.supabase.table("pkm_manifests")
+            .select("domain,top_level_scope_paths,externalizable_paths")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        path_rows = (
+            self.supabase.table("pkm_manifest_paths")
+            .select("domain,json_path,path_type,exposure_eligibility")
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+        catalog: dict[str, dict[str, set[str]]] = {}
+        for row in manifest_rows.data or []:
+            if not isinstance(row, dict):
+                continue
+            domain = self._normalize_domain_key(row.get("domain"))
+            if not domain:
+                continue
+            entry = catalog.setdefault(domain, {"paths": set(), "wildcards": set()})
+            for top_level_path in row.get("top_level_scope_paths") or []:
+                normalized = self._normalize_scope_path(str(top_level_path))
+                if normalized:
+                    entry["paths"].add(normalized)
+                    entry["wildcards"].add(normalized)
+            for externalizable_path in row.get("externalizable_paths") or []:
+                normalized = self._normalize_scope_path(str(externalizable_path))
+                if normalized:
+                    entry["paths"].add(normalized)
+
+        for row in path_rows.data or []:
+            if not isinstance(row, dict):
+                continue
+            if row.get("exposure_eligibility") is False:
+                continue
+            domain = self._normalize_domain_key(row.get("domain"))
+            json_path = self._normalize_scope_path(row.get("json_path"))
+            if not domain or not json_path:
+                continue
+            entry = catalog.setdefault(domain, {"paths": set(), "wildcards": set()})
+            entry["paths"].add(json_path)
+            if row.get("path_type") in {"object", "array"}:
+                entry["wildcards"].add(json_path)
+
+        if catalog:
+            return catalog
+
+        return await self._get_legacy_scope_catalog(user_id)
 
     def matches_wildcard(self, scope: str, wildcard: str) -> bool:
         """
@@ -312,53 +369,48 @@ class DynamicScopeGenerator:
                 logger.debug(f"No world model index for user {user_id}")
                 return False
 
-            domain_subintents = scope_catalog.get(domain)
-            if domain_subintents is None:
+            domain_catalog = scope_catalog.get(domain)
+            if domain_catalog is None:
                 return False
+            domain_paths = domain_catalog.get("paths", set())
+            domain_wildcards = domain_catalog.get("wildcards", set())
 
             # Domain-level scope is valid when domain exists.
             if _attribute_key is None:
                 return True
 
-            # If no subintent metadata exists, remain permissive for attribute paths.
-            if not domain_subintents:
-                return True
-
             candidate_path = self._normalize_scope_path(_attribute_key)
             if not candidate_path:
-                return True
+                return False
 
-            for subintent in domain_subintents:
-                if candidate_path == subintent or candidate_path.startswith(f"{subintent}."):
+            if _is_wildcard:
+                if candidate_path in domain_wildcards:
                     return True
+                return any(
+                    path == candidate_path or path.startswith(f"{candidate_path}.")
+                    for path in domain_paths
+                )
 
-            # Backward compatibility for direct domain-root attributes.
-            return "." not in candidate_path
+            return candidate_path in domain_paths or candidate_path in domain_wildcards
         except Exception as e:
             logger.error(f"Error validating scope {scope}: {e}")
             return False
 
     async def get_available_scopes(self, user_id: str) -> list[str]:
         """
-        Get all valid wildcard scopes for a user from world_model_index_v2.
-
-        Returns wildcard scopes for domains and known subintent paths when available:
-        - attr.{domain}.*
-        - attr.{domain}.{subintent}.*
+        Get all valid consent scopes for a user from manifest-backed discovery.
 
         Args:
             user_id: The user ID
 
         Returns:
-            List of wildcard scope strings
+            List of exact and wildcard scope strings
         """
         try:
             scope_catalog = await self._get_user_scope_catalog(user_id)
-            scopes: set[str] = set()
-            for domain, subintents in scope_catalog.items():
+            scopes: set[str] = {"pkm.read", "world_model.read"}
+            for domain, _entries in scope_catalog.items():
                 scopes.add(self.generate_domain_wildcard(domain))
-                for subintent in sorted(subintents):
-                    scopes.add(self.generate_domain_wildcard(f"{domain}.{subintent}"))
             return sorted(scopes)
         except Exception as e:
             logger.error(f"Error getting available scopes for {user_id}: {e}")
@@ -374,7 +426,12 @@ class DynamicScopeGenerator:
         Returns:
             List of wildcard scope strings
         """
-        return await self.get_available_scopes(user_id)
+        scopes = await self.get_available_scopes(user_id)
+        return sorted(
+            scope
+            for scope in scopes
+            if scope in {"pkm.read", "world_model.read"} or scope.endswith(self.WILDCARD_SUFFIX)
+        )
 
     async def check_scope_access(
         self,
@@ -412,21 +469,30 @@ class DynamicScopeGenerator:
         """
         Expand a wildcard scope into specific scopes for a user.
 
-        world_model_index_v2 does not store per-attribute keys, so we return
-        the wildcard itself as the only scope.
-
         Args:
             wildcard: The wildcard scope (e.g., 'attr.financial.*')
             user_id: The user ID (unused; kept for API compatibility)
 
         Returns:
-            List containing the wildcard (no per-attribute expansion)
+            List of matching exact scopes
         """
-        _ = user_id
         domain, _, is_wildcard = self.parse_scope(wildcard)
         if not is_wildcard or domain is None:
             return [wildcard]
-        return [wildcard]
+        scope_catalog = await self._get_user_scope_catalog(user_id)
+        domain_catalog = scope_catalog.get(domain)
+        if not domain_catalog:
+            return [wildcard]
+        _, wildcard_path, _ = self.parse_scope(wildcard)
+        matched = []
+        for path in sorted(domain_catalog.get("paths", set())):
+            if (
+                wildcard_path is None
+                or path == wildcard_path
+                or path.startswith(f"{wildcard_path}.")
+            ):
+                matched.append(self.generate_scope(domain, path))
+        return matched or [wildcard]
 
     def get_scope_display_info(self, scope: str) -> dict:
         """

@@ -18,7 +18,7 @@ consent-protocol/
 │   └── routes/                # All API endpoint routers
 │       ├── consent.py         # Consent token management
 │       ├── developer.py       # Versioned developer API (/api/v1)
-│       ├── world_model.py     # World model CRUD
+│       ├── pkm.py             # Personal Knowledge Model CRUD
 │       ├── notifications.py   # FCM push tokens
 │       ├── kai/               # Kai financial agent routes
 │       └── ...

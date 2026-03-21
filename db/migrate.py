@@ -44,6 +44,11 @@ IAM_MIGRATION_FILES = (
     "027_relationship_disconnect_status.sql",
     "028_professional_regulatory_capabilities.sql",
 )
+WORLD_MODEL_MIGRATION_FILES = (
+    "030_pkm_cutover.sql",
+    "031_domain_registry_rpc_compat.sql",
+    "032_pkm_metadata_rpc_compat.sql",
+)
 
 
 # ============================================================================
@@ -844,6 +849,8 @@ async def run_full_migration(pool: asyncpg.Pool):
     await create_kai_market_cache_entries(pool)
     print("[14/14] Creating developer registry (public MCP beta auth)...")
     await create_developer_registry(pool)
+    print("[15/15] Applying world model evolution migrations...")
+    await run_world_model_migration(pool)
 
     print("\n✅ Full migration complete!")
 
@@ -872,6 +879,22 @@ async def run_iam_migration(pool: asyncpg.Pool):
             await conn.execute(sql)
 
     print("IAM schema migration complete!")
+
+
+async def run_world_model_migration(pool: asyncpg.Pool):
+    """Apply the canonical PKM cutover migration."""
+    print("Running PKM schema migration (explicit mode)...")
+
+    async with pool.acquire() as conn:
+        for filename in WORLD_MODEL_MIGRATION_FILES:
+            migration_path = MIGRATIONS_DIR / filename
+            if not migration_path.exists():
+                raise FileNotFoundError(f"World model migration file missing: {migration_path}")
+            sql = migration_path.read_text(encoding="utf-8")
+            print(f"  -> applying {filename}")
+            await conn.execute(sql)
+
+    print("PKM schema migration complete!")
 
 
 async def run_init_migration(pool: asyncpg.Pool):
@@ -919,6 +942,8 @@ async def run_init_migration(pool: asyncpg.Pool):
     await create_kai_market_cache_entries(pool)
     print("[14/14] Creating developer registry (public MCP beta auth)...")
     await create_developer_registry(pool)
+    print("[15/15] Applying world model evolution migrations...")
+    await run_world_model_migration(pool)
 
     print("\nAll tables initialized successfully!")
 
@@ -962,6 +987,13 @@ async def show_status(pool: asyncpg.Pool):
         "developer_tokens",
         "developer_api_keys",
         "runtime_persona_state",
+        "pkm_index",
+        "pkm_blobs",
+        "pkm_manifests",
+        "pkm_manifest_paths",
+        "pkm_scope_registry",
+        "pkm_events",
+        "pkm_migration_state",
     ]:
         if table in all_tables:
             try:
@@ -988,6 +1020,7 @@ Examples:
   python db/migrate.py --table world_model_data  # Create single table
   python db/migrate.py --consent                 # Create all consent tables
   python db/migrate.py --iam                     # Apply IAM schema foundation (020 + 021)
+  python db/migrate.py --world-model             # Apply world-model evolution migrations
   python db/migrate.py --full                    # Full reset (WARNING: DESTRUCTIVE!)
   python db/migrate.py --status                  # Show table summary
         """,
@@ -1014,6 +1047,11 @@ Examples:
         help="Apply IAM schema foundation migrations (020 + 021)",
     )
     parser.add_argument(
+        "--world-model",
+        action="store_true",
+        help="Apply world-model evolution migrations (029+)",
+    )
+    parser.add_argument(
         "--full", action="store_true", help="Drop and recreate ALL tables (DESTRUCTIVE!)"
     )
     parser.add_argument(
@@ -1023,7 +1061,18 @@ Examples:
 
     args = parser.parse_args()
 
-    if not any([args.init, args.table, args.consent, args.iam, args.full, args.clear, args.status]):
+    if not any(
+        [
+            args.init,
+            args.table,
+            args.consent,
+            args.iam,
+            args.world_model,
+            args.full,
+            args.clear,
+            args.status,
+        ]
+    ):
         parser.print_help()
         return
 
@@ -1070,6 +1119,9 @@ Examples:
 
         if args.iam:
             await run_iam_migration(pool)
+
+        if args.world_model:
+            await run_world_model_migration(pool)
 
         if args.clear:
             await clear_table(pool, args.clear)

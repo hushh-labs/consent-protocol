@@ -87,14 +87,16 @@ class SentimentAgent(HushhAgent):
             fetch_market_news,
         )
 
+        news_articles = []
+        realtime_news_detail: str | None = None
         try:
             news_articles = await fetch_market_news(ticker, user_id, consent_token)
         except PermissionError as e:
             logger.error(f"[Sentiment] News access denied: {e}")
             raise
         except RealtimeDataUnavailable as e:
-            logger.error(f"[Sentiment] Realtime news unavailable: {e.detail}")
-            raise
+            realtime_news_detail = e.detail
+            logger.warning(f"[Sentiment] Realtime news unavailable for {ticker}: {e.detail}")
         except Exception as e:
             logger.error(f"[Sentiment] News fetch failed: {e}")
             raise
@@ -105,6 +107,26 @@ class SentimentAgent(HushhAgent):
             market_data = await fetch_market_data(ticker, user_id, consent_token)
         except Exception as e:
             logger.warning(f"[Sentiment] Market snapshot unavailable for {ticker}: {e}")
+
+        if not news_articles:
+            summary = (
+                f"No realtime news was available for {ticker}, so Kai is using a neutral "
+                "sentiment fallback anchored to the latest market snapshot."
+            )
+            if realtime_news_detail:
+                summary = f"{summary} {realtime_news_detail}"
+            return SentimentInsight(
+                summary=summary,
+                sentiment_score=0.0,
+                key_catalysts=[
+                    "Realtime news unavailable",
+                    "Sentiment held neutral until fresh catalyst coverage is available",
+                ],
+                news_highlights=[],
+                sources=["Sentiment fallback", "Latest market snapshot"],
+                confidence=0.25,
+                recommendation="neutral",
+            )
 
         # Operon 2: Gemini Deep Sentiment Analysis
         from hushh_mcp.operons.kai.llm import (
