@@ -1,12 +1,9 @@
 # api/routes/kai/decisions.py
 """
-Kai Decision Endpoints — reads from world_model_index_v2.domain_summaries.
+Kai Decision Endpoints — reads decision projections from world-model mutation events.
 
-The legacy vault_kai table has been dropped.  All decision history is now
-stored under the `financial` domain summary contract.
-
-Write operations (store/delete) are handled client-side via the generic
-POST /api/world-model/store-domain endpoint with domain="financial".
+Legacy summary parsing is retained only as a fallback for older records.
+Write operations remain client-side via POST /api/world-model/store-domain.
 """
 
 import logging
@@ -16,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
-from hushh_mcp.services.world_model_service import get_world_model_service
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +43,7 @@ async def get_decision_history(
     token_data: dict = Depends(require_vault_owner_token),
 ):
     """
-    Get decision history from domain_summaries.
-
-    Canonical source: world_model_index_v2.domain_summaries.financial.
+    Get decision history from mutation events, with legacy summary fallback.
     REQUIRES: VAULT_OWNER consent token.
     """
     if token_data.get("user_id") != user_id:
@@ -58,29 +53,19 @@ async def get_decision_history(
         )
 
     world_model = get_world_model_service()
-    index = await world_model.get_index_v2(user_id)
-
-    domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
-    decisions: list[dict] = []
-    financial_summary = (
-        domain_summaries.get("financial")
-        if isinstance(domain_summaries.get("financial"), dict)
-        else {}
+    decisions: list[dict] = await world_model.get_recent_decision_records(
+        user_id,
+        limit=limit + offset,
     )
-    if isinstance(financial_summary, dict):
-        for key in (
-            "recent_decisions",
-            "analysis_recent_decisions",
-            "analysis_decisions",
-            "decisions",
-        ):
-            payload = financial_summary.get(key)
-            if isinstance(payload, list):
-                decisions.extend([row for row in payload if isinstance(row, dict)])
-            elif isinstance(payload, dict):
-                nested = payload.get("decisions")
-                if isinstance(nested, list):
-                    decisions.extend([row for row in nested if isinstance(row, dict)])
+    if not decisions:
+        index = await world_model.get_index_v2(user_id)
+        domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
+        financial_summary = (
+            domain_summaries.get("financial")
+            if isinstance(domain_summaries.get("financial"), dict)
+            else {}
+        )
+        decisions = world_model._extract_decision_records(financial_summary)
 
     # Pagination
     total = len(decisions)
