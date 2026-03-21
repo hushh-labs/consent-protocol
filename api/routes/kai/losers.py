@@ -169,6 +169,187 @@ def _summarize_excluded_cash_positions(holdings: list[PortfolioHolding]) -> tupl
     return count, round(market_value_sum, 2)
 
 
+def _build_deterministic_optimization_fallback(
+    *,
+    criteria_context: str,
+    per_loser_context: list[dict[str, Any]],
+    replacement_pool: list[dict[str, Any]],
+    total_mv: float,
+) -> dict[str, Any]:
+    """Fallback response when LLM synthesis is unavailable or malformed."""
+    high_conviction = [
+        candidate for candidate in replacement_pool if candidate.get("tier") in {"ACE", "KING"}
+    ]
+    avoid_count = 0
+    investable_count = 0
+    losers_payload: list[dict[str, Any]] = []
+
+    for position in per_loser_context:
+        ren = position.get("renaissance", {}) or {}
+        is_avoid = bool(ren.get("is_avoid"))
+        is_investable = bool(ren.get("is_investable"))
+        tier = ren.get("tier")
+        weight_pct = position.get("weight_pct")
+
+        if is_avoid:
+            action = "exit"
+            rationale = "Renaissance avoid coverage flags this position as structurally weak for new capital."
+            target_weight_pct = 0.0
+            avoid_count += 1
+        elif is_investable and tier in {"ACE", "KING"}:
+            action = "hold"
+            rationale = "This remains inside the investable universe, so the fallback keeps exposure while monitoring concentration."
+            target_weight_pct = weight_pct
+            investable_count += 1
+        elif is_investable:
+            action = "trim"
+            rationale = "The position is investable but not top-tier, so the fallback trims risk before adding higher-conviction names."
+            target_weight_pct = (
+                round((weight_pct or 0.0) * 0.75, 2) if weight_pct is not None else None
+            )
+            investable_count += 1
+        else:
+            action = "rotate"
+            rationale = "Coverage is incomplete or non-investable, so the fallback prefers rotating into higher-conviction names."
+            target_weight_pct = 0.0
+
+        replacements = [
+            {
+                "ticker": candidate.get("ticker"),
+                "tier": candidate.get("tier"),
+                "why": candidate.get("thesis")
+                or "Higher-conviction Renaissance replacement candidate.",
+            }
+            for candidate in high_conviction[:3]
+        ]
+
+        losers_payload.append(
+            {
+                "symbol": position.get("symbol"),
+                "name": position.get("name"),
+                "renaissance_tier": tier,
+                "avoid_category": ren.get("avoid_category"),
+                "criteria_flags": [flag for flag in [tier, ren.get("avoid_category")] if flag],
+                "needs_more_data": not is_investable and not is_avoid,
+                "likely_driver": "unknown" if not is_investable else "fundamental",
+                "confidence": 0.42,
+                "action": action,
+                "rationale": rationale,
+                "replacement_candidates": replacements,
+                "current_weight_pct": weight_pct,
+                "target_weight_pct": target_weight_pct,
+            }
+        )
+
+    current_health = max(25.0, min(85.0, 55.0 + investable_count * 6.0 - avoid_count * 12.0))
+    projected_health = max(current_health, min(92.0, current_health + 12.0))
+    avoid_weight_pct = 0.0
+    investable_weight_pct = 0.0
+    if total_mv > 0:
+        for position in per_loser_context:
+            ren = position.get("renaissance", {}) or {}
+            market_value = float(position.get("market_value") or 0.0)
+            pct = market_value / total_mv * 100.0
+            if ren.get("is_avoid"):
+                avoid_weight_pct += pct
+            if ren.get("is_investable"):
+                investable_weight_pct += pct
+
+    takeaways = [
+        "Fallback optimization was used because the model response could not be trusted for this run.",
+        "Prefer rotating non-investable or avoid-list exposure into ACE or KING replacements first.",
+        "Keep concentration in any single position below the product guardrail before adding new risk.",
+    ]
+
+    return {
+        "criteria_context": criteria_context,
+        "summary": {
+            "health_score": round(current_health, 1),
+            "projected_health_score": round(projected_health, 1),
+            "health_reasons": [
+                f"{investable_count} positions are still inside the investable universe.",
+                f"{avoid_count} positions carry avoid-list risk or incomplete coverage.",
+                "Fallback plan emphasizes diversification and higher-conviction replacements.",
+            ],
+            "portfolio_diagnostics": {
+                "total_losers_value": round(total_mv, 2),
+                "avoid_weight_estimate_pct": round(avoid_weight_pct, 2),
+                "investable_weight_estimate_pct": round(investable_weight_pct, 2),
+                "concentration_notes": [
+                    "Review positions with the largest market values first.",
+                    "Reduce reliance on names without durable realtime or filing coverage.",
+                ],
+            },
+            "plans": {
+                "minimal": {
+                    "actions": [
+                        {
+                            "symbol": loser["symbol"],
+                            "name": loser["name"],
+                            "action": loser["action"].upper(),
+                            "rationale": loser["rationale"],
+                            "current_weight_pct": loser["current_weight_pct"],
+                            "target_weight_pct": loser["target_weight_pct"],
+                        }
+                        for loser in losers_payload[:3]
+                    ]
+                },
+                "standard": {
+                    "actions": [
+                        {
+                            "symbol": loser["symbol"],
+                            "name": loser["name"],
+                            "action": loser["action"].upper(),
+                            "rationale": loser["rationale"],
+                            "current_weight_pct": loser["current_weight_pct"],
+                            "target_weight_pct": loser["target_weight_pct"],
+                        }
+                        for loser in losers_payload
+                    ]
+                },
+                "maximal": {
+                    "actions": [
+                        {
+                            "symbol": loser["symbol"],
+                            "name": loser["name"],
+                            "action": "ROTATE"
+                            if loser["action"] in {"exit", "rotate"}
+                            else loser["action"].upper(),
+                            "rationale": loser["rationale"],
+                            "current_weight_pct": loser["current_weight_pct"],
+                            "target_weight_pct": loser["target_weight_pct"],
+                        }
+                        for loser in losers_payload
+                    ]
+                },
+            },
+        },
+        "losers": losers_payload,
+        "portfolio_level_takeaways": takeaways,
+        "analytics": {
+            "health_radar": {
+                "current": {
+                    "Growth": round(current_health * 0.85, 1),
+                    "Moat": round(current_health * 0.8, 1),
+                    "Quality": round(current_health * 0.9, 1),
+                    "Income": round(current_health * 0.65, 1),
+                    "Resilience": round(current_health * 0.78, 1),
+                    "Diversification": round(current_health * 0.75, 1),
+                },
+                "optimized": {
+                    "Growth": round(projected_health * 0.9, 1),
+                    "Moat": round(projected_health * 0.88, 1),
+                    "Quality": round(projected_health * 0.92, 1),
+                    "Income": round(projected_health * 0.7, 1),
+                    "Resilience": round(projected_health * 0.84, 1),
+                    "Diversification": round(projected_health * 0.86, 1),
+                },
+            },
+            "sector_shift": [],
+        },
+    }
+
+
 @router.post("/portfolio/analyze-losers", response_model=AnalyzeLosersResponse)
 async def analyze_portfolio_losers(
     request: AnalyzeLosersRequest,
@@ -268,8 +449,17 @@ async def analyze_portfolio_losers(
             detail=e.to_payload(),
         ) from e
     except Exception as e:
-        logger.error(f"Losers analysis LLM failed: {e}")
-        raise HTTPException(status_code=500, detail="Losers analysis failed")
+        logger.warning(
+            "Losers analysis LLM failed for user=%s; returning deterministic fallback: %s",
+            request.user_id,
+            e,
+        )
+        payload = _build_deterministic_optimization_fallback(
+            criteria_context=criteria_context,
+            per_loser_context=per_loser_context,
+            replacement_pool=replacement_pool,
+            total_mv=total_mv,
+        )
 
     # Ensure criteria_context is always present for UI (fallback to rubric)
     payload.setdefault("criteria_context", criteria_context)
@@ -314,7 +504,12 @@ async def _build_optimization_context(
     optimize_from_losers = bool(losers_filtered)
 
     if not optimize_from_losers:
-        if request.force_optimize and holdings_in:
+        if holdings_in:
+            if not request.force_optimize:
+                logger.info(
+                    "Optimize Portfolio: no losers met threshold for user=%s; falling back to holdings-based optimization",
+                    request.user_id,
+                )
             sorted_holdings = sorted(
                 holdings_in,
                 key=lambda h: h.market_value or 0.0,
@@ -371,8 +566,26 @@ async def _build_optimization_context(
             )
 
         ren_task = asyncio.create_task(renaissance.get_analysis_context(ticker))
-        async with quote_semaphore:
-            market_ctx = await fetch_market_data(ticker, user_id, consent_token)
+        try:
+            async with quote_semaphore:
+                market_ctx = await fetch_market_data(ticker, user_id, consent_token)
+        except RealtimeDataUnavailable as market_error:
+            logger.warning(
+                "Optimize Portfolio: quote unavailable for %s (%s); using degraded position context",
+                ticker,
+                market_error.detail,
+            )
+            market_ctx = {
+                "provider": "unavailable",
+                "source": "quote_unavailable",
+                "fetched_at": None,
+                "ttl_seconds": None,
+                "is_stale": True,
+                "price": None,
+                "change_pct": None,
+                "degraded": True,
+                "fallback_reason": market_error.detail,
+            }
         ren_ctx = await ren_task
 
         quote = market_ctx.get("quote", {}) if isinstance(market_ctx, dict) else {}
@@ -412,6 +625,12 @@ async def _build_optimization_context(
                 else True,
                 "price": price,
                 "change_pct": change_pct,
+                "degraded": bool(market_ctx.get("degraded"))
+                if isinstance(market_ctx, dict)
+                else True,
+                "fallback_reason": market_ctx.get("fallback_reason")
+                if isinstance(market_ctx, dict)
+                else None,
             },
             "renaissance": {
                 "is_investable": ren_ctx.get("is_investable", False),

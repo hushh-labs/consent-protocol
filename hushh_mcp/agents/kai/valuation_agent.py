@@ -94,8 +94,12 @@ class ValuationAgent(HushhAgent):
             logger.error(f"[Valuation] Market data access denied: {e}")
             raise
         except RealtimeDataUnavailable as e:
-            logger.error(f"[Valuation] Realtime market dependency unavailable: {e.detail}")
-            raise
+            logger.warning(
+                "[Valuation] Realtime market dependency unavailable for %s; using fallback: %s",
+                ticker,
+                e.detail,
+            )
+            return self._build_market_unavailable_fallback(ticker=ticker, detail=e.detail)
         except Exception as e:
             logger.error(f"[Valuation] Data fetch failed: {e}")
             raise
@@ -173,6 +177,21 @@ class ValuationAgent(HushhAgent):
         except Exception as e:
             logger.error(f"[Valuation] Deterministic analysis failed: {e}")
             raise
+
+    def _build_market_unavailable_fallback(self, ticker: str, detail: str) -> ValuationInsight:
+        """Fallback when the symbol cannot be priced reliably in realtime."""
+        return ValuationInsight(
+            summary=(
+                f"Realtime quote coverage was unavailable for {ticker}, so Kai is returning a "
+                "low-confidence valuation placeholder instead of a hard failure."
+            ),
+            valuation_metrics={"fallback": 1.0},
+            peer_comparison={"status": "unavailable", "detail": detail},
+            price_targets={},
+            sources=["Valuation fallback", "Realtime quote unavailable"],
+            confidence=0.2,
+            recommendation="fair",
+        )
 
 
 # Export singleton for use in KaiAgent orchestration

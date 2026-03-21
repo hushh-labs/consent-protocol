@@ -226,10 +226,10 @@ The LLM client is initialized in `hushh_mcp/operons/kai/llm.py` with graceful fa
 
 ## Analysis History
 
-Analysis results are stored in the world model under `financial.analysis.decisions` (finance-root contract).
+Analysis results are stored in the PKM under `financial.analysis.decisions` (finance-root contract).
 
 - **FIFO**: Maximum 3 versions per ticker. Fourth analysis deletes the oldest.
-- **Storage**: Encrypted in `world_model_data.financial.analysis.decisions`, summarized in `world_model_index_v2.domain_summaries.financial`
+- **Storage**: Encrypted in `pkm_blobs(financial/history)` and summarized in `pkm_index.summary_projection.financial`
 - **Access**: `GET /api/kai/decisions/{user_id}` returns the decision summary list
 
 ---
@@ -252,6 +252,6 @@ The SSE stream always terminates cleanly with either a terminal `decision` event
 ## See Also
 
 - [Agent Development](./agent-development.md) -- Building new agents
-- [World Model](./world-model.md) -- Encrypted data architecture
+- [Personal Knowledge Model](./personal-knowledge-model.md) -- Encrypted data architecture
 - [Consent Protocol](./consent-protocol.md) -- Token lifecycle and validation
 - [Environment Variables](./env-vars.md) -- Backend configuration reference

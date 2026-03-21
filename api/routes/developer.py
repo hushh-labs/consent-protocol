@@ -33,7 +33,7 @@ router = APIRouter()
 developer_api_router = APIRouter(prefix="/api/v1", tags=["Developer API"])
 portal_router = APIRouter(prefix="/api/developer", tags=["Developer Portal"])
 
-_STATIC_REQUESTABLE_SCOPES = ("world_model.read", "world_model.write")
+_STATIC_REQUESTABLE_SCOPES = ("pkm.read", "pkm.write", "world_model.read", "world_model.write")
 _MAX_EXPIRY_HOURS = 24 * 365
 
 
@@ -70,7 +70,7 @@ class DeveloperScopeCatalogResponse(BaseModel):
     notes: list[str] = Field(
         default_factory=lambda: [
             "Do not hardcode domain keys. Discover available scopes per user at runtime.",
-            "Dynamic attr scopes are derived from world_model_index_v2.available_domains, domain summaries, and domain_registry metadata.",
+            "Dynamic attr scopes are derived from PKM discovery metadata and the scope registry.",
             "Use get_scoped_data for all consented reads; public named data getters are not supported.",
         ]
     )
@@ -81,7 +81,7 @@ class DeveloperUserScopesResponse(BaseModel):
     available_domains: list[str] = Field(default_factory=list)
     scopes: list[str] = Field(default_factory=list)
     scopes_are_dynamic: bool = True
-    source: str = "world_model_index_v2 + domain_registry"
+    source: str = "pkm_index + pkm_scope_registry"
     app_id: str | None = None
     app_display_name: str | None = None
 
@@ -182,12 +182,20 @@ class OwnerProfile(TypedDict):
 def _scope_catalog() -> list[DeveloperScopeDescriptor]:
     return [
         DeveloperScopeDescriptor(
+            name="pkm.read",
+            description="Read the full user personal knowledge model (all discovered domains).",
+        ),
+        DeveloperScopeDescriptor(
+            name="pkm.write",
+            description="Write to the user personal knowledge model in governed flows.",
+        ),
+        DeveloperScopeDescriptor(
             name="world_model.read",
-            description="Read the full user world model (all discovered domains).",
+            description="Legacy alias for pkm.read during cutover.",
         ),
         DeveloperScopeDescriptor(
             name="world_model.write",
-            description="Write to the user world model in governed flows.",
+            description="Legacy alias for pkm.write during cutover.",
         ),
         DeveloperScopeDescriptor(
             name="attr.{domain}.*",
