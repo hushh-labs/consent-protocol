@@ -262,20 +262,22 @@ async def _deep_migrate_user(
     db: Any,
     user_id: str,
     passphrase: str,
+    wrapper_method: str | None,
     dry_run: bool,
 ) -> dict[str, Any]:
-    wrapper_rows = (
-        db.table("vault_key_wrappers")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
+    wrapper_query = db.table("vault_key_wrappers").select("*").eq("user_id", user_id)
+    if wrapper_method:
+        wrapper_query = wrapper_query.eq("method", wrapper_method)
+    elif passphrase:
+        wrapper_query = wrapper_query.eq("method", "passphrase")
+    wrapper_rows = wrapper_query.order("created_at", desc=True).execute().data or []
     if not wrapper_rows:
-        return {"user_id": user_id, "status": "skipped", "reason": "no_wrapper"}
+        return {
+            "user_id": user_id,
+            "status": "skipped",
+            "reason": "no_wrapper",
+            "wrapper_method": wrapper_method or "passphrase",
+        }
 
     vault_key_hex = _unwrap_vault_key(passphrase, wrapper_rows[0])
 
@@ -411,6 +413,12 @@ async def main() -> None:
     parser.add_argument(
         "--passphrase", type=str, default=None, help="Passphrase for deep migration"
     )
+    parser.add_argument(
+        "--wrapper-method",
+        type=str,
+        default=None,
+        help="Explicit wrapper method to use for unwrapping (defaults to passphrase when --passphrase is provided).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not persist updates")
     parser.add_argument(
         "--index-only",
@@ -447,6 +455,7 @@ async def main() -> None:
         db=db,
         user_id=user_id,
         passphrase=passphrase,
+        wrapper_method=args.wrapper_method,
         dry_run=args.dry_run,
     )
     print(json.dumps({"stage": "deep_migration", **result}, indent=2))

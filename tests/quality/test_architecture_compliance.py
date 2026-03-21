@@ -112,7 +112,7 @@ class TestConsentPatternCompliance:
             "hushh_mcp/services/consent_db.py",
             "hushh_mcp/services/investor_db.py",
             "hushh_mcp/services/vault_keys_service.py",
-            "hushh_mcp/services/world_model_service.py",
+            "hushh_mcp/services/personal_knowledge_model_service.py",
             "hushh_mcp/services/domain_registry_service.py",
             "hushh_mcp/services/attribute_learner.py",
             "hushh_mcp/consent/scope_generator.py",
@@ -155,11 +155,11 @@ The domain_registry_service.py file is required for dynamic domain discovery.
 
     def test_world_model_service_exists(self):
         """WorldModelService must exist for unified data storage."""
-        path = os.path.join(self.cwd, "hushh_mcp/services/world_model_service.py")
+        path = os.path.join(self.cwd, "hushh_mcp/services/personal_knowledge_model_service.py")
         assert os.path.exists(path), """
 ❌ MISSING: WorldModelService
 
-The world_model_service.py file is required for unified data storage.
+The personal_knowledge_model_service.py file is required for unified data storage.
 All new data should be stored in world_model_attributes table via this service.
 """
 
@@ -407,11 +407,11 @@ class TestWorldModelMigrationCompliance:
 
     def test_world_model_service_exists(self):
         """WorldModelService must exist as preferred data storage."""
-        path = os.path.join(self.cwd, "hushh_mcp/services/world_model_service.py")
+        path = os.path.join(self.cwd, "hushh_mcp/services/personal_knowledge_model_service.py")
         assert os.path.exists(path), """
 ❌ MISSING: WorldModelService
 
-The world_model_service.py file is required for dynamic data storage.
+The personal_knowledge_model_service.py file is required for dynamic data storage.
 """
 
     def test_vault_db_has_deprecation_notice(self):

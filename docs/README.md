@@ -18,7 +18,7 @@ consent-protocol/
 │   └── routes/                # All API endpoint routers
 │       ├── consent.py         # Consent token management
 │       ├── developer.py       # Versioned developer API (/api/v1)
-│       ├── world_model.py     # World model CRUD
+│       ├── pkm.py             # Personal Knowledge Model CRUD
 │       ├── notifications.py   # FCM push tokens
 │       ├── kai/               # Kai financial agent routes
 │       └── ...
@@ -38,7 +38,7 @@ consent-protocol/
     └── reference/
         ├── agent-development.md   # DNA model, operons, contribution guide
         ├── developer-api.md       # Published developer API contract
-        ├── world-model.md         # Two-table architecture, BYOK
+        ├── personal-knowledge-model.md # PKM architecture, BYOK
         ├── kai-agents.md          # 3-agent debate system
         ├── consent-protocol.md    # Token model and security
         └── fcm-notifications.md   # FCM push architecture
@@ -74,7 +74,7 @@ Health check: `curl http://localhost:8000/health`
 | ---- | -------- |
 | Build a new agent or operon | [reference/agent-development.md](./reference/agent-development.md) |
 | Publish against the developer API / MCP | [reference/developer-api.md](./reference/developer-api.md) |
-| Understand data encryption and storage | [reference/world-model.md](./reference/world-model.md) |
+| Understand data encryption and storage | [reference/personal-knowledge-model.md](./reference/personal-knowledge-model.md) |
 | Learn the 3-agent debate system | [reference/kai-agents.md](./reference/kai-agents.md) |
 | Understand the consent token model | [reference/consent-protocol.md](./reference/consent-protocol.md) |
 | FCM push notification architecture | [reference/fcm-notifications.md](./reference/fcm-notifications.md) |

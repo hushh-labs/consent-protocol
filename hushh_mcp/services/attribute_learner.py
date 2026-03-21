@@ -80,7 +80,7 @@ class AttributeLearner:
     @property
     def world_model(self):
         if self._world_model is None:
-            from hushh_mcp.services.world_model_service import get_world_model_service
+            from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
             self._world_model = get_world_model_service()
         return self._world_model
@@ -151,11 +151,12 @@ class AttributeLearner:
         assistant_response: str,
     ) -> list[dict]:
         """
-        Extract attributes from conversation and store as domain summaries.
+        Extract attributes from conversation and record them as mutation events.
 
-        Inferred attributes are written to world_model_index_v2.domain_summaries
-        (non-sensitive metadata only). Sensitive data should be stored via the
-        client-side BYOK flow in world_model_data.
+        Learned attributes are no longer written into world_model_index_v2.domain_summaries.
+        Sensitive semantic state belongs in the BYOK-encrypted domain payloads, not the
+        discovery index. We still emit structured mutation events so the research flow
+        remains auditable and replayable.
 
         Args:
             user_id: The user's ID
@@ -172,20 +173,26 @@ class AttributeLearner:
             return []
 
         stored = []
-        # Group attributes by domain so we do one update_domain_summary per domain
         domain_attrs: dict[str, dict] = {}
         for attr in attributes:
             domain_attrs.setdefault(attr.domain, {})[attr.key] = attr.value
 
-        for domain, summary_patch in domain_attrs.items():
+        for domain, inferred_payload in domain_attrs.items():
             try:
-                success = await self.world_model.update_domain_summary(
+                success = await self.world_model.record_mutation_event(
                     user_id=user_id,
                     domain=domain,
-                    summary=summary_patch,
+                    operation_type="attribute_inference",
+                    path_set=sorted(inferred_payload.keys()),
+                    source_agent="attribute_learner",
+                    confidence=max(
+                        (attr.confidence for attr in attributes if attr.domain == domain),
+                        default=0.8,
+                    ),
+                    metadata={"attributes": inferred_payload},
                 )
                 if success:
-                    for key, value in summary_patch.items():
+                    for key, value in inferred_payload.items():
                         stored.append(
                             {
                                 "domain": domain,
@@ -195,10 +202,10 @@ class AttributeLearner:
                             }
                         )
                         logger.info(
-                            f"Stored learned attribute summary: {domain}.{key} for user {user_id}"
+                            f"Recorded learned attribute inference: {domain}.{key} for user {user_id}"
                         )
             except Exception as e:
-                logger.error(f"Error storing domain summary for {domain}: {e}")
+                logger.error(f"Error storing inferred attribute event for {domain}: {e}")
 
         return stored
 

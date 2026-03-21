@@ -9,7 +9,7 @@ The migration from asyncpg (Cloud SQL) to Supabase has been completed. All API r
 
 - **VaultDBService** - Vault operations
 - **ConsentDBService** - Consent management (consent_audit table)
-- **WorldModelService** - World model data and attributes
+- **PersonalKnowledgeModelService** - PKM data and attributes
 
 See `docs/reference/database_service_layer.md` for architecture details.
 
@@ -57,7 +57,7 @@ The script automatically verifies:
 1. vault_keys (11 rows)
 2. consent_audit (97 rows)
 
-> **Note:** The following tables existed in the original Cloud SQL database but have since been dropped and replaced by the unified `world_model_data` architecture: `investor_profiles`, `vault_kai`, `user_investor_profiles`, `vault_food`, `vault_professional`, `vault_kai_preferences`. They are listed here only for historical reference.
+> **Note:** The following tables existed in the original Cloud SQL database but have since been dropped and replaced by the PKM storage architecture: `investor_profiles`, `vault_kai`, `user_investor_profiles`, `vault_food`, `vault_professional`, `vault_kai_preferences`. They are listed here only for historical reference.
 
 **Total: ~108 rows (core tables)**
 

@@ -98,6 +98,36 @@ By using Kai, you acknowledge that you understand these limitations.
     def __init__(self, risk_profile: RiskProfile = "balanced"):
         self.risk_profile = risk_profile
 
+    async def generate_decision(
+        self,
+        ticker: str,
+        fundamental_insight: FundamentalInsight,
+        sentiment_insight: SentimentInsight,
+        valuation_insight: ValuationInsight,
+        debate_result: DebateResult,
+        user_id: str,
+        consent_token: str | None = None,
+        processing_mode: str | None = None,
+    ) -> DecisionCard:
+        """
+        Backward-compatible orchestrator entrypoint.
+
+        The active orchestrator still calls ``generate_decision`` with legacy
+        keyword names. Normalize them into the current ``generate`` contract so
+        the runtime can stay stable while the rest of Kai is modernized.
+        """
+        del consent_token  # Decision generation no longer needs the raw token.
+
+        return await self.generate(
+            ticker=ticker,
+            user_id=user_id,
+            processing_mode=processing_mode or "hybrid",
+            fundamental=fundamental_insight,
+            sentiment=sentiment_insight,
+            valuation=valuation_insight,
+            debate=debate_result,
+        )
+
     async def generate(
         self,
         ticker: str,

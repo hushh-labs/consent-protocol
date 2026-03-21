@@ -14,7 +14,7 @@ The Hushh developer contract is versioned under `/api/v1` and built around one s
 3. Wait for the user's approval in Kai.
 4. Read only the approved slice with `get_scoped_data`.
 
-Do not hardcode domain keys. Dynamic scopes are derived from the indexed world model and domain registry.
+Do not hardcode domain keys. Dynamic scopes are derived from the indexed PKM and domain registry.
 
 ---
 
@@ -61,16 +61,16 @@ GET /api/v1/user-scopes/{user_id}?token=<developer-token>
 
 Requestable developer scopes:
 
-- `world_model.read`
-- `world_model.write`
+- `pkm.read`
+- `pkm.write`
 - `attr.{domain}.*`
 - `attr.{domain}.{subintent}.*`
 - `attr.{domain}.{path}`
 
 Availability is derived from:
 
-- `world_model_index_v2.available_domains`
-- `world_model_index_v2.domain_summaries`
+- `pkm_index.available_domains`
+- `pkm_index.summary_projection`
 - `domain_registry`
 
 Two users can legitimately expose different scope catalogs.

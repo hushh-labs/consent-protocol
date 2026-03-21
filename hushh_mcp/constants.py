@@ -40,7 +40,12 @@ class ConsentScope(str, Enum):
     EMBEDDING_PROFILE_READ = "embedding.profile.read"
     EMBEDDING_PROFILE_COMPUTE = "embedding.profile.compute"
 
-    # ==================== WORLD MODEL OPERATIONS ====================
+    # ==================== PKM OPERATIONS ====================
+    PKM_READ = "pkm.read"
+    PKM_WRITE = "pkm.write"
+    PKM_METADATA = "pkm.metadata"
+
+    # Legacy aliases retained during cutover.
     WORLD_MODEL_READ = "world_model.read"
     WORLD_MODEL_WRITE = "world_model.write"
     WORLD_MODEL_METADATA = "world_model.metadata"
@@ -58,7 +63,7 @@ class ConsentScope(str, Enum):
     EXTERNAL_MARKET_DATA = "external.market.data"
     EXTERNAL_RENAISSANCE = "external.renaissance.data"
 
-    # Data access uses world_model.read, world_model.write, and dynamic attr.{domain}.* scopes.
+    # Data access uses pkm.read, pkm.write, and dynamic attr.{domain}.* scopes.
 
     @classmethod
     def list(cls):
@@ -175,6 +180,9 @@ class ConsentScope(str, Enum):
             cls.CHAT_HISTORY_WRITE,
             cls.EMBEDDING_PROFILE_READ,
             cls.EMBEDDING_PROFILE_COMPUTE,
+            cls.PKM_READ,
+            cls.PKM_WRITE,
+            cls.PKM_METADATA,
             cls.WORLD_MODEL_READ,
             cls.WORLD_MODEL_WRITE,
             cls.WORLD_MODEL_METADATA,
