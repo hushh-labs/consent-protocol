@@ -17,7 +17,7 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
     Handles:
     - Dynamic attr.{domain}.* scopes
     - Dynamic attr.{domain}.{attribute} scopes
-    - World model scopes (world_model.read, world_model.write)
+    - PKM scopes (pkm.read, pkm.write) and legacy world_model.* aliases
     - Agent permissions (agent.*)
     - vault.owner master scope
     - custom.* temporary scopes
@@ -44,10 +44,10 @@ def resolve_scope_to_enum(scope: str) -> ConsentScope:
         return ConsentScope.WORLD_MODEL_READ
 
     # World model scopes
-    if scope == "world_model.read":
-        return ConsentScope.WORLD_MODEL_READ
-    if scope == "world_model.write":
-        return ConsentScope.WORLD_MODEL_WRITE
+    if scope in {"pkm.read", "world_model.read"}:
+        return ConsentScope.PKM_READ
+    if scope in {"pkm.write", "world_model.write"}:
+        return ConsentScope.PKM_WRITE
 
     # Agent permissions
     if scope.startswith("agent."):
@@ -86,8 +86,8 @@ def scope_matches(granted_scope: str, requested_scope: str) -> bool:
     if granted_scope == "vault.owner":
         return True
 
-    # world_model.read grants access to ALL attr.* domains
-    if granted_scope == "world_model.read":
+    # PKM read grants access to ALL attr.* domains
+    if granted_scope in {"pkm.read", "world_model.read"}:
         generator = get_scope_generator()
         if generator.is_dynamic_scope(requested_scope):
             return True
@@ -107,7 +107,7 @@ def get_scope_description(scope: str) -> str:
     """
     Get human-readable description for any scope.
 
-    Uses DynamicScopeGenerator for attr.* scopes; hardcoded for world_model and agent scopes.
+    Uses DynamicScopeGenerator for attr.* scopes; hardcoded for PKM and agent scopes.
 
     Args:
         scope: The scope string
@@ -135,8 +135,10 @@ def get_scope_description(scope: str) -> str:
     # Hardcoded descriptions for non-dynamic scopes (world-model only; no legacy vault.*)
     descriptions = {
         "vault.owner": "Full access to your vault (master key)",
-        "world_model.read": "Read your world model data",
-        "world_model.write": "Write to your world model",
+        "pkm.read": "Read your personal knowledge model data",
+        "pkm.write": "Write to your personal knowledge model",
+        "world_model.read": "Read your personal knowledge model data",
+        "world_model.write": "Write to your personal knowledge model",
         "agent.kai.analyze": "Allow Kai agent to analyze your data",
         "agent.kai.execute": "Allow Kai agent to execute actions",
     }
@@ -157,7 +159,7 @@ def is_write_scope(scope: str) -> bool:
     if scope == "vault.owner":
         return True
 
-    if scope == "world_model.write":
+    if scope in {"pkm.write", "world_model.write"}:
         return True
 
     # For attr.* scopes, write is determined by context, not scope
@@ -179,7 +181,12 @@ def normalize_scope(scope: str) -> str:
     generator = get_scope_generator()
 
     # Already in canonical dot format
-    if generator.is_dynamic_scope(scope) or scope in ("world_model.read", "world_model.write"):
+    if generator.is_dynamic_scope(scope) or scope in (
+        "pkm.read",
+        "pkm.write",
+        "world_model.read",
+        "world_model.write",
+    ):
         return scope
 
     return scope

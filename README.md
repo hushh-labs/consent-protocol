@@ -12,7 +12,7 @@ The Consent Protocol is the single source of truth for the Hushh backend. It pow
 
 - **Consent token issuance, validation, and revocation** -- cryptographically signed, stateless, auditable.
 - **Personal Data Agents (PDAs)** -- built on Google ADK with consent enforcement at every layer.
-- **World Model** -- two-table encrypted data architecture (BYOK). Server stores ciphertext only.
+- **Personal Knowledge Model (PKM)** -- segmented encrypted data architecture (BYOK). Server stores ciphertext only.
 - **MCP Server** -- exposes user data to external AI agents (Claude, etc.) with explicit consent.
 - **Agent Kai** -- multi-agent financial analysis system (Fundamental, Sentiment, Valuation) with debate engine.
 - **FCM Push Notifications** -- pure-push consent request delivery (web, iOS, Android).
@@ -118,7 +118,7 @@ consent-protocol/
 │   ├── middlewares/               # Rate limiting, auth helpers
 │   └── routes/                    # All endpoint routers
 │       ├── consent.py             # Consent token management
-│       ├── world_model.py         # World model CRUD
+│       ├── pkm.py                 # Personal Knowledge Model CRUD
 │       ├── notifications.py       # FCM push tokens
 │       └── kai/                   # Kai financial agent routes
 │
@@ -146,7 +146,7 @@ consent-protocol/
     ├── mcp-setup.md               # MCP server setup
     └── reference/
         ├── agent-development.md   # DNA model, operons, contribution guide
-        ├── world-model.md         # Two-table architecture, BYOK
+        ├── personal-knowledge-model.md  # PKM architecture, BYOK
         ├── kai-agents.md          # 3-agent debate system
         ├── consent-protocol.md    # Token model and security
         └── fcm-notifications.md   # FCM push architecture
@@ -160,7 +160,7 @@ consent-protocol/
 | -------- | ----------- |
 | [docs/README.md](docs/README.md) | Documentation entry point |
 | [docs/reference/agent-development.md](docs/reference/agent-development.md) | How to build agents and operons |
-| [docs/reference/world-model.md](docs/reference/world-model.md) | Encrypted data architecture |
+| [docs/reference/personal-knowledge-model.md](docs/reference/personal-knowledge-model.md) | PKM storage and retrieval architecture |
 | [docs/reference/kai-agents.md](docs/reference/kai-agents.md) | Multi-agent financial analysis |
 | [docs/reference/consent-protocol.md](docs/reference/consent-protocol.md) | Consent token lifecycle |
 | [docs/reference/fcm-notifications.md](docs/reference/fcm-notifications.md) | FCM push notifications |
