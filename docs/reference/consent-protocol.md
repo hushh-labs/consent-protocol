@@ -152,7 +152,7 @@ GET  /api/consent/pending               # Dashboard: View pending
 POST /api/consent/pending/approve      # Dashboard: Approve request
 
 # Kai personalization storage
-# Optional intro data is stored in encrypted world-model path `financial.profile`.
+# Optional intro data is stored in encrypted PKM path `financial.profile`.
 # No `/api/kai/preferences/*` endpoints exist.
 
 # MCP Server Data Access
@@ -354,7 +354,7 @@ Examples:
 - `attr.financial.profile.*`
 
 Dynamic scopes are discovered at runtime from PKM metadata and `domain_registry`.
-Use `GET /api/world-model/scopes/{user_id}` (or MCP `discover_user_domains`) instead of hardcoding domains.
+Use `GET /api/pkm/scopes/{user_id}` (or MCP `discover_user_domains`) instead of hardcoding domains.
 
 ### Scope Hierarchy
 

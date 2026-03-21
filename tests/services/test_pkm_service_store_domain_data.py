@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hushh_mcp.services.world_model_service import WorldModelService
+from hushh_mcp.services.personal_knowledge_model_service import WorldModelService
 
 
 class _StubDomainRegistry:
@@ -121,14 +121,15 @@ async def test_store_domain_data_writes_per_domain_blob_manifest_and_events(monk
 
     assert result["success"] is True
     blob_upsert = service._supabase.tables["pkm_blobs"].last_upsert_data
-    assert blob_upsert["on_conflict"] == "user_id,domain"
+    assert blob_upsert["on_conflict"] == "user_id,domain,segment_id"
+    assert {row["segment_id"] for row in blob_upsert["data"]} == {"root"}
     assert blob_upsert["data"][0]["domain"] == "financial"
     assert blob_upsert["data"][0]["content_revision"] == 1
 
     manifest_upsert = service._supabase.tables["pkm_manifests"].last_upsert_data
     assert manifest_upsert["on_conflict"] == "user_id,domain"
     assert manifest_upsert["data"]["path_count"] == 3
-    assert manifest_upsert["data"]["externalizable_path_count"] == 2
+    assert manifest_upsert["data"]["externalizable_path_count"] == 3
 
     path_upsert = service._supabase.tables["pkm_manifest_paths"].last_upsert_data
     assert path_upsert["on_conflict"] == "user_id,domain,json_path"
@@ -140,7 +141,12 @@ async def test_store_domain_data_writes_per_domain_blob_manifest_and_events(monk
 
     update_summary = service.update_domain_summary
     update_summary.assert_awaited_once()
-    summary_payload = update_summary.await_args.kwargs["summary"]
+    raw_summary_payload = (
+        update_summary.await_args.kwargs.get("summary")
+        if update_summary.await_args.kwargs
+        else update_summary.await_args.args[2]
+    )
+    summary_payload = service._normalize_domain_summary("financial", raw_summary_payload)
     assert summary_payload["storage_mode"] == "per_domain_blob"
     assert summary_payload["manifest_version"] == 1
     assert "risk_profile" not in summary_payload

@@ -10,7 +10,7 @@ Kai implements the AlphaAgents framework -- three specialist agents debate acros
 
 **Output**: A `DecisionCard` with a recommendation (Buy / Hold / Reduce), short recommendation summary, confidence score, supporting evidence, and sourced reasoning from all three agents.
 
-Kai intro personalization is optional and managed in encrypted world-model path `financial.profile`. Legacy `/api/kai/preferences/*` routes are removed.
+Kai intro personalization is optional and managed in encrypted PKM path `financial.profile`. Legacy `/api/kai/preferences/*` routes are removed.
 
 ---
 

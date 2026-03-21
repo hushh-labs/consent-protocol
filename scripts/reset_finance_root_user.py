@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402, I001
 """User-scoped finance-root reset + reimport validator (does not touch vault key tables)."""
 
 from __future__ import annotations
@@ -32,11 +33,13 @@ sys.path.insert(0, str(CONSENT_ROOT))
 from db.db_client import get_db  # noqa: E402
 from hushh_mcp.services.domain_contracts import FINANCIAL_INTENT_MAP  # noqa: E402
 from hushh_mcp.services.domain_registry_service import get_domain_registry_service  # noqa: E402
+from hushh_mcp.services.personal_knowledge_model_service import (
+    get_world_model_service,  # noqa: E402
+)
 from hushh_mcp.services.portfolio_import_service import (  # noqa: E402
     ImportResult,
     get_portfolio_import_service,
 )
-from hushh_mcp.services.world_model_service import get_world_model_service  # noqa: E402
 from hushh_mcp.types import EncryptedPayload  # noqa: E402
 from hushh_mcp.vault.encrypt import decrypt_data, encrypt_data  # noqa: E402
 
