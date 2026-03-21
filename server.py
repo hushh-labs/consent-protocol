@@ -194,8 +194,9 @@ from api.routes import identity  # noqa: E402
 app.include_router(identity.router)
 
 # Phase 7: World Model (Dynamic Domain Management)
-from api.routes import world_model  # noqa: E402
+from api.routes import pkm, world_model  # noqa: E402
 
+app.include_router(pkm.router)
 app.include_router(world_model.router)
 
 # Account deletion and management
@@ -210,7 +211,7 @@ app.include_router(invites.router)
 logger.info("ria.routes_enabled")
 
 logger.info(
-    "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + WORLD MODEL ENABLED"
+    "🚀 Hushh Consent Protocol server initialized with modular routes - KAI V2 + PHASE 2 + PKM ENABLED"
 )
 
 

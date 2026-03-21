@@ -74,16 +74,20 @@ def issue_token(
 def _scope_str_to_enum(scope_str: str) -> ConsentScope:
     """
     Map a scope string to its ConsentScope enum equivalent.
-    Dynamic scopes (attr.*) map to WORLD_MODEL_READ.
+    Dynamic scopes (attr.*) map to PKM_READ.
     """
     try:
         return ConsentScope(scope_str)
     except ValueError:
-        # Dynamic scope (e.g., attr.financial.*) - map to WORLD_MODEL_READ
+        if scope_str == "world_model.read":
+            return ConsentScope.PKM_READ
+        if scope_str == "world_model.write":
+            return ConsentScope.PKM_WRITE
+        # Dynamic scope (e.g., attr.financial.*) - map to PKM_READ
         if scope_str.startswith("attr."):
-            return ConsentScope.WORLD_MODEL_READ
-        # Unknown scope - default to WORLD_MODEL_READ
-        return ConsentScope.WORLD_MODEL_READ
+            return ConsentScope.PKM_READ
+        # Unknown scope - default to PKM_READ
+        return ConsentScope.PKM_READ
 
 
 # ========== Token Verifier ==========

@@ -1,13 +1,16 @@
 # consent-protocol/api/routes/world_model.py
 """
-World Model API Routes - Blob-based storage.
+World Model API Routes - BYOK world model storage and discovery.
 
-Implements the NEW two-table architecture:
-- world_model_data: Single encrypted JSONB blob per user
-- world_model_index_v2: Queryable metadata for MCP scopes
+Implements the evolving architecture:
+- world_model_domain_blobs: Encrypted per-domain payloads
+- user_domain_manifests: Explicit structure contracts for scopes
+- world_model_index_v2: Minimal discovery metadata for UI/bootstrap
+- world_model_data: Legacy full-blob read fallback
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,11 +18,19 @@ from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.domain_contracts import canonical_top_level_domain, domain_registry_payload
-from hushh_mcp.services.world_model_service import get_world_model_service
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/world-model", tags=["world-model"])
+
+
+def _isoformat_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
 
 
 # ============================================================================
@@ -121,66 +132,24 @@ async def get_risk_profile_from_index(user_id: str) -> tuple[str, list[dict], di
 
 async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]:
     """
-    Fetch recent decisions for a user from domain_summaries.
+    Fetch recent decisions for a user from mutation events first.
 
-    Canonical source: world_model_index_v2.domain_summaries.financial.
+    Canonical source: world_model_mutation_events decision projections.
     Returns a list of DecisionRecord objects sorted by creation date (newest first).
     """
     try:
         world_model = get_world_model_service()
-        index = await world_model.get_index_v2(user_id)
-
         records: list[DecisionRecord] = []
-        domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
-
-        candidate_payloads: list[object] = []
-        financial_summary = (
-            domain_summaries.get("financial")
-            if isinstance(domain_summaries.get("financial"), dict)
-            else {}
-        )
-        if isinstance(financial_summary, dict):
-            for key in (
-                "recent_decisions",
-                "analysis_recent_decisions",
-                "analysis_decisions",
-                "decisions",
-            ):
-                candidate_payloads.append(financial_summary.get(key))
-
-        items: list[dict] = []
-        for payload in candidate_payloads:
-            if isinstance(payload, list):
-                items.extend([row for row in payload if isinstance(row, dict)])
-            elif isinstance(payload, dict):
-                maybe_rows = payload.get("decisions")
-                if isinstance(maybe_rows, list):
-                    items.extend([row for row in maybe_rows if isinstance(row, dict)])
-
-        # Compatibility parser for summary maps like {AAPL_decision, AAPL_confidence, AAPL_analyzed_at}
-        if isinstance(financial_summary, dict):
-            for summary_key, summary_value in financial_summary.items():
-                if not isinstance(summary_key, str) or not summary_key.endswith("_decision"):
-                    continue
-                ticker = summary_key[: -len("_decision")].upper()
-                if not ticker:
-                    continue
-                confidence_raw = financial_summary.get(f"{ticker}_confidence")
-                analyzed_at = financial_summary.get(f"{ticker}_analyzed_at")
-                try:
-                    confidence_value = float(confidence_raw or 0.0)
-                except Exception:
-                    confidence_value = 0.0
-                items.append(
-                    {
-                        "id": 0,
-                        "ticker": ticker,
-                        "decision_type": str(summary_value or "HOLD"),
-                        "confidence": confidence_value,
-                        "created_at": str(analyzed_at or ""),
-                        "metadata": {"source": "summary_map"},
-                    }
-                )
+        items = await world_model.get_recent_decision_records(user_id, limit=limit)
+        if not items:
+            index = await world_model.get_index_v2(user_id)
+            domain_summaries = index.domain_summaries if index and index.domain_summaries else {}
+            financial_summary = (
+                domain_summaries.get("financial")
+                if isinstance(domain_summaries.get("financial"), dict)
+                else {}
+            )
+            items = world_model._extract_decision_records(financial_summary)
 
         for d in items:
             try:
@@ -213,6 +182,42 @@ class EncryptedBlob(BaseModel):
     iv: str = Field(..., description="Initialization vector")
     tag: str = Field(..., description="Authentication tag")
     algorithm: str = Field(default="aes-256-gcm", description="Encryption algorithm")
+    segments: dict[str, "EncryptedBlob"] = Field(
+        default_factory=dict,
+        description="Optional segmented PKM ciphertext payloads keyed by segment id",
+    )
+
+
+class PathDescriptorPayload(BaseModel):
+    json_path: str
+    parent_path: Optional[str] = None
+    path_type: str = "leaf"
+    exposure_eligibility: bool = True
+    consent_label: Optional[str] = None
+    sensitivity_label: Optional[str] = None
+    source_agent: Optional[str] = None
+
+
+class StructureDecisionPayload(BaseModel):
+    action: str = Field(default="match_existing_domain")
+    target_domain: Optional[str] = None
+    json_paths: List[str] = Field(default_factory=list)
+    top_level_scope_paths: List[str] = Field(default_factory=list)
+    externalizable_paths: List[str] = Field(default_factory=list)
+    summary_projection: dict = Field(default_factory=dict)
+    sensitivity_labels: dict = Field(default_factory=dict)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    source_agent: str = Field(default="world_model_structure_agent")
+    contract_version: int = Field(default=1, ge=1)
+
+
+class DomainManifestPayload(BaseModel):
+    manifest_version: int = Field(default=1, ge=1)
+    summary_projection: dict = Field(default_factory=dict)
+    top_level_scope_paths: List[str] = Field(default_factory=list)
+    externalizable_paths: List[str] = Field(default_factory=list)
+    paths: List[PathDescriptorPayload] = Field(default_factory=list)
+    source_agent: Optional[str] = None
 
 
 class StoreDomainRequest(BaseModel):
@@ -222,10 +227,22 @@ class StoreDomainRequest(BaseModel):
     domain: str = Field(..., description="Domain key (e.g., 'financial')")
     encrypted_blob: EncryptedBlob = Field(..., description="Pre-encrypted data from client")
     summary: dict = Field(..., description="Non-sensitive metadata for index")
+    structure_decision: Optional[StructureDecisionPayload] = Field(
+        default=None,
+        description="Durable structure/intention artifact for this domain write",
+    )
+    manifest: Optional[DomainManifestPayload] = Field(
+        default=None,
+        description="Explicit manifest of discovered/externalizable paths for this domain",
+    )
+    source_agent: Optional[str] = Field(
+        default=None,
+        description="Optional explicit source agent label for mutation/audit events",
+    )
     expected_data_version: Optional[int] = Field(
         default=None,
         ge=0,
-        description="Optional optimistic concurrency guard for world_model_data.data_version",
+        description="Optional optimistic concurrency guard for the current domain blob version",
     )
 
 
@@ -237,6 +254,9 @@ class StoreDomainResponse(BaseModel):
     conflict: bool = False
     data_version: Optional[int] = None
     updated_at: Optional[str] = None
+
+
+EncryptedBlob.model_rebuild()
 
 
 @router.post("/store-domain", response_model=StoreDomainResponse)
@@ -272,8 +292,22 @@ async def store_domain(
             "iv": request.encrypted_blob.iv,
             "tag": request.encrypted_blob.tag,
             "algorithm": request.encrypted_blob.algorithm,
+            "segments": {
+                segment_id: {
+                    "ciphertext": segment_blob.ciphertext,
+                    "iv": segment_blob.iv,
+                    "tag": segment_blob.tag,
+                    "algorithm": segment_blob.algorithm,
+                }
+                for segment_id, segment_blob in (request.encrypted_blob.segments or {}).items()
+            },
         },
         summary=request.summary,
+        structure_decision=request.structure_decision.model_dump()
+        if request.structure_decision
+        else None,
+        manifest=request.manifest.model_dump() if request.manifest else None,
+        source_agent=request.source_agent,
         expected_data_version=request.expected_data_version,
         return_result=True,
     )
@@ -288,7 +322,7 @@ async def store_domain(
                         "World model changed on another device. Refresh latest data and retry."
                     ),
                     "current_data_version": store_result.get("data_version"),
-                    "updated_at": store_result.get("updated_at"),
+                    "updated_at": _isoformat_or_none(store_result.get("updated_at")),
                 },
             )
         raise HTTPException(
@@ -300,7 +334,7 @@ async def store_domain(
         message=f"Successfully stored {canonical_domain} domain data",
         conflict=False,
         data_version=store_result.get("data_version"),
-        updated_at=store_result.get("updated_at"),
+        updated_at=_isoformat_or_none(store_result.get("updated_at")),
     )
 
 
@@ -330,7 +364,16 @@ async def get_encrypted_data(
     return data
 
 
-@router.get("/domain-data/{user_id}/{domain}", response_model=dict)
+class DomainDataResponse(BaseModel):
+    encrypted_blob: EncryptedBlob
+    storage_mode: str = "domain"
+    data_version: Optional[int] = None
+    updated_at: Optional[str] = None
+    manifest_revision: Optional[int] = None
+    segment_ids: List[str] = Field(default_factory=list)
+
+
+@router.get("/domain-data/{user_id}/{domain}", response_model=DomainDataResponse)
 async def get_domain_data(
     user_id: str,
     domain: str,
@@ -356,7 +399,75 @@ async def get_domain_data(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"No {domain} data found for user"
         )
 
-    return {"encrypted_blob": data}
+    return DomainDataResponse(
+        encrypted_blob=EncryptedBlob(
+            ciphertext=data["ciphertext"],
+            iv=data["iv"],
+            tag=data["tag"],
+            algorithm=data.get("algorithm", "aes-256-gcm"),
+            segments={
+                segment_id: EncryptedBlob(
+                    ciphertext=segment_blob["ciphertext"],
+                    iv=segment_blob["iv"],
+                    tag=segment_blob["tag"],
+                    algorithm=segment_blob.get("algorithm", "aes-256-gcm"),
+                )
+                for segment_id, segment_blob in (data.get("segments") or {}).items()
+            },
+        ),
+        storage_mode=str(data.get("storage_mode") or "domain"),
+        data_version=data.get("data_version"),
+        updated_at=_isoformat_or_none(data.get("updated_at")),
+        manifest_revision=data.get("manifest_revision"),
+        segment_ids=data.get("segment_ids") or [],
+    )
+
+
+class DomainManifestResponse(BaseModel):
+    user_id: str
+    domain: str
+    manifest_version: int = 1
+    structure_decision: dict = Field(default_factory=dict)
+    summary_projection: dict = Field(default_factory=dict)
+    top_level_scope_paths: List[str] = Field(default_factory=list)
+    externalizable_paths: List[str] = Field(default_factory=list)
+    path_count: int = 0
+    externalizable_path_count: int = 0
+    segment_ids: List[str] = Field(default_factory=list)
+    last_structured_at: Optional[str] = None
+    last_content_at: Optional[str] = None
+    paths: List[dict] = Field(default_factory=list)
+    scope_registry: List[dict] = Field(default_factory=list)
+
+
+@router.get("/manifest/{user_id}/{domain}", response_model=DomainManifestResponse)
+async def get_domain_manifest(
+    user_id: str,
+    domain: str,
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """Get the manifest-backed structure contract for a specific user/domain."""
+    if token_data.get("user_id") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token user_id does not match request user_id",
+        )
+
+    world_model = get_world_model_service()
+    manifest = await world_model.get_domain_manifest(user_id, domain)
+    if manifest is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No manifest found for {domain}",
+        )
+    response_payload = dict(manifest)
+    response_payload["last_structured_at"] = _isoformat_or_none(
+        response_payload.get("last_structured_at")
+    )
+    response_payload["last_content_at"] = _isoformat_or_none(
+        response_payload.get("last_content_at")
+    )
+    return DomainManifestResponse(**response_payload)
 
 
 class DeleteDomainResponse(BaseModel):
@@ -517,27 +628,60 @@ async def get_metadata(
         index = await world_model.get_index_v2(user_id)
 
         if index is None:
-            # Check if user has any data at all (edge case: data exists but index missing)
             encrypted_data = await world_model.get_encrypted_data(user_id)
-            if encrypted_data is None:
+            domain_rows = (
+                world_model.supabase.table("pkm_blobs")
+                .select("domain,content_revision,updated_at")
+                .eq("user_id", user_id)
+                .execute()
+                .data
+                or []
+            )
+            if encrypted_data is None and not domain_rows:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="No world model data found for user",
                 )
-            # Data exists but index is missing - this is a corrupted state
-            # Return minimal metadata to allow dashboard to show
-            logger.warning(f"User {user_id} has encrypted data but no index - corrupted state")
+            logger.warning(
+                "User %s has world model storage but no index - returning degraded metadata",
+                user_id,
+            )
+            degraded_domains: List[DomainMetadata] = []
+            for row in domain_rows:
+                domain_key = str(row.get("domain") or "")
+                manifest = await world_model.get_domain_manifest(user_id, domain_key)
+                degraded_domains.append(
+                    DomainMetadata(
+                        key=domain_key,
+                        display_name=domain_key.replace("_", " ").title(),
+                        icon="folder",
+                        color="#6366F1",
+                        attribute_count=int((manifest or {}).get("path_count") or 0),
+                        summary={
+                            "storage_mode": "per_domain_blob",
+                            "manifest_version": (manifest or {}).get("manifest_version") or 1,
+                            "path_count": (manifest or {}).get("path_count") or 0,
+                            "externalizable_path_count": (manifest or {}).get(
+                                "externalizable_path_count"
+                            )
+                            or 0,
+                        },
+                        available_scopes=[],
+                        last_updated=str(row.get("updated_at") or ""),
+                    )
+                )
             return WorldModelMetadataResponse(
                 user_id=user_id,
-                domains=[],
-                total_attributes=0,
+                domains=degraded_domains,
+                total_attributes=sum(domain.attribute_count for domain in degraded_domains),
                 model_completeness=0,
                 suggested_domains=["financial", "health", "travel"],
-                last_updated=encrypted_data.get("updated_at"),
+                last_updated=(encrypted_data or {}).get("updated_at"),
             )
 
         # Build domain metadata from index
         domains: List[DomainMetadata] = []
+        user_scopes = await world_model.scope_generator.get_available_scopes(user_id)
 
         for domain_key in index.available_domains:
             summary = index.domain_summaries.get(domain_key, {})
@@ -563,7 +707,12 @@ async def get_metadata(
                     color=domain_info.color_hex if domain_info else "#6366F1",
                     attribute_count=attr_count,
                     summary=summary,
-                    available_scopes=[f"attr.{domain_key}.*"],
+                    available_scopes=[
+                        scope
+                        for scope in user_scopes
+                        if scope == f"attr.{domain_key}.*"
+                        or scope.startswith(f"attr.{domain_key}.")
+                    ],
                     last_updated=index.last_active_at.isoformat() if index.last_active_at else None,
                 )
             )
@@ -681,9 +830,6 @@ async def get_user_scopes(
         )
 
     world_model = get_world_model_service()
-    index = await world_model.get_index_v2(user_id)
-    if index is None:
-        return UserScopesResponse(user_id=user_id, scopes=[])
     scopes = await world_model.scope_generator.get_available_scopes(user_id)
     return UserScopesResponse(user_id=user_id, scopes=sorted(scopes))
 

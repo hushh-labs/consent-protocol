@@ -21,10 +21,10 @@ from api.middleware import require_vault_owner_token
 from hushh_mcp.operons.kai.fetchers import fetch_market_data, fetch_market_news
 from hushh_mcp.services.market_cache_store import get_market_cache_store_service
 from hushh_mcp.services.market_insights_cache import market_insights_cache
+from hushh_mcp.services.personal_knowledge_model_service import get_world_model_service
 from hushh_mcp.services.renaissance_service import TIER_WEIGHTS, get_renaissance_service
 from hushh_mcp.services.ria_iam_service import RIAIAMService
 from hushh_mcp.services.symbol_master_service import get_symbol_master_service
-from hushh_mcp.services.world_model_service import get_world_model_service
 
 logger = logging.getLogger(__name__)
 
@@ -886,7 +886,7 @@ async def _fetch_finnhub_candles(symbol: str) -> list[dict[str, float]]:
                 market_insights_cache.mark_provider_cooldown(cooldown_key, cooldown_seconds)
             if status_code in {401, 403, 429}:
                 # Expected quota/plan constraints for candle data; fall back to cached/derived sparkline.
-                logger.info(
+                logger.debug(
                     "[Kai Market] sparkline candles unavailable for %s (status=%s)",
                     symbol,
                     status_code,
@@ -1079,7 +1079,7 @@ async def _fetch_sector_rotation_from_etf_quotes(
                 quote = await fetch_market_data(etf_symbol, user_id, consent_token)
                 return sector_name, quote or {}
             except Exception as exc:
-                logger.info(
+                logger.debug(
                     "[Kai Market] sector ETF quote unavailable for %s (%s): %r",
                     sector_name,
                     etf_symbol,
@@ -1463,9 +1463,6 @@ async def _run_refresh_with_advisory_lock() -> None:
 async def _market_refresh_loop() -> None:
     interval = _market_refresh_interval_seconds()
     logger.info("[Kai Market] background refresh loop started (interval=%ss)", interval)
-    # Startup jitter avoids synchronized bursts across instances.
-    startup_jitter = 0.5 + (secrets.randbelow(1501) / 1000.0)
-    await asyncio.sleep(startup_jitter)
     while True:
         await _run_refresh_with_advisory_lock()
         jitter_max = max(5.0, interval * 0.12)
@@ -2094,6 +2091,18 @@ async def get_market_insights(
     if payload.get("provider_status"):
         meta["provider_status"] = payload.get("provider_status")
     payload["meta"] = meta
+
+    logger.info(
+        "[Kai Market] home user=%s tier=%s stale=%s age=%ss watchlist=%s picks=%s headlines=%s source=%s",
+        user_id,
+        meta["cache_tier"],
+        meta["stale"],
+        home_age_seconds,
+        len(payload.get("watchlist") or []),
+        len(payload.get("pick_rows") or []),
+        len(payload.get("news_tape") or []),
+        payload.get("active_pick_source") or "default",
+    )
 
     return payload
 

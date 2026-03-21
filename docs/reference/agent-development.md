@@ -453,6 +453,6 @@ The verifier checks:
 ## See Also
 
 - [Kai Agents](./kai-agents.md) -- Reference implementation
-- [World Model](./world-model.md) -- Encrypted data architecture
+- [Personal Knowledge Model](./personal-knowledge-model.md) -- Encrypted data architecture
 - [Consent Protocol](./consent-protocol.md) -- Token lifecycle and validation
 - [Environment Variables](./env-vars.md) -- Backend configuration reference
