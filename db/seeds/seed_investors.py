@@ -3,8 +3,8 @@
 Seed Investor Profiles from Sample JSON
 
 Usage:
-    python scripts/seed_investors.py
-    python scripts/seed_investors.py --file path/to/custom.json
+    python db/seeds/seed_investors.py
+    python db/seeds/seed_investors.py --file path/to/custom.json
 """
 
 import argparse
