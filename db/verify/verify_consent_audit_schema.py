@@ -4,10 +4,10 @@ Verify consent_audit table exists in Supabase with columns required for the
 consent request flow (pending list, SSE, approve/deny).
 
 Run from consent-protocol with DB_* env set (or .env):
-  python scripts/verify_consent_audit_schema.py
+  python db/verify/verify_consent_audit_schema.py
 
 If verification fails, run in Supabase SQL Editor:
-  consent-protocol/scripts/init_supabase_schema.sql (or the consent_audit block, lines 81-106).
+  consent-protocol/db/legacy/init_supabase_schema.sql (or the consent_audit block, lines 81-106).
 """
 
 import os
@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-# Required columns for consent request flow (from init_supabase_schema.sql / consent_db.py)
+# Required columns for consent request flow (from db/legacy/init_supabase_schema.sql / consent_db.py)
 REQUIRED_COLUMNS = [
     "id",
     "token_id",
@@ -48,7 +48,7 @@ def main() -> int:
     except ImportError as e:
         print("Error: could not import db_client.", e, file=sys.stderr)
         print(
-            "Run from consent-protocol with: python scripts/verify_consent_audit_schema.py",
+            "Run from consent-protocol with: python db/verify/verify_consent_audit_schema.py",
             file=sys.stderr,
         )
         return 1
@@ -67,7 +67,7 @@ def main() -> int:
             file=sys.stderr,
         )
         print(
-            "If consent_audit is missing, run scripts/init_supabase_schema.sql in Supabase.",
+            "If consent_audit is missing, run db/legacy/init_supabase_schema.sql in Supabase.",
             file=sys.stderr,
         )
         return 1
@@ -92,7 +92,7 @@ def main() -> int:
     if not rows:
         print("Table consent_audit does not exist.", file=sys.stderr)
         print(
-            "Run consent-protocol/scripts/init_supabase_schema.sql in Supabase SQL Editor (or the consent_audit block, lines 81-106).",
+            "Run consent-protocol/db/legacy/init_supabase_schema.sql in Supabase SQL Editor (or the consent_audit block, lines 81-106).",
             file=sys.stderr,
         )
         return 1
@@ -102,7 +102,7 @@ def main() -> int:
     if missing:
         print(f"consent_audit is missing columns: {', '.join(missing)}", file=sys.stderr)
         print(
-            "Run consent-protocol/scripts/init_supabase_schema.sql in Supabase SQL Editor (or the consent_audit block, lines 81-106).",
+            "Run consent-protocol/db/legacy/init_supabase_schema.sql in Supabase SQL Editor (or the consent_audit block, lines 81-106).",
             file=sys.stderr,
         )
         return 1
