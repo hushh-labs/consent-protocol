@@ -4,8 +4,7 @@
   "migration_version_policy": "minimum",
   "required_functions": [
     "merge_domain_summary",
-    "remove_domain_summary_key",
-    "upsert_pkm_data_blob"
+    "remove_domain_summary_key"
   ],
   "required_tables": {
     "vault_keys": [
@@ -48,27 +47,6 @@
       "action",
       "issued_at"
     ],
-    "pkm_data": [
-      "user_id",
-      "encrypted_data_ciphertext",
-      "encrypted_data_iv",
-      "encrypted_data_tag",
-      "algorithm",
-      "data_version",
-      "created_at",
-      "updated_at"
-    ],
-    "pkm_index": [
-      "user_id",
-      "domain_summaries",
-      "available_domains",
-      "computed_tags",
-      "activity_score",
-      "last_active_at",
-      "total_attributes",
-      "created_at",
-      "updated_at"
-    ],
     "consent_exports": [
       "consent_token",
       "user_id",
@@ -76,42 +54,9 @@
       "iv",
       "tag",
       "export_key",
-      "wrapped_key_bundle",
-      "connector_key_id",
-      "connector_wrapping_alg",
       "scope",
-      "export_revision",
-      "export_generated_at",
-      "source_content_revision",
-      "source_manifest_revision",
-      "refresh_status",
       "expires_at",
       "created_at"
-    ],
-    "consent_export_refresh_jobs": [
-      "id",
-      "user_id",
-      "consent_token",
-      "granted_scope",
-      "status",
-      "trigger_domain",
-      "trigger_paths",
-      "requested_at",
-      "last_error",
-      "attempt_count",
-      "created_at",
-      "updated_at"
-    ],
-    "actor_identity_cache": [
-      "user_id",
-      "display_name",
-      "email",
-      "photo_url",
-      "email_verified",
-      "source",
-      "last_synced_at",
-      "created_at",
-      "updated_at"
     ],
     "kai_market_cache_entries": [
       "cache_key",

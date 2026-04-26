@@ -3,7 +3,7 @@
 Add onboarding_completed column to existing vault_keys table.
 
 This is a one-time migration to add the onboarding tracking column.
-Run with: python db/add_onboarding_column.py
+Run with: python db/repair/add_onboarding_column.py
 """
 
 import asyncio
