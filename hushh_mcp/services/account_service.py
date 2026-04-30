@@ -35,6 +35,7 @@ class AccountService:
             "kai_plaid_user_profile_cache": text(
                 "DELETE FROM kai_plaid_user_profile_cache WHERE user_id = :user_id"
             ),
+            "one_kyc_workflows": text("DELETE FROM one_kyc_workflows WHERE user_id = :user_id"),
         }
         self._safe_export_queries = {
             "actor_profile": text(
@@ -96,6 +97,17 @@ class AccountService:
                 WHERE user_id = :user_id
                 ORDER BY issued_at DESC
                 LIMIT 500
+                """
+            ),
+            "one_kyc_workflows": text(
+                """
+                SELECT workflow_id, user_id, status, gmail_thread_id, sender_email,
+                       counterparty_label, required_fields, requested_scope,
+                       consent_request_id, draft_status, last_error_code,
+                       created_at, updated_at
+                FROM one_kyc_workflows
+                WHERE user_id = :user_id
+                ORDER BY created_at DESC
                 """
             ),
         }
@@ -240,6 +252,7 @@ class AccountService:
             "internal_access_events": False,
             "push_tokens": False,
             "invite_links": False,
+            "one_kyc_workflows": False,
             "vault_keys": False,
         }
 
@@ -300,6 +313,12 @@ class AccountService:
                 results["internal_access_events"] = True
                 conn.execute(text("DELETE FROM user_push_tokens WHERE user_id = :user_id"), params)
                 results["push_tokens"] = True
+                self._delete_user_rows_if_table_exists(
+                    conn,
+                    table_name="one_kyc_workflows",
+                    params=params,
+                )
+                results["one_kyc_workflows"] = True
                 conn.execute(text("DELETE FROM vault_keys WHERE user_id = :user_id"), params)
                 results["vault_keys"] = True
 
@@ -460,6 +479,7 @@ class AccountService:
             "investor_marketplace_profile": False,
             "consent_audit": False,
             "internal_access_events": False,
+            "one_kyc_workflows": False,
             "actor_profile": False,
             "runtime_persona_state": False,
         }
@@ -546,6 +566,12 @@ class AccountService:
                     params,
                 )
                 results["internal_access_events"] = True
+                self._delete_user_rows_if_table_exists(
+                    conn,
+                    table_name="one_kyc_workflows",
+                    params=params,
+                )
+                results["one_kyc_workflows"] = True
                 conn.execute(
                     text(
                         """
