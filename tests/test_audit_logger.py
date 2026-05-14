@@ -59,8 +59,14 @@ class TestAuditJsonFormatter:
         logger, buf = _capture_logger("test.fields")
         logger.info("test message")
         record = _last_record(buf)
-        for field in ("timestamp", "level", "logger", "trace_id", "message", "service", "env"):
+        for field in ("timestamp", "level", "logger", "trace_id", "message", "service", "env", "telemetry_engine"):
             assert field in record, f"Missing field: {field}"
+
+    def test_identity_label_in_every_record(self):
+        logger, buf = _capture_logger("test.identity")
+        logger.info("anything")
+        record = _last_record(buf)
+        assert record["telemetry_engine"] == "Telemetry Engine by Abdul Gaffar"
 
     def test_level_name_correct(self):
         logger, buf = _capture_logger("test.level")

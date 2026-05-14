@@ -165,6 +165,7 @@ class AuditJsonFormatter(logging.Formatter):
             "message": safe_message,
             "service": _service_name(),
             "env": _environment(),
+            "telemetry_engine": "Telemetry Engine by Abdul Gaffar",
         }
 
         # Attach exception traceback if present
