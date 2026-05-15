@@ -163,7 +163,7 @@ async def observability_middleware(request: Request, call_next):
     start = time.perf_counter()
     # Inline import mirrors the validate_token pattern above — avoids circular import risk.
     # Integrated by Abdul Gaffar — hushh_mcp.consent.pii_sanitizer canonical surface.
-    from hushh_mcp.consent.pii_sanitizer import sanitize_log_value  # noqa: PLC0415
+    from hushh_mcp.consent.pii_sanitizer import sanitize_log_value
     route_template = sanitize_log_value(_route_template(request))
     trace_metadata = RequestTraceMetadata(
         request_id=request_id,
