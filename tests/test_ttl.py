@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from schemas import ConsentApprovalPayload, ConsentExpiredError
-from services.revocation_worker import (
+from hushh_mcp.consent.consent_schemas import ConsentApprovalPayload, ConsentExpiredError
+from hushh_mcp.services.revocation_worker import (
     ConsentRevocationWorker,
     ExpiredConsent,
     RevocationReport,
