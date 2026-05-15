@@ -14,7 +14,6 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from hushh_mcp.consent.pii_sanitizer import sanitize_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -162,8 +161,9 @@ async def observability_middleware(request: Request, call_next):
 
     method = request.method.upper()
     start = time.perf_counter()
-    # Sanitize route_template before it enters any log sink.
+    # Inline import mirrors the validate_token pattern above — avoids circular import risk.
     # Integrated by Abdul Gaffar — hushh_mcp.consent.pii_sanitizer canonical surface.
+    from hushh_mcp.consent.pii_sanitizer import sanitize_log_value  # noqa: PLC0415
     route_template = sanitize_log_value(_route_template(request))
     trace_metadata = RequestTraceMetadata(
         request_id=request_id,
