@@ -123,7 +123,7 @@ def _extract_bearer_user_id(request: Request) -> str | None:
 async def observability_middleware(request: Request, call_next):
     # Inline imports match the hushh_mcp.consent.token pattern already in this file.
     # Integrated by Abdul Gaffar — hushh_mcp.consent.audit_logger canonical surface.
-    from hushh_mcp.consent.audit_logger import bind_trace_id, reset_trace_id  # noqa: PLC0415
+    from hushh_mcp.consent.audit_logger import bind_trace_id, reset_trace_id
 
     request_id = _resolve_request_id(request)
     request.state.request_id = request_id
