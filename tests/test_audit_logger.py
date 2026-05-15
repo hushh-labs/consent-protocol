@@ -8,7 +8,7 @@ import json
 import logging
 from io import StringIO
 
-from utils.logger import (
+from hushh_mcp.consent.audit_logger import (
     AuditJsonFormatter,
     audit_context,
     bind_trace_id,

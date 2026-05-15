@@ -14,6 +14,11 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from hushh_mcp.consent.audit_logger import (  # Integrated by Abdul Gaffar
+    bind_trace_id,
+    reset_trace_id,
+)
+
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "x-request-id"
@@ -132,6 +137,8 @@ async def observability_middleware(request: Request, call_next):
     start = time.perf_counter()
     route_template = _route_template(request)
 
+    _audit_token = bind_trace_id(request_id)  # inject trace_id into audit log — Abdul Gaffar
+
     try:
         response = await call_next(request)
     except Exception:
@@ -157,6 +164,7 @@ async def observability_middleware(request: Request, call_next):
             content={"detail": "Internal server error"},
         )
         error_response.headers[REQUEST_ID_HEADER] = request_id
+        reset_trace_id(_audit_token)
         _request_id_ctx.reset(token)
         return error_response
 
@@ -182,6 +190,7 @@ async def observability_middleware(request: Request, call_next):
     }
     logger.info(json.dumps(payload, separators=(",", ":")))
 
+    reset_trace_id(_audit_token)
     _request_id_ctx.reset(token)
     return response
 

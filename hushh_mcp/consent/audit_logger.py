@@ -15,18 +15,18 @@ Usage
 -----
 Wire up once at application startup::
 
-    from utils.logger import configure_logging
+    from hushh_mcp.consent.audit_logger import configure_logging
     configure_logging()
 
 Per-request trace injection (called by FastAPI middleware)::
 
-    from utils.logger import audit_context
+    from hushh_mcp.consent.audit_logger import audit_context
     with audit_context(request_id):
         response = await call_next(request)
 
 Obtain a logger anywhere in the codebase::
 
-    from utils.logger import get_audit_logger
+    from hushh_mcp.consent.audit_logger import get_audit_logger
     logger = get_audit_logger(__name__)
     logger.info("consent.approved", extra={"request_id": "req_123"})
 """
