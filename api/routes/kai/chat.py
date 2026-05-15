@@ -378,4 +378,4 @@ async def analyze_portfolio_loser(
 
     except Exception:
         logger.error("kai.chat.analyze_loser.error ticker=%s", ticker, exc_info=True)
-        raise HTTPException(status_code=500, detail="Analysis failed")
+        raise HTTPException(status_code=500, detail="Analysis is temporarily unavailable.")
