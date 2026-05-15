@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from utils.security import mask_email, mask_phone, sanitize_log_value, sanitize_payload
+from hushh_mcp.consent.pii_sanitizer import mask_email, mask_phone, sanitize_log_value, sanitize_payload
 
 # ---------------------------------------------------------------------------
 # mask_email

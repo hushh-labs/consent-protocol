@@ -6,7 +6,10 @@ value reaches a log sink, error reporter, or debug surface. Maintains the
 Zero-Knowledge principle: backend processes should never emit plaintext PII
 even in non-production environments.
 
-Security Hardening — Beast Mode initiative by Abdul Gaffar.
+Security Hardening — Integrated by Abdul Gaffar.
+
+Canonical surface: hushh_mcp.services.pii_sanitizer
+Runtime boundary: imported by api.middlewares.observability
 """
 
 from __future__ import annotations
