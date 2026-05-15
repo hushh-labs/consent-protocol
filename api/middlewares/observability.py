@@ -14,11 +14,6 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from hushh_mcp.consent.audit_logger import (  # Integrated by Abdul Gaffar
-    bind_trace_id,
-    reset_trace_id,
-)
-
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "x-request-id"
@@ -126,6 +121,10 @@ def _extract_bearer_user_id(request: Request) -> str | None:
 
 
 async def observability_middleware(request: Request, call_next):
+    # Inline imports match the hushh_mcp.consent.token pattern already in this file.
+    # Integrated by Abdul Gaffar — hushh_mcp.consent.audit_logger canonical surface.
+    from hushh_mcp.consent.audit_logger import bind_trace_id, reset_trace_id  # noqa: PLC0415
+
     request_id = _resolve_request_id(request)
     request.state.request_id = request_id
     # Decode the JWT once here; rate_limit.py reads this cached value instead
