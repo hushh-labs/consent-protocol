@@ -13,10 +13,10 @@ This ensures consistent consent-first architecture throughout the system.
 import logging
 import re
 import time
-from typing import Dict
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.exc import OperationalError as SqlalchemyOperationalError
 
 from api.middleware import require_firebase_auth, require_vault_owner_token
@@ -312,6 +312,61 @@ async def mark_pending_consent_opened(
     return {"ok": True, "acknowledged": True, **opened}
 
 
+class ConsentApprovalPayload(BaseModel):
+    """Consent-approval request body with canonical field-level constraints.
+
+    Field constraints are enforced by Pydantic before any handler logic runs,
+    so the approve_consent handler receives only validated, well-formed data.
+    FastAPI automatically returns HTTP 422 with structured error detail when
+    any constraint is violated — no manual validation code needed.
+
+    Constraints rationale
+    ---------------------
+    userId / requestId  : min_length=1 rejects empty strings; max_length=128
+                          caps payloads that could be used for log-injection;
+                          pattern rejects whitespace-only IDs that would pass
+                          the length check but are semantically invalid.
+    version             : ge=1 le=2 — only schema versions 1 and 2 are defined.
+    durationHours       : ge=1 — zero-duration consent has no meaning;
+                          le=8760 — caps at one calendar year (365 × 24).
+    sourceContentRevision / sourceManifestRevision : ge=0 — revision counters
+                          are non-negative integers.
+
+    Canonical surface: api.routes.consent — no separate validation service.
+    Integrated by Abdul Gaffar — canonical model-level field constraints.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    version: int = Field(default=1, ge=1, le=2)
+
+    userId: str = Field(..., min_length=1, max_length=128, pattern=r"^\S+$")
+    requestId: str = Field(..., min_length=1, max_length=128, pattern=r"^\S+$")
+
+    encryptedData: str | None = Field(default=None, max_length=10_000_000)
+    encryptedIv: str | None = Field(default=None, max_length=512)
+    encryptedTag: str | None = Field(default=None, max_length=512)
+
+    wrappedExportKey: str | None = Field(default=None, max_length=10_000_000)
+    wrappedKeyIv: str | None = Field(default=None, max_length=512)
+    wrappedKeyTag: str | None = Field(default=None, max_length=512)
+    senderPublicKey: str | None = Field(default=None, max_length=4096)
+    wrappingAlg: str | None = Field(default=None, max_length=64)
+    connectorKeyId: str | None = Field(default=None, max_length=256)
+
+    durationHours: int | None = Field(default=None, ge=1, le=8760)
+    sourceContentRevision: int | None = Field(default=None, ge=0)
+    sourceManifestRevision: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _stamp_missing_version(cls, values: Any) -> Any:
+        """v1 clients omit ``version`` entirely — stamp it so handlers never see None."""
+        if isinstance(values, dict) and "version" not in values:
+            values = {**values, "version": 1}
+        return values
+
+
 @router.post("/pending/approve")
 async def approve_consent(
     request: Request,
@@ -326,21 +381,29 @@ async def approve_consent(
     For connector-backed approvals, the export key is wrapped to the connector public key
     and the backend never persists a plaintext decrypt key.
     """
-    body = await request.json()
-    userId = body.get("userId")
-    requestId = body.get("requestId")
-    encryptedData = body.get("encryptedData")  # Base64 ciphertext
-    encryptedIv = body.get("encryptedIv")  # Base64 IV
-    encryptedTag = body.get("encryptedTag")  # Base64 auth tag
-    wrappedExportKey = body.get("wrappedExportKey")
-    wrappedKeyIv = body.get("wrappedKeyIv")
-    wrappedKeyTag = body.get("wrappedKeyTag")
-    senderPublicKey = body.get("senderPublicKey")
-    wrappingAlg = body.get("wrappingAlg")
-    connectorKeyId = body.get("connectorKeyId")
-    requested_duration_hours = body.get("durationHours")
-    source_content_revision = body.get("sourceContentRevision")
-    source_manifest_revision = body.get("sourceManifestRevision")
+    # ConsentApprovalPayload enforces field constraints (min_length, max_length,
+    # pattern, ge/le bounds) before any handler logic runs.  ValidationError is
+    # surfaced as HTTP 422 with structured detail — same shape FastAPI uses for
+    # declared body parameters.
+    # Integrated by Abdul Gaffar — canonical model-level field constraints.
+    try:
+        _body = ConsentApprovalPayload.model_validate(await request.json())
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False))
+    userId = _body.userId
+    requestId = _body.requestId
+    encryptedData = _body.encryptedData  # Base64 ciphertext
+    encryptedIv = _body.encryptedIv  # Base64 IV
+    encryptedTag = _body.encryptedTag  # Base64 auth tag
+    wrappedExportKey = _body.wrappedExportKey
+    wrappedKeyIv = _body.wrappedKeyIv
+    wrappedKeyTag = _body.wrappedKeyTag
+    senderPublicKey = _body.senderPublicKey
+    wrappingAlg = _body.wrappingAlg
+    connectorKeyId = _body.connectorKeyId
+    requested_duration_hours = _body.durationHours
+    source_content_revision = _body.sourceContentRevision
+    source_manifest_revision = _body.sourceManifestRevision
 
     # Verify user is approving their own consent
     if token_data["user_id"] != userId:
