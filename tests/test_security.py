@@ -7,9 +7,16 @@ log sinks or debug surfaces, in compliance with the Zero-Knowledge principle.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from hushh_mcp.consent.pii_sanitizer import mask_email, mask_phone, sanitize_log_value, sanitize_payload
+from hushh_mcp.consent.pii_sanitizer import (
+    mask_email,
+    mask_phone,
+    sanitize_log_value,
+    sanitize_payload,
+)
 
 # ---------------------------------------------------------------------------
 # mask_email
@@ -19,6 +26,10 @@ from hushh_mcp.consent.pii_sanitizer import mask_email, mask_phone, sanitize_log
 class TestMaskEmail:
     def test_standard_email_masked(self):
         assert mask_email("alice@example.com") == "a***e@example.com"
+
+    def test_masked_email_contains_stars(self):
+        # Verify masking always inserts asterisks (re confirms the pattern).
+        assert re.search(r"\*+", mask_email("alice@example.com")) is not None
 
     def test_first_and_last_local_char_preserved(self):
         result = mask_email("john.doe@hushh.ai")
