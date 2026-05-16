@@ -5,6 +5,7 @@ Session token and user management endpoints.
 
 import logging
 import os
+import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -122,15 +123,28 @@ async def logout_session(
         revoked_count = 0
         for tok in active_tokens:
             token_id = tok.get("token_id")
+            tok_scope = tok.get("scope", "vault.owner")
+            tok_agent = tok.get("agent_id", "self")
             if token_id:
+                # In-memory revocation: fast path on this instance.
                 revoke_token(token_id)
+                # DB revocation: cross-instance consistency via event-sourcing.
+                revoke_event_id = f"REVOKED_SESSION_{int(time.time() * 1000)}_{revoked_count}"
+                await service.insert_event(
+                    user_id=request.userId,
+                    agent_id=tok_agent,
+                    scope=tok_scope,
+                    action="REVOKED",
+                    token_id=revoke_event_id,
+                    metadata={"reason": "logout"},
+                )
                 revoked_count += 1
 
         logger.info("session.logout.revoked count=%s user=%s", revoked_count, request.userId)
 
         return {
             "status": "success",
-            "message": f"Revoked {revoked_count} session token(s). Clear sessionStorage on the client.",
+            "message": "Session tokens revoked. Clear sessionStorage on the client.",
             "revoked_count": revoked_count,
         }
     except HTTPException:

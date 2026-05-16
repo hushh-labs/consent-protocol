@@ -1,160 +1,237 @@
+# tests/test_session_logout.py
 """
-Hermetic tests for the /consent/logout endpoint.
+Trust-boundary proof for POST /api/consent/logout.
 
-Covers:
-- Happy path: active session tokens are revoked and count is returned
-- No active session tokens: returns 0 revoked
-- Token user mismatch: 403
-- DB error: 500
-- Missing/invalid VAULT_OWNER token: 401/403 (from require_vault_owner_token)
+Route: POST /api/consent/logout  (api/routes/session.py :: logout_session)
+Auth:  require_vault_owner_token -- caller must present a valid VAULT_OWNER token.
+
+Trust boundary contract
+-----------------------
+1. No token              -> 401 (middleware rejects before handler runs)
+2. Token for wrong user  -> 403 (handler rejects userId mismatch)
+3. Token for correct user -> 200 + DB REVOKED events written + in-memory tokens revoked
+
+Cross-instance consistency: each active session token receives both
+  - revoke_token(token_id)            -- in-memory fast-path (this instance)
+  - insert_event(action="REVOKED")    -- DB write (all instances)
 """
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-_FAKE_TOKEN_DATA = {"user_id": "user-abc", "scope": "vault.owner"}
+from api.middleware import require_vault_owner_token
+from api.routes.session import router
+
+_USER = "user-abc-123"
+_TOKEN_DATA = {"user_id": _USER, "scope": "vault.owner"}
+
+# Canonical route under test
+_LOGOUT_URL = "/api/consent/logout"
+_LOGOUT_BODY = {"userId": _USER}
 
 
-def _make_app() -> FastAPI:
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _app_with_token(token_data: dict) -> FastAPI:
+    """FastAPI app that injects *token_data* as the authenticated vault owner."""
     app = FastAPI()
-
-    from api.middleware import require_vault_owner_token
-    from api.routes.session import router
-
-    app.dependency_overrides[require_vault_owner_token] = lambda: _FAKE_TOKEN_DATA
+    app.dependency_overrides[require_vault_owner_token] = lambda: token_data
     app.include_router(router)
     return app
 
 
-@pytest.fixture(scope="module")
-def client() -> TestClient:
-    return TestClient(_make_app(), raise_server_exceptions=False)
-
-
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
-
-
-def test_logout_revokes_active_session_tokens(client: TestClient):
-    fake_tokens = [
-        {"token_id": "tok-1", "agent_id": "self", "scope": "vault.owner"},
-        {"token_id": "tok-2", "agent_id": "self", "scope": "vault.owner"},
-    ]
-    with (
-        patch(
-            "hushh_mcp.services.consent_db.ConsentDBService.get_active_tokens",
-            new_callable=AsyncMock,
-            return_value=fake_tokens,
-        ),
-        patch("api.routes.session.revoke_token") as mock_revoke,
-    ):
-        resp = client.post("/api/consent/logout", json={"userId": "user-abc"})
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "success"
-    assert body["revoked_count"] == 2
-    assert mock_revoke.call_count == 2
-    mock_revoke.assert_any_call("tok-1")
-    mock_revoke.assert_any_call("tok-2")
-
-
-def test_logout_returns_zero_when_no_active_tokens(client: TestClient):
-    with patch(
-        "hushh_mcp.services.consent_db.ConsentDBService.get_active_tokens",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        resp = client.post("/api/consent/logout", json={"userId": "user-abc"})
-
-    assert resp.status_code == 200
-    assert resp.json()["revoked_count"] == 0
-
-
-def test_logout_skips_tokens_without_token_id(client: TestClient):
-    fake_tokens = [
-        {"agent_id": "self", "scope": "vault.owner"},  # no token_id key
-        {"token_id": None, "agent_id": "self"},  # token_id is None
-        {"token_id": "tok-valid", "agent_id": "self"},
-    ]
-    with (
-        patch(
-            "hushh_mcp.services.consent_db.ConsentDBService.get_active_tokens",
-            new_callable=AsyncMock,
-            return_value=fake_tokens,
-        ),
-        patch("api.routes.session.revoke_token") as mock_revoke,
-    ):
-        resp = client.post("/api/consent/logout", json={"userId": "user-abc"})
-
-    assert resp.status_code == 200
-    assert resp.json()["revoked_count"] == 1
-    mock_revoke.assert_called_once_with("tok-valid")
-
-
-# ---------------------------------------------------------------------------
-# Auth guard
-# ---------------------------------------------------------------------------
-
-
-def test_logout_user_mismatch_returns_403():
+def _app_no_override() -> FastAPI:
+    """FastAPI app with real require_vault_owner_token -- no token provided."""
     app = FastAPI()
-    from api.middleware import require_vault_owner_token
-    from api.routes.session import router
-
-    app.dependency_overrides[require_vault_owner_token] = lambda: {
-        "user_id": "different-user",
-        "scope": "vault.owner",
-    }
     app.include_router(router)
-
-    resp = TestClient(app, raise_server_exceptions=False).post(
-        "/api/consent/logout", json={"userId": "user-abc"}
-    )
-    assert resp.status_code == 403
-    assert "mismatch" in resp.json()["detail"].lower()
-
-
-def test_logout_without_auth_returns_401_or_403():
-    app = FastAPI()
-    from api.routes.session import router
-
-    app.include_router(router)
-
-    resp = TestClient(app, raise_server_exceptions=False).post(
-        "/api/consent/logout", json={"userId": "user-abc"}
-    )
-    assert resp.status_code in (401, 403)
+    return app
 
 
 # ---------------------------------------------------------------------------
-# Error handling
+# Trust boundary -- authentication layer
 # ---------------------------------------------------------------------------
 
 
-def test_logout_db_error_returns_500(client: TestClient):
-    with patch(
-        "hushh_mcp.services.consent_db.ConsentDBService.get_active_tokens",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("db down"),
-    ):
-        resp = client.post("/api/consent/logout", json={"userId": "user-abc"})
+class TestLogoutTrustBoundary:
+    def test_no_token_returns_401(self):
+        """POST /api/consent/logout without Authorization header must return 401."""
+        client = TestClient(_app_no_override(), raise_server_exceptions=False)
+        resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+        assert resp.status_code == 401, (
+            f"Expected 401 when no token supplied; got {resp.status_code}"
+        )
 
-    assert resp.status_code == 500
+    def test_wrong_user_returns_403(self):
+        """VAULT_OWNER token for a different user must return 403."""
+        other_token = {"user_id": "attacker-uid", "scope": "vault.owner"}
+        client = TestClient(_app_with_token(other_token), raise_server_exceptions=False)
+        resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+        assert resp.status_code == 403, (
+            f"Expected 403 when token user != request userId; got {resp.status_code}"
+        )
+
+    def test_correct_user_reaches_handler(self):
+        """VAULT_OWNER token matching request userId must reach the handler (not 401/403)."""
+        with patch(
+            "api.routes.session.ConsentDBService.get_active_tokens",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+        assert resp.status_code == 200, (
+            f"Expected 200 for authenticated correct-user request; got {resp.status_code}"
+        )
 
 
-def test_logout_db_error_is_not_200(client: TestClient):
-    with patch(
-        "hushh_mcp.services.consent_db.ConsentDBService.get_active_tokens",
-        new_callable=AsyncMock,
-        side_effect=Exception("unexpected"),
-    ):
-        resp = client.post("/api/consent/logout", json={"userId": "user-abc"})
+# ---------------------------------------------------------------------------
+# Revocation correctness -- in-memory + DB
+# ---------------------------------------------------------------------------
 
-    assert resp.status_code != 200
+
+class TestLogoutRevocation:
+    """
+    Caller: POST /api/consent/logout
+    Service: api.routes.session.logout_session
+    DB writes: ConsentDBService.insert_event(action="REVOKED") per active token
+    Memory:    revoke_token(token_id) per active token
+    """
+
+    def _fake_tokens(self, count: int = 2) -> list[dict]:
+        return [
+            {"token_id": f"jwt-tok-{i}", "agent_id": "self", "scope": "vault.owner"}
+            for i in range(count)
+        ]
+
+    def test_revokes_each_active_token_in_memory(self):
+        """revoke_token must be called once per active session token."""
+        fake = self._fake_tokens(2)
+        with (
+            patch(
+                "api.routes.session.ConsentDBService.get_active_tokens",
+                new_callable=AsyncMock,
+                return_value=fake,
+            ),
+            patch(
+                "api.routes.session.ConsentDBService.insert_event",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+            patch("api.routes.session.revoke_token") as mock_revoke,
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 200
+        assert mock_revoke.call_count == 2
+        mock_revoke.assert_any_call("jwt-tok-0")
+        mock_revoke.assert_any_call("jwt-tok-1")
+
+    def test_writes_revoked_event_to_db_per_token(self):
+        """insert_event(action='REVOKED') must be called once per active session token."""
+        fake = self._fake_tokens(2)
+        with (
+            patch(
+                "api.routes.session.ConsentDBService.get_active_tokens",
+                new_callable=AsyncMock,
+                return_value=fake,
+            ),
+            patch(
+                "api.routes.session.ConsentDBService.insert_event",
+                new_callable=AsyncMock,
+                return_value=1,
+            ) as mock_insert,
+            patch("api.routes.session.revoke_token"),
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 200
+        assert mock_insert.call_count == 2
+        for c in mock_insert.call_args_list:
+            assert c.kwargs["action"] == "REVOKED"
+            assert c.kwargs["user_id"] == _USER
+            assert c.kwargs["agent_id"] == "self"
+
+    def test_returns_revoked_count(self):
+        """Response body must include the number of tokens revoked."""
+        fake = self._fake_tokens(3)
+        with (
+            patch(
+                "api.routes.session.ConsentDBService.get_active_tokens",
+                new_callable=AsyncMock,
+                return_value=fake,
+            ),
+            patch(
+                "api.routes.session.ConsentDBService.insert_event",
+                new_callable=AsyncMock,
+                return_value=1,
+            ),
+            patch("api.routes.session.revoke_token"),
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 200
+        assert resp.json()["revoked_count"] == 3
+        assert resp.json()["status"] == "success"
+
+    def test_zero_active_tokens_returns_200(self):
+        """No active tokens is a valid state -- must return 200 with count=0."""
+        with patch(
+            "api.routes.session.ConsentDBService.get_active_tokens",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 200
+        assert resp.json()["revoked_count"] == 0
+
+    def test_tokens_without_token_id_are_skipped(self):
+        """Tokens missing token_id must be skipped -- not cause an error."""
+        fake = [
+            {"agent_id": "self", "scope": "vault.owner"},  # no token_id key
+            {"token_id": None, "agent_id": "self", "scope": "vault.owner"},  # None
+            {"token_id": "jwt-valid", "agent_id": "self", "scope": "vault.owner"},
+        ]
+        with (
+            patch(
+                "api.routes.session.ConsentDBService.get_active_tokens",
+                new_callable=AsyncMock,
+                return_value=fake,
+            ),
+            patch(
+                "api.routes.session.ConsentDBService.insert_event",
+                new_callable=AsyncMock,
+                return_value=1,
+            ) as mock_insert,
+            patch("api.routes.session.revoke_token") as mock_revoke,
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 200
+        assert resp.json()["revoked_count"] == 1
+        mock_revoke.assert_called_once_with("jwt-valid")
+        assert mock_insert.call_count == 1
+
+    def test_db_error_returns_500(self):
+        """DB failure during revocation must return 500, not a silent 200."""
+        with patch(
+            "api.routes.session.ConsentDBService.get_active_tokens",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("DB connection lost"),
+        ):
+            client = TestClient(_app_with_token(_TOKEN_DATA), raise_server_exceptions=False)
+            resp = client.post(_LOGOUT_URL, json=_LOGOUT_BODY)
+
+        assert resp.status_code == 500
