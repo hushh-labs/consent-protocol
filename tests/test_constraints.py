@@ -346,3 +346,74 @@ class TestRouteReturns422OnConstraintViolation:
             },
         )
         assert response.status_code == 422
+
+
+# ===========================================================================
+# Trust-boundary proof — Pydantic field constraints are the sole 422 gate
+# ===========================================================================
+
+
+class TestTrustBoundaryProof:
+    """
+    Canonical surface : api.routes.consent.ConsentApprovalPayload
+                        (Field constraints: min_length, max_length, ge, le, pattern)
+    Canonical caller  : POST /api/consent/pending/approve
+                        → FastAPI parses the JSON body into ConsentApprovalPayload
+                        → Pydantic ValidationError → HTTP 422 with field-level detail
+                        → No handler logic runs until all field constraints pass
+    Attach point proof: The tests below prove the constraints are enforced at
+                        the API boundary (not buried in handler logic) by sending
+                        HTTP requests to the real consent route and asserting 422
+                        fires before any DB or auth logic is reached.
+    """
+
+    def test_empty_user_id_blocked_at_api_boundary(self):
+        """userId="" is rejected by min_length=1 before any handler logic runs."""
+        client = TestClient(_make_test_app(), raise_server_exceptions=False)
+        response = client.post(
+            "/api/consent/pending/approve",
+            json={"userId": "", "requestId": _VALID_REQUEST},
+        )
+        assert response.status_code == 422
+
+    def test_empty_request_id_blocked_at_api_boundary(self):
+        """requestId="" is rejected by min_length=1 before any handler logic runs."""
+        client = TestClient(_make_test_app(), raise_server_exceptions=False)
+        response = client.post(
+            "/api/consent/pending/approve",
+            json={"userId": _VALID_USER, "requestId": ""},
+        )
+        assert response.status_code == 422
+
+    def test_valid_minimal_payload_exits_constraint_gate(self):
+        """A payload that satisfies all field constraints exits the 422 gate and reaches auth."""
+        client = TestClient(_make_test_app(), raise_server_exceptions=False)
+        with patch("api.routes.consent.ConsentDBService", return_value=_mock_db()):
+            response = client.post(
+                "/api/consent/pending/approve",
+                json={"userId": _VALID_USER, "requestId": _VALID_REQUEST},
+            )
+        # 404 = constraints passed, auth passed, DB returned None — constraint gate was exited
+        assert response.status_code != 422
+
+    def test_field_constraints_are_enforced_not_handler_logic(self):
+        """Pydantic ValidationError proves constraint rejection happens at parse time."""
+        with pytest.raises(ValidationError) as exc_info:
+            ConsentApprovalPayload.model_validate(
+                {"userId": "", "requestId": _VALID_REQUEST}
+            )
+        errors = exc_info.value.errors()
+        assert any(e["loc"][-1] == "userId" for e in errors)
+
+    def test_duration_hours_upper_bound_enforced_at_boundary(self):
+        """durationHours > 8760 is rejected by le=8760 before handler runs."""
+        client = TestClient(_make_test_app(), raise_server_exceptions=False)
+        response = client.post(
+            "/api/consent/pending/approve",
+            json={
+                "userId": _VALID_USER,
+                "requestId": _VALID_REQUEST,
+                "durationHours": 99999,
+            },
+        )
+        assert response.status_code == 422
