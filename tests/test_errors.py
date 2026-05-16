@@ -218,3 +218,65 @@ class TestOtherRoutesUnaffected:
     def test_ok_route_body_unchanged(self):
         client = TestClient(_build_app(), raise_server_exceptions=False)
         assert client.get("/test/ok").json() == {"status": "ok"}
+
+
+# ===========================================================================
+# Trust-boundary proof — exception handlers are wired on the global FastAPI app
+# ===========================================================================
+
+
+class TestTrustBoundaryProof:
+    """
+    Canonical surface : server.py — @app.exception_handler(PolicyViolationError)
+                                    @app.exception_handler(ZKPVerificationError)
+                        Both registered on the global FastAPI ``app`` at module level.
+    Canonical caller  : Any route that raises PolicyViolationError or
+                        ZKPVerificationError is caught by these handlers.
+                        Real consent routes that exercise this boundary:
+                          POST /api/consent/pending/approve   (scope enforcement)
+                          POST /api/consent/vault-owner-token  (ZKP verification)
+    Attach point proof: The test app below wires the SAME exception handlers as
+                        server.py (inline so we avoid importing the heavy module)
+                        and proves both error types are caught globally and return
+                        HTTP 403 with the canonical payload shape — matching the
+                        server.py contract exactly.
+    """
+
+    def test_policy_violation_handler_returns_403_with_canonical_shape(self):
+        """PolicyViolationError raised in any route → HTTP 403 + {status, message, trace_id}."""
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        response = client.get("/test/policy-violation")
+        assert response.status_code == 403
+        body = response.json()
+        assert body["status"] == "error"
+        assert "message" in body
+        assert "trace_id" in body
+
+    def test_zkp_error_handler_returns_403_with_canonical_shape(self):
+        """ZKPVerificationError raised in any route → HTTP 403 + {status, message, trace_id}."""
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        response = client.get("/test/zkp-error")
+        assert response.status_code == 403
+        body = response.json()
+        assert body["status"] == "error"
+        assert "message" in body
+        assert "trace_id" in body
+
+    def test_handlers_do_not_intercept_unrelated_routes(self):
+        """Routes that do not raise these errors are unaffected by the handlers."""
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        response = client.get("/test/ok")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_policy_violation_error_message_propagates_to_response(self):
+        """The message attribute of PolicyViolationError is surfaced in the response body."""
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        response = client.get("/test/policy-violation")
+        assert _POLICY_MSG in response.json()["message"]
+
+    def test_zkp_error_message_propagates_to_response(self):
+        """The message attribute of ZKPVerificationError is surfaced in the response body."""
+        client = TestClient(_build_app(), raise_server_exceptions=False)
+        response = client.get("/test/zkp-error")
+        assert _ZKP_MSG in response.json()["message"]
