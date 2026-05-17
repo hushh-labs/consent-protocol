@@ -30,6 +30,7 @@ Usage:
     )
 """
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -41,6 +42,11 @@ from hushh_mcp.consent.scope_helpers import scope_matches
 from hushh_mcp.services.consent_request_links import build_consent_request_url
 
 logger = logging.getLogger(__name__)
+
+
+def _token_fingerprint(token: str) -> str:
+    """Return a 12-char SHA-256 fingerprint for safe log messages."""
+    return hashlib.sha256(token.encode()).hexdigest()[:12]
 
 
 class ConsentDBService:
@@ -1701,8 +1707,8 @@ class ConsentDBService:
         normalized_bundle = self._normalize_wrapped_key_bundle(wrapped_key_bundle)
         if normalized_bundle is None:
             logger.error(
-                "Refusing to store consent export without a wrapped key bundle token=%s",
-                consent_token[:30],
+                "Refusing to store consent export without a wrapped key bundle token_fp=%s",
+                _token_fingerprint(consent_token),
             )
             return False
 
@@ -1731,7 +1737,7 @@ class ConsentDBService:
                 on_conflict="consent_token",
             ).execute()
 
-            logger.info(f"Stored consent export for token: {consent_token[:30]}...")
+            logger.info("Stored consent export for token_fp=%s", _token_fingerprint(consent_token))
             return True
         except Exception as e:
             logger.error(f"Failed to store consent export: {e}")
@@ -1811,7 +1817,7 @@ class ConsentDBService:
         try:
             supabase.table("consent_exports").delete().eq("consent_token", consent_token).execute()
 
-            logger.info(f"Deleted consent export for token: {consent_token[:30]}...")
+            logger.info("Deleted consent export for token_fp=%s", _token_fingerprint(consent_token))
             return True
         except Exception as e:
             logger.error(f"Failed to delete consent export: {e}")
