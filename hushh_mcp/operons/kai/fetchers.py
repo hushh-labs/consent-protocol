@@ -881,7 +881,7 @@ async def fetch_sec_filings(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(f"[SEC Fetcher] Fetching filings for {ticker} - user {user_id}")
+    logger.info("[SEC Fetcher] Fetching filings for %s (user=[redacted])", ticker)
 
     # SEC EDGAR API Implementation
     # Reference: https://www.sec.gov/edgar/sec-api-documentation
@@ -1178,7 +1178,7 @@ async def fetch_market_news(
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
-    logger.info(f"[News Fetcher] Fetching news for {ticker} - user {user_id}")
+    logger.info("[News Fetcher] Fetching news for %s (user=[redacted])", ticker)
 
     errors: list[str] = []
     articles: list[Dict[str, Any]] = []
@@ -1500,7 +1500,7 @@ async def fetch_peer_data(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(f"[Peer Data Fetcher] Fetching peers for {ticker} - user {user_id}")
+    logger.info("[Peer Data Fetcher] Fetching peers for %s (user=[redacted])", ticker)
 
     peers: list[str] = []
     errors: list[str] = []

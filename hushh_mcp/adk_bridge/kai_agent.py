@@ -83,7 +83,7 @@ class KaiA2AServer(A2AServer):
             ticker = input_text.strip().upper()
 
             # Run Full Analysis Pipeline
-            logger.info(f"Starting A2A Analysis for {ticker} (User: {user_id})")
+            logger.info("Starting A2A Analysis for %s (user=[redacted])", ticker)
             result_text = self._run_analysis_pipeline(user_id, consent_token, ticker)
 
             return Message(

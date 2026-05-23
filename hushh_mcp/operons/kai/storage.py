@@ -122,7 +122,7 @@ def retrieve_decision_card(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(f"[Storage Operon] Retrieving decision for user {user_id}")
+    logger.info("[Storage Operon] Retrieving decision (user=[redacted])")
 
     # Decrypt using client-provided vault key
     try:
@@ -173,7 +173,7 @@ def retrieve_decision_history(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info(f"[Storage Operon] Retrieving decision history for user {user_id}")
+    logger.info("[Storage Operon] Retrieving decision history (user=[redacted])")
 
     # This operon just validates consent
     # The actual database query is done by the API endpoint
