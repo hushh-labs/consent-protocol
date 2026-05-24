@@ -1,20 +1,27 @@
-"""Marketplace discovery routes for RIA and investor ecosystems.
-
-Canonical attach points
------------------------
-api.routes.marketplace.list_marketplace_rias         -> GET /api/marketplace/rias
-api.routes.marketplace.list_marketplace_investors    -> GET /api/marketplace/investors
-api.routes.marketplace.get_marketplace_ria           -> GET /api/marketplace/ria/{ria_id}
-"""
+"""Marketplace discovery routes for RIA and investor ecosystems."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-from hushh_mcp.services.ria_iam_service import IAMSchemaNotReadyError, RIAIAMService
+from api.middleware import require_firebase_auth
+from hushh_mcp.services.ria_iam_service import (
+    IAMSchemaNotReadyError,
+    RIAIAMPolicyError,
+    RIAIAMService,
+)
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
+
+
+class MarketplaceInvestorActionRequest(BaseModel):
+    action: str = Field(..., max_length=32)
+    source_type: str | None = Field(default=None, max_length=32)
+    public_profile_id: str | int | None = None
+    target_user_id: str | None = Field(default=None, max_length=256)
+    metadata: dict | None = None
 
 
 def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
@@ -52,19 +59,94 @@ async def list_marketplace_rias(
 async def list_marketplace_investors(
     query: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=20, ge=1, le=50),
+    persona: str | None = Query(default="ria", max_length=50),
+    deck: str | None = Query(default="qualified", max_length=50),
+    location: str | None = Query(default=None, max_length=100),
 ):
     service = RIAIAMService()
     try:
-        items = await service.search_marketplace_investors(query=query, limit=limit)
+        items = await service.search_marketplace_investors(
+            query=query,
+            limit=limit,
+            persona=persona,
+            deck=deck,
+            location=location,
+        )
         return {"items": items}
     except IAMSchemaNotReadyError as exc:
         return _iam_schema_not_ready_response(str(exc))
 
 
-@router.get("/ria/{ria_id}")
-async def get_marketplace_ria(
-    ria_id: str = Path(..., min_length=1, max_length=128),
+@router.get("/investors/deck")
+async def list_marketplace_investor_deck(
+    query: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=12, ge=1, le=50),
+    persona: str | None = Query(default="ria", max_length=50),
+    deck: str | None = Query(default="qualified", max_length=50),
+    location: str | None = Query(default=None, max_length=100),
+    firebase_uid: str = Depends(require_firebase_auth),
 ):
+    service = RIAIAMService()
+    try:
+        return await service.search_marketplace_investor_deck(
+            firebase_uid,
+            query=query,
+            limit=limit,
+            persona=persona,
+            deck=deck,
+            location=location,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/investors/actions")
+async def list_marketplace_investor_actions(
+    status: str | None = Query(default=None, max_length=32),
+    action: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=100),
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        items = await service.list_marketplace_investor_actions(
+            firebase_uid,
+            status=status,
+            action=action,
+            limit=limit,
+        )
+        return {"items": items}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/investors/actions")
+async def record_marketplace_investor_action(
+    payload: MarketplaceInvestorActionRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        return await service.record_marketplace_investor_action(
+            firebase_uid,
+            action=payload.action,
+            source_type=payload.source_type,
+            public_profile_id=payload.public_profile_id,
+            target_user_id=payload.target_user_id,
+            metadata=payload.metadata,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/ria/{ria_id}")
+async def get_marketplace_ria(ria_id: str = Path(..., min_length=1, max_length=128)):
     service = RIAIAMService()
     try:
         profile = await service.get_marketplace_ria_profile(ria_id)
