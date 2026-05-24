@@ -96,7 +96,7 @@ def test_malformed_request_id_header_is_replaced_with_fresh_id():
         ("GET", "/api/kai/market/insights/{user_id}", 401, "4xx_expected"),
         ("POST", "/db/vault/get", 404, "4xx_expected"),
         ("POST", "/db/vault/bootstrap-state", 404, "4xx_expected"),
-        ("GET", "/api/kai/analyze/run/start", 409, "4xx_unexpected"),
+        ("POST", "/api/kai/analyze/run/start", 409, "4xx_expected"),
     ],
 )
 def test_status_bucket_parametrized(method, route, status, expected_bucket):
