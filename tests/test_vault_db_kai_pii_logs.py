@@ -38,9 +38,7 @@ def log_capture():
         logging.getLogger(name).removeHandler(handler)
 
 
-# ---------------------------------------------------------------------------
-# Regression: old formats contained user_id
-# ---------------------------------------------------------------------------
+# Regression: old formats contained user_id.
 
 
 @pytest.mark.parametrize(
@@ -70,9 +68,7 @@ def test_old_log_format_contained_user_id(old_msg: str) -> None:
     assert _USER_ID in old_msg
 
 
-# ---------------------------------------------------------------------------
-# New formats must NOT contain user_id
-# ---------------------------------------------------------------------------
+# New formats must not contain user_id.
 
 
 @pytest.mark.parametrize(
@@ -84,7 +80,7 @@ def test_old_log_format_contained_user_id(old_msg: str) -> None:
         "vault.write.ok domain=financial field=portfolio",
         "vault.write_batch.ok domain=financial field_count=3",
         "vault.delete.ok domain=financial field_count=2",
-        f"vault.DEPRECATED: unauthenticated access domain=financial (user=[redacted])",
+        "vault.DEPRECATED: unauthenticated access domain=financial (user=[redacted])",
         f"[Fundamental Operon] Analyzing {_TICKER} (user=[redacted])",
         f"[Sentiment Operon] Analyzing {_TICKER} (user=[redacted])",
         f"[Valuation Operon] Analyzing {_TICKER} (user=[redacted])",
@@ -106,9 +102,7 @@ def test_new_log_format_has_no_user_id(new_msg: str) -> None:
     assert f"User: {_USER_ID}" not in new_msg
 
 
-# ---------------------------------------------------------------------------
-# End-to-end: emit via logger and confirm nothing leaks
-# ---------------------------------------------------------------------------
+# Emit via logger and confirm nothing leaks.
 
 
 def test_vault_and_kai_logs_emit_no_user_id(log_capture) -> None:
