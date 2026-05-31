@@ -747,7 +747,7 @@ async def fetch_market_data_batch(
         )
 
         if not valid:
-            logger.error(f"[Market Data Batch Fetcher] TrustLink validation failed: {reason}")
+            logger.error("[Market Data Batch Fetcher] trust_link_check_failed")
             raise PermissionError(f"Market data access denied: {reason}")
 
         if token.user_id != user_id:
@@ -875,7 +875,7 @@ async def fetch_sec_filings(
     )
 
     if not valid:
-        logger.error(f"[SEC Fetcher] TrustLink validation failed: {reason}")
+        logger.error("[SEC Fetcher] trust_link_check_failed")
         raise PermissionError(f"SEC data access denied: {reason}")
 
     if token.user_id != user_id:
@@ -1085,7 +1085,7 @@ async def fetch_sec_filings(
             )
 
         except Exception as facts_error:
-            logger.warning(f"[SEC Fetcher] Could not fetch company facts: {facts_error}")
+            logger.warning("[SEC Fetcher] company_facts_unavailable")
             raise RealtimeDataUnavailable(
                 "sec_filings",
                 f"SEC companyfacts unavailable for {ticker}: {facts_error}",
@@ -1172,7 +1172,7 @@ async def fetch_market_news(
         )
 
         if not valid:
-            logger.error(f"[News Fetcher] TrustLink validation failed: {reason}")
+            logger.error("[News Fetcher] trust_link_check_failed")
             raise PermissionError(f"News data access denied: {reason}")
 
         if token.user_id != user_id:
@@ -1310,7 +1310,7 @@ async def fetch_market_data(
         )
 
         if not valid:
-            logger.error(f"[Market Data Fetcher] TrustLink validation failed: {reason}")
+            logger.error("[Market Data Fetcher] trust_link_check_failed")
             raise PermissionError(f"Market data access denied: {reason}")
 
         if token.user_id != user_id:

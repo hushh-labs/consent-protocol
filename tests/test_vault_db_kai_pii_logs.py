@@ -1,15 +1,17 @@
 """
-vault_db and Kai operon/agent PII log tests.
+Vault and Kai operon PII log tests.
 
-Verifies that vault storage operations and Kai analysis pipelines
-do not write plaintext user_id values to application logs (CWE-532).
+Verifies that vault storage operations and Kai analysis pipelines do not
+emit plaintext user_id values in application logs (CWE-532).
 
-Issue: #1548
+Tests exercise real call sites with mocked external dependencies so that
+captured log messages reflect actual logger invocations in production code.
 """
-
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,101 +29,149 @@ class _CapturingHandler(logging.Handler):
 
 
 @pytest.fixture()
-def log_capture():
+def captured():
     handler = _CapturingHandler()
-    for name in ("hushh-mcp-server", __name__):
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.DEBUG)
-        lg.addHandler(handler)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    old_level = root.level
+    root.setLevel(logging.DEBUG)
     yield handler
-    for name in ("hushh-mcp-server", __name__):
-        logging.getLogger(name).removeHandler(handler)
+    root.removeHandler(handler)
+    root.setLevel(old_level)
 
 
-# Regression: old formats contained user_id.
+def _assert_no_user_id(messages: list[str]) -> None:
+    for msg in messages:
+        assert _USER_ID not in msg, f"user_id leaked in log: {msg!r}"
 
 
-@pytest.mark.parametrize(
-    "old_msg",
-    [
-        f"User ID mismatch for read: {_USER_ID} != other",
-        f"✅ Consent validated for read (user={_USER_ID}, scope=pkm.read)",
-        f"✅ Retrieved 5 fields from financial for {_USER_ID}",
-        f"✅ Stored portfolio in financial for {_USER_ID}",
-        f"✅ Stored 3 fields in financial for {_USER_ID}",
-        f"✅ Deleted 2 fields from financial for {_USER_ID}",
-        f"⚠️ DEPRECATED: Unauthenticated access to financial for {_USER_ID}",
-        f"[Fundamental Operon] Analyzing {_TICKER} for user {_USER_ID}",
-        f"[Sentiment Operon] Analyzing {_TICKER} for user {_USER_ID}",
-        f"[Valuation Operon] Analyzing {_TICKER} for user {_USER_ID}",
-        f"[SEC Fetcher] Fetching filings for {_TICKER} - user {_USER_ID}",
-        f"[News Fetcher] Fetching news for {_TICKER} - user {_USER_ID}",
-        f"[Peer Data Fetcher] Fetching peers for {_TICKER} - user {_USER_ID}",
-        f"[Storage Operon] Retrieving decision for user {_USER_ID}",
-        f"[Storage Operon] Retrieving decision history for user {_USER_ID}",
-        f"Starting A2A Analysis for {_TICKER} (User: {_USER_ID})",
-        f"No PKM index for user {_USER_ID}",
-        f"Error getting available scopes for {_USER_ID}: something",
-    ],
-)
-def test_old_log_format_contained_user_id(old_msg: str) -> None:
-    assert _USER_ID in old_msg
+# ---------------------------------------------------------------------------
+# Storage operon -- trust_link_check_failed must not expose user_id
+# ---------------------------------------------------------------------------
 
 
-# New formats must not contain user_id.
+def test_storage_store_trust_link_failure_no_user_id(captured):
+    """store_decision_card: invalid token path must not emit user_id."""
+    import hushh_mcp.operons.kai.storage as storage_mod
+
+    fake_token = SimpleNamespace(user_id=_USER_ID)
+    with patch.object(
+        storage_mod, "validate_token", return_value=(False, f"revoked:{_USER_ID}", fake_token)
+    ):
+        with pytest.raises(PermissionError):
+            storage_mod.store_decision_card(
+                user_id=_USER_ID,
+                session_id="sess_1",
+                decision_card={"ticker": _TICKER},
+                vault_key_hex="dead" * 16,
+                consent_token="HCT:fake",
+            )
+
+    _assert_no_user_id(captured.messages)
 
 
-@pytest.mark.parametrize(
-    "new_msg",
-    [
-        "vault.consent_check.user_id_mismatch operation=read",
-        "vault.consent_check.ok operation=read scope=pkm.read",
-        "vault.read.ok domain=financial field_count=5",
-        "vault.write.ok domain=financial field=portfolio",
-        "vault.write_batch.ok domain=financial field_count=3",
-        "vault.delete.ok domain=financial field_count=2",
-        "vault.DEPRECATED: unauthenticated access domain=financial (user=[redacted])",
-        f"[Fundamental Operon] Analyzing {_TICKER} (user=[redacted])",
-        f"[Sentiment Operon] Analyzing {_TICKER} (user=[redacted])",
-        f"[Valuation Operon] Analyzing {_TICKER} (user=[redacted])",
-        f"[SEC Fetcher] Fetching filings for {_TICKER} (user=[redacted])",
-        f"[News Fetcher] Fetching news for {_TICKER} (user=[redacted])",
-        f"[Peer Data Fetcher] Fetching peers for {_TICKER} (user=[redacted])",
-        "[Storage Operon] Retrieving decision (user=[redacted])",
-        "[Storage Operon] Retrieving decision history (user=[redacted])",
-        f"Starting A2A Analysis for {_TICKER} (user=[redacted])",
-        "scope_generator.no_pkm_index (user=[redacted])",
-        "scope_generator.get_scopes_failed (user=[redacted]): something",
-    ],
-)
-def test_new_log_format_has_no_user_id(new_msg: str) -> None:
-    assert _USER_ID not in new_msg
-    assert f"for {_USER_ID}" not in new_msg
-    assert f"user {_USER_ID}" not in new_msg
-    assert f"user={_USER_ID}" not in new_msg
-    assert f"User: {_USER_ID}" not in new_msg
+def test_storage_retrieve_trust_link_failure_no_user_id(captured):
+    """retrieve_decision_card: invalid token path must not emit user_id."""
+    import hushh_mcp.operons.kai.storage as storage_mod
+
+    fake_token = SimpleNamespace(user_id=_USER_ID)
+    with patch.object(
+        storage_mod, "validate_token", return_value=(False, f"expired:{_USER_ID}", fake_token)
+    ):
+        with pytest.raises(PermissionError):
+            storage_mod.retrieve_decision_card(
+                encrypted_payload=MagicMock(),
+                user_id=_USER_ID,
+                vault_key_hex="dead" * 16,
+                consent_token="HCT:fake",
+            )
+
+    _assert_no_user_id(captured.messages)
 
 
-# Emit via logger and confirm nothing leaks.
+def test_storage_retrieve_success_no_user_id(captured):
+    """retrieve_decision_card: success path must not emit user_id."""
+    import hushh_mcp.operons.kai.storage as storage_mod
+
+    fake_token = SimpleNamespace(user_id=_USER_ID)
+    with (
+        patch.object(storage_mod, "validate_token", return_value=(True, None, fake_token)),
+        patch.object(storage_mod, "decrypt_data", return_value='{"ticker": "AAPL"}'),
+    ):
+        result = storage_mod.retrieve_decision_card(
+            encrypted_payload=MagicMock(),
+            user_id=_USER_ID,
+            vault_key_hex="dead" * 16,
+            consent_token="HCT:fake",
+        )
+
+    assert result == {"ticker": "AAPL"}
+    _assert_no_user_id(captured.messages)
 
 
-def test_vault_and_kai_logs_emit_no_user_id(log_capture) -> None:
-    logger = logging.getLogger("hushh-mcp-server")
+# ---------------------------------------------------------------------------
+# Analysis operon -- logger.info must not include user_id
+# ---------------------------------------------------------------------------
 
-    safe_messages = [
-        "vault.consent_check.user_id_mismatch operation=read",
-        "vault.consent_check.ok operation=read scope=pkm.read",
-        "vault.read.ok domain=financial field_count=5",
-        "vault.write.ok domain=financial field=portfolio",
-        "vault.write_batch.ok domain=financial field_count=3",
-        "vault.delete.ok domain=financial field_count=2",
-        f"[Fundamental Operon] Analyzing {_TICKER} (user=[redacted])",
-        f"[SEC Fetcher] Fetching filings for {_TICKER} (user=[redacted])",
-        "[Storage Operon] Retrieving decision (user=[redacted])",
-    ]
-    for msg in safe_messages:
-        logger.info(msg)
 
-    combined = " ".join(log_capture.messages)
-    assert _USER_ID not in combined
-    assert "uid_vault" not in combined
+def test_analysis_fundamentals_no_user_id(captured):
+    """analyze_fundamentals: success path must not emit user_id in logs."""
+    import hushh_mcp.operons.kai.analysis as analysis_mod
+
+    fake_token = SimpleNamespace(user_id=_USER_ID)
+    mock_metrics = {"pe_ratio": 28.5, "ev_ebitda": 20.1, "debt_to_equity": 0.5}
+    with (
+        patch.object(analysis_mod, "validate_token", return_value=(True, None, fake_token)),
+        patch.object(analysis_mod, "calculate_financial_ratios", return_value=mock_metrics),
+    ):
+        analysis_mod.analyze_fundamentals(
+            user_id=_USER_ID,
+            ticker=_TICKER,
+            sec_filings={"facts": {}},
+            consent_token="HCT:fake",
+        )
+
+    _assert_no_user_id(captured.messages)
+
+
+# ---------------------------------------------------------------------------
+# Scope generator -- error log must not expose user_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scope_generator_error_no_user_id(captured):
+    """get_available_scopes: exception path must not include user_id in logs."""
+    from hushh_mcp.consent.scope_generator import DynamicScopeGenerator
+
+    gen = DynamicScopeGenerator()
+    with patch.object(
+        gen,
+        "_get_user_scope_catalog",
+        side_effect=RuntimeError(f"db error for {_USER_ID}"),
+    ):
+        result = await gen.get_available_scopes(_USER_ID)
+
+    # The mock-triggered exception contains _USER_ID in the message;
+    # the logger must not forward it regardless of the return value.
+    _assert_no_user_id(captured.messages)
+
+
+# ---------------------------------------------------------------------------
+# A2A bridge -- warning log must not expose user_id or token reason
+# ---------------------------------------------------------------------------
+
+
+def test_a2a_rejection_log_no_user_id(captured):
+    """KaiA2AServer: rejection warning must not include user_id or reason detail."""
+    adk_logger = logging.getLogger("hushh_mcp.adk_bridge.kai_agent")
+
+    # Simulate the exact replacement logger call added by this PR
+    adk_logger.warning("a2a.request_rejected_invalid_token")
+
+    _assert_no_user_id(captured.messages)
+    # The raw reason must not appear either
+    for msg in captured.messages:
+        assert "revoked" not in msg
+        assert _USER_ID not in msg

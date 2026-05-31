@@ -58,7 +58,7 @@ class KaiA2AServer(A2AServer):
             validation = validate_a2a_consent_token("agent_kai", consent_token)
 
             if not validation.ok or not validation.user_id:
-                logger.warning(f"A2A Request rejected: Invalid Token ({validation.reason})")
+                logger.warning("a2a.request_rejected_invalid_token")
                 return self._create_error_response(
                     message, f"Access Denied: Invalid Consent Token. {validation.reason}"
                 )
@@ -76,7 +76,7 @@ class KaiA2AServer(A2AServer):
                     )
                 )
             except Exception as e:
-                logger.error(f"Failed to log A2A access: {e}")
+                logger.error("a2a.audit_log_failed")
 
             # 3. PROCESSING
             input_text = message.content.text
@@ -94,8 +94,8 @@ class KaiA2AServer(A2AServer):
             )
 
         except Exception as e:
-            logger.exception("Error in handle_message")
-            return self._create_error_response(message, f"Internal Error: {str(e)}")
+            logger.exception("Error in handle_message exc_type=%s", type(e).__name__)
+            return self._create_error_response(message, "Internal analysis error. Please try again.")
 
     def _run_async(self, coro):
         """Helper to run async code in this sync method."""

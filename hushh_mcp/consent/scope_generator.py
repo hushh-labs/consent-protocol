@@ -363,7 +363,7 @@ class DynamicScopeGenerator:
                 .execute()
             )
         except Exception as e:
-            logger.error("Error getting scope entries for %s: %s", user_id, e)
+            logger.error("scope_generator.get_scope_entries_failed")
             return []
 
         def _source_rank(kind: str) -> int:
