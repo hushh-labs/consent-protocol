@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field, ValidationError
 
 from api.middleware import require_vault_owner_token
@@ -1434,8 +1434,8 @@ async def start_or_resume_upgrade(
 
 @router.post("/upgrade/runs/{run_id}/status", response_model=PkmUpgradeStatusResponse)
 async def update_upgrade_run_status(
-    run_id: str,
     request: UpdateUpgradeRunRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data.get("user_id") != request.user_id:
@@ -1459,9 +1459,9 @@ async def update_upgrade_run_status(
 
 @router.post("/upgrade/runs/{run_id}/steps/{domain}", response_model=PkmUpgradeStatusResponse)
 async def update_upgrade_step(
-    run_id: str,
-    domain: str,
     request: UpdateUpgradeStepRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
+    domain: str = Path(..., min_length=1, max_length=200),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data.get("user_id") != request.user_id:
@@ -1487,8 +1487,8 @@ async def update_upgrade_step(
 
 @router.post("/upgrade/runs/{run_id}/complete", response_model=PkmUpgradeStatusResponse)
 async def complete_upgrade_run(
-    run_id: str,
     request: StartOrResumeUpgradeRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data.get("user_id") != request.user_id:
@@ -1500,7 +1500,10 @@ async def complete_upgrade_run(
     try:
         payload = await get_pkm_upgrade_service().complete_run(run_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        logger.warning("pkm.complete_upgrade_run.conflict run_id=%s: %s", run_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Upgrade run cannot be completed"
+        ) from exc
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upgrade run not found")
     return _build_upgrade_status_response(payload)
@@ -1508,8 +1511,8 @@ async def complete_upgrade_run(
 
 @router.post("/upgrade/runs/{run_id}/fail", response_model=PkmUpgradeStatusResponse)
 async def fail_upgrade_run(
-    run_id: str,
     request: UpdateUpgradeRunRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data.get("user_id") != request.user_id:
