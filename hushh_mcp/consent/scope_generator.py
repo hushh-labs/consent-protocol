@@ -362,7 +362,7 @@ class DynamicScopeGenerator:
                 .eq("user_id", user_id)
                 .execute()
             )
-        except Exception as e:
+        except Exception:
             logger.error("scope_generator.get_scope_entries_failed")
             return []
 
