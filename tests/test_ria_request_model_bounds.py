@@ -31,6 +31,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+import api.routes.ria as ria_module
+from api.middleware import require_firebase_auth
 from api.routes.ria import (
     RIAConsentBundleCreate,
     RIAConsentRequestCreate,
@@ -331,8 +333,6 @@ class TestRIAMarketplaceDiscoverabilityRequest:
 # at the HTTP layer (HTTP 422 from FastAPI/Pydantic), not just in isolation.
 # ===========================================================================
 
-import api.routes.ria as ria_module  # noqa: E402 (after Pydantic-only tests)
-from api.middleware import require_firebase_auth  # noqa: E402
 
 
 def _firebase_stub():
