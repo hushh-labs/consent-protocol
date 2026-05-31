@@ -65,7 +65,7 @@ def test_storage_store_trust_link_failure_no_user_id(captured):
                 session_id="sess_1",
                 decision_card={"ticker": _TICKER},
                 vault_key_hex="dead" * 16,
-                consent_token="HCT:fake",
+                consent_token="HCT:fake"  # noqa: S106,
             )
 
     _assert_no_user_id(captured.messages)
@@ -84,7 +84,7 @@ def test_storage_retrieve_trust_link_failure_no_user_id(captured):
                 encrypted_payload=MagicMock(),
                 user_id=_USER_ID,
                 vault_key_hex="dead" * 16,
-                consent_token="HCT:fake",
+                consent_token="HCT:fake"  # noqa: S106,
             )
 
     _assert_no_user_id(captured.messages)
@@ -103,7 +103,7 @@ def test_storage_retrieve_success_no_user_id(captured):
             encrypted_payload=MagicMock(),
             user_id=_USER_ID,
             vault_key_hex="dead" * 16,
-            consent_token="HCT:fake",
+            consent_token="HCT:fake"  # noqa: S106,
         )
 
     assert result == {"ticker": "AAPL"}
@@ -129,7 +129,7 @@ def test_analysis_fundamentals_no_user_id(captured):
             user_id=_USER_ID,
             ticker=_TICKER,
             sec_filings={"facts": {}},
-            consent_token="HCT:fake",
+            consent_token="HCT:fake"  # noqa: S106,
         )
 
     _assert_no_user_id(captured.messages)
@@ -151,7 +151,7 @@ async def test_scope_generator_error_no_user_id(captured):
         "_get_user_scope_catalog",
         side_effect=RuntimeError(f"db error for {_USER_ID}"),
     ):
-        result = await gen.get_available_scopes(_USER_ID)
+        await gen.get_available_scopes(_USER_ID)
 
     # The mock-triggered exception contains _USER_ID in the message;
     # the logger must not forward it regardless of the return value.

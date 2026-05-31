@@ -75,7 +75,7 @@ class KaiA2AServer(A2AServer):
                         metadata={"protocol": "a2a"},
                     )
                 )
-            except Exception as e:
+            except Exception:
                 logger.error("a2a.audit_log_failed")
 
             # 3. PROCESSING
