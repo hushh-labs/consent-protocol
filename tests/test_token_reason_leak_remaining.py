@@ -6,11 +6,10 @@ response bodies from db_proxy.py, consent.py, or kai/stream.py.
 CWE-209: Internal validation reason strings (e.g. "expired", "revoked",
 "invalid_signature") could reveal internal token structure to callers.
 """
-import importlib
-import pytest
 from unittest.mock import AsyncMock, patch
-from fastapi.testclient import TestClient
 
+import pytest
+from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -41,6 +40,7 @@ def _assert_no_reason_leak(response_body: bytes) -> None:
 
 def _make_stream_app():
     from fastapi import FastAPI
+
     from api.routes.kai import stream as stream_mod
 
     app = FastAPI()
@@ -75,6 +75,7 @@ def test_stream_token_reason_not_leaked(reason):
 
 def _make_consent_app():
     from fastapi import FastAPI
+
     from api.routes import consent as consent_mod
 
     app = FastAPI()
