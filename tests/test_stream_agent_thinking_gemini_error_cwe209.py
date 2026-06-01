@@ -20,6 +20,7 @@ forwarded to the client.
 
 from __future__ import annotations
 
+import json
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
@@ -96,11 +97,19 @@ async def test_fallback_token_is_opaque_static_string() -> None:
 
     # At least one fallback token must be yielded
     assert events, "Expected at least one fallback token event when Gemini errors"
-    # Collect all text across token events
-    all_text = "".join(
-        e.get("data", {}).get("text", "") if isinstance(e.get("data"), dict) else ""
-        for e in events
-    )
+    # create_event serialises the payload into a JSON string under the "data" key.
+    # Decode each frame and gather the text tokens from the envelope payload.
+    def _frame_text(event: Any) -> str:
+        raw = event.get("data", "")
+        if isinstance(raw, dict):
+            return raw.get("text", "") or raw.get("payload", {}).get("text", "")
+        try:
+            envelope = json.loads(raw)
+            return envelope.get("payload", {}).get("text", "")
+        except (ValueError, AttributeError):
+            return ""
+
+    all_text = "".join(_frame_text(e) for e in events)
     assert SENTINEL not in all_text
     assert "unavailable" in all_text.lower(), "Expected opaque unavailability message"
 
