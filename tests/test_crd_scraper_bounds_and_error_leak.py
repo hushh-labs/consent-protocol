@@ -12,7 +12,6 @@ import inspect
 import types
 from unittest.mock import AsyncMock
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -73,7 +72,6 @@ class TestJobIdPathBounds:
 
 class TestValueErrorDoesNotLeak:
     def test_value_error_returns_opaque_422(self) -> None:
-        from hushh_mcp.services.crd_scrape_proxy_service import CrdScrapeProxyService
 
         svc = _stub_provider({})
         svc.get_job = AsyncMock(side_effect=ValueError("internal DB path: /var/secret/db.sock"))
