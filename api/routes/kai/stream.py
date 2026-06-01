@@ -918,6 +918,8 @@ async def stream_agent_thinking(
     logger.info(f"[Kai Stream] Starting stream_agent_thinking for {agent_name}")
     token_count = 0
     stream_error_message: Optional[str] = None
+    buffered_token_events: list[dict[str, Any]] = []
+    stream_completed = False
     try:
         async for event in stream_gemini_response(
             prompt=f"""You are a {agent_name} analyst. Briefly think through your analysis approach for {ticker}.
@@ -932,8 +934,7 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                 logger.info(
                     f"[Kai Stream] Token #{token_count} for {agent_name}: {event.get('text', '')[:30]}..."
                 )
-                yield create_event(
-                    "agent_token",
+                buffered_token_events.append(
                     {
                         "agent": agent_name.lower(),
                         "text": event.get("text", ""),
@@ -941,12 +942,13 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                         "token_source": event.get("token_source", "response"),
                         "round": round_number,
                         "phase": phase,
-                    },
+                    }
                 )
             elif event.get("type") == "error":
                 stream_error_message = str(event.get("message") or "unknown stream error")
                 logger.error(f"[Kai Stream] Gemini error for {agent_name}: {stream_error_message}")
             elif event.get("type") == "complete":
+                stream_completed = True
                 logger.info(
                     f"[Kai Stream] Streaming complete for {agent_name}, total tokens: {token_count}"
                 )
@@ -958,9 +960,15 @@ Think step by step in 2-3 sentences about what you'll analyze and why it matters
                 )
                 return
 
-        if token_count == 0 and stream_error_message:
+        if stream_completed and not stream_error_message:
+            for token_payload in buffered_token_events:
+                yield create_event("agent_token", token_payload)
+                if await request.is_disconnected():
+                    return
+
+        if stream_error_message:
             fallback_text = (
-                f"Live commentary is temporarily unavailable ({stream_error_message}). "
+                "Live commentary is temporarily unavailable. "
                 "Continuing analysis so your recommendation still completes."
             )
             fallback_words = fallback_text.split()
