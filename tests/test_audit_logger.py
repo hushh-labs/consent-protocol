@@ -269,8 +269,9 @@ class TestObservabilityMiddlewareAttachPoint:
         Structural proof: the observability middleware imports bind_trace_id and
         reset_trace_id from hushh_mcp.consent.audit_logger.
         """
-        import api.middlewares.observability as obs_module
         import inspect
+
+        import api.middlewares.observability as obs_module
 
         src = inspect.getsource(obs_module)
         assert "bind_trace_id" in src, (
