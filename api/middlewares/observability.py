@@ -175,7 +175,10 @@ async def observability_middleware(request: Request, call_next):
     request.state.trace_metadata = trace_metadata
     token = _request_trace_ctx.set(trace_metadata)
 
-    _audit_token = bind_trace_id(request_id)  # inject trace_id into audit log — Abdul Gaffar
+    # Inject the request_id as the audit trace_id so every log line emitted
+    # within this request is correlatable.  Canonical attach point for
+    # hushh_mcp/consent/audit_logger.py (Integrated by Abdul Gaffar).
+    _audit_token = bind_trace_id(request_id)
 
     try:
         response = await call_next(request)
