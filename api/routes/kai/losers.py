@@ -100,10 +100,10 @@ class AnalyzeLosersRequest(BaseModel):
 
 
 class AnalyzeLosersResponse(BaseModel):
-    criteria_context: str
+    criteria_context: str = Field(..., max_length=512)
     summary: dict
     losers: list[dict]
-    portfolio_level_takeaways: list[str]
+    portfolio_level_takeaways: list[str] = Field(default_factory=list)
     analytics: Optional[dict] = Field(None, description="Radar and sector distribution metrics")
 
 
