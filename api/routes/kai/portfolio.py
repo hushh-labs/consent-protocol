@@ -1931,7 +1931,7 @@ class PortfolioImportResponse(BaseModel):
     losers: list[dict] = Field(default_factory=list)
     winners: list[dict] = Field(default_factory=list)
     kpis_stored: list[str] = Field(default_factory=list)
-    error: Optional[str] = Field(None, max_length=512)
+    error: Optional[str] = Field(default=None, max_length=512)
     source: str = Field(default="unknown", max_length=64)
     # Comprehensive financial data (LLM-extracted)
     portfolio_data: Optional[dict] = None
@@ -1949,12 +1949,12 @@ class PortfolioSummaryResponse(BaseModel):
 
     user_id: str = Field(..., max_length=256)
     has_portfolio: bool
-    holdings_count: Optional[int] = Field(None, ge=0)
-    portfolio_value_bucket: Optional[str] = Field(None, max_length=64)
-    portfolio_risk_bucket: Optional[str] = Field(None, max_length=64)
-    preference_risk_profile: Optional[str] = Field(None, max_length=64)
-    losers_count: Optional[int] = Field(None, ge=0)
-    winners_count: Optional[int] = Field(None, ge=0)
+    holdings_count: Optional[int] = Field(default=None, ge=0)
+    portfolio_value_bucket: Optional[str] = Field(default=None, max_length=64)
+    portfolio_risk_bucket: Optional[str] = Field(default=None, max_length=64)
+    preference_risk_profile: Optional[str] = Field(default=None, max_length=64)
+    losers_count: Optional[int] = Field(default=None, ge=0)
+    winners_count: Optional[int] = Field(default=None, ge=0)
     total_gain_loss_pct: Optional[float] = None
 
 
@@ -1963,16 +1963,16 @@ class DashboardProfilePick(BaseModel):
 
     symbol: str = Field(..., max_length=10)
     company_name: str = Field(..., max_length=256)
-    sector: Optional[str] = Field(None, max_length=64)
-    tier: Optional[str] = Field(None, max_length=32)
+    sector: Optional[str] = Field(default=None, max_length=64)
+    tier: Optional[str] = Field(default=None, max_length=32)
     conviction_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    price: Optional[float] = Field(None, ge=0.0)
+    price: Optional[float] = Field(default=None, ge=0.0)
     change_percent: Optional[float] = None
-    recommendation_bias: Optional[str] = Field(None, max_length=64)
+    recommendation_bias: Optional[str] = Field(default=None, max_length=64)
     rationale: str = Field(..., max_length=512)
     source_tags: list[str] = Field(default_factory=list)
     degraded: bool = False
-    as_of: Optional[str] = Field(None, max_length=64)
+    as_of: Optional[str] = Field(default=None, max_length=64)
 
 
 class DashboardProfilePicksResponse(BaseModel):

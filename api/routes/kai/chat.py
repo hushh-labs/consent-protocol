@@ -51,12 +51,12 @@ class KaiChatResponseModel(BaseModel):
 
     conversation_id: str = Field(..., description="Conversation ID for continuity", max_length=256)
     response: str = Field(..., description="Kai's response text", max_length=8192)
-    component_type: Optional[str] = Field(None, description="UI component type to render", max_length=128)
-    component_data: Optional[dict] = Field(None, description="Data for the UI component")
+    component_type: Optional[str] = Field(default=None, description="UI component type to render", max_length=128)
+    component_data: Optional[dict] = Field(default=None, description="Data for the UI component")
     learned_attributes: list[dict] = Field(
         default_factory=list, description="Attributes learned from this exchange"
     )
-    tokens_used: Optional[int] = Field(None, description="Tokens used for this response", ge=0, le=1000000)
+    tokens_used: Optional[int] = Field(default=None, description="Tokens used for this response", ge=0, le=1000000)
 
 
 class ConversationHistoryResponse(BaseModel):
@@ -280,7 +280,7 @@ class AnalyzeLoserRequest(BaseModel):
     symbol: str = Field(
         ..., description="Stock ticker symbol to analyze", min_length=1, max_length=10
     )
-    conversation_id: Optional[str] = Field(None, description="Existing conversation ID")
+    conversation_id: Optional[str] = Field(default=None, description="Existing conversation ID")
 
 
 class AnalyzeLoserResponse(BaseModel):

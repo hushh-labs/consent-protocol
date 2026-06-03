@@ -40,11 +40,11 @@ class AgentChatConversationModel(BaseModel):
     id: str = Field(..., max_length=256)
     title: str = Field(..., max_length=256)
     status: str = Field(..., max_length=64)
-    model: Optional[str] = Field(None, max_length=128)
+    model: Optional[str] = Field(default=None, max_length=128)
     message_count: int = Field(default=0, ge=0)
-    created_at: Optional[str] = Field(None, max_length=64)
-    updated_at: Optional[str] = Field(None, max_length=64)
-    last_message_at: Optional[str] = Field(None, max_length=64)
+    created_at: Optional[str] = Field(default=None, max_length=64)
+    updated_at: Optional[str] = Field(default=None, max_length=64)
+    last_message_at: Optional[str] = Field(default=None, max_length=64)
 
 
 class AgentChatMessageModel(BaseModel):
@@ -53,9 +53,9 @@ class AgentChatMessageModel(BaseModel):
     role: str = Field(..., max_length=64)
     status: str = Field(..., max_length=64)
     content: str = Field(..., max_length=8192)
-    model: Optional[str] = Field(None, max_length=128)
-    created_at: Optional[str] = Field(None, max_length=64)
-    completed_at: Optional[str] = Field(None, max_length=64)
+    model: Optional[str] = Field(default=None, max_length=128)
+    created_at: Optional[str] = Field(default=None, max_length=64)
+    completed_at: Optional[str] = Field(default=None, max_length=64)
 
 
 class AgentChatConversationsResponse(BaseModel):
