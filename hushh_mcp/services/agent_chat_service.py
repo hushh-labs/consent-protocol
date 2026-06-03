@@ -65,6 +65,8 @@ _APP_SURFACE_ACTIONS: dict[str, tuple[str, str]] = {
 MessageRole = Literal["user", "assistant", "system", "tool"]
 MessageStatus = Literal["complete", "interrupted", "error"]
 AgentActionExecution = Literal["frontend", "blocked"]
+AgentRuntimeCredentialMode = Literal["byok", "hushh_managed_vertex"]
+DEFAULT_AGENT_RUNTIME_CREDENTIAL_MODE: AgentRuntimeCredentialMode = "hushh_managed_vertex"
 
 _STOCK_ALIAS_TO_TICKER = {
     "alphabet": "GOOGL",
@@ -247,6 +249,19 @@ class AgentChatActionPlan:
             "message": self.message,
             "reason": self.reason,
         }
+
+
+@dataclass(frozen=True)
+class AgentRuntimeContract:
+    mode: AgentRuntimeCredentialMode
+    credential_supplied: bool
+
+
+class AgentRuntimeContractError(ValueError):
+    def __init__(self, *, error_code: str, message: str):
+        super().__init__(message)
+        self.error_code = error_code
+        self.message = message
 
 
 def _iso(value: Any) -> str | None:
@@ -437,6 +452,35 @@ class AgentChatService:
                 raise RuntimeError("Gemini API key is not configured")
             self._client = genai.Client(api_key=api_key)
         return self._client
+
+    def prepare_runtime_contract(
+        self,
+        *,
+        runtime_credential: str | None = None,
+        runtime_credential_mode: str | None = None,
+    ) -> AgentRuntimeContract:
+        mode_value = (runtime_credential_mode or DEFAULT_AGENT_RUNTIME_CREDENTIAL_MODE).strip()
+        if mode_value not in {"byok", "hushh_managed_vertex"}:
+            raise AgentRuntimeContractError(
+                error_code="AGENT_RUNTIME_MODE_INVALID",
+                message="Agent runtime credential mode is invalid.",
+            )
+
+        mode = mode_value
+        secret = (runtime_credential or "").strip()
+        if mode == "byok" and not secret:
+            raise AgentRuntimeContractError(
+                error_code="AGENT_RUNTIME_CREDENTIAL_MISSING",
+                message=(
+                    "Kai needs your Gemini key to continue. Add or update it in "
+                    "Profile > Runtime keys, or switch Kai to Hushh managed Gemini."
+                ),
+            )
+
+        return AgentRuntimeContract(
+            mode=mode,
+            credential_supplied=bool(secret),
+        )
 
     async def _execute_raw(self, sql: str, params: dict[str, Any] | None = None):
         return await asyncio.to_thread(self.db.execute_raw, sql, params or {})

@@ -8,6 +8,7 @@ from hushh_mcp.services.agent_chat_service import (
     AgentChatActionPlan,
     AgentChatConversation,
     AgentChatMessage,
+    AgentRuntimeContractError,
     PreparedAgentChatTurn,
 )
 
@@ -16,6 +17,8 @@ class _FakeAgentChatService:
     def __init__(self):
         self.saved_messages: list[dict] = []
         self.next_action_plan: AgentChatActionPlan | None = None
+        self.prepared_turns = 0
+        self.runtime_contract_calls: list[dict] = []
         self.stream_action_plans: list[AgentChatActionPlan | None] = []
         self.stream_tokens = ["Hello", " from Gemini"]
         self.stream_error: Exception | None = None
@@ -56,10 +59,38 @@ class _FakeAgentChatService:
             ),
         ]
 
+    def prepare_runtime_contract(
+        self,
+        *,
+        runtime_credential: str | None = None,
+        runtime_credential_mode: str | None = None,
+    ):
+        self.runtime_contract_calls.append(
+            {
+                "runtime_credential": runtime_credential,
+                "runtime_credential_mode": runtime_credential_mode,
+            }
+        )
+        if runtime_credential_mode == "byok" and not (runtime_credential or "").strip():
+            raise AgentRuntimeContractError(
+                error_code="AGENT_RUNTIME_CREDENTIAL_MISSING",
+                message=(
+                    "Kai needs your Gemini key to continue. Add or update it in "
+                    "Profile > Runtime keys, or switch Kai to Hushh managed Gemini."
+                ),
+            )
+        if runtime_credential_mode not in {None, "byok", "hushh_managed_vertex"}:
+            raise AgentRuntimeContractError(
+                error_code="AGENT_RUNTIME_MODE_INVALID",
+                message="Agent runtime credential mode is invalid.",
+            )
+        return None
+
     async def prepare_turn(self, *, user_id: str, message: str, conversation_id: str | None = None):
         assert user_id == "user-1"
         assert message == "Hello Agent"
         assert conversation_id is None
+        self.prepared_turns += 1
         return PreparedAgentChatTurn(
             conversation_id="conversation-1",
             user_message_id="message-user-2",
@@ -170,6 +201,12 @@ def test_agent_chat_stream_sends_token_events_and_saves_assistant(monkeypatch):
     assert 'event: token\ndata: {"token": "Hello"}' in response.text
     assert 'event: token\ndata: {"token": " from Gemini"}' in response.text
     assert 'event: complete\ndata: {"conversation_id": "conversation-1"' in response.text
+    assert service.runtime_contract_calls == [
+        {
+            "runtime_credential": None,
+            "runtime_credential_mode": None,
+        }
+    ]
     assert service.stream_action_plans == [None]
     assert service.saved_messages == [
         {
@@ -182,6 +219,86 @@ def test_agent_chat_stream_sends_token_events_and_saves_assistant(monkeypatch):
             "error_code": None,
         }
     ]
+
+
+def test_agent_chat_stream_accepts_hushh_managed_runtime_mode_without_user_key(monkeypatch):
+    service = _FakeAgentChatService()
+    monkeypatch.setattr(agent_chat, "get_agent_chat_service", lambda: service)
+    client = _client(service)
+
+    response = client.post(
+        "/agent/chat/stream",
+        json={
+            "user_id": "user-1",
+            "message": "Hello Agent",
+            "runtime_credential_mode": "hushh_managed_vertex",
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.prepared_turns == 1
+    assert service.runtime_contract_calls == [
+        {
+            "runtime_credential": None,
+            "runtime_credential_mode": "hushh_managed_vertex",
+        }
+    ]
+
+
+def test_agent_chat_stream_rejects_byok_without_runtime_credential(monkeypatch):
+    service = _FakeAgentChatService()
+    monkeypatch.setattr(agent_chat, "get_agent_chat_service", lambda: service)
+    client = _client(service)
+
+    response = client.post(
+        "/agent/chat/stream",
+        json={
+            "user_id": "user-1",
+            "message": "Hello Agent",
+            "runtime_credential_mode": "byok",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "AGENT_RUNTIME_CREDENTIAL_MISSING",
+        "message": (
+            "Kai needs your Gemini key to continue. Add or update it in "
+            "Profile > Runtime keys, or switch Kai to Hushh managed Gemini."
+        ),
+    }
+    assert service.prepared_turns == 0
+    assert service.saved_messages == []
+
+
+def test_agent_chat_stream_rejects_invalid_runtime_mode_without_leaking_key(
+    monkeypatch,
+    caplog,
+):
+    service = _FakeAgentChatService()
+    monkeypatch.setattr(agent_chat, "get_agent_chat_service", lambda: service)
+    client = _client(service)
+    raw_key = "USER_GEMINI_KEY_SHOULD_NOT_LEAK"
+
+    response = client.post(
+        "/agent/chat/stream",
+        json={
+            "user_id": "user-1",
+            "message": "Hello Agent",
+            "runtime_credential": raw_key,
+            "runtime_credential_mode": "unsupported",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "AGENT_RUNTIME_MODE_INVALID",
+        "message": "Agent runtime credential mode is invalid.",
+    }
+    assert raw_key not in response.text
+    assert raw_key not in caplog.text
+    assert service.prepared_turns == 0
+    assert service.saved_messages == []
 
 
 def test_agent_chat_stream_saves_short_frontend_action_receipt(monkeypatch):

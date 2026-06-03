@@ -7,6 +7,7 @@ from hushh_mcp.services.agent_chat_service import (
     DEFAULT_AGENT_CHAT_MODEL,
     AgentChatMessage,
     AgentChatService,
+    AgentRuntimeContractError,
 )
 
 
@@ -24,6 +25,57 @@ def test_agent_chat_service_allows_env_model_override(monkeypatch, test_vault_ke
     service = AgentChatService(vault_key_hex=test_vault_key)
 
     assert service.model == "gemini-2.5-flash"
+
+
+def test_agent_chat_runtime_contract_defaults_to_hushh_managed(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    contract = service.prepare_runtime_contract()
+
+    assert contract.mode == "hushh_managed_vertex"
+    assert contract.credential_supplied is False
+
+
+def test_agent_chat_runtime_contract_accepts_byok_with_runtime_credential(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    contract = service.prepare_runtime_contract(
+        runtime_credential=" USER_GEMINI_KEY ",
+        runtime_credential_mode="byok",
+    )
+
+    assert contract.mode == "byok"
+    assert contract.credential_supplied is True
+
+
+def test_agent_chat_runtime_contract_rejects_missing_byok_credential(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    try:
+        service.prepare_runtime_contract(
+            runtime_credential=" ",
+            runtime_credential_mode="byok",
+        )
+    except AgentRuntimeContractError as error:
+        assert error.error_code == "AGENT_RUNTIME_CREDENTIAL_MISSING"
+        assert "Gemini key" in error.message
+    else:  # pragma: no cover - defensive assertion clarity
+        raise AssertionError("Expected AgentRuntimeContractError")
+
+
+def test_agent_chat_runtime_contract_rejects_invalid_mode(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    try:
+        service.prepare_runtime_contract(
+            runtime_credential="USER_GEMINI_KEY",
+            runtime_credential_mode="unsupported",
+        )
+    except AgentRuntimeContractError as error:
+        assert error.error_code == "AGENT_RUNTIME_MODE_INVALID"
+        assert error.message == "Agent runtime credential mode is invalid."
+    else:  # pragma: no cover - defensive assertion clarity
+        raise AssertionError("Expected AgentRuntimeContractError")
 
 
 def test_agent_chat_service_decrypts_encrypted_conversation_and_message(test_vault_key):
