@@ -15,7 +15,11 @@ from api.routes.investors import (
     InvestorProfile,
     InvestorSearchResult,
 )
-from api.routes.marketplace import MarketplaceContactLookup, MarketplaceContactMatchRequest, MarketplaceInvestorActionRequest
+from api.routes.marketplace import (
+    MarketplaceContactLookup,
+    MarketplaceContactMatchRequest,
+    MarketplaceInvestorActionRequest,
+)
 from api.routes.tickers import SyncHoldingsRequest
 
 
