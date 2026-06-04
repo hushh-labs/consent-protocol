@@ -765,7 +765,7 @@ async def developer_api_root():
 @developer_api_router.get("/tool-catalog", response_model=DeveloperToolCatalogResponse)
 async def get_tool_catalog(
     request: Request,
-    token: Optional[str] = Query(None),
+    token: Optional[str] = Query(None, max_length=2048),
     authorization: Optional[str] = Header(None),
 ):
     if not developer_api_enabled():
@@ -959,7 +959,7 @@ async def get_consent_status(
 async def request_consent(
     payload: DeveloperConsentRequest,
     request: Request,
-    token: Optional[str] = Query(None),
+    token: Optional[str] = Query(None, max_length=2048),
     authorization: Optional[str] = Header(None),
 ):
     principal = _resolve_principal(
@@ -1321,7 +1321,7 @@ async def get_default_available_export(
 async def get_scoped_export(
     payload: DeveloperScopedExportRequest,
     request: Request,
-    token: Optional[str] = Query(None),
+    token: Optional[str] = Query(None, max_length=2048),
     authorization: Optional[str] = Header(None),
 ):
     principal = _resolve_principal(
