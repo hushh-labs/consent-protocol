@@ -1667,7 +1667,12 @@ async def _market_refresh_loop() -> None:
     interval = _market_refresh_interval_seconds()
     logger.info("[Kai Market] background refresh loop started (interval=%ss)", interval)
     while True:
-        await _run_refresh_with_advisory_lock()
+        try:
+            await _run_refresh_with_advisory_lock()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("[Kai Market] background refresh cycle failed, will retry: %s", exc)
         jitter_max = max(5.0, interval * 0.12)
         jitter_ms = int(jitter_max * 1000)
         cycle_jitter = (secrets.randbelow(jitter_ms + 1) / 1000.0) if jitter_ms > 0 else 0.0
