@@ -17,6 +17,7 @@ from hushh_mcp.services.agent_chat_service import (
     AgentChatConversation,
     AgentChatMessage,
     AgentRuntimeContractError,
+    AgentRuntimeProviderError,
     PreparedAgentChatTurn,
     get_agent_chat_service,
 )
@@ -152,7 +153,7 @@ async def stream_agent_chat(
     _assert_user(token_data, body.user_id)
     service = get_agent_chat_service()
     try:
-        service.prepare_runtime_contract(
+        runtime = await service.prepare_agent_runtime(
             runtime_credential=body.runtime_credential,
             runtime_credential_mode=body.runtime_credential_mode,
         )
@@ -164,6 +165,8 @@ async def stream_agent_chat(
         action_plan: AgentChatActionPlan | None = await service.plan_action_with_gemini(
             user_message=body.message,
             history=turn.history,
+            runtime_client=runtime.client,
+            runtime_model=runtime.model,
             pkm_context=body.pkm_context,
         )
     except AgentRuntimeContractError as error:
@@ -173,6 +176,20 @@ async def stream_agent_chat(
             error.error_code,
             body.runtime_credential_mode,
             bool((body.runtime_credential or "").strip()),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": error.error_code,
+                "message": error.message,
+            },
+        ) from error
+    except AgentRuntimeProviderError as error:
+        logger.warning(
+            "agent_chat.runtime_provider_failed user_id=%s error_code=%s detail=%s",
+            body.user_id,
+            error.error_code,
+            error.detail,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -259,6 +276,8 @@ async def stream_agent_chat(
             async for token in service.stream_response(
                 user_message=body.message,
                 history=turn.history,
+                runtime_client=runtime.client,
+                runtime_model=runtime.model,
                 action_plan=action_plan,
                 pkm_context=body.pkm_context,
             ):
@@ -303,6 +322,31 @@ async def stream_agent_chat(
                     status_value="interrupted",
                 )
             raise
+        except AgentRuntimeProviderError as error:
+            logger.warning(
+                "agent_chat.stream_provider_failed user_id=%s error_code=%s detail=%s",
+                body.user_id,
+                error.error_code,
+                error.detail,
+            )
+            if not saved:
+                await _save_assistant_message(
+                    service=service,
+                    turn=turn,
+                    user_id=body.user_id,
+                    text=error.message,
+                    status_value="error",
+                    error_code=error.error_code,
+                )
+                saved = True
+            yield _event(
+                "error",
+                {
+                    "code": error.error_code,
+                    "message": error.message,
+                    "conversation_id": turn.conversation_id,
+                },
+            )
         except Exception as error:
             logger.exception("agent_chat.stream_failed user_id=%s: %s", body.user_id, error)
             if not saved:

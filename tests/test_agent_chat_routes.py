@@ -9,7 +9,9 @@ from hushh_mcp.services.agent_chat_service import (
     AgentChatConversation,
     AgentChatMessage,
     AgentRuntimeContractError,
+    AgentRuntimeProviderError,
     PreparedAgentChatTurn,
+    PreparedAgentRuntime,
 )
 
 
@@ -19,9 +21,12 @@ class _FakeAgentChatService:
         self.next_action_plan: AgentChatActionPlan | None = None
         self.prepared_turns = 0
         self.runtime_contract_calls: list[dict] = []
+        self.prepared_runtimes: list[dict] = []
         self.stream_action_plans: list[AgentChatActionPlan | None] = []
         self.stream_tokens = ["Hello", " from Gemini"]
         self.stream_error: Exception | None = None
+        self.plan_error: Exception | None = None
+        self.runtime_client = object()
         self.deleted = False
         self.conversation = AgentChatConversation(
             id="conversation-1",
@@ -86,6 +91,31 @@ class _FakeAgentChatService:
             )
         return None
 
+    async def prepare_agent_runtime(
+        self,
+        *,
+        runtime_credential: str | None = None,
+        runtime_credential_mode: str | None = None,
+    ):
+        self.prepare_runtime_contract(
+            runtime_credential=runtime_credential,
+            runtime_credential_mode=runtime_credential_mode,
+        )
+        self.prepared_runtimes.append(
+            {
+                "runtime_credential": runtime_credential,
+                "runtime_credential_mode": runtime_credential_mode,
+            }
+        )
+        return PreparedAgentRuntime(
+            mode=runtime_credential_mode or "hushh_managed_vertex",
+            provider="gemini",
+            model="gemini-2.5-flash",
+            credential_ref="pkm:runtime_secrets.llm.gemini_api_key",
+            client=self.runtime_client,
+            evidence={},
+        )
+
     async def prepare_turn(self, *, user_id: str, message: str, conversation_id: str | None = None):
         assert user_id == "user-1"
         assert message == "Hello Agent"
@@ -103,11 +133,15 @@ class _FakeAgentChatService:
         *,
         user_message: str,
         history: list[AgentChatMessage],
+        runtime_client,
+        runtime_model: str,
         action_plan: AgentChatActionPlan | None = None,
         pkm_context: str | None = None,
     ):
         assert user_message == "Hello Agent"
         assert history == []
+        assert runtime_client is self.runtime_client
+        assert runtime_model == "gemini-2.5-flash"
         assert pkm_context in {None, "Saved domains: Financial"}
         self.stream_action_plans.append(action_plan)
         if self.stream_error is not None:
@@ -120,11 +154,17 @@ class _FakeAgentChatService:
         *,
         user_message: str,
         history: list[AgentChatMessage],
+        runtime_client,
+        runtime_model: str,
         pkm_context: str | None = None,
     ):
         assert user_message == "Hello Agent"
         assert history == []
+        assert runtime_client is self.runtime_client
+        assert runtime_model == "gemini-2.5-flash"
         assert pkm_context in {None, "Saved domains: Financial"}
+        if self.plan_error is not None:
+            raise self.plan_error
         return self.next_action_plan
 
     def plan_action(self, message: str):
@@ -396,6 +436,49 @@ def test_agent_chat_stream_saves_error_message_when_stream_fails_before_tokens(m
             "status": "error",
             "model": "gemini-2.5-pro",
             "error_code": "AGENT_CHAT_STREAM_FAILED",
+        }
+    ]
+
+
+def test_agent_chat_stream_saves_safe_runtime_provider_error(monkeypatch):
+    service = _FakeAgentChatService()
+    service.stream_error = AgentRuntimeProviderError(
+        error_code="AGENT_RUNTIME_CREDENTIAL_INVALID",
+        message=(
+            "Your saved Gemini key could not be used. Update it in Profile > Runtime keys "
+            "or switch Kai to Hushh managed Gemini."
+        ),
+        detail={"likely_issue": "invalid_or_unauthorized_api_key"},
+    )
+    monkeypatch.setattr(agent_chat, "get_agent_chat_service", lambda: service)
+    client = _client(service)
+
+    response = client.post(
+        "/agent/chat/stream",
+        json={
+            "user_id": "user-1",
+            "message": "Hello Agent",
+            "runtime_credential_mode": "byok",
+            "runtime_credential": "BAD_KEY_SHOULD_NOT_LEAK",
+        },
+    )
+
+    assert response.status_code == 200
+    assert '"code": "AGENT_RUNTIME_CREDENTIAL_INVALID"' in response.text
+    assert "Your saved Gemini key could not be used." in response.text
+    assert "BAD_KEY_SHOULD_NOT_LEAK" not in response.text
+    assert service.saved_messages == [
+        {
+            "conversation_id": "conversation-1",
+            "user_id": "user-1",
+            "role": "assistant",
+            "content": (
+                "Your saved Gemini key could not be used. Update it in Profile > Runtime keys "
+                "or switch Kai to Hushh managed Gemini."
+            ),
+            "status": "error",
+            "model": "gemini-2.5-pro",
+            "error_code": "AGENT_RUNTIME_CREDENTIAL_INVALID",
         }
     ]
 
