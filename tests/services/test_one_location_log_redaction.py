@@ -5,7 +5,7 @@ appear in plaintext in production log output.
 """
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from mcp_modules.log_redaction import REDACTED, redact_log_value
 
