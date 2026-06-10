@@ -1,10 +1,11 @@
 """
 Tests for log redaction in OneLocationAgentService.
-Verifies user_id is redacted via redact_log_value in all
-notification and identity lookup log paths.
+Exercises real service call sites to prove user_id does not
+appear in plaintext in production log output.
 """
 
 import logging
+from unittest.mock import MagicMock, patch
 
 from mcp_modules.log_redaction import REDACTED, redact_log_value
 
@@ -13,33 +14,33 @@ class TestOneLocationLogRedaction:
     """user_id must never appear in plaintext in location service logs."""
 
     def test_notification_send_failed_redacts_user_id(self, caplog):
-        """notification_send_failed must not log raw user_id."""
-        user_id = "firebase-uid-abc123"
-        redacted = redact_log_value(user_id)
-        with caplog.at_level(logging.WARNING):
-            logging.getLogger("hushh_mcp.services.one_location_agent_service").warning(
-                "one.location.notification_send_failed type=%s user=%s error=%s",
-                "push",
-                redacted,
-                "timeout",
+        """Real _deliver path must not log raw user_id on send failure."""
+        from hushh_mcp.services.one_location_agent_service import OneLocationAgentService
+        svc = OneLocationAgentService.__new__(OneLocationAgentService)
+        raw_user_id = "firebase-uid-abc123"
+        with patch("hushh_mcp.services.one_location_agent_service.ensure_firebase_admin"),\
+             patch("hushh_mcp.services.one_location_agent_service.get_db", side_effect=RuntimeError("db down")),\
+             caplog.at_level(logging.WARNING, logger="hushh_mcp.services.one_location_agent_service"):
+            svc._send_push_notification(
+                user_id=raw_user_id,
+                notification_type="push",
+                title="Test",
+                body="Test body",
             )
-        messages = [r.message for r in caplog.records]
-        assert any("notification_send_failed" in m for m in messages)
-        assert not any("firebase-uid-abc123" in m for m in messages)
+        assert raw_user_id not in caplog.text
+        assert any("notification" in r.message for r in caplog.records)
 
     def test_identity_lookup_failed_redacts_user_id(self, caplog):
-        """identity_lookup_failed must not log raw user_id."""
-        user_id = "uid-secret-xyz"
-        redacted = redact_log_value(user_id)
-        with caplog.at_level(logging.DEBUG):
-            logging.getLogger("hushh_mcp.services.one_location_agent_service").debug(
-                "one.location.identity_lookup_failed user=%s error=%s",
-                redacted,
-                "db timeout",
-            )
-        messages = [r.message for r in caplog.records]
-        assert any("identity_lookup_failed" in m for m in messages)
-        assert not any("uid-secret-xyz" in m for m in messages)
+        """Real _identity_row path must not log raw user_id on db failure."""
+        from hushh_mcp.services.one_location_agent_service import OneLocationAgentService
+        svc = OneLocationAgentService.__new__(OneLocationAgentService)
+        raw_user_id = "uid-secret-xyz"
+        with patch("hushh_mcp.services.one_location_agent_service.get_db", side_effect=RuntimeError("db down")),\
+             caplog.at_level(logging.DEBUG, logger="hushh_mcp.services.one_location_agent_service"):
+            result = svc._identity_row(raw_user_id)
+        assert result is None
+        assert raw_user_id not in caplog.text
+        assert any("identity_lookup_failed" in r.message for r in caplog.records)
 
     def test_redact_log_value_masks_user_id_string(self):
         """redact_log_value must redact a plain user_id string."""
