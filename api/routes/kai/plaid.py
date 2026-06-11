@@ -842,9 +842,10 @@ async def plaid_webhook(request: Request):
         raw_body = await request.body()
         payload = json.loads(raw_body.decode("utf-8"))
     except Exception as exc:
+        logger.warning("kai.plaid.webhook.invalid_json: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "PLAID_WEBHOOK_INVALID_JSON", "message": str(exc)},
+            detail={"code": "PLAID_WEBHOOK_INVALID_JSON", "message": "Webhook payload is not valid JSON."},
         ) from exc
 
     if not isinstance(payload, dict):
