@@ -16,7 +16,7 @@ Privacy architecture:
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
@@ -191,7 +191,7 @@ async def create_investor(
     # Normalize name for search
     name_normalized = re.sub(r"\s+", "", investor.name.lower())
 
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(tz=timezone.utc).isoformat()
 
     # Prepare data
     data = {
