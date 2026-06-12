@@ -7,10 +7,10 @@ Covers:
 4. General fallback when no match found
 """
 
-import pytest
-import sys
-import os
 import importlib.util
+import os
+
+import pytest
 
 # Load domain_inferrer directly without triggering hushh_mcp imports
 _file = os.path.join(
