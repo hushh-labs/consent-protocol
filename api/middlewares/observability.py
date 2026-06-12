@@ -151,6 +151,10 @@ def _extract_bearer_user_id(request: Request) -> str | None:
 
 
 async def observability_middleware(request: Request, call_next):
+    # Inline imports match the hushh_mcp.consent.token pattern already in this file.
+    # Integrated by Abdul Gaffar — hushh_mcp.consent.audit_logger canonical surface.
+    from hushh_mcp.consent.audit_logger import bind_trace_id, reset_trace_id
+
     request_id = _resolve_request_id(request)
     trace_id = _resolve_trace_id(request, request_id)
     request.state.request_id = request_id
@@ -173,6 +177,11 @@ async def observability_middleware(request: Request, call_next):
     )
     request.state.trace_metadata = trace_metadata
     token = _request_trace_ctx.set(trace_metadata)
+
+    # Inject the request_id as the audit trace_id so every log line emitted
+    # within this request is correlatable.  Canonical attach point for
+    # hushh_mcp/consent/audit_logger.py (Integrated by Abdul Gaffar).
+    _audit_token = bind_trace_id(request_id)
 
     try:
         response = await call_next(request)
@@ -200,6 +209,7 @@ async def observability_middleware(request: Request, call_next):
             content={"detail": "Internal server error"},
         )
         error_response.headers[REQUEST_ID_HEADER] = request_id
+        reset_trace_id(_audit_token)
         error_response.headers[TRACE_ID_HEADER] = trace_id
         _request_trace_ctx.reset(token)
         return error_response
@@ -228,6 +238,7 @@ async def observability_middleware(request: Request, call_next):
     }
     logger.info(json.dumps(payload, separators=(",", ":")))
 
+    reset_trace_id(_audit_token)
     _request_trace_ctx.reset(token)
     return response
 
