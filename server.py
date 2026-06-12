@@ -72,17 +72,24 @@ def _parse_cors_allowed_origins() -> list[str]:
     if frontend_url and frontend_url not in origins:
         origins.append(frontend_url)
 
+    if not _is_production():
+        for dev_origin in (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+            "http://10.0.0.177:3000",
+        ):
+            if dev_origin not in origins:
+                origins.append(dev_origin)
+
     if origins:
         return origins
 
     if _is_production():
         return []
 
-    return [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://10.0.0.177:3000",
-    ]
+    return []
 
 
 # Import route modules
@@ -423,6 +430,27 @@ async def startup_pkm_scope_validator_warmup() -> None:
 
 
 @app.on_event("startup")
+async def startup_consent_token_verifier_prewarm() -> None:
+    """Prewarm consent-token verifier work before the first scoped request."""
+    started_at = time.perf_counter()
+    try:
+        from hushh_mcp.consent.token import prewarm_consent_token_verifier
+
+        prewarm_consent_token_verifier()
+    except Exception as exc:
+        logger.warning(
+            "startup.consent_token_verifier_prewarm_failed reason=%s",
+            exc,
+        )
+        return
+
+    logger.info(
+        "startup.consent_token_verifier_prewarmed duration_ms=%.2f",
+        (time.perf_counter() - started_at) * 1000,
+    )
+
+
+@app.on_event("startup")
 async def startup_regulated_runtime_guards():
     """Emit explicit startup security warnings for risky production flags."""
     from hushh_mcp.services.ria_verification import (
@@ -591,6 +619,39 @@ async def debug_consent_listener():
     from api.consent_listener import get_consent_listener_status
 
     return get_consent_listener_status()
+
+
+@app.on_event("startup")
+async def startup_consent_revocation_worker() -> None:
+    """Start the background consent-expiry revocation sweep.
+
+    Registers ConsentRevocationWorker via start_revocation_loop so that
+    expired consent records are marked REVOKED in the database automatically.
+    The worker is decoupled from the DB through injected async callables so
+    the server starts cleanly even when the DB is temporarily unreachable.
+
+    Canonical attach point: hushh_mcp/services/revocation_worker.py
+    Integrated by Abdul Gaffar — canonical temporal-consent boundary.
+    """
+    try:
+        from hushh_mcp.services.consent_db import ConsentDBService
+        from hushh_mcp.services.revocation_worker import start_revocation_loop
+
+        _db = ConsentDBService()
+
+        start_revocation_loop(
+            fetch_expired=_db.fetch_expired_consents,
+            revoke=_db.mark_consent_revoked,
+            interval_seconds=300,
+        )
+        logger.info("startup.consent_revocation_worker_registered interval_s=300")
+    except Exception as exc:
+        # Non-fatal: log and continue — per-request token validation still
+        # enforces expiry via validate_token(); the worker is a DB consistency aid.
+        logger.warning(
+            "startup.consent_revocation_worker_failed reason=%s",
+            exc,
+        )
 
 
 if __name__ == "__main__":
