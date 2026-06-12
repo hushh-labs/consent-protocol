@@ -99,6 +99,7 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from api.middlewares.observability import (  # noqa: E402
     configure_opentelemetry,
+    get_request_id,
     observability_middleware,
 )
 from api.middlewares.rate_limit import limiter  # noqa: E402
@@ -116,6 +117,7 @@ from api.routes import (  # noqa: E402
 )
 from db.connection import DatabaseUnavailableError  # noqa: E402
 from db.db_client import DatabaseExecutionError  # noqa: E402
+from hushh_mcp.consent.errors import PolicyViolationError, ZKPVerificationError  # noqa: E402
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -175,6 +177,43 @@ async def database_execution_exception_handler(_request: Request, exc: DatabaseE
             hint=getattr(exc, "hint", None),
         ),
     )
+
+
+def _consent_error_payload(exc: Exception, request: Request) -> dict:
+    """Build a privacy-safe 403 payload for consent-domain errors.
+
+    trace_id comes from request.state (set by observability_middleware) so
+    the caller can correlate the response with server-side logs.
+    Integrated by Abdul Gaffar — canonical error-boundary mapping.
+    """
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    return {
+        "status": "error",
+        "message": str(getattr(exc, "message", exc)),
+        "trace_id": trace_id,
+    }
+
+
+@app.exception_handler(PolicyViolationError)
+async def policy_violation_handler(request: Request, exc: PolicyViolationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.policy_violation code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
+
+
+@app.exception_handler(ZKPVerificationError)
+async def zkp_verification_handler(request: Request, exc: ZKPVerificationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.zkp_verification_failed code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
 
 
 # CORS allowlist: explicit origins only (no wildcard regex).
