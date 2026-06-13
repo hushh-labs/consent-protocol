@@ -253,11 +253,11 @@ async def get_active_consents(
 
 @router.get("/user/lookup")
 async def lookup_user(
-    identifier: Optional[str] = None,
-    email: Optional[str] = None,
-    phone_number: Optional[str] = None,
-    country_iso2: Optional[str] = None,
-    country: Optional[str] = None,
+    identifier: Optional[str] = Query(default=None, max_length=128),
+    email: Optional[str] = Query(default=None, max_length=320),
+    phone_number: Optional[str] = Query(default=None, max_length=32),
+    country_iso2: Optional[str] = Query(default=None, max_length=2),
+    country: Optional[str] = Query(default=None, max_length=64),
     x_mcp_developer_token: Optional[str] = Header(None, alias="X-MCP-Developer-Token"),
 ):
     """
