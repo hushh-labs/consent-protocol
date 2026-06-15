@@ -443,7 +443,7 @@ class OneLocationAgentService:
                 logger.warning(
                     "one.location.notification_blocked_plaintext_keys type=%s user=%s",
                     notification_type,
-                    user_id,
+                    redact_log_value(user_id),
                 )
                 return
             seen: set[str] = set()
@@ -475,9 +475,31 @@ class OneLocationAgentService:
             logger.warning(
                 "one.location.notification_skipped type=%s user=%s error=%s",
                 notification_type,
-                user_id,
+                redact_log_value(user_id),
                 exc,
             )
+
+    def _send_push_notification(
+        self,
+        *,
+        user_id: str,
+        notification_type: str,
+        title: str,
+        body: str,
+        notification_tag: str | None = None,
+        request_url: str | None = None,
+        data: dict[str, str | None] | None = None,
+    ) -> None:
+        """Compatibility wrapper for metadata-only location workflow pushes."""
+        self._send_metadata_notification(
+            user_id=user_id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            notification_tag=notification_tag or f"one-location:{notification_type}",
+            request_url=request_url or "/one/location",
+            data=data or {},
+        )
 
     def _identity_row(self, user_id: str) -> dict[str, Any] | None:
         try:
@@ -1785,7 +1807,7 @@ class OneLocationAgentService:
                     title="Location access expired",
                     body="A location share reached its expiry time.",
                     notification_tag=f"one-location-expired:{grant_id}",
-                    request_url=_one_location_url(grantId=grant_id),
+                    request_url=_one_location_url(grantId=grant_id, section="shared"),
                     data={
                         "grant_id": grant_id,
                         "owner_user_id": owner_user_id,
@@ -2203,7 +2225,11 @@ class OneLocationAgentService:
             title="Location shared",
             body=f"{owner_label} shared location access with you.",
             notification_tag=f"one-location-share:{grant['id']}",
-            request_url=_one_location_url(grantId=grant["id"], locationNotification="opened"),
+            request_url=_one_location_url(
+                grantId=grant["id"],
+                locationNotification="opened",
+                section="shared",
+            ),
             data={
                 "grant_id": grant["id"],
                 "owner_user_id": owner_user_id,
@@ -2693,7 +2719,11 @@ class OneLocationAgentService:
                 else f"{display_name[:80]} requested location access from your link."
             ),
             notification_tag=f"one-location-public-request:{submission['id']}",
-            request_url=_one_location_url(requestId=request["id"] if request else None),
+            request_url=_one_location_url(
+                requestId=request["id"] if request else None,
+                submissionId=submission["id"],
+                section="public_responses",
+            ),
             data={
                 "submission_id": submission["id"],
                 "invite_id": invite["id"],
@@ -2872,7 +2902,7 @@ class OneLocationAgentService:
             title="Location access revoked",
             body=f"{owner_label} removed your location access.",
             notification_tag=f"one-location-revoked:{grant_id}",
-            request_url=_one_location_url(grantId=grant_id),
+            request_url=_one_location_url(grantId=grant_id, section="shared"),
             data={
                 "grant_id": grant_id,
                 "owner_user_id": owner_user_id,
@@ -2973,7 +3003,7 @@ class OneLocationAgentService:
                 title="Location access request",
                 body=f"{requester_label} is asking to view your location.",
                 notification_tag=f"one-location-request:{request['id']}",
-                request_url=_one_location_url(requestId=request["id"]),
+                request_url=_one_location_url(requestId=request["id"], section="approvals"),
                 data={
                     "request_id": request["id"],
                     "requester_user_id": requester_user_id,
@@ -3046,7 +3076,12 @@ class OneLocationAgentService:
             title="Location request approved",
             body=f"{owner_label} approved your location request.",
             notification_tag=f"one-location-approved:{request_id}",
-            request_url=_one_location_url(requestId=request_id, grantId=grant["id"]),
+            request_url=_one_location_url(
+                requestId=request_id,
+                grantId=grant["id"],
+                locationNotification="opened",
+                section="shared",
+            ),
             data={
                 "request_id": request_id,
                 "grant_id": grant["id"],
@@ -3093,7 +3128,7 @@ class OneLocationAgentService:
             title="Location request denied",
             body=f"{owner_label} denied your location request.",
             notification_tag=f"one-location-denied:{request_id}",
-            request_url=_one_location_url(requestId=request_id),
+            request_url=_one_location_url(requestId=request_id, section="my_requests"),
             data={
                 "request_id": request_id,
                 "owner_user_id": owner_user_id,
@@ -3181,7 +3216,9 @@ class OneLocationAgentService:
                 body=f"{referring_label} referred you into a location request.",
                 notification_tag=f"one-location-referral:{referral_payload['id']}",
                 request_url=_one_location_url(
-                    requestId=request["id"], referralId=referral_payload["id"]
+                    requestId=request["id"],
+                    referralId=referral_payload["id"],
+                    section="my_requests",
                 ),
                 data={
                     "request_id": request["id"],
