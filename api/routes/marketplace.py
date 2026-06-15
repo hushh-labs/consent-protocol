@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.middleware import require_firebase_auth
-from api.routes import ria as ria_routes
 from hushh_mcp.services.ria_iam_service import (
     IAMSchemaNotReadyError,
     RIAIAMPolicyError,
@@ -16,9 +15,6 @@ from hushh_mcp.services.ria_iam_service import (
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
 
-MarketplaceContactLookup = ria_routes.RIAContactLookup
-MarketplaceContactMatchRequest = ria_routes.RIAContactMatchRequest
-
 
 class MarketplaceInvestorActionRequest(BaseModel):
     action: str = Field(..., max_length=32)
@@ -26,6 +22,16 @@ class MarketplaceInvestorActionRequest(BaseModel):
     public_profile_id: str | int | None = Field(None)
     target_user_id: str | None = Field(default=None, max_length=256)
     metadata: dict | None = Field(None)
+
+
+class MarketplaceContactLookup(BaseModel):
+    hash: str = Field(..., min_length=64, max_length=64, pattern=r"^[a-fA-F0-9]{64}$")
+    last4: str = Field(..., min_length=2, max_length=4, pattern=r"^\d{2,4}$")
+
+
+class MarketplaceContactMatchRequest(BaseModel):
+    phone_lookups: list[MarketplaceContactLookup] = Field(default_factory=list, max_length=1000)
+    limit: int = Field(default=50, ge=1, le=100)
 
 
 def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
@@ -154,7 +160,18 @@ async def match_marketplace_contacts(
     payload: MarketplaceContactMatchRequest,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
-    return await ria_routes.match_ria_marketplace_contacts_payload(payload, firebase_uid)
+    service = RIAIAMService()
+    try:
+        items = await service.match_marketplace_contacts(
+            firebase_uid,
+            phone_lookups=[item.dict() for item in payload.phone_lookups],
+            limit=payload.limit,
+        )
+        return {"items": items}
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get("/ria/{ria_id}")
