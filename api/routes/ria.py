@@ -165,6 +165,16 @@ class RIAMarketplaceDiscoverabilityRequest(BaseModel):
     strategy_summary: str | None = Field(None, max_length=5000)
 
 
+class RIAContactLookup(BaseModel):
+    hash: str = Field(..., min_length=64, max_length=64, pattern=r"^[a-fA-F0-9]{64}$")
+    last4: str = Field(..., min_length=2, max_length=4, pattern=r"^\d{2,4}$")
+
+
+class RIAContactMatchRequest(BaseModel):
+    phone_lookups: list[RIAContactLookup] = Field(default_factory=list, max_length=1000)
+    limit: int = Field(default=50, ge=1, le=100)
+
+
 class RIAPicksShareStateRequest(BaseModel):
     enabled: bool
 
@@ -470,6 +480,32 @@ async def update_ria_marketplace_discoverability(
         return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def match_ria_marketplace_contacts_payload(
+    payload: RIAContactMatchRequest,
+    firebase_uid: str,
+) -> dict[str, list[dict]] | JSONResponse:
+    service = RIAIAMService()
+    try:
+        items = await service.match_marketplace_contacts(
+            firebase_uid,
+            phone_lookups=[item.model_dump() for item in payload.phone_lookups],
+            limit=payload.limit,
+        )
+        return {"items": items}
+    except IAMSchemaNotReadyError:
+        return _iam_schema_not_ready_response()
+    except RIAIAMPolicyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/marketplace/contacts/match")
+async def match_ria_marketplace_contacts(
+    payload: RIAContactMatchRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    return await match_ria_marketplace_contacts_payload(payload, firebase_uid)
 
 
 @router.post("/requests")

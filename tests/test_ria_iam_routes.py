@@ -317,7 +317,7 @@ def test_marketplace_investor_action_routes_are_authenticated_and_forwarded(monk
     assert get_response.json()["items"][0]["status"] == "shortlisted"
 
 
-def test_marketplace_contact_match_route_is_authenticated_and_forwarded(monkeypatch):
+def test_ria_marketplace_contact_match_route_is_authenticated_and_forwarded(monkeypatch):
     async def _mock_match(self, user_id: str, **kwargs):  # noqa: ANN003
         assert user_id == "user_test_123"
         assert kwargs == {
@@ -351,7 +351,7 @@ def test_marketplace_contact_match_route_is_authenticated_and_forwarded(monkeypa
 
     client = TestClient(_build_app())
     response = client.post(
-        "/api/marketplace/contacts/match",
+        "/api/ria/marketplace/contacts/match",
         json={
             "phone_lookups": [
                 {
@@ -367,6 +367,47 @@ def test_marketplace_contact_match_route_is_authenticated_and_forwarded(monkeypa
     match = response.json()["items"][0]
     assert match["display_name"] == "Matched Advisor"
     assert match["profile"]["visibility_posture"] == "default_available"
+
+
+def test_ria_marketplace_contact_match_rejects_invalid_hash(monkeypatch):
+    async def _mock_match(self, user_id: str, **kwargs):  # noqa: ANN003
+        raise AssertionError("invalid contact hashes must not reach the service")
+
+    monkeypatch.setattr(RIAIAMService, "match_marketplace_contacts", _mock_match)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/ria/marketplace/contacts/match",
+        json={
+            "phone_lookups": [
+                {
+                    "hash": "z" * 64,
+                    "last4": "0101",
+                }
+            ],
+            "limit": 25,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_marketplace_contact_match_legacy_route_uses_ria_attach_point(monkeypatch):
+    async def _mock_match(self, user_id: str, **kwargs):  # noqa: ANN003
+        assert user_id == "user_test_123"
+        assert kwargs["phone_lookups"][0]["hash"] == "a" * 64
+        return [{"user_id": "matched_ria_1", "kind": "ria", "display_name": "Matched Advisor", "profile": {}}]
+
+    monkeypatch.setattr(RIAIAMService, "match_marketplace_contacts", _mock_match)
+
+    client = TestClient(_build_app())
+    response = client.post(
+        "/api/marketplace/contacts/match",
+        json={"phone_lookups": [{"hash": "a" * 64, "last4": "0101"}], "limit": 25},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["display_name"] == "Matched Advisor"
 
 
 def test_marketplace_query_filters_are_bounded():
