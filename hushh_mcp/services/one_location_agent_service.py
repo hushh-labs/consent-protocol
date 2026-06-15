@@ -170,6 +170,10 @@ def _json_param(value: dict[str, Any] | list[Any] | None) -> str:
     return json.dumps(_redact_location_metadata(value or {}), separators=(",", ":"))
 
 
+def _json_param_with_public_location(value: dict[str, Any] | None) -> str:
+    return json.dumps(value or {}, separators=(",", ":"))
+
+
 def _contains_plaintext_location_key(value: Any) -> bool:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -1390,12 +1394,15 @@ class OneLocationAgentService:
         if isinstance(metadata, dict):
             safe_label = str(metadata.get("owner_safe_label") or "").strip()
         if public:
-            return {
+            payload = {
                 "status": str(row.get("status") or "active"),
                 "durationHours": float(row.get("duration_hours") or 0),
                 "expiresAt": _iso(row.get("expires_at")),
                 "ownerLabel": safe_label or PUBLIC_INVITE_DEFAULT_OWNER_LABEL,
             }
+            if isinstance(metadata, dict) and isinstance(metadata.get("publicLocation"), dict):
+                payload["locationAvailable"] = True
+            return payload
         payload = {
             "id": str(row.get("id") or ""),
             "ownerUserId": str(row.get("owner_user_id") or ""),
@@ -1409,6 +1416,54 @@ class OneLocationAgentService:
         if safe_label:
             payload["ownerLabel"] = safe_label
         return payload
+
+    @staticmethod
+    def _public_location_snapshot_payload(value: Any) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise OneLocationAgentError(
+                "LOCATION_PUBLIC_LOCATION_INVALID",
+                "Public location links need a valid captured location.",
+                status_code=422,
+            )
+        try:
+            latitude = float(value.get("latitude"))
+            longitude = float(value.get("longitude"))
+        except (TypeError, ValueError) as exc:
+            raise OneLocationAgentError(
+                "LOCATION_PUBLIC_LOCATION_INVALID",
+                "Public location links need valid latitude and longitude.",
+                status_code=422,
+            ) from exc
+        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
+            raise OneLocationAgentError(
+                "LOCATION_PUBLIC_LOCATION_INVALID",
+                "Public location coordinates are outside the valid range.",
+                status_code=422,
+            )
+        accuracy_raw = value.get("accuracyM", value.get("accuracy_m"))
+        accuracy_m: float | None = None
+        if accuracy_raw is not None:
+            try:
+                parsed_accuracy = float(accuracy_raw)
+                if parsed_accuracy > 0:
+                    accuracy_m = round(parsed_accuracy, 2)
+            except (TypeError, ValueError):
+                accuracy_m = None
+        captured_at = _parse_datetime(
+            value.get("capturedAt") or value.get("captured_at"),
+            field_name="capturedAt",
+        )
+        return {
+            "latitude": round(latitude, 7),
+            "longitude": round(longitude, 7),
+            "accuracyM": accuracy_m,
+            "capturedAt": _iso(captured_at),
+            "sourcePlatform": normalize_source_platform(
+                value.get("sourcePlatform") or value.get("source_platform")
+            ),
+        }
 
     @staticmethod
     def _public_submission_payload(
@@ -2353,6 +2408,7 @@ class OneLocationAgentService:
         *,
         owner_user_id: str,
         duration_hours: float,
+        location_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not owner_user_id:
             raise OneLocationAgentError(
@@ -2369,6 +2425,10 @@ class OneLocationAgentService:
         raw_token = secrets.token_urlsafe(32)
         token_hash = _hash_public_value(raw_token)
         expires_at = _utcnow() + timedelta(hours=duration)
+        public_location = self._public_location_snapshot_payload(location_snapshot)
+        metadata: dict[str, Any] = {}
+        if public_location:
+            metadata["publicLocation"] = public_location
         row = self._execute_one(
             """
             INSERT INTO one_location_public_invites (
@@ -2377,7 +2437,7 @@ class OneLocationAgentService:
             )
             VALUES (
               :owner_user_id, :public_code_hash, 'active', :duration_hours,
-              :expires_at, NOW(), NOW(), '{}'::jsonb
+              :expires_at, NOW(), NOW(), CAST(:metadata_json AS JSONB)
             )
             RETURNING *
             """,
@@ -2386,6 +2446,7 @@ class OneLocationAgentService:
                 "public_code_hash": token_hash,
                 "duration_hours": duration,
                 "expires_at": expires_at,
+                "metadata_json": _json_param_with_public_location(metadata),
             },
         )
         invite = self._public_invite_payload(row)
@@ -2399,7 +2460,11 @@ class OneLocationAgentService:
             owner_user_id=owner_user_id,
             actor_user_id=owner_user_id,
             event_type="location_public_invite_created",
-            metadata={"invite_id": invite["id"], "duration_hours": duration},
+            metadata={
+                "invite_id": invite["id"],
+                "duration_hours": duration,
+                "location_snapshot": "attached" if public_location else "none",
+            },
         )
         return {
             "invite": invite,
@@ -2516,6 +2581,11 @@ class OneLocationAgentService:
     ) -> dict[str, Any]:
         invite_row = self._public_invite_row_for_token(public_token=public_token)
         invite = self._public_invite_payload(invite_row) or {}
+        invite_metadata = _loads_json(invite_row.get("metadata")) or {}
+        public_location = (
+            invite_metadata.get("publicLocation") if isinstance(invite_metadata, dict) else None
+        )
+        has_public_location = isinstance(public_location, dict)
         display_name = str(visitor_display_name or "").strip()
         if len(display_name) < 2:
             raise OneLocationAgentError(
@@ -2540,11 +2610,11 @@ class OneLocationAgentService:
         owner_user_id = invite["ownerUserId"]
         matched_identity = self._identity_row_by_phone_digits(phone_digits)
         matched_user_id = str(matched_identity.get("user_id") or "") if matched_identity else None
-        status_value = "pending_identity"
+        status_value = "approved" if has_public_location else "pending_identity"
         request: dict[str, Any] | None = None
         if matched_user_id == owner_user_id:
             matched_user_id = None
-        if matched_user_id:
+        if matched_user_id and not has_public_location:
             try:
                 request = self.request_access(
                     requester_user_id=matched_user_id,
@@ -2584,7 +2654,8 @@ class OneLocationAgentService:
                 "message": message_value,
                 "metadata_json": _json_param(
                     {
-                        "intake_only": True,
+                        "intake_only": not has_public_location,
+                        "public_location_view": has_public_location,
                         "submitter_fingerprint_hash": submitter_fingerprint_hash,
                     }
                 ),
@@ -2608,14 +2679,19 @@ class OneLocationAgentService:
                 "submission_id": submission["id"],
                 "matched": bool(matched_user_id),
                 "request_created": bool(request),
-                "intake_only": True,
+                "intake_only": not has_public_location,
+                "public_location_view": has_public_location,
             },
         )
         self._send_metadata_notification(
             user_id=owner_user_id,
             notification_type="location_public_invite_submitted",
-            title="Public location request",
-            body=f"{display_name[:80]} requested location access from your link.",
+            title="Public location viewed" if has_public_location else "Public location request",
+            body=(
+                f"{display_name[:80]} opened your public location link."
+                if has_public_location
+                else f"{display_name[:80]} requested location access from your link."
+            ),
             notification_tag=f"one-location-public-request:{submission['id']}",
             request_url=_one_location_url(requestId=request["id"] if request else None),
             data={
@@ -2628,7 +2704,10 @@ class OneLocationAgentService:
                 "status": status_value,
             },
         )
-        return {"submission": self._public_submission_payload(row, public=True)}
+        result = {"submission": self._public_submission_payload(row, public=True)}
+        if has_public_location:
+            result["publicLocation"] = public_location
+        return result
 
     def revoke_public_invite(self, *, owner_user_id: str, invite_id: str) -> dict[str, Any]:
         row = self._execute_one(
