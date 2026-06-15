@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS_DIR = REPO_ROOT / "db" / "migrations"
 MANIFEST_PATH = REPO_ROOT / "db" / "release_migration_manifest.json"
