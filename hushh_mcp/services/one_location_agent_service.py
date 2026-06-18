@@ -2669,6 +2669,7 @@ class OneLocationAgentService:
                     owner_user_id=owner_user_id,
                     message=message_value or f"Public request from {display_name}",
                     notify_owner=False,
+                    require_requester_key_material=True,
                 )
                 status_value = "matched_request_pending"
             except OneLocationAgentError as exc:
@@ -2944,19 +2945,17 @@ class OneLocationAgentService:
         message: str | None = None,
         referred_by_user_id: str | None = None,
         notify_owner: bool = True,
+        require_requester_key_material: bool = False,
     ) -> dict[str, Any]:
         if requester_user_id == owner_user_id:
             raise OneLocationAgentError(
                 "LOCATION_REQUEST_SELF", "Request a different person's location.", status_code=422
             )
-        self._recipient_key_row(
-            recipient_user_id=requester_user_id,
-            require_phone_verified=False,
-            unavailable_message=(
-                "Your One Location key is still setting up. Refresh this page once, "
-                "then send the request again."
-            ),
-        )
+        if require_requester_key_material:
+            self._recipient_key_row(
+                recipient_user_id=requester_user_id,
+                require_phone_verified=False,
+            )
         message_value = (message or "").strip()[:500] or None
         row = self._execute_one(
             """

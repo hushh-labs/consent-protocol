@@ -1372,6 +1372,35 @@ def test_four_user_location_workflow_contract() -> None:
     assert "longitude" not in serialized_state
 
 
+def test_location_request_creation_does_not_require_requester_key_material() -> None:
+    service = FourUserMemoryService()
+    service.register_recipient_key(
+        user_id="user_a",
+        key_id="key-user_a",
+        public_key_jwk={"kty": "EC", "crv": "P-256", "x": "user_a", "y": "user_a"},
+    )
+
+    request = service.request_access(
+        requester_user_id="user_c",
+        owner_user_id="user_a",
+        message="Can I see your location?",
+    )
+
+    assert request["ownerUserId"] == "user_a"
+    assert request["requesterUserId"] == "user_c"
+    assert request["status"] == "pending"
+
+    with pytest.raises(OneLocationAgentError) as missing_key:
+        service.create_grant(
+            owner_user_id="user_a",
+            recipient_user_id="user_c",
+            recipient_key_id=None,
+            duration_hours=1,
+            require_recipient_phone_verified=False,
+        )
+    assert missing_key.value.code == "LOCATION_RECIPIENT_UNAVAILABLE"
+
+
 def test_one_location_activity_summary_uses_existing_metadata_events() -> None:
     service = FourUserMemoryService()
 
