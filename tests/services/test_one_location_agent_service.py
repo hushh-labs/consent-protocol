@@ -223,10 +223,16 @@ class FourUserMemoryService(OneLocationAgentService):
             matches = [key for key in matches if key["key_id"] == key_id]
         return matches[-1] if matches else None
 
-    def _identity_key_row(self, user_id: str, key_id: str | None = None) -> dict | None:
+    def _identity_key_row(
+        self,
+        user_id: str,
+        key_id: str | None = None,
+        *,
+        require_phone_verified: bool = True,
+    ) -> dict | None:
         identity = self.identities.get(user_id)
         key = self._active_key(user_id, key_id)
-        if not identity or not identity["phone_verified"] or not key:
+        if not identity or (require_phone_verified and not identity["phone_verified"]) or not key:
             return None
         return {
             **identity,
@@ -638,7 +644,9 @@ class FourUserMemoryService(OneLocationAgentService):
             return row
         if "JOIN one_location_recipient_keys k" in sql:
             return self._identity_key_row(
-                params["recipient_user_id"], params.get("recipient_key_id")
+                params["recipient_user_id"],
+                params.get("recipient_key_id"),
+                require_phone_verified=bool(params.get("require_phone_verified", True)),
             )
         if "INSERT INTO one_location_share_grants" in sql:
             grant_id = str(uuid.uuid4())
@@ -1254,6 +1262,7 @@ def test_four_user_location_workflow_contract() -> None:
             key_id=f"key-{user_id}",
             public_key_jwk={"kty": "EC", "crv": "P-256", "x": user_id, "y": user_id},
         )
+    service.identities[user_c]["phone_verified"] = False
 
     grant_b = service.create_grant(
         owner_user_id=user_a,
@@ -1274,6 +1283,15 @@ def test_four_user_location_workflow_contract() -> None:
         service.view_latest_envelope(recipient_user_id=user_c, grant_id=grant_b["id"])
     assert denied_c.value.code == "LOCATION_GRANT_NOT_FOUND"
 
+    with pytest.raises(OneLocationAgentError) as unverified_share:
+        service.create_grant(
+            owner_user_id=user_a,
+            recipient_user_id=user_c,
+            recipient_key_id=f"key-{user_c}",
+            duration_hours=1,
+        )
+    assert unverified_share.value.code == "LOCATION_RECIPIENT_UNAVAILABLE"
+
     direct_request_c = service.request_access(
         requester_user_id=user_c,
         owner_user_id=user_a,
@@ -1286,6 +1304,21 @@ def test_four_user_location_workflow_contract() -> None:
     )
     assert duplicate_request_c["id"] == direct_request_c["id"]
     assert duplicate_request_c["message"] == "Can you share where you are now?"
+
+    approved_c = service.approve_request(
+        owner_user_id=user_a,
+        request_id=direct_request_c["id"],
+        duration_hours=1,
+    )
+    grant_c = approved_c["grant"]
+    assert grant_c["recipientUserId"] == user_c
+    service.store_encrypted_envelope(
+        owner_user_id=user_a,
+        grant_id=grant_c["id"],
+        envelope=encrypted_envelope(f"key-{user_c}", "ciphertext-for-c"),
+    )
+    viewed_c = service.view_latest_envelope(recipient_user_id=user_c, grant_id=grant_c["id"])
+    assert viewed_c["envelope"]["ciphertext"] == "ciphertext-for-c"
 
     referral_response = service.refer_recipient(
         referring_user_id=user_b,

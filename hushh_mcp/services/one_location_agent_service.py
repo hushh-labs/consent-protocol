@@ -2113,7 +2113,12 @@ class OneLocationAgentService:
         )
 
     def _recipient_key_row(
-        self, *, recipient_user_id: str, recipient_key_id: str | None = None
+        self,
+        *,
+        recipient_user_id: str,
+        recipient_key_id: str | None = None,
+        require_phone_verified: bool = True,
+        unavailable_message: str | None = None,
     ) -> dict[str, Any]:
         row = self._execute_one(
             """
@@ -2123,18 +2128,23 @@ class OneLocationAgentService:
             FROM actor_identity_cache a
             JOIN one_location_recipient_keys k ON k.user_id = a.user_id
             WHERE a.user_id = :recipient_user_id
-              AND a.phone_verified = TRUE
+              AND (:require_phone_verified IS FALSE OR a.phone_verified = TRUE)
               AND k.status = 'active'
               AND (:recipient_key_id IS NULL OR k.key_id = :recipient_key_id)
             ORDER BY k.created_at DESC
             LIMIT 1
             """,
-            {"recipient_user_id": recipient_user_id, "recipient_key_id": recipient_key_id},
+            {
+                "recipient_user_id": recipient_user_id,
+                "recipient_key_id": recipient_key_id,
+                "require_phone_verified": require_phone_verified,
+            },
         )
         if not row:
             raise OneLocationAgentError(
                 "LOCATION_RECIPIENT_UNAVAILABLE",
-                "Choose a verified recipient who has location key material ready.",
+                unavailable_message
+                or "Choose a verified recipient who has location key material ready.",
                 status_code=409,
             )
         return row
@@ -2147,6 +2157,7 @@ class OneLocationAgentService:
         recipient_key_id: str | None,
         duration_hours: float,
         reason: str | None = None,
+        require_recipient_phone_verified: bool = True,
     ) -> dict[str, Any]:
         if owner_user_id == recipient_user_id:
             raise OneLocationAgentError(
@@ -2163,7 +2174,9 @@ class OneLocationAgentService:
                 status_code=422,
             ) from exc
         recipient = self._recipient_key_row(
-            recipient_user_id=recipient_user_id, recipient_key_id=recipient_key_id
+            recipient_user_id=recipient_user_id,
+            recipient_key_id=recipient_key_id,
+            require_phone_verified=require_recipient_phone_verified,
         )
         owner_identity = self._identity_row(owner_user_id)
         owner_label = _identity_display_label(owner_identity)
@@ -2936,7 +2949,14 @@ class OneLocationAgentService:
             raise OneLocationAgentError(
                 "LOCATION_REQUEST_SELF", "Request a different person's location.", status_code=422
             )
-        self._recipient_key_row(recipient_user_id=requester_user_id)
+        self._recipient_key_row(
+            recipient_user_id=requester_user_id,
+            require_phone_verified=False,
+            unavailable_message=(
+                "Your One Location key is still setting up. Refresh this page once, "
+                "then send the request again."
+            ),
+        )
         message_value = (message or "").strip()[:500] or None
         row = self._execute_one(
             """
@@ -3056,6 +3076,7 @@ class OneLocationAgentService:
             recipient_key_id=None,
             duration_hours=duration_hours,
             reason="request_approved",
+            require_recipient_phone_verified=False,
         )
         resolved = self._execute_one(
             """
