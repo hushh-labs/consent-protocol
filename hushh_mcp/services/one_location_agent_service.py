@@ -1213,7 +1213,7 @@ class OneLocationAgentService:
                 self._add_recommendation_reason(
                     signal,
                     code="location_key_ready",
-                    label="Ready for encrypted location sharing",
+                    label="Ready for location sharing",
                     weight=28,
                 )
             else:
@@ -1275,7 +1275,7 @@ class OneLocationAgentService:
                 tier = "setup_needed"
                 trust_level = "setup_needed"
                 category_label = "Needs setup"
-                summary = "They need to open One Location once before encrypted sharing."
+                summary = "They need to open One Location once before sharing."
             elif signal.get("needs_action"):
                 category = "needs_action"
                 tier = "needs_action"
@@ -1299,7 +1299,7 @@ class OneLocationAgentService:
                 tier = "available"
                 trust_level = "new"
                 category_label = "Location ready"
-                summary = "Verified KAI member with recipient encryption ready."
+                summary = "Verified One member ready for location sharing."
 
             enriched.append(
                 {
@@ -2144,7 +2144,7 @@ class OneLocationAgentService:
             raise OneLocationAgentError(
                 "LOCATION_RECIPIENT_UNAVAILABLE",
                 unavailable_message
-                or "Choose a verified recipient who has location key material ready.",
+                or "Choose someone marked One Network, or ask them to open One Location once.",
                 status_code=409,
             )
         return row
