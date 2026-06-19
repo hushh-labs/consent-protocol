@@ -33,7 +33,7 @@ import re
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -174,11 +174,11 @@ class _OfflineConnectionPool:
     # Pool-level passthroughs (asyncpg supports pool.fetch(...) etc.)
     async def fetch(self, query: str, *args) -> list[dict]:
         async with self.acquire() as conn:
-            return await conn.fetch(query, *args)
+            return cast(list[dict], await conn.fetch(query, *args))
 
     async def fetchrow(self, query: str, *args) -> Optional[dict]:
         async with self.acquire() as conn:
-            return await conn.fetchrow(query, *args)
+            return cast(Optional[dict], await conn.fetchrow(query, *args))
 
     async def fetchval(self, query: str, *args) -> Any:
         async with self.acquire() as conn:
@@ -186,7 +186,7 @@ class _OfflineConnectionPool:
 
     async def execute(self, query: str, *args) -> str:
         async with self.acquire() as conn:
-            return await conn.execute(query, *args)
+            return cast(str, await conn.execute(query, *args))
 
     async def close(self) -> None:
         """Close the pool (no persistent connections to close for SQLite)."""
