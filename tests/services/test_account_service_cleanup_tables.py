@@ -81,6 +81,8 @@ async def test_full_account_deletion_covers_account_owned_tables(monkeypatch):
         "DELETE FROM kai_gmail_connections",
         "DELETE FROM consent_export_refresh_jobs",
         "DELETE FROM consent_exports",
+        "DELETE FROM connected_system_audit_events",
+        "DELETE FROM connected_system_intents",
         "DELETE FROM pkm_upgrade_runs",
         "DELETE FROM world_model_index_v2",
         "DELETE FROM pkm_migration_state",

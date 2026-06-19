@@ -42,6 +42,12 @@ class AccountService:
                 "DELETE FROM consent_export_refresh_jobs WHERE user_id = :user_id"
             ),
             "consent_exports": text("DELETE FROM consent_exports WHERE user_id = :user_id"),
+            "connected_system_audit_events": text(
+                "DELETE FROM connected_system_audit_events WHERE user_id = :user_id"
+            ),
+            "connected_system_intents": text(
+                "DELETE FROM connected_system_intents WHERE user_id = :user_id"
+            ),
             "internal_access_events": text(
                 "DELETE FROM internal_access_events WHERE user_id = :user_id"
             ),
@@ -480,6 +486,8 @@ class AccountService:
                         "kai_portfolio_source_preferences",
                         "consent_export_refresh_jobs",
                         "consent_exports",
+                        "connected_system_audit_events",
+                        "connected_system_intents",
                         "pkm_upgrade_runs",
                     ],
                     params=params,
