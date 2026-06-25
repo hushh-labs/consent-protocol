@@ -271,6 +271,8 @@ class FourUserMemoryService(OneLocationAgentService):
             for user_id, identity in self.identities.items():
                 if user_id == owner:
                     continue
+                # Mirror the real SQL: phone-verified users OR active One Network
+                # connections are visible recipients.
                 if not identity["phone_verified"] and user_id not in connected_ids:
                     continue
                 key = self._active_key(user_id)
