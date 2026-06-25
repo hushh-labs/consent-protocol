@@ -49,7 +49,8 @@
     "069_drop_kai_location_plaintext.sql",
     "070_developer_registry.sql",
     "071_enterprise_crm_registry.sql",
-    "072_crm_registry_mulesoft_pbkdf2_cbc.sql"
+    "072_crm_registry_mulesoft_pbkdf2_cbc.sql",
+    "073_crm_registry_mulesoft_simplify.sql"
   ],
   "groups": {
     "iam": [
@@ -84,7 +85,8 @@
       "068_one_location_circle_invites.sql",
       "069_drop_kai_location_plaintext.sql",
       "071_enterprise_crm_registry.sql",
-      "072_crm_registry_mulesoft_pbkdf2_cbc.sql"
+      "072_crm_registry_mulesoft_pbkdf2_cbc.sql",
+      "073_crm_registry_mulesoft_simplify.sql"
     ],
     "pkm": [
       "030_pkm_cutover.sql",

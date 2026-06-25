@@ -1,6 +1,6 @@
 {
   "contract_name": "uat_integrated_schema",
-  "expected_migration_version": 72,
+  "expected_migration_version": 73,
   "migration_version_policy": "exact",
   "required_functions": [
     "merge_domain_summary",
@@ -657,7 +657,8 @@
       "crm_client_id_blob",
       "crm_client_secret_blob",
       "kdf_salt",
-      "kdf_iterations"
+      "kdf_iterations",
+      "crm_delete_endpoint"
     ],
     "crm_operation_endpoints": [
       "crm_id",

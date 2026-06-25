@@ -598,6 +598,10 @@ class ConnectedSystemDefinition:
     # the hardcoded in-code definitions backward compatible. NEVER surfaced in
     # to_summary() — headers must not leak through the API.
     transport_headers: tuple[tuple[str, str], ...] = ()
+    # Salesforce delete uses a different endpoint path than schema/CRUD-read, so
+    # the registry can carry a dedicated delete endpoint. None → fall back to
+    # transport_endpoint. Only consulted when supports_delete is enabled.
+    delete_transport_endpoint: str | None = None
 
     def to_summary(self, *, endpoint_configured: bool, delete_enabled: bool) -> dict[str, Any]:
         return {

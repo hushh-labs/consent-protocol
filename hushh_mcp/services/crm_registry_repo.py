@@ -18,7 +18,11 @@ from typing import Any
 
 from db.db_client import get_db
 from hushh_mcp.config import VAULT_DATA_KEY
-from hushh_mcp.runtime_settings import get_connector_secrets_key
+from hushh_mcp.runtime_settings import (
+    get_connector_kdf_iterations,
+    get_connector_kdf_salt,
+    get_connector_secrets_key,
+)
 from hushh_mcp.services.connected_systems_service import (
     ConnectedSystemConfigurationError,
     ConnectedSystemDefinition,
@@ -93,11 +97,15 @@ def _decrypt_credentials(row: dict[str, Any]) -> tuple[str, str]:
 
     if algorithm == PBKDF2_CBC_ALGORITHM:
         password = get_connector_secrets_key()
-        salt = row.get("kdf_salt")
-        iterations = row.get("kdf_iterations")
+        # KDF params are constant across MuleSoft CRMs → resolve from config when
+        # the row omits them (the common case after migration 073). A row MAY
+        # still override with its own kdf_salt / kdf_iterations.
+        salt = row.get("kdf_salt") or get_connector_kdf_salt()
+        iterations = row.get("kdf_iterations") or get_connector_kdf_iterations()
         if not salt or not iterations:
             raise ConnectedSystemConfigurationError(
-                "CRM registry PBKDF2 row is missing kdf_salt / kdf_iterations.",
+                "CRM registry PBKDF2 row is missing kdf_salt / kdf_iterations "
+                "and no connector KDF config is set.",
                 code="CONNECTED_SYSTEM_REGISTRY_INCOMPLETE",
             )
         client_id = _decrypt_pbkdf2_cbc_blob(
@@ -231,4 +239,7 @@ def load_active_definition(
         registry_source=REGISTRY_SOURCE,
         tool_catalog=tool_catalog,
         transport_headers=transport_headers,
+        delete_transport_endpoint=(
+            str(row.get("crm_delete_endpoint")).strip() if row.get("crm_delete_endpoint") else None
+        ),
     )
