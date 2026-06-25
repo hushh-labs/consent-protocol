@@ -57,14 +57,12 @@ def _coerce_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         normalized = str(key or "").strip().lower()
         if normalized in COORDINATE_METADATA_KEYS:
             raise ValueError(
-                f"one_location consent entry metadata contains forbidden "
-                f"coordinate key: {key}"
+                f"one_location consent entry metadata contains forbidden coordinate key: {key}"
             )
     for value in metadata.values():
         if isinstance(value, str) and _contains_plaintext_location_key(value):
             raise ValueError(
-                "one_location consent entry metadata contains a plaintext "
-                "location value"
+                "one_location consent entry metadata contains a plaintext location value"
             )
     return metadata
 
@@ -116,9 +114,7 @@ class OneLocationCenterContributor:
 
     # ----- mappers -------------------------------------------------------
 
-    def _incoming_requests(
-        self, state: dict[str, Any], user_id: str
-    ) -> list[dict[str, Any]]:
+    def _incoming_requests(self, state: dict[str, Any], user_id: str) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         for request in state.get("requests") or []:
             if _safe_str(request.get("ownerUserId")) != user_id:
@@ -131,17 +127,13 @@ class OneLocationCenterContributor:
                     kind="incoming_request",
                     section="approvals",
                     counterpart_id=_safe_str(request.get("requesterUserId")),
-                    counterpart_label=_safe_str(
-                        request.get("requesterDisplayName")
-                    )
+                    counterpart_label=_safe_str(request.get("requesterDisplayName"))
                     or "Someone in your One Network",
                 )
             )
         return entries
 
-    def _outgoing_requests(
-        self, state: dict[str, Any], user_id: str
-    ) -> list[dict[str, Any]]:
+    def _outgoing_requests(self, state: dict[str, Any], user_id: str) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         for request in state.get("requests") or []:
             if _safe_str(request.get("requesterUserId")) != user_id:
@@ -149,11 +141,7 @@ class OneLocationCenterContributor:
             if _safe_str(request.get("ownerUserId")) == user_id:
                 continue
             status = _safe_str(request.get("status"))
-            kind = (
-                "outgoing_request"
-                if status in _PENDING_REQUEST_STATUSES
-                else "history"
-            )
+            kind = "outgoing_request" if status in _PENDING_REQUEST_STATUSES else "history"
             entries.append(
                 self._request_entry(
                     request,
@@ -166,9 +154,7 @@ class OneLocationCenterContributor:
             )
         return entries
 
-    def _active_grants(
-        self, state: dict[str, Any], user_id: str
-    ) -> list[dict[str, Any]]:
+    def _active_grants(self, state: dict[str, Any], user_id: str) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         # Owner side: people who can see me.
         for grant in state.get("ownerGrants") or []:
@@ -216,9 +202,7 @@ class OneLocationCenterContributor:
                         grant,
                         section="shared" if not is_owner else "people",
                         counterpart_id=_safe_str(
-                            grant.get("recipientUserId")
-                            if is_owner
-                            else grant.get("ownerUserId")
+                            grant.get("recipientUserId") if is_owner else grant.get("ownerUserId")
                         ),
                         counterpart_label=_safe_str(
                             grant.get("recipientDisplayName")
@@ -280,11 +264,7 @@ class OneLocationCenterContributor:
                 "section": section,
                 "grant_id": grant_id,
                 "requester_label": counterpart_label,
-                **(
-                    {"duration_label": _duration_label(duration_hours)}
-                    if duration_hours
-                    else {}
-                ),
+                **({"duration_label": _duration_label(duration_hours)} if duration_hours else {}),
             }
         )
         return {
@@ -336,9 +316,7 @@ class OneLocationCenterContributor:
             "metadata": metadata,
         }
 
-    def _public_invite_entry(
-        self, invite: dict[str, Any], *, kind: str
-    ) -> dict[str, Any]:
+    def _public_invite_entry(self, invite: dict[str, Any], *, kind: str) -> dict[str, Any]:
         invite_id = _safe_str(invite.get("id"))
         metadata = _coerce_metadata(
             {
