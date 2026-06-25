@@ -16,6 +16,10 @@ load_dotenv(_DOTENV_PATH, override=False)
 
 APP_SIGNING_KEY_ENV = "APP_SIGNING_KEY"
 VAULT_DATA_KEY_ENV = "VAULT_DATA_KEY"
+# Connector-credential encryption password (PBKDF2 input) for the MuleSoft
+# PBKDF2-AES256-CBC scheme. Separate trust domain from VAULT_DATA_KEY (user
+# data). Falls back to VAULT_DATA_KEY until a dedicated key is provisioned.
+CONNECTOR_SECRETS_KEY_ENV = "CONNECTOR_SECRETS_KEY"  # noqa: S105
 APP_FRONTEND_ORIGIN_ENV = "APP_FRONTEND_ORIGIN"
 FIREBASE_ADMIN_CREDENTIALS_JSON_ENV = "FIREBASE_ADMIN_CREDENTIALS_JSON"
 FIREBASE_SERVICE_ACCOUNT_JSON_ENV = "FIREBASE_SERVICE_ACCOUNT_JSON"
@@ -170,6 +174,16 @@ def get_optional_gmail_oauth_token_key() -> str:
 
 def get_optional_plaid_access_token_key() -> str:
     return _clean_env(PLAID_ACCESS_TOKEN_KEY_ENV)
+
+
+def get_connector_secrets_key() -> str:
+    """Password for connector-credential PBKDF2-AES256-CBC encryption.
+
+    Separate trust domain from user-data encryption. Falls back to
+    VAULT_DATA_KEY during transition so existing deployments keep working;
+    provision a dedicated CONNECTOR_SECRETS_KEY before production self-serve.
+    """
+    return _clean_env(CONNECTOR_SECRETS_KEY_ENV) or _clean_env(VAULT_DATA_KEY_ENV)
 
 
 def crm_registry_db_enabled() -> bool:
