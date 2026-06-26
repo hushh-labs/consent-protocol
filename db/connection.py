@@ -58,7 +58,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 def _is_offline_mode() -> bool:
     """Return True when running in air-gapped offline mode."""
-    return str(os.getenv("DB_OFFLINE", "0")).strip().lower() in ("1", "true", "yes", "on")
+    return str(os.getenv("DB_OFFLINE", "0")).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 async def _get_offline_pool():
@@ -167,6 +172,26 @@ def _get_connect_timeout_seconds() -> float:
     return value
 
 
+def _get_pool_int(env_name: str, default: int, *, minimum: int) -> int:
+    """Read a positive integer pool-sizing env var with a safe fallback."""
+    raw = os.getenv(env_name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid int for %s=%r; using default %d", env_name, raw, default)
+        return default
+    if value < minimum:
+        logger.warning(
+            "Out-of-range %s=%r; expected >= %d. Using default %d",
+            env_name,
+            raw,
+            minimum,
+            default,
+        )
+        return default
+    return value
+
+
 def get_database_url() -> str:
     """
     Build database URL from DB_* environment variables (single source of truth).
@@ -245,6 +270,14 @@ async def get_pool() -> asyncpg.Pool:
         database_url = _get_database_url()
         ssl_config = get_database_ssl()
         connect_timeout_seconds = _get_connect_timeout_seconds()
+        # Pool sizing is env-tunable. The previous fixed max_size=10 was easily
+        # exhausted when a few slow endpoints held connections, causing other
+        # requests to block on acquire() until they hit the connect timeout and
+        # 500'd. A larger ceiling plus a warm floor removes that cliff.
+        pool_min_size = _get_pool_int("DB_POOL_MIN_SIZE", 2, minimum=0)
+        pool_max_size = _get_pool_int("DB_POOL_MAX_SIZE", 20, minimum=1)
+        if pool_max_size < pool_min_size:
+            pool_max_size = pool_min_size
         db_host = os.getenv("DB_HOST", "")
         db_unix_socket = os.getenv("DB_UNIX_SOCKET", "")
         db_user = os.getenv("DB_USER", "")
@@ -263,8 +296,8 @@ async def get_pool() -> asyncpg.Pool:
                     database=db_name,
                     host=db_unix_socket,
                     port=db_port,
-                    min_size=2,
-                    max_size=10,
+                    min_size=pool_min_size,
+                    max_size=pool_max_size,
                     timeout=connect_timeout_seconds,
                     command_timeout=60,
                     max_inactive_connection_lifetime=300,
@@ -272,8 +305,8 @@ async def get_pool() -> asyncpg.Pool:
             else:
                 _pool = await asyncpg.create_pool(
                     database_url,
-                    min_size=2,
-                    max_size=10,
+                    min_size=pool_min_size,
+                    max_size=pool_max_size,
                     timeout=connect_timeout_seconds,
                     command_timeout=60,
                     max_inactive_connection_lifetime=300,
