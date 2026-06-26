@@ -47,9 +47,16 @@ router = APIRouter(prefix="/api/account", tags=["Account"])
 @router.post("/identity/refresh")
 async def refresh_account_identity(
     firebase_uid: str = Depends(require_firebase_auth),
+    force: bool = True,
 ):
-    """Refresh the backend account identity shadow from Firebase Auth."""
-    identity = await ActorIdentityService().sync_from_firebase(firebase_uid, force=True)
+    """Refresh the backend account identity shadow from Firebase Auth.
+
+    When ``force`` is false the cached identity shadow is returned if it is
+    fresh, avoiding a synchronous Firebase Auth round-trip and DB upsert. This
+    keeps read-only callers (such as the phone-mandate guard) fast while
+    callers that need guaranteed freshness keep the default forced refresh.
+    """
+    identity = await ActorIdentityService().sync_from_firebase(firebase_uid, force=force)
     return {
         "success": True,
         "user_id": firebase_uid,

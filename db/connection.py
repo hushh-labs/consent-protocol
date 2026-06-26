@@ -2,8 +2,17 @@
 """
 Database connection pool management.
 
-This module provides direct PostgreSQL connection via asyncpg using
-Supabase's session pooler credentials.
+This module provides a direct PostgreSQL connection pool via asyncpg to
+Google Cloud SQL (Postgres). Supabase has been removed; Cloud SQL is the
+only runtime datastore.
+
+Connectivity:
+    - Local/dev: connect over the Cloud SQL Auth Proxy, which binds a local
+      TCP port (DB_HOST=127.0.0.1, DB_PORT=CLOUDSQL_PROXY_PORT). Start it via
+      `./bin/hushh terminal backend --mode local --reload` or
+      `bash scripts/runtime/run_backend_local.sh local --reload`.
+    - Cloud Run/prod: connect over the Cloud SQL Unix socket
+      (DB_UNIX_SOCKET=/cloudsql/<project:region:instance>).
 
 Usage:
     from db.connection import get_pool
@@ -13,13 +22,17 @@ Usage:
         result = await pool.fetch("SELECT * FROM users")
 
 Connection Method:
-    Uses individual DB_* environment variables (shared pooler or Cloud SQL socket):
-    - DB_USER: Supabase pooler username (e.g., postgres.project-ref)
+    Uses individual DB_* environment variables (single source of truth; no
+    DATABASE_URL):
+    - DB_USER: Cloud SQL database user (e.g., hushh_uat_app)
     - DB_PASSWORD: Database password
-    - DB_HOST: Pooler host (e.g., aws-1-us-east-1.pooler.supabase.com)
-    - DB_UNIX_SOCKET: Optional Cloud SQL Unix socket path (/cloudsql/project:region:instance)
-    - DB_PORT: Port (default 5432)
+    - DB_HOST: Cloud SQL Auth Proxy host (typically 127.0.0.1 in local/dev)
+    - DB_PORT: Cloud SQL Auth Proxy port (e.g., 6543; default 5432)
+    - DB_UNIX_SOCKET: Cloud SQL Unix socket path for Cloud Run
+      (/cloudsql/<project:region:instance>); mutually exclusive with DB_HOST
     - DB_NAME: Database name (default postgres)
+    - CLOUDSQL_INSTANCE_CONNECTION_NAME: <project:region:instance> for the proxy
+    - CLOUDSQL_PROXY_PORT: Local port the proxy binds (mirrors DB_PORT)
 """
 
 import asyncio
@@ -169,7 +182,8 @@ def get_database_url() -> str:
         raise EnvironmentError(
             "Database credentials not set. Required: DB_USER, DB_PASSWORD, and one of DB_HOST/DB_UNIX_SOCKET. "
             "Optional: DB_PORT (default 5432), DB_NAME (default postgres). "
-            "Set in .env; get from Supabase Dashboard → Project Settings → Database → Connection Pooling."
+            "Set in .env from the Cloud SQL instance (project:region:instance); locally these point at "
+            "the Cloud SQL Auth Proxy on 127.0.0.1:CLOUDSQL_PROXY_PORT."
         )
     if db_unix_socket:
         # Cloud SQL Unix socket path must be provided via query host parameter.
@@ -178,11 +192,16 @@ def get_database_url() -> str:
 
 
 def get_database_ssl():
-    """Return ssl config for asyncpg when using Supabase pooler."""
+    """Return ssl config for asyncpg.
+
+    Cloud SQL is reached either over the Cloud SQL Auth Proxy (local TCP,
+    already encrypted by the proxy) or over a Unix socket (Cloud Run); in both
+    cases asyncpg needs no extra SSL config. An explicit DB_SSLMODE=require can
+    still force TLS for any other remote host.
+    """
     if os.getenv("DB_UNIX_SOCKET"):
         return None
-    db_host = os.getenv("DB_HOST", "")
-    if "supabase.com" in db_host or "pooler.supabase" in db_host:
+    if str(os.getenv("DB_SSLMODE", "")).strip().lower() == "require":
         return "require"
     return None
 
@@ -233,9 +252,9 @@ async def get_pool() -> asyncpg.Pool:
         db_name = os.getenv("DB_NAME", "postgres")
         db_port = int(os.getenv("DB_PORT", "5432"))
         target = db_unix_socket or db_host
-        logger.info(f"Connecting to PostgreSQL at {target}...")
+        logger.info(f"Connecting to PostgreSQL (Cloud SQL) at {target}...")
         if ssl_config:
-            logger.info("SSL enabled for Supabase pooler connection")
+            logger.info("SSL enabled for database connection")
         try:
             if db_unix_socket:
                 _pool = await asyncpg.create_pool(
