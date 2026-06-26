@@ -58,12 +58,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 def _is_offline_mode() -> bool:
     """Return True when running in air-gapped offline mode."""
-    return str(os.getenv("DB_OFFLINE", "0")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return str(os.getenv("DB_OFFLINE", "0")).strip().lower() in ("1", "true", "yes", "on")
 
 
 async def _get_offline_pool():
