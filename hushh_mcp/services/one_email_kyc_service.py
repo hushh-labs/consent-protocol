@@ -3441,15 +3441,33 @@ class OneEmailKycService:
         if expected_scope and isinstance(metadata, dict):
             exports = metadata.get("consent_exports")
             if isinstance(exports, list):
-                workflow_export = next(
-                    (
-                        item
-                        for item in exports
-                        if isinstance(item, dict)
-                        and _clean_text(item.get("scope")) == _clean_text(expected_scope)
-                    ),
-                    workflow_export,
-                )
+                scoped_entries = [item for item in exports if isinstance(item, dict)]
+                if scoped_entries:
+                    expected_clean = _clean_text(expected_scope)
+                    # Prefer an exact-scope binding; otherwise accept a bound
+                    # export whose scope SATISFIES the expected scope (a broader
+                    # grant like attr.financial.* covers attr.financial.portfolio.*).
+                    # Never fall back to an unrelated-scope binding (e.g. the
+                    # identity export), which would compare a financial export
+                    # against an identity snapshot and guarantee a false stale
+                    # mismatch whenever the request scope is narrower than the
+                    # actual export scope.
+                    workflow_export = next(
+                        (
+                            item
+                            for item in scoped_entries
+                            if _clean_text(item.get("scope")) == expected_clean
+                        ),
+                        None,
+                    ) or next(
+                        (
+                            item
+                            for item in scoped_entries
+                            if _clean_text(item.get("scope"))
+                            and scope_matches(_clean_text(item.get("scope")), expected_clean)
+                        ),
+                        None,
+                    )
         if not isinstance(workflow_export, dict):
             raise OneEmailKycError(
                 "KYC workflow is not bound to the approved export revision.",
@@ -3465,8 +3483,25 @@ class OneEmailKycService:
                 status_code=409,
                 code="ONE_KYC_DRAFT_EXPORT_STALE",
             )
+        # Scope is validated by COMPATIBILITY, not byte-equality: a broader
+        # bound/export scope (attr.financial.*) legitimately covers a narrower
+        # expected/current scope (attr.financial.portfolio.*). The remaining
+        # fields must still match exactly — they prove the underlying export
+        # data has not changed since the reply was bound.
+        bound_scope = _clean_text(workflow_export.get("scope"))
+        current_scope = _clean_text(current_export.get("scope"))
+        if (
+            bound_scope
+            and current_scope
+            and not scope_matches(bound_scope, current_scope)
+            and not scope_matches(current_scope, bound_scope)
+        ):
+            raise OneEmailKycError(
+                "KYC approved reply must be regenerated because the approved export changed.",
+                status_code=409,
+                code="ONE_KYC_DRAFT_EXPORT_STALE",
+            )
         compared_fields = (
-            "scope",
             "export_revision",
             "export_generated_at",
             "connector_key_id",
