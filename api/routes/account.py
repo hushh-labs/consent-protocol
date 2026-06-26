@@ -539,14 +539,49 @@ async def delete_account(
         details = result.get("details")
         if not isinstance(details, dict):
             details = {}
-        details["firebase_auth_user"] = await _delete_firebase_auth_user(user_id)
+        firebase_auth_status = await _delete_firebase_auth_user(user_id)
+        details["firebase_auth_user"] = firebase_auth_status
         details[
             "firebase_phone_orphan_user"
         ] = await _delete_safe_phone_only_firebase_user_by_phone(
             phone_number=verified_phone_number,
             protected_uid=user_id,
         )
+        # Fail-loud on Firebase identity orphan: the encrypted account is already
+        # gone, so we keep the 200, but surface the incomplete cleanup so callers can
+        # alert/retry instead of silently treating the identity as removed.
+        if firebase_auth_status == "failed":
+            details["firebase_auth_user_deletion_incomplete"] = True
+            logger.error(
+                "Account deletion completed in DB but Firebase Auth identity remains "
+                "orphaned for user=%s",
+                user_id,
+            )
         result["details"] = details
+
+    return result
+
+
+@router.post("/reset")
+async def reset_account(
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Reset the logged-in user's One account to a fresh, just-onboarded state.
+
+    Clears all personal data (PKM, finance, Gmail, connected systems, consents, KYC,
+    location, marketplace, relationships) while KEEPING the One identity: the Firebase
+    user, the encrypted vault keys + unlock methods, and the actor profile spine. The
+    user re-runs onboarding on next login. Requires VAULT_OWNER token.
+    """
+    user_id = token_data["user_id"]
+    logger.warning("Account reset requested for user %s", user_id)
+
+    service = AccountService()
+    result = await service.reset_account(user_id)
+
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail="Account reset failed")
 
     return result
 
