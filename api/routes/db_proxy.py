@@ -169,18 +169,18 @@ class VaultBootstrapStateResponse(BaseModel):
     firstLoginAt: int | None = None
     lastLoginAt: int | None = None
     loginCount: int
-    preOnboardingCompleted: bool | None = None
-    preOnboardingSkipped: bool | None = None
-    preOnboardingCompletedAt: int | None = None
-    preNavTourCompletedAt: int | None = None
-    preNavTourSkippedAt: int | None = None
-    # Explore-only capability tour mirror: ids the user has explored at least
-    # once (e.g. ["email", "location"]). Empty list means nothing explored yet.
-    # The client local store is the source of truth; this is the durable,
+    setupCompleted: bool | None = None
+    setupSkipped: bool | None = None
+    setupCompletedAt: int | None = None
+    navSetupCompletedAt: int | None = None
+    navSetupSkippedAt: int | None = None
+    # Setup capability mirror: ids the user has set up / explored at least once
+    # (e.g. ["email", "location"]). Empty list means nothing set up yet. The
+    # client local store is the source of truth; this is the durable,
     # cross-device echo.
-    exploredCapabilityIds: list[str] = []
-    preExploredUpdatedAt: int | None = None
-    preStateUpdatedAt: int | None = None
+    setupCapabilityIds: list[str] = []
+    setupCapabilitiesUpdatedAt: int | None = None
+    setupStateUpdatedAt: int | None = None
     # Verified-phone claim folded in from the cached actor-identity shadow so a
     # single session-bootstrap call resolves both vault presence and the phone
     # mandate. None means "unknown" (e.g. shadow lookup failed); the client then
@@ -190,13 +190,13 @@ class VaultBootstrapStateResponse(BaseModel):
 
 class VaultPreStateUpdateRequest(BaseModel):
     userId: str | None = None
-    preOnboardingCompleted: bool | None = None
-    preOnboardingSkipped: bool | None = None
-    preOnboardingCompletedAt: int | None = None
-    preNavTourCompletedAt: int | None = None
-    preNavTourSkippedAt: int | None = None
-    # Replace the stored explore-only capability set. None leaves it unchanged.
-    exploredCapabilityIds: list[str] | None = None
+    setupCompleted: bool | None = None
+    setupSkipped: bool | None = None
+    setupCompletedAt: int | None = None
+    navSetupCompletedAt: int | None = None
+    navSetupSkippedAt: int | None = None
+    # Replace the stored setup capability set. None leaves it unchanged.
+    setupCapabilityIds: list[str] | None = None
 
 
 class VaultGetRequest(BaseModel):
@@ -359,14 +359,14 @@ async def vault_bootstrap_state(
             firstLoginAt=state.get("firstLoginAt"),
             lastLoginAt=state.get("lastLoginAt"),
             loginCount=int(state.get("loginCount") or 0),
-            preOnboardingCompleted=state.get("preOnboardingCompleted"),
-            preOnboardingSkipped=state.get("preOnboardingSkipped"),
-            preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
-            preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
-            preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
-            exploredCapabilityIds=state.get("exploredCapabilityIds") or [],
-            preExploredUpdatedAt=state.get("preExploredUpdatedAt"),
-            preStateUpdatedAt=state.get("preStateUpdatedAt"),
+            setupCompleted=state.get("setupCompleted"),
+            setupSkipped=state.get("setupSkipped"),
+            setupCompletedAt=state.get("setupCompletedAt"),
+            navSetupCompletedAt=state.get("navSetupCompletedAt"),
+            navSetupSkippedAt=state.get("navSetupSkippedAt"),
+            setupCapabilityIds=state.get("setupCapabilityIds") or [],
+            setupCapabilitiesUpdatedAt=state.get("setupCapabilitiesUpdatedAt"),
+            setupStateUpdatedAt=state.get("setupStateUpdatedAt"),
             phoneVerified=phone_verified,
         )
     except ValueError:
@@ -393,12 +393,12 @@ async def vault_pre_vault_state(
         service = VaultKeysService()
         state = await service.update_pre_vault_state(
             user_id=user_id,
-            pre_onboarding_completed=request.preOnboardingCompleted,
-            pre_onboarding_skipped=request.preOnboardingSkipped,
-            pre_onboarding_completed_at=request.preOnboardingCompletedAt,
-            pre_nav_tour_completed_at=request.preNavTourCompletedAt,
-            pre_nav_tour_skipped_at=request.preNavTourSkippedAt,
-            explored_capability_ids=request.exploredCapabilityIds,
+            setup_completed=request.setupCompleted,
+            setup_skipped=request.setupSkipped,
+            setup_completed_at=request.setupCompletedAt,
+            nav_setup_completed_at=request.navSetupCompletedAt,
+            nav_setup_skipped_at=request.navSetupSkippedAt,
+            setup_capability_ids=request.setupCapabilityIds,
         )
         has_vault = await service.check_vault_exists(user_id, ensure_entry=False)
 
@@ -409,14 +409,14 @@ async def vault_pre_vault_state(
             firstLoginAt=state.get("firstLoginAt"),
             lastLoginAt=state.get("lastLoginAt"),
             loginCount=int(state.get("loginCount") or 0),
-            preOnboardingCompleted=state.get("preOnboardingCompleted"),
-            preOnboardingSkipped=state.get("preOnboardingSkipped"),
-            preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
-            preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
-            preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
-            exploredCapabilityIds=state.get("exploredCapabilityIds") or [],
-            preExploredUpdatedAt=state.get("preExploredUpdatedAt"),
-            preStateUpdatedAt=state.get("preStateUpdatedAt"),
+            setupCompleted=state.get("setupCompleted"),
+            setupSkipped=state.get("setupSkipped"),
+            setupCompletedAt=state.get("setupCompletedAt"),
+            navSetupCompletedAt=state.get("navSetupCompletedAt"),
+            navSetupSkippedAt=state.get("navSetupSkippedAt"),
+            setupCapabilityIds=state.get("setupCapabilityIds") or [],
+            setupCapabilitiesUpdatedAt=state.get("setupCapabilitiesUpdatedAt"),
+            setupStateUpdatedAt=state.get("setupStateUpdatedAt"),
         )
     except ValueError:
         raise HTTPException(
