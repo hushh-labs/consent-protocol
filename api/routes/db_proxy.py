@@ -175,6 +175,11 @@ class VaultBootstrapStateResponse(BaseModel):
     preNavTourCompletedAt: int | None = None
     preNavTourSkippedAt: int | None = None
     preStateUpdatedAt: int | None = None
+    # Verified-phone claim folded in from the cached actor-identity shadow so a
+    # single session-bootstrap call resolves both vault presence and the phone
+    # mandate. None means "unknown" (e.g. shadow lookup failed); the client then
+    # falls back to its own identity read rather than treating it as unverified.
+    phoneVerified: bool | None = None
 
 
 class VaultPreStateUpdateRequest(BaseModel):
@@ -322,6 +327,23 @@ async def vault_bootstrap_state(
         state = await service.get_pre_vault_state(user_id)
         has_vault = await service.check_vault_exists(user_id, ensure_entry=False)
 
+        # Fold the verified-phone claim in from the cached actor-identity shadow
+        # (a pure DB read, no Firebase round-trip) so the client can resolve the
+        # phone mandate from this same bootstrap call. Best-effort: a lookup
+        # failure leaves phoneVerified=None and the client falls back to its own
+        # identity read instead of being wrongly treated as unverified.
+        phone_verified: bool | None = None
+        try:
+            identity = (await ActorIdentityService().get_many([user_id])).get(user_id)
+            if identity is not None:
+                phone_verified = identity.get("phone_verified") is True
+        except Exception as identity_error:
+            logger.warning(
+                "vault/bootstrap-state phone-shadow lookup failed user=%s error=%s",
+                _mask_user_id(user_id),
+                type(identity_error).__name__,
+            )
+
         return VaultBootstrapStateResponse(
             userId=user_id,
             hasVault=has_vault,
@@ -335,6 +357,7 @@ async def vault_bootstrap_state(
             preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
+            phoneVerified=phone_verified,
         )
     except ValueError:
         raise HTTPException(
