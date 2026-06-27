@@ -109,6 +109,8 @@ async def create_vault_keys(pool: asyncpg.Pool):
             pre_onboarding_completed_at BIGINT,
             pre_nav_tour_completed_at BIGINT,
             pre_nav_tour_skipped_at BIGINT,
+            pre_explored_capability_ids TEXT,
+            pre_explored_updated_at BIGINT,
             pre_state_updated_at BIGINT,
             created_at BIGINT NOT NULL,
             updated_at BIGINT NOT NULL,
@@ -127,6 +129,16 @@ async def create_vault_keys(pool: asyncpg.Pool):
             )
         )
     """)
+    # Additive columns for the explore-only capability tour mirror. Existing
+    # tables predate these, so add them idempotently. The ids are stored as a
+    # JSON-encoded TEXT array (e.g. '["email","location"]'); NULL/empty means
+    # nothing explored yet.
+    await pool.execute(
+        "ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS pre_explored_capability_ids TEXT"
+    )
+    await pool.execute(
+        "ALTER TABLE vault_keys ADD COLUMN IF NOT EXISTS pre_explored_updated_at BIGINT"
+    )
     print("✅ vault_keys ready!")
 
 

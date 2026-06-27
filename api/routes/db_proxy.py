@@ -174,6 +174,12 @@ class VaultBootstrapStateResponse(BaseModel):
     preOnboardingCompletedAt: int | None = None
     preNavTourCompletedAt: int | None = None
     preNavTourSkippedAt: int | None = None
+    # Explore-only capability tour mirror: ids the user has explored at least
+    # once (e.g. ["email", "location"]). Empty list means nothing explored yet.
+    # The client local store is the source of truth; this is the durable,
+    # cross-device echo.
+    exploredCapabilityIds: list[str] = []
+    preExploredUpdatedAt: int | None = None
     preStateUpdatedAt: int | None = None
     # Verified-phone claim folded in from the cached actor-identity shadow so a
     # single session-bootstrap call resolves both vault presence and the phone
@@ -189,6 +195,8 @@ class VaultPreStateUpdateRequest(BaseModel):
     preOnboardingCompletedAt: int | None = None
     preNavTourCompletedAt: int | None = None
     preNavTourSkippedAt: int | None = None
+    # Replace the stored explore-only capability set. None leaves it unchanged.
+    exploredCapabilityIds: list[str] | None = None
 
 
 class VaultGetRequest(BaseModel):
@@ -356,6 +364,8 @@ async def vault_bootstrap_state(
             preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
             preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
+            exploredCapabilityIds=state.get("exploredCapabilityIds") or [],
+            preExploredUpdatedAt=state.get("preExploredUpdatedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
             phoneVerified=phone_verified,
         )
@@ -388,6 +398,7 @@ async def vault_pre_vault_state(
             pre_onboarding_completed_at=request.preOnboardingCompletedAt,
             pre_nav_tour_completed_at=request.preNavTourCompletedAt,
             pre_nav_tour_skipped_at=request.preNavTourSkippedAt,
+            explored_capability_ids=request.exploredCapabilityIds,
         )
         has_vault = await service.check_vault_exists(user_id, ensure_entry=False)
 
@@ -403,6 +414,8 @@ async def vault_pre_vault_state(
             preOnboardingCompletedAt=state.get("preOnboardingCompletedAt"),
             preNavTourCompletedAt=state.get("preNavTourCompletedAt"),
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
+            exploredCapabilityIds=state.get("exploredCapabilityIds") or [],
+            preExploredUpdatedAt=state.get("preExploredUpdatedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
         )
     except ValueError:

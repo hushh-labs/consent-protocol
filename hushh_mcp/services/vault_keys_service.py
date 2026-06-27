@@ -12,6 +12,7 @@ The backend never sees plaintext vault key material.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -210,10 +211,48 @@ class VaultKeysService:
             "preNavTourSkippedAt": cls._normalize_int_ms_or_none(
                 row.get("pre_nav_tour_skipped_at")
             ),
+            "exploredCapabilityIds": cls._normalize_explored_ids(
+                row.get("pre_explored_capability_ids")
+            ),
+            "preExploredUpdatedAt": cls._normalize_int_ms_or_none(
+                row.get("pre_explored_updated_at")
+            ),
             "preStateUpdatedAt": cls._normalize_int_ms_or_none(row.get("pre_state_updated_at")),
             "createdAt": cls._normalize_int_ms_or_none(row.get("created_at")),
             "updatedAt": cls._normalize_int_ms_or_none(row.get("updated_at")),
         }
+
+    @staticmethod
+    def _normalize_explored_ids(raw: Any) -> list[str]:
+        """
+        Parse the JSON-encoded explore-only capability id list stored as TEXT.
+
+        Tolerant of NULL, empty strings, malformed JSON, and non-string members
+        so a corrupt row never breaks bootstrap; returns a de-duped, sorted list.
+        """
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            decoded: Any = raw
+        elif isinstance(raw, str):
+            trimmed = raw.strip()
+            if not trimmed:
+                return []
+            try:
+                decoded = json.loads(trimmed)
+            except (TypeError, ValueError):
+                return []
+        else:
+            return []
+        if not isinstance(decoded, list):
+            return []
+        seen: set[str] = set()
+        for entry in decoded:
+            if isinstance(entry, str):
+                cleaned = entry.strip()
+                if cleaned:
+                    seen.add(cleaned)
+        return sorted(seen)
 
     async def ensure_user_entry(self, user_id: str) -> Dict[str, Any]:
         return await run_in_threadpool(self._ensure_user_entry_sync, user_id)
@@ -268,7 +307,8 @@ class VaultKeysService:
                     .select(
                         "user_id,vault_status,first_login_at,last_login_at,login_count,"
                         "pre_onboarding_completed,pre_onboarding_skipped,pre_onboarding_completed_at,"
-                        "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,pre_state_updated_at,"
+                        "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,"
+                        "pre_explored_capability_ids,pre_explored_updated_at,pre_state_updated_at,"
                         "created_at,updated_at"
                     )
                     .eq("user_id", user_id_clean)
@@ -307,7 +347,8 @@ class VaultKeysService:
             .select(
                 "user_id,vault_status,first_login_at,last_login_at,login_count,"
                 "pre_onboarding_completed,pre_onboarding_skipped,pre_onboarding_completed_at,"
-                "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,pre_state_updated_at,"
+                "pre_nav_tour_completed_at,pre_nav_tour_skipped_at,"
+                "pre_explored_capability_ids,pre_explored_updated_at,pre_state_updated_at,"
                 "created_at,updated_at"
             )
             .eq("user_id", user_id_clean)
@@ -338,6 +379,8 @@ class VaultKeysService:
             "preOnboardingCompletedAt": state["preOnboardingCompletedAt"],
             "preNavTourCompletedAt": state["preNavTourCompletedAt"],
             "preNavTourSkippedAt": state["preNavTourSkippedAt"],
+            "exploredCapabilityIds": state["exploredCapabilityIds"],
+            "preExploredUpdatedAt": state["preExploredUpdatedAt"],
             "preStateUpdatedAt": state["preStateUpdatedAt"],
         }
 
@@ -350,6 +393,7 @@ class VaultKeysService:
         pre_onboarding_completed_at: Optional[int] = None,
         pre_nav_tour_completed_at: Optional[int] = None,
         pre_nav_tour_skipped_at: Optional[int] = None,
+        explored_capability_ids: Optional[list[str]] = None,
     ) -> Dict[str, Any]:
         return await run_in_threadpool(
             self._update_pre_vault_state_sync,
@@ -359,6 +403,7 @@ class VaultKeysService:
             pre_onboarding_completed_at,
             pre_nav_tour_completed_at,
             pre_nav_tour_skipped_at,
+            explored_capability_ids,
         )
 
     def _update_pre_vault_state_sync(
@@ -369,6 +414,7 @@ class VaultKeysService:
         pre_onboarding_completed_at: Optional[int] = None,
         pre_nav_tour_completed_at: Optional[int] = None,
         pre_nav_tour_skipped_at: Optional[int] = None,
+        explored_capability_ids: Optional[list[str]] = None,
     ) -> Dict[str, Any]:
         """
         Persist DB-first pre-vault onboarding/tour markers with basic consistency checks.
@@ -424,6 +470,14 @@ class VaultKeysService:
             "pre_state_updated_at": now_ms,
             "updated_at": now_ms,
         }
+        # Persist the explore-only capability set only when the caller supplies
+        # one (None leaves the existing value untouched). Normalize to a de-duped,
+        # sorted JSON array so the stored shape is stable and tamper-resistant.
+        if explored_capability_ids is not None:
+            update_payload["pre_explored_capability_ids"] = json.dumps(
+                self._normalize_explored_ids(explored_capability_ids)
+            )
+            update_payload["pre_explored_updated_at"] = now_ms
         updated = (
             supabase.table("vault_keys")
             .update(update_payload)
