@@ -60,6 +60,7 @@ KAI_ROUTE_CONTRACT_PATHS = [
     "/agent/voice/tts",
     "/agent/realtime/session",
     "/agent/realtime/gemini/token",
+    "/agent/realtime/gemini/live",
     "/consent/grant",
     "/analyze",
     "/analyze/stream",

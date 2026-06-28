@@ -23,12 +23,24 @@ Security model:
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import contextlib
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -50,6 +62,23 @@ router = APIRouter(tags=["Kai Agent"])
 # https://ai.google.dev/gemini-api/docs/models#audio-models
 _GEMINI_LIVE_MODEL = (
     os.getenv("AGENT_GEMINI_LIVE_MODEL") or "gemini-3.1-flash-live-preview"
+).strip()
+
+# Vertex AI Live model + location for the server-relayed voice path. Vertex Live
+# runs over ADC (no Developer-API key), so it works on projects where the
+# Developer API is restricted. gemini-live-2.5-flash is the newest Live model
+# currently served on Vertex; the gemini-3.x Live previews are Developer-API
+# only for now, and the native-audio variant is not yet entitled on Vertex.
+# Override per environment without code changes.
+_VERTEX_LIVE_MODEL = (
+    os.getenv("AGENT_GEMINI_VERTEX_LIVE_MODEL") or "gemini-live-2.5-flash"
+).strip()
+_VERTEX_LIVE_LOCATION = (os.getenv("AGENT_GEMINI_VERTEX_LIVE_LOCATION") or "global").strip()
+_VERTEX_LIVE_PROJECT = (
+    os.getenv("GOOGLE_CLOUD_PROJECT")
+    or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+    or os.getenv("GCLOUD_PROJECT")
+    or ""
 ).strip()
 
 # Supported Gemini speech voices (mirrors the chained TTS voice list).
@@ -216,3 +245,194 @@ async def create_agent_gemini_live_token(
         voice=voice,
         tier=tier,
     )
+
+
+# ---------------------------------------------------------------------------
+# Vertex AI Live relay (server-side ADC, no Developer-API key)
+# ---------------------------------------------------------------------------
+#
+# The /token path above mints a browser ephemeral token for the Gemini
+# *Developer* API. On projects where the Developer API is restricted, that path
+# is unavailable. This relay runs Gemini Live over *Vertex AI* using the
+# deployment's Application Default Credentials, which is the same trust path the
+# chained chat/voice inference already uses, so it works wherever Vertex does.
+#
+# Wire protocol (browser <-> this relay) intentionally mirrors the subset of the
+# Gemini Live JSON the browser already speaks, so the frontend client needs only
+# a URL change:
+#   - browser -> relay: {"setup": {...}} (ignored; server is authoritative) and
+#                       {"realtimeInput": {"audio": {"mimeType","data"}}}
+#   - relay -> browser: {"setupComplete": {}},
+#                       {"serverContent": {"modelTurn": {"parts": [...]}}},
+#                       {"serverContent": {"interrupted": true}},
+#                       {"serverContent": {"turnComplete": true}}
+#
+# Audio is base64 PCM16 both ways (16 kHz in, 24 kHz out), exactly as before.
+
+_VERTEX_LIVE_INPUT_RATE = 16000
+
+
+def _resolve_vertex_live_client():
+    """Build a Vertex Live genai client from ADC.
+
+    Project/location come from explicit env overrides when set, otherwise the
+    SDK resolves them from ADC (quota project) and the default location.
+    """
+    from google import genai
+
+    kwargs: dict[str, object] = {"vertexai": True}
+    if _VERTEX_LIVE_PROJECT:
+        kwargs["project"] = _VERTEX_LIVE_PROJECT
+    if _VERTEX_LIVE_LOCATION:
+        kwargs["location"] = _VERTEX_LIVE_LOCATION
+    return genai.Client(**kwargs)
+
+
+def _build_live_config(voice: str, instructions: str):
+    from google.genai import types as genai_types
+
+    return genai_types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        system_instruction=instructions,
+        speech_config=genai_types.SpeechConfig(
+            voice_config=genai_types.VoiceConfig(
+                prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=voice)
+            )
+        ),
+        input_audio_transcription=genai_types.AudioTranscriptionConfig(),
+        output_audio_transcription=genai_types.AudioTranscriptionConfig(),
+    )
+
+
+@router.websocket("/agent/realtime/gemini/live")
+async def agent_gemini_live_relay(websocket: WebSocket) -> None:
+    """Relay browser audio to/from a Vertex AI Live session via ADC."""
+
+    await websocket.accept()
+
+    if not _gemini_live_enabled():
+        await websocket.close(code=1011, reason="Gemini Live voice is not enabled.")
+        return
+
+    # Auth-optional, same tier model as the token route. The browser cannot set
+    # WebSocket headers, so the Firebase bearer (when present) rides in a query
+    # param. Anonymous callers get the navigation-only intro persona.
+    authorization = websocket.query_params.get("authorization")
+    if authorization and not authorization.startswith("Bearer "):
+        authorization = f"Bearer {authorization}"
+    uid = await _resolve_optional_uid(authorization)
+    persona_tier = "signed_locked" if uid else "anon_onboarding"
+    persona_ctx = build_persona_context(
+        tier=persona_tier,
+        screen=websocket.query_params.get("screen"),
+        persona=websocket.query_params.get("persona"),
+    )
+    instructions = compose_voice_instructions(persona_ctx)
+    voice = _resolve_voice(websocket.query_params.get("voice"))
+
+    try:
+        client = _resolve_vertex_live_client()
+        live_config = _build_live_config(voice, instructions)
+    except Exception as error:  # noqa: BLE001 - normalize provider failures
+        logger.warning(
+            "agent_gemini_live_relay_init_failed error=%s",
+            error.__class__.__name__,
+        )
+        await websocket.close(code=1011, reason="Voice is unavailable right now.")
+        return
+
+    try:
+        async with client.aio.live.connect(model=_VERTEX_LIVE_MODEL, config=live_config) as session:
+            # Tell the browser the session is live so it starts streaming mic.
+            await websocket.send_text(json.dumps({"setupComplete": {}}))
+
+            async def pump_browser_to_gemini() -> None:
+                while True:
+                    raw = await websocket.receive_text()
+                    try:
+                        message = json.loads(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    realtime = message.get("realtimeInput")
+                    if not isinstance(realtime, dict):
+                        # The browser may still send a {"setup": ...} frame; the
+                        # server config is authoritative, so we ignore it.
+                        continue
+                    audio = realtime.get("audio")
+                    if not isinstance(audio, dict):
+                        continue
+                    data = audio.get("data")
+                    if not isinstance(data, str) or not data:
+                        continue
+                    mime = audio.get("mimeType") or (f"audio/pcm;rate={_VERTEX_LIVE_INPUT_RATE}")
+                    await session.send_realtime_input(
+                        audio={"data": base64.b64decode(data), "mime_type": mime}
+                    )
+
+            async def pump_gemini_to_browser() -> None:
+                while True:
+                    async for response in session.receive():
+                        server_content = response.server_content
+                        if server_content is not None:
+                            if getattr(server_content, "interrupted", False):
+                                await websocket.send_text(
+                                    json.dumps({"serverContent": {"interrupted": True}})
+                                )
+                            model_turn = getattr(server_content, "model_turn", None)
+                            if model_turn is not None and model_turn.parts:
+                                parts: list[dict] = []
+                                for part in model_turn.parts:
+                                    inline = getattr(part, "inline_data", None)
+                                    if inline is not None and inline.data:
+                                        parts.append(
+                                            {
+                                                "inlineData": {
+                                                    "mimeType": inline.mime_type
+                                                    or "audio/pcm;rate=24000",
+                                                    "data": base64.b64encode(inline.data).decode(
+                                                        "ascii"
+                                                    ),
+                                                }
+                                            }
+                                        )
+                                    elif getattr(part, "text", None):
+                                        parts.append({"text": part.text})
+                                if parts:
+                                    await websocket.send_text(
+                                        json.dumps(
+                                            {"serverContent": {"modelTurn": {"parts": parts}}}
+                                        )
+                                    )
+                            if getattr(server_content, "turn_complete", False):
+                                await websocket.send_text(
+                                    json.dumps({"serverContent": {"turnComplete": True}})
+                                )
+
+            up = asyncio.create_task(pump_browser_to_gemini())
+            down = asyncio.create_task(pump_gemini_to_browser())
+            done, pending = await asyncio.wait({up, down}, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            # Surface a non-cancellation error from whichever pump finished.
+            for task in done:
+                exc = task.exception()
+                if exc is not None and not isinstance(
+                    exc, (WebSocketDisconnect, asyncio.CancelledError)
+                ):
+                    raise exc
+    except WebSocketDisconnect:
+        return
+    except Exception as error:  # noqa: BLE001 - normalize provider failures
+        logger.warning(
+            "agent_gemini_live_relay_failed tier=%s error=%s",
+            "full" if uid else "intro",
+            error.__class__.__name__,
+        )
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1011, reason="Voice session ended unexpectedly.")
+        return
+
+    with contextlib.suppress(Exception):
+        await websocket.close()
