@@ -42,9 +42,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Agent"])
 
-# Native-audio Live model. Override per environment without code changes.
+# Native-audio Live model for full-duplex voice. Override per environment without
+# code changes. Note: the Live API only accepts dedicated Live model IDs; the
+# text/chat model (gemini-3.5-flash) is NOT a Live model. gemini-3.1-flash-live-preview
+# is the current latest high-quality, low-latency native-audio Live model (the
+# prior gemini-2.5-flash-native-audio-preview-09-2025 is superseded). See
+# https://ai.google.dev/gemini-api/docs/models#audio-models
 _GEMINI_LIVE_MODEL = (
-    os.getenv("AGENT_GEMINI_LIVE_MODEL") or "gemini-2.5-flash-native-audio-preview-09-2025"
+    os.getenv("AGENT_GEMINI_LIVE_MODEL") or "gemini-3.1-flash-live-preview"
 ).strip()
 
 # Supported Gemini speech voices (mirrors the chained TTS voice list).
