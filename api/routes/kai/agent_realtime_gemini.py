@@ -33,6 +33,10 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from api.middlewares.rate_limit import RateLimits, limiter
+from hushh_mcp.services.agent_persona import (
+    build_persona_context,
+    compose_voice_instructions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,29 +58,6 @@ _SESSION_START_WINDOW_SECONDS = 60
 
 _DISABLED_FLAG_VALUES = {"0", "false", "off", "disabled", "no"}
 
-# Full persona: signed-in + unlocked vault. Realtime voice still has no tools,
-# memory, or app actions, so it must not claim access to private data.
-_AGENT_LIVE_INSTRUCTIONS_FULL = (
-    "You are One, the personal agent inside Hussh. You hold the relationship layer "
-    "and speak warmly and concisely. In this realtime voice conversation you have no "
-    "tools, memory, portfolio access, PKM context, or app actions, so do not claim "
-    "access to private user data or perform app actions. For finance defer to Kai, "
-    "for privacy and consent defer to Nav, and for identity defer to KYC, and let the "
-    "user know they can switch to typed chat for those workflows. Answer plainly in "
-    "English."
-)
-
-# Pre-vault persona: anonymous or locked vault (onboarding). Informational and
-# navigational only; must never imply it can read or change private data.
-_AGENT_LIVE_INSTRUCTIONS_INTRO = (
-    "You are One, the friendly guide inside Hussh, talking to someone who is still "
-    "getting started and has not unlocked their private vault yet. Speak warmly and "
-    "concisely. You have no access to any private user data, memory, portfolio, or "
-    "app actions. Help the person understand Hussh and how to get set up, and when "
-    "they want to do something with their own data, invite them to sign in and unlock "
-    "their vault. Answer plainly in English."
-)
-
 
 def _gemini_live_enabled() -> bool:
     configured = os.getenv("AGENT_GEMINI_LIVE_ENABLED", "").strip().lower()
@@ -85,6 +66,11 @@ def _gemini_live_enabled() -> bool:
 
 class AgentGeminiLiveTokenRequest(BaseModel):
     voice: Optional[str] = Field(default=None, max_length=64)
+    # Optional active-state hints from the agent runtime context. They only
+    # shape the (tool-less) system instruction; they never widen access. The
+    # persona composer sanitizes them against prompt injection.
+    screen: Optional[str] = Field(default=None, max_length=64)
+    persona: Optional[str] = Field(default=None, max_length=32)
 
 
 class AgentGeminiLiveTokenResponse(BaseModel):
@@ -144,10 +130,18 @@ async def create_agent_gemini_live_token(
         )
 
     uid = await _resolve_optional_uid(authorization)
+    # Backward-compatible coarse tier returned to the client (full vs intro).
     tier = "full" if uid else "intro"
-    instructions = (
-        _AGENT_LIVE_INSTRUCTIONS_FULL if tier == "full" else _AGENT_LIVE_INSTRUCTIONS_INTRO
+    # Richer access tier used only to shape the (tool-less) system instruction.
+    # Realtime voice never reads vault state, so a signed-in user maps to the
+    # signed_locked tier here: the instruction must not promise data access.
+    persona_tier = "signed_locked" if uid else "anon_onboarding"
+    persona_ctx = build_persona_context(
+        tier=persona_tier,
+        screen=body.screen,
+        persona=body.persona,
     )
+    instructions = compose_voice_instructions(persona_ctx)
     voice = _resolve_voice(body.voice)
 
     from google import genai
