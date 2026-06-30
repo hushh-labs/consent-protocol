@@ -15,7 +15,12 @@ import pytest
 from google.genai import types
 
 from hushh_mcp.agents.location import tools
-from hushh_mcp.agents.location.tools import CONTROL_PLANE_LOCATION_TOOLS
+from hushh_mcp.agents.location import tools as loc_tools
+from hushh_mcp.agents.location.tools import (
+    CONTROL_PLANE_LOCATION_TOOLS,
+    propose_location_view,
+    propose_public_link,
+)
 from hushh_mcp.hushh_adk.context import HushhContext
 from hushh_mcp.services.location_chat_service import _function_declarations
 
@@ -94,3 +99,74 @@ def test_function_declarations_match_control_plane_tools():
     declared = {decl.name for decl in _function_declarations(types)}
     tool_names = {t._name for t in CONTROL_PLANE_LOCATION_TOOLS}
     assert declared == tool_names
+
+
+async def test_propose_public_link_returns_directive_without_mutation():
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        out = await propose_public_link.__wrapped__(2)
+    assert out == {"proposed": "create_public_link", "durationHours": 2.0}
+
+
+async def test_propose_public_link_rejects_out_of_range_duration():
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        with pytest.raises(ValueError):
+            await propose_public_link.__wrapped__(99)
+
+
+async def test_propose_location_view_rejects_non_uuid():
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        with pytest.raises(ValueError):
+            await propose_location_view.__wrapped__("not-a-uuid")
+
+
+class _FakeSvc:
+    def list_verified_recipients(self, *, owner_user_id, limit=50):
+        return [
+            {"userId": "u-mom", "displayName": "Mom", "keyId": "k-mom", "canReceiveLocation": True},
+            {"userId": "u-kid", "displayName": "Kid", "keyId": None, "canReceiveLocation": False},
+        ]
+
+    def list_state(self, *, user_id):
+        return {
+            "ownerGrants": [
+                {
+                    "id": "g1",
+                    "recipientDisplayName": "Mom",
+                    "expiresAt": "later",
+                    "status": "active",
+                }
+            ],
+            "receivedGrants": [],
+            "requests": [],
+        }
+
+
+async def test_request_recipient_choice_options_carry_real_ids_and_public_link(monkeypatch):
+    monkeypatch.setattr(loc_tools, "_service", lambda: _FakeSvc())
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        out = await loc_tools.request_recipient_choice.__wrapped__()
+    prompt = out["prompt"]
+    assert prompt["kind"] == "select" and prompt["purpose"] == "select_recipient"
+    assert prompt["options"][0]["ref"] == {"recipientUserId": "u-mom", "recipientKeyId": "k-mom"}
+    assert prompt["options"][1]["hint"] == "hasn't set up location yet"
+    assert prompt["options"][-1]["ref"] == {"publicLink": True}
+    # coordinate-free
+    blob = repr(out).lower()
+    assert "latitude" not in blob and "longitude" not in blob and "lat" not in blob.split("late")[0]
+
+
+async def test_request_active_share_choice_includes_stop_all(monkeypatch):
+    monkeypatch.setattr(loc_tools, "_service", lambda: _FakeSvc())
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        out = await loc_tools.request_active_share_choice.__wrapped__()
+    refs = [o["ref"] for o in out["prompt"]["options"]]
+    assert {"grantId": "g1"} in refs
+    assert {"all": True} in refs
+
+
+async def test_request_confirmation_returns_confirm_prompt():
+    with HushhContext(user_id="u1", consent_token="t", vault_keys={}):  # noqa: S106
+        out = await loc_tools.request_confirmation.__wrapped__("Stop sharing with everyone?", True)
+    assert out["prompt"]["kind"] == "confirm"
+    assert out["prompt"]["destructive"] is True
+    assert "everyone" in out["prompt"]["question"]
